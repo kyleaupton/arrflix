@@ -79,6 +79,16 @@ const router = createRouter({
       meta: { public: true, layout: 'auth' },
     },
 
+    // Dev playground (dev only)
+    ...(import.meta.env.DEV
+      ? [
+          {
+            path: '/dev',
+            component: () => import('@/views/DevPlayground.vue'),
+          },
+        ]
+      : []),
+
     // Media
     {
       path: '/movie/:id',
