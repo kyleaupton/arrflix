@@ -9,13 +9,13 @@ services:
       APP_ENV: dev
       TMDB_API_KEY: ${TMDB_API_KEY}
     ports:
-      - "8485:8484"
-      - "9697:9696"
-      - "5432:5432"
+      - "8484:8484" # Application (required)
+      - "9696:9696" # Prowlarr (for debugging)
+      - "5432:5432" # Postgres (for debugging)
     volumes:
       - ${MEDIA_LIBRARIES}:/data
       - ./.data/postgres-data:/var/lib/postgresql/data
 
-      # app code for dev
+      # Application code for dev
       - ./web:/app/web
       - ./backend:/app/backend
