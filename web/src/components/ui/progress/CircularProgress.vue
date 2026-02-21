@@ -33,13 +33,7 @@ const sizes = {
 const config = computed(() => sizes[props.size])
 const viewBox = computed(() => `0 0 ${config.value.dim} ${config.value.dim}`)
 const center = computed(() => config.value.dim / 2)
-const circumference = computed(() => 2 * Math.PI * config.value.radius)
-
-const offset = computed(() => {
-  if (props.state !== 'progress') return 0
-  const clampedValue = Math.min(100, Math.max(0, props.value))
-  return circumference.value * (1 - clampedValue / 100)
-})
+const clampedValue = computed(() => Math.min(100, Math.max(0, props.value)))
 
 const ringClass = computed(() => {
   switch (props.state) {
@@ -57,12 +51,6 @@ const ringClass = computed(() => {
 const showFullRing = computed(() => ['success', 'error', 'cancelled'].includes(props.state))
 
 const isIndeterminate = computed(() => props.state === 'indeterminate')
-
-// For indeterminate state, show a partial arc that spins
-const indeterminateDashArray = computed(() => {
-  const arcLength = circumference.value * 0.25 // 25% of the circle
-  return `${arcLength} ${circumference.value - arcLength}`
-})
 </script>
 
 <template>
@@ -90,12 +78,15 @@ const indeterminateDashArray = computed(() => {
       fill="none"
       :stroke-width="config.stroke"
       stroke-linecap="round"
+      pathLength="100"
       :class="['stroke-current', ringClass, isIndeterminate && 'animate-spin-progress']"
-      :style="!isIndeterminate ? { transition: 'stroke-dashoffset 0.3s ease-in-out' } : undefined"
-      :stroke-dasharray="isIndeterminate ? indeterminateDashArray : (showFullRing ? undefined : circumference)"
-      :stroke-dashoffset="isIndeterminate ? 0 : (showFullRing ? 0 : offset)"
-      :transform="`rotate(-90 ${center} ${center})`"
-      :transform-origin="`${center}px ${center}px`"
+      :style="{
+        transform: !isIndeterminate ? 'rotate(-90deg)' : undefined,
+        transformOrigin: `${center}px ${center}px`,
+        transition: !isIndeterminate ? 'stroke-dashoffset 0.3s ease-in-out' : undefined,
+      }"
+      :stroke-dasharray="isIndeterminate ? '25 75' : (showFullRing ? undefined : '100')"
+      :stroke-dashoffset="isIndeterminate ? 0 : (showFullRing ? 0 : 100 - clampedValue)"
     />
 
     <!-- Center icon for terminal states -->
