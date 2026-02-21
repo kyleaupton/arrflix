@@ -10,9 +10,9 @@ RUN cd web && npm ci && npm run build-only
 
 FROM ubuntu:24.04
 
+ARG TARGETARCH
 ARG S6_VERSION=3.2.1.0
 ARG PROWLARR_VERSION=2.3.0.5236
-ARG PROWLARR_ARCH=linux-core-x64
 ARG ARRFLIX_VERSION=""
 ARG ARRFLIX_COMMIT=""
 ARG ARRFLIX_BUILD_DATE=""
@@ -30,14 +30,15 @@ RUN apt-get update && apt-get install -y \
 
 # Install s6-overlay
 ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-noarch.tar.xz /tmp/
-ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-x86_64.tar.xz /tmp/
-RUN cd / && \
-    tar -Jxpf /tmp/s6-overlay-noarch.tar.xz && \
-    tar -Jxpf /tmp/s6-overlay-x86_64.tar.xz && \
+RUN tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz
+RUN S6_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo "aarch64" || echo "x86_64") && \
+    curl -fsSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-${S6_ARCH}.tar.xz -o /tmp/s6-overlay-arch.tar.xz && \
+    tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz && \
     rm /tmp/*.tar.xz
 
 # Install Prowlarr
-RUN set -eux; \
+RUN PROWLARR_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo "linux-core-arm64" || echo "linux-core-x64") && \
+    set -eux && \
     mkdir -p /opt/prowlarr && cd /opt/prowlarr && \
     curl -fsSL https://github.com/Prowlarr/Prowlarr/releases/download/v${PROWLARR_VERSION}/Prowlarr.master.${PROWLARR_VERSION}.${PROWLARR_ARCH}.tar.gz -o prowlarr.tar.gz && \
     tar -xzf prowlarr.tar.gz --strip-components=1 && \

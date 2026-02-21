@@ -19,7 +19,8 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go
-RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz -o /tmp/go.tgz && \
+ARG TARGETARCH
+RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz -o /tmp/go.tgz && \
     tar -C /usr/local -xzf /tmp/go.tgz && \
     rm /tmp/go.tgz
 
@@ -37,14 +38,15 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - && \
 # Install s6-overlay
 ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-noarch.tar.xz /tmp
 RUN tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz
-ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-x86_64.tar.xz /tmp
-RUN tar -C / -Jxpf /tmp/s6-overlay-x86_64.tar.xz
+RUN S6_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo "aarch64" || echo "x86_64") && \
+    curl -fsSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-${S6_ARCH}.tar.xz -o /tmp/s6-overlay-arch.tar.xz && \
+    tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz && \
+    rm /tmp/s6-overlay-arch.tar.xz
 
 # Install Prowlarr
 ARG PROWLARR_VERSION=2.3.0.5236
-# linux-core-x64, linux-core-arm64, linux-core-arm
-ARG PROWLARR_ARCH=linux-core-x64
-RUN set -eux; \
+RUN PROWLARR_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo "linux-core-arm64" || echo "linux-core-x64") && \
+    set -eux && \
     mkdir -p /opt/prowlarr && cd /opt/prowlarr && \
     curl -fsSL https://github.com/Prowlarr/Prowlarr/releases/download/v${PROWLARR_VERSION}/Prowlarr.master.${PROWLARR_VERSION}.${PROWLARR_ARCH}.tar.gz -o prowlarr.tar.gz && \
     tar -xzf prowlarr.tar.gz --strip-components=1 && \
@@ -53,8 +55,6 @@ RUN set -eux; \
 
 # Copy the project code
 WORKDIR /app
-# COPY . .
-# COPY --from=frontend-deps /src/app/web/node_modules /app/app/web/node_modules
 
 # s6 services
 COPY docker/s6 /etc/s6-overlay
