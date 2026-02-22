@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	tmdb "github.com/cyruzin/golang-tmdb"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -24,10 +25,31 @@ import (
 // ErrScanAlreadyRunning is returned when a scan is already in progress for a library.
 var ErrScanAlreadyRunning = errors.New("scan already running for this library")
 
+// scanRepo is the subset of repo.Repository used by the scanner.
+type scanRepo interface {
+	GetLibrary(ctx context.Context, id pgtype.UUID) (dbgen.Library, error)
+	GetMediaFileByLibraryAndPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error)
+	GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error)
+	CreateMediaItem(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error)
+	UpsertSeason(ctx context.Context, mediaItemID pgtype.UUID, seasonNumber int32, airDate pgtype.Date) (dbgen.MediaSeason, error)
+	UpsertEpisode(ctx context.Context, seasonID pgtype.UUID, episodeNumber int32, title *string, airDate pgtype.Date, tmdbID *int64, tvdbID *int64) (dbgen.MediaEpisode, error)
+	CreateMediaFile(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error)
+	UpsertMediaFileState(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error)
+	CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error)
+}
+
+// scanTmdb is the subset of TmdbService used by the scanner.
+type scanTmdb interface {
+	FindByID(ctx context.Context, id, source string) (tmdb.FindByID, error)
+	GetMovieDetails(ctx context.Context, id int64) (tmdb.MovieDetails, error)
+	GetSeriesDetails(ctx context.Context, id int64) (tmdb.TVDetails, error)
+	GetEpisodeDetails(ctx context.Context, id int64, season int64, episode int64) (tmdb.TVEpisodeDetails, error)
+}
+
 type ScannerService struct {
-	repo    *repo.Repository
+	repo    scanRepo
 	logger  *logger.Logger
-	tmdb    *TmdbService
+	tmdb    scanTmdb
 	broker  *sse.Broker
 	ctx     context.Context // background context for goroutines; cancelled on shutdown
 	running sync.Map        // libraryID string -> scanID string
@@ -115,6 +137,38 @@ func (s *ScannerService) publishEvent(eventType, scanID, libraryID string, extra
 	})
 }
 
+// ensureSeasonAndEpisode upserts the season and episode for a series media file.
+// Returns the episode ID if one was created, or nil for movies / missing season info.
+func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID pgtype.UUID, ident identity.Identity, path string) (*pgtype.UUID, error) {
+	if ident.Season == nil {
+		return nil, nil
+	}
+
+	seasonRow, err := s.repo.UpsertSeason(ctx, mediaItemID, *ident.Season, pgtype.Date{})
+	if err != nil {
+		s.logger.Error().Err(err).Str("path", path).Msg("Error upserting season")
+		return nil, err
+	}
+
+	if ident.Episode == nil {
+		return nil, nil
+	}
+
+	episode, err := s.tmdb.GetEpisodeDetails(ctx, *ident.TmdbID, int64(*ident.Season), int64(*ident.Episode))
+	if err != nil {
+		s.logger.Error().Err(err).Str("path", path).Msg("Error getting episode details from TMDB")
+		return nil, err
+	}
+
+	episodeRow, err := s.repo.UpsertEpisode(ctx, seasonRow.ID, *ident.Episode, &episode.Name, pgtype.Date{}, nil, nil)
+	if err != nil {
+		s.logger.Error().Err(err).Str("path", path).Msg("Error upserting episode")
+		return nil, err
+	}
+
+	return &episodeRow.ID, nil
+}
+
 func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library, scanID string) (scanStats, error) {
 	stats := scanStats{}
 	start := time.Now()
@@ -125,6 +179,11 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 	err := filepath.WalkDir(library.RootPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err // propagate permission/IO errors
+		}
+
+		// Stop walking if the context has been cancelled.
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 
 		if d.IsDir() || !isMediaFile(path) {
@@ -162,23 +221,23 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 		}
 
 		// attempt to get identification
-		identity, err := identity.Resolve(library, path)
+		ident, err := identity.Resolve(library, path)
 		if err != nil {
 			s.logger.Error().Str("path", path).Err(err).Msg("Error resolving identity")
 			return nil
 		}
 
-		if identity.TmdbID == nil {
+		if ident.TmdbID == nil {
 			// If we got an identity, but no tmdb id, we'll need to convert to one.
 			// This is a best effort to get a tmdb id. If we don't get one, we'll skip the file.
 			var id string
 			var provider string
 
-			if identity.TvdbID != nil {
-				id = strconv.FormatInt(*identity.TvdbID, 10)
+			if ident.TvdbID != nil {
+				id = strconv.FormatInt(*ident.TvdbID, 10)
 				provider = "tvdb_id"
-			} else if identity.ImdbID != nil {
-				id = *identity.ImdbID
+			} else if ident.ImdbID != nil {
+				id = *ident.ImdbID
 				provider = "imdb_id"
 			}
 
@@ -212,25 +271,25 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 				tmdbId = &res.TvResults[0].ID
 			}
 
-			identity.TmdbID = tmdbId
+			ident.TmdbID = tmdbId
 		}
 
-		if identity.TmdbID == nil {
+		if ident.TmdbID == nil {
 			// We can't do anything without a tmdb id, so we'll skip the file.
 			// TODO: keep track of files that we couldn't do anything with so we can alert the user.
 			s.logger.Error().Str("path", path).Msg("No tmdb id found")
 			return nil
 		}
 
-		// See if the tmdb id exists within media_item
-		mediaItem, err := s.repo.GetMediaItemByTmdbID(ctx, *identity.TmdbID)
+		// See if the tmdb id exists within media_item, scoped to the library type
+		// to avoid collisions between movies and series sharing the same TMDB ID.
+		mediaItem, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, *ident.TmdbID, library.Type)
 		if err != nil && err != pgx.ErrNoRows {
 			s.logger.Error().Str("path", path).Err(err).Msg("Error getting media item by tmdb id")
 			return err
 		}
 
 		var mediaItemId pgtype.UUID
-		var episodeId *pgtype.UUID
 
 		if err == pgx.ErrNoRows {
 			// If we get here then mediaItem doesn't exists, so we need to make it.
@@ -241,44 +300,52 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 
 			switch library.Type {
 			case "movie":
-				movie, err := s.tmdb.GetMovieDetails(ctx, *identity.TmdbID)
+				movie, err := s.tmdb.GetMovieDetails(ctx, *ident.TmdbID)
 				if err != nil {
 					s.logger.Error().Str("path", path).Err(err).Msg("Error getting movie details")
 					return nil
 				}
 
 				title = movie.Title
-				// yyyy-mm-dd
+
+				if movie.ReleaseDate == "" {
+					s.logger.Error().Str("path", path).Msg("Movie has empty release date")
+					return nil
+				}
+
 				yearStr := strings.Split(movie.ReleaseDate, "-")[0]
-				// cast to int
 				year64, err := strconv.ParseInt(yearStr, 10, 32)
 				if err != nil {
-					s.logger.Error().Str("path", path).Err(err).Msg("Error getting movie details")
+					s.logger.Error().Str("path", path).Err(err).Msg("Error parsing movie release year")
 					return nil
 				}
 
 				year = int32(year64)
 			case "series":
-				tv, err := s.tmdb.GetSeriesDetails(ctx, *identity.TmdbID)
+				tv, err := s.tmdb.GetSeriesDetails(ctx, *ident.TmdbID)
 				if err != nil {
 					s.logger.Error().Str("path", path).Err(err).Msg("Error getting series details")
 					return nil
 				}
 
 				title = tv.Name
-				// yyyy-mm-dd
+
+				if tv.FirstAirDate == "" {
+					s.logger.Error().Str("path", path).Msg("Series has empty first air date")
+					return nil
+				}
+
 				yearStr := strings.Split(tv.FirstAirDate, "-")[0]
-				// cast to int
 				year64, err := strconv.ParseInt(yearStr, 10, 32)
 				if err != nil {
-					s.logger.Error().Str("path", path).Err(err).Msg("Error getting episode details")
+					s.logger.Error().Str("path", path).Err(err).Msg("Error parsing series first air date year")
 					return nil
 				}
 
 				year = int32(year64)
 			}
 
-			s.logger.Debug().Str("title", title).Int32("year", year).Int64("tmdb_id", *identity.TmdbID).Msg("Creating media_item")
+			s.logger.Debug().Str("title", title).Int32("year", year).Int64("tmdb_id", *ident.TmdbID).Msg("Creating media_item")
 
 			// create media_item if it doesn't exist
 			createdMediaItem, err := s.repo.CreateMediaItem(
@@ -286,7 +353,7 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 				library.Type,
 				title,
 				&year,
-				identity.TmdbID,
+				ident.TmdbID,
 			)
 			if err != nil {
 				s.logger.Error().Str("path", path).Err(err).Msg("Error creating media_item")
@@ -296,32 +363,14 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 			s.logger.Debug().Str("path", path).Str("media_item_id", createdMediaItem.ID.String()).Msg("Media item created")
 			mediaItemId = createdMediaItem.ID
 			stats.MediaItemsCreated++
-
-			if identity.Season != nil {
-				// create media_season if it doesn't exist
-				seasonRow, err := s.repo.UpsertSeason(ctx, mediaItemId, *identity.Season, pgtype.Date{})
-				if err != nil {
-					return nil
-				}
-
-				if identity.Episode != nil {
-					// grab the episode details from tmdb
-					episode, err := s.tmdb.GetEpisodeDetails(ctx, *identity.TmdbID, int64(*identity.Season), int64(*identity.Episode))
-					if err != nil {
-						return err
-					}
-
-					// create media_episode if it doesn't exist
-					episodeRow, err := s.repo.UpsertEpisode(ctx, seasonRow.ID, *identity.Episode, &episode.Name, pgtype.Date{}, nil, nil)
-					if err != nil {
-						return nil
-					}
-					episodeId = &episodeRow.ID
-				}
-			}
-
 		} else {
 			mediaItemId = mediaItem.ID
+		}
+
+		// Ensure season/episode records for series files.
+		episodeId, err := s.ensureSeasonAndEpisode(ctx, mediaItemId, ident, path)
+		if err != nil {
+			return nil // skip file, continue walking
 		}
 
 		// create media_file (removed seasonId - derived from episode)
@@ -367,11 +416,10 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 }
 
 func isMediaFile(path string) bool {
-	extensions := []string{".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".m4v", ".webm"}
-	for _, ext := range extensions {
-		if strings.HasSuffix(path, ext) {
-			return true
-		}
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".m4v", ".webm":
+		return true
 	}
 	return false
 }
