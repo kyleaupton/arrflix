@@ -312,11 +312,29 @@ func goTypeToValueType(t reflect.Type) string {
 // ToTemplateData converts the context to a map suitable for Go templates
 // This provides namespaced access (e.g., .Candidate.Title, .Media.Title)
 func (ctx *EvaluationContext) ToTemplateData() map[string]any {
+	// Build a custom map for Media so Season/Episode render as zero-padded strings
+	media := map[string]any{
+		"Type":       ctx.Media.Type,
+		"Title":      ctx.Media.Title,
+		"CleanTitle": ctx.Media.CleanTitle,
+		"Year":       ctx.Media.Year,
+		"TmdbID":     ctx.Media.TmdbID,
+	}
+	if ctx.Media.Season != nil {
+		media["Season"] = fmt.Sprintf("%02d", *ctx.Media.Season)
+	}
+	if ctx.Media.Episode != nil {
+		media["Episode"] = fmt.Sprintf("%02d", *ctx.Media.Episode)
+	}
+	if ctx.Media.EpisodeTitle != nil {
+		media["EpisodeTitle"] = *ctx.Media.EpisodeTitle
+	}
+
 	data := map[string]any{
 		"Candidate": ctx.Candidate,
 		"Quality":   ctx.Quality,
 		"Release":   ctx.Release,
-		"Media":     ctx.Media,
+		"Media":     media,
 	}
 
 	// Always include MediaInfo (empty struct if not available) to avoid <no value> in templates

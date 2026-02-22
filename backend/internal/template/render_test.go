@@ -70,3 +70,50 @@ func TestRender(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderZeroPaddedSeasonEpisode(t *testing.T) {
+	result := release.Parse("Breaking.Bad.S01E05.720p.BluRay.x264-GROUP")
+
+	media := map[string]any{
+		"Title":        "Breaking Bad",
+		"CleanTitle":   "Breaking Bad",
+		"Year":         2008,
+		"Season":       "01",
+		"Episode":      "05",
+		"EpisodeTitle": "Gray Matter",
+	}
+
+	ctx := map[string]any{
+		"Media":   media,
+		"Quality": result.Quality,
+	}
+
+	tests := []struct {
+		name     string
+		template string
+		want     string
+	}{
+		{
+			name:     "Series with zero-padded season and episode",
+			template: "{{.Media.Title}} - S{{.Media.Season}}E{{.Media.Episode}} - {{.Media.EpisodeTitle}}",
+			want:     "Breaking Bad - S01E05 - Gray Matter",
+		},
+		{
+			name:     "Season directory template",
+			template: "Season {{.Media.Season}}",
+			want:     "Season 01",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Render(tt.template, ctx)
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("Render() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

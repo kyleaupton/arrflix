@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { TemplateTokenEditor } from '@/components/ui/template-editor'
+import { presets, type TemplatePreset } from './templatePresets'
 
 interface Props {
   template?: HandlersNameTemplateSwagger | null
@@ -43,11 +44,37 @@ const templateForm = ref({
 })
 
 const templateError = ref<string | null>(null)
+const selectedPresetId = ref<string | null>(null)
+
+const isCreateMode = computed(() => !props.template?.id)
 
 const typeOptions = [
   { label: 'Movies', value: 'movie' },
   { label: 'Series', value: 'series' },
 ]
+
+function applyPreset(preset: TemplatePreset) {
+  selectedPresetId.value = preset.id
+  if (templateForm.value.type === 'movie') {
+    templateForm.value.template = preset.movie.template
+    templateForm.value.movie_dir_template = preset.movie.movieDirTemplate
+    templateForm.value.series_show_template = ''
+    templateForm.value.series_season_template = ''
+  } else {
+    templateForm.value.template = preset.series.template
+    templateForm.value.series_show_template = preset.series.seriesShowTemplate
+    templateForm.value.series_season_template = preset.series.seriesSeasonTemplate
+    templateForm.value.movie_dir_template = ''
+  }
+}
+
+function clearPreset() {
+  selectedPresetId.value = null
+  templateForm.value.template = ''
+  templateForm.value.movie_dir_template = ''
+  templateForm.value.series_show_template = ''
+  templateForm.value.series_season_template = ''
+}
 
 // Initialize form when template changes
 watch(
@@ -63,6 +90,7 @@ watch(
         movie_dir_template: template.movie_dir_template || '',
         default: template.default || false,
       }
+      selectedPresetId.value = null
     } else {
       templateForm.value = {
         name: '',
@@ -70,13 +98,27 @@ watch(
         template: '',
         series_show_template: '',
         series_season_template: '',
-        movie_dir_template: '{{.Media.CleanTitle}} ({{.Media.Year}}) {tmdb-{{.Media.TmdbID}}}',
+        movie_dir_template: '',
         default: false,
       }
+      selectedPresetId.value = null
     }
     templateError.value = null
   },
   { immediate: true },
+)
+
+// Re-apply preset when type changes
+watch(
+  () => templateForm.value.type,
+  () => {
+    if (selectedPresetId.value && isCreateMode.value) {
+      const preset = presets.find((p) => p.id === selectedPresetId.value)
+      if (preset) {
+        applyPreset(preset)
+      }
+    }
+  },
 )
 
 const handleSave = async () => {
@@ -140,6 +182,39 @@ const isLoading = computed(
         class="p-4 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm"
       >
         {{ templateError }}
+      </div>
+
+      <!-- Preset selector (create mode only) -->
+      <div v-if="isCreateMode" class="flex flex-col gap-2">
+        <Label>Start from a preset</Label>
+        <div class="flex gap-2">
+          <button
+            :class="[
+              'flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors',
+              selectedPresetId === null
+                ? 'border-primary bg-primary/5 text-foreground'
+                : 'border-border bg-card text-muted-foreground hover:border-muted-foreground/50',
+            ]"
+            @click="clearPreset"
+          >
+            <div class="font-medium">Blank</div>
+            <div class="text-xs text-muted-foreground">Start from scratch</div>
+          </button>
+          <button
+            v-for="preset in presets"
+            :key="preset.id"
+            :class="[
+              'flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors',
+              selectedPresetId === preset.id
+                ? 'border-primary bg-primary/5 text-foreground'
+                : 'border-border bg-card text-muted-foreground hover:border-muted-foreground/50',
+            ]"
+            @click="applyPreset(preset)"
+          >
+            <div class="font-medium">{{ preset.label }}</div>
+            <div class="text-xs text-muted-foreground">{{ preset.description }}</div>
+          </button>
+        </div>
       </div>
 
       <div class="flex flex-col gap-2">
