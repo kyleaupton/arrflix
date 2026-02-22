@@ -6193,6 +6193,7 @@ const docTemplate = `{
                 "grabs",
                 "guid",
                 "indexer",
+                "indexerFlags",
                 "indexerId",
                 "link",
                 "peers",
@@ -6227,6 +6228,12 @@ const docTemplate = `{
                 },
                 "indexer": {
                     "type": "string"
+                },
+                "indexerFlags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "indexerId": {
                     "type": "integer"

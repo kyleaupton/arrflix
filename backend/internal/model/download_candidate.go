@@ -20,9 +20,10 @@ type DownloadCandidate struct {
 	AgeHours    float64   `json:"ageHours"`
 	Size        int64     `json:"size"` // size in bytes
 	Grabs       int       `json:"grabs"`
-	Categories  []string  `json:"categories"`
-	PublishDate time.Time `json:"publishDate"`
-	Title       string    `json:"title"`
+	Categories   []string  `json:"categories"`
+	IndexerFlags []string  `json:"indexerFlags"`
+	PublishDate  time.Time `json:"publishDate"`
+	Title        string    `json:"title"`
 }
 
 func (c *DownloadCandidate) GetMediaType() (MediaType, error) {

@@ -405,9 +405,10 @@ func searchResultToCandidate(result indexer.SearchResult) model.DownloadCandidat
 		AgeHours:    result.AgeHours,
 		Size:        result.Size,
 		Grabs:       result.Grabs,
-		Categories:  result.Categories,
-		PublishDate: result.PublishDate,
-		Title:       result.Title,
+		Categories:   result.Categories,
+		IndexerFlags: result.IndexerFlags,
+		PublishDate:  result.PublishDate,
+		Title:        result.Title,
 	}
 }
 

@@ -1734,6 +1734,10 @@ definitions:
         type: string
       indexer:
         type: string
+      indexerFlags:
+        items:
+          type: string
+        type: array
       indexerId:
         type: integer
       link:
@@ -1761,6 +1765,7 @@ definitions:
     - grabs
     - guid
     - indexer
+    - indexerFlags
     - indexerId
     - link
     - peers

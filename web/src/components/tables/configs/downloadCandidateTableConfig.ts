@@ -11,6 +11,21 @@ const formatFileSize = (bytes: number): string => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
 }
 
+// Helper to render an array of strings as small badge pills
+const formatBadges = (items: string[], color: 'muted' | 'green'): string => {
+  if (!items || items.length === 0) return ''
+  const colorClasses =
+    color === 'green'
+      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+      : 'bg-muted text-muted-foreground'
+  return items
+    .map(
+      (item) =>
+        `<span class="inline-flex items-center rounded-full px-1.5 py-0 text-[10px] font-medium ${colorClasses}">${item}</span>`,
+    )
+    .join('')
+}
+
 // Helper function to format age
 const formatAge = (ageHours: number): string => {
   if (ageHours < 1) {
@@ -29,6 +44,16 @@ export const downloadCandidateColumns: TableColumn<ModelDownloadCandidate>[] = [
     label: 'Title',
     sortable: true,
     filterable: true,
+    render: (_value: string, row: ModelDownloadCandidate) => {
+      const categoryBadges = formatBadges(row.categories, 'muted')
+      const flagBadges = formatBadges(
+        (row.indexerFlags ?? []).map((f) => f.replace(/_/g, ' ')),
+        'green',
+      )
+      const badges = categoryBadges + flagBadges
+      const escaped = row.title.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      return `<div class="flex flex-wrap gap-1 mb-0.5">${badges}</div><div>${escaped}</div>`
+    },
   },
   {
     key: 'indexer',

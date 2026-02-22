@@ -39,8 +39,9 @@ type SearchResult struct {
 	Age         int64
 	AgeHours    float64
 	PublishDate time.Time
-	Categories  []string
-	Grabs       int
+	Categories   []string
+	Grabs        int
+	IndexerFlags []string
 }
 
 // IndexerInfo provides information about a configured indexer.

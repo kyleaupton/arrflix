@@ -155,7 +155,8 @@ func (p *ProwlarrSource) mapResult(r *prowlarr.Search) (indexer.SearchResult, er
 		Age:         r.Age,
 		AgeHours:    r.AgeHours,
 		PublishDate: r.PublishDate,
-		Categories:  categories,
-		Grabs:       r.Grabs,
+		Categories:   categories,
+		Grabs:        r.Grabs,
+		IndexerFlags: r.IndexerFlags,
 	}, nil
 }

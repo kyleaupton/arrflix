@@ -6185,6 +6185,7 @@
                 "grabs",
                 "guid",
                 "indexer",
+                "indexerFlags",
                 "indexerId",
                 "link",
                 "peers",
@@ -6219,6 +6220,12 @@
                 },
                 "indexer": {
                     "type": "string"
+                },
+                "indexerFlags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "indexerId": {
                     "type": "integer"

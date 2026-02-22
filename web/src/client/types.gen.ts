@@ -714,6 +714,7 @@ export type ModelDownloadCandidate = {
     grabs: number;
     guid: string;
     indexer: string;
+    indexerFlags: Array<string>;
     indexerId: number;
     link: string;
     /**
