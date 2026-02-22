@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { RefreshCw } from 'lucide-vue-next'
+import { RefreshCw, Download } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { useEventsStore } from '@/stores/events'
 import { useDownloadJobsStore, type DownloadJob } from '@/stores/downloadJobs'
@@ -117,7 +117,11 @@ onMounted(async () => {
         search-placeholder="Search downloads..."
         paginator
         :rows="10"
-      />
+      >
+        <template #empty-icon>
+          <Download class="size-5" />
+        </template>
+      </DataTable>
     </div>
 
     <!-- Detail Drawer -->

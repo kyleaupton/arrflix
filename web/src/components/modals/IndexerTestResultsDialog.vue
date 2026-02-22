@@ -3,7 +3,7 @@ import { inject, computed, h } from 'vue'
 import { Button } from '@/components/ui/button'
 import BaseDialog from './BaseDialog.vue'
 import DataTable, { type TableColumn } from '@/components/tables/DataTable.vue'
-import { CheckCircle, XCircle } from 'lucide-vue-next'
+import { CheckCircle, XCircle, FlaskConical } from 'lucide-vue-next'
 
 interface TestResult {
   indexer_id: number
@@ -86,7 +86,11 @@ const columns: TableColumn<TestResult>[] = [
         :rows="10"
         :searchable="false"
         empty-message="No test results available"
-      />
+      >
+        <template #empty-icon>
+          <FlaskConical class="size-5" />
+        </template>
+      </DataTable>
     </div>
 
     <template #footer>

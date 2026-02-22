@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Search } from 'lucide-vue-next'
 import { type ModelIndexerDefinition } from '@/client/types.gen'
 import DataTable from '@/components/tables/DataTable.vue'
 import {
@@ -49,6 +50,10 @@ const availableIndexerActions = createAvailableIndexerActions((indexer: ModelInd
       "
       @data-loaded="(data) => console.log('Loaded indexers:', data.length)"
       @load-error="(error) => console.error('Failed to load indexers:', error)"
-    />
+    >
+      <template #empty-icon>
+        <Search class="size-5" />
+      </template>
+    </DataTable>
   </div>
 </template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useQuery } from '@tanstack/vue-query'
-import { Plus } from 'lucide-vue-next'
+import { Plus, Shield } from 'lucide-vue-next'
 import { getV1PoliciesOptions } from '@/client/@tanstack/vue-query.gen'
 import { type DbgenPolicy } from '@/client/types.gen'
 import DataTable from '@/components/tables/DataTable.vue'
@@ -116,7 +116,11 @@ const policyActions = createPolicyActions(
           search-placeholder="Search policies..."
           paginator
           :rows="10"
-        />
+        >
+          <template #empty-icon>
+            <Shield class="size-5" />
+          </template>
+        </DataTable>
       </CardContent>
     </Card>
   </div>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useQuery, useMutation } from '@tanstack/vue-query'
-import { Plus } from 'lucide-vue-next'
+import { Plus, HardDrive } from 'lucide-vue-next'
 import {
   getV1DownloadersOptions,
   deleteV1DownloadersByIdMutation,
@@ -150,7 +150,11 @@ const downloaderActions = createDownloaderActions(
           search-placeholder="Search downloaders..."
           paginator
           :rows="10"
-        />
+        >
+          <template #empty-icon>
+            <HardDrive class="size-5" />
+          </template>
+        </DataTable>
       </CardContent>
     </Card>
   </div>

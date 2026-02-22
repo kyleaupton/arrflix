@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useQuery, useMutation } from '@tanstack/vue-query'
-import { Plus, Check } from 'lucide-vue-next'
+import { Plus, Check, Search } from 'lucide-vue-next'
 import {
   getV1IndexersConfiguredOptions,
   deleteV1IndexerByIdMutation,
@@ -204,7 +204,11 @@ const indexerActions = createIndexerActions(handleEdit, handleTest, handleToggle
           search-placeholder="Search indexers..."
           paginator
           :rows="10"
-        />
+        >
+          <template #empty-icon>
+            <Search class="size-5" />
+          </template>
+        </DataTable>
       </CardContent>
     </Card>
   </div>

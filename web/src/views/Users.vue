@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useQuery, useMutation } from '@tanstack/vue-query'
-import { Plus, X } from 'lucide-vue-next'
+import { Plus, X, Users as UsersIcon } from 'lucide-vue-next'
 import {
   getV1UsersOptions,
   deleteV1UsersByIdMutation,
@@ -191,7 +191,11 @@ function formatDate(dateStr: string) {
           search-placeholder="Search users..."
           paginator
           :rows="10"
-        />
+        >
+          <template #empty-icon>
+            <UsersIcon class="size-5" />
+          </template>
+        </DataTable>
       </CardContent>
     </Card>
   </div>

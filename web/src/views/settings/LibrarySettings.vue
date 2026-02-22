@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, onMounted, onUnmounted, ref } from 'vue'
 import { useQuery, useMutation } from '@tanstack/vue-query'
-import { Loader2, Plus } from 'lucide-vue-next'
+import { Loader2, Plus, FolderOpen } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
   getV1LibrariesOptions,
@@ -193,7 +193,11 @@ const libraryActions = createLibraryActions(
           search-placeholder="Search libraries..."
           paginator
           :rows="10"
-        />
+        >
+          <template #empty-icon>
+            <FolderOpen class="size-5" />
+          </template>
+        </DataTable>
       </CardContent>
     </Card>
   </div>

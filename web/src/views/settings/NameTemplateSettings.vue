@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useQuery, useMutation } from '@tanstack/vue-query'
-import { Plus } from 'lucide-vue-next'
+import { Plus, FileText } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
   getV1NameTemplatesOptions,
@@ -104,7 +104,11 @@ const templateActions = createNameTemplateActions(handleEditTemplate, handleDele
           search-placeholder="Search templates..."
           paginator
           :rows="10"
-        />
+        >
+          <template #empty-icon>
+            <FileText class="size-5" />
+          </template>
+        </DataTable>
       </CardContent>
     </Card>
   </div>

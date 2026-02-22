@@ -41,7 +41,11 @@
           search-placeholder="Search files..."
           paginator
           :rows="10"
-        />
+        >
+          <template #empty-icon>
+            <File class="size-5" />
+          </template>
+        </DataTable>
       </div>
 
       <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
@@ -64,7 +68,7 @@
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { Download } from 'lucide-vue-next'
+import { Download, File } from 'lucide-vue-next'
 import { getV1MovieByIdOptions } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'

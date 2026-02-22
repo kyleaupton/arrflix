@@ -15,12 +15,17 @@
       search-placeholder="Search candidates..."
       paginator
       :rows="20"
-    />
+    >
+      <template #empty-icon>
+        <Search class="size-5" />
+      </template>
+    </DataTable>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Search } from 'lucide-vue-next'
 import {
   getV1MovieByIdCandidatesOptions,
   getV1SeriesByIdCandidatesOptions,

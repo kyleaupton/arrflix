@@ -17,7 +17,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -33,6 +32,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { MoreVertical, Search, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Empty, EmptyContent, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { cn } from '@/lib/utils'
 import type { TableColumn, TableAction } from './types'
 
@@ -461,87 +461,93 @@ defineExpose({
     </div>
 
     <!-- Data Table -->
-    <div v-else class="rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow v-for="headerGroup in table.getHeaderGroups()" :key="headerGroup.id">
-            <TableHead
-              v-for="header in headerGroup.headers"
-              :key="header.id"
-              :class="
-                cn(
-                  (header.column.columnDef.meta as any)?.align === 'center' && 'text-center',
-                  (header.column.columnDef.meta as any)?.align === 'right' && 'text-right',
-                  header.column.id === 'actions' && 'w-[50px]',
-                )
-              "
-              :style="{
-                width: header.getSize() !== 150 ? `${header.getSize()}px` : undefined,
-              }"
-            >
-              <div
-                v-if="!header.isPlaceholder"
+    <div v-else>
+      <!-- Empty State -->
+      <Empty v-if="table.getRowModel().rows.length === 0">
+        <EmptyContent>
+          <EmptyMedia variant="icon">
+            <slot name="empty-icon" />
+          </EmptyMedia>
+          <EmptyTitle>{{ queryError ? `Error: ${queryError}` : emptyMessage }}</EmptyTitle>
+        </EmptyContent>
+      </Empty>
+
+      <!-- Table -->
+      <div v-else class="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow v-for="headerGroup in table.getHeaderGroups()" :key="headerGroup.id">
+              <TableHead
+                v-for="header in headerGroup.headers"
+                :key="header.id"
                 :class="
                   cn(
-                    'flex items-center gap-2',
-                    header.column.getCanSort() && 'cursor-pointer select-none',
+                    (header.column.columnDef.meta as any)?.align === 'center' && 'text-center',
+                    (header.column.columnDef.meta as any)?.align === 'right' && 'text-right',
+                    header.column.id === 'actions' && 'w-[50px]',
                   )
                 "
-                @click="header.column.getToggleSortingHandler()?.($event)"
+                :style="{
+                  width: header.getSize() !== 150 ? `${header.getSize()}px` : undefined,
+                }"
               >
-                <span>
-                  {{
-                    typeof header.column.columnDef.header === 'function'
-                      ? (header.column.columnDef.header as any)({
-                          column: header.column,
-                          header,
-                          table,
-                        })
-                      : header.column.columnDef.header
-                  }}
-                </span>
-                <span v-if="header.column.getCanSort()" class="inline-flex items-center">
-                  {{
-                    {
-                      asc: '↑',
-                      desc: '↓',
-                    }[header.column.getIsSorted() as string] ?? '⇅'
-                  }}
-                </span>
-              </div>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          <TableRow v-if="table.getRowModel().rows.length === 0" class="hover:bg-transparent">
-            <TableEmpty :colspan="table.getAllColumns().length">
-              <div class="text-center text-muted-foreground">
-                {{ queryError ? `Error: ${queryError}` : emptyMessage }}
-              </div>
-            </TableEmpty>
-          </TableRow>
-          <TableRow
-            v-for="row in table.getRowModel().rows"
-            :key="row.id"
-            :data-state="row.getIsSelected() && 'selected'"
-            :class="cn(selectable && 'cursor-pointer')"
-            @click="selectable && selectionMode === 'single' && handleRowClick(row)"
-          >
-            <TableCell
-              v-for="cell in row.getVisibleCells()"
-              :key="cell.id"
-              :class="
-                cn(
-                  (cell.column.columnDef.meta as any)?.align === 'center' && 'text-center',
-                  (cell.column.columnDef.meta as any)?.align === 'right' && 'text-right',
-                )
-              "
+                <div
+                  v-if="!header.isPlaceholder"
+                  :class="
+                    cn(
+                      'flex items-center gap-2',
+                      header.column.getCanSort() && 'cursor-pointer select-none',
+                    )
+                  "
+                  @click="header.column.getToggleSortingHandler()?.($event)"
+                >
+                  <span>
+                    {{
+                      typeof header.column.columnDef.header === 'function'
+                        ? (header.column.columnDef.header as any)({
+                            column: header.column,
+                            header,
+                            table,
+                          })
+                        : header.column.columnDef.header
+                    }}
+                  </span>
+                  <span v-if="header.column.getCanSort()" class="inline-flex items-center">
+                    {{
+                      {
+                        asc: '↑',
+                        desc: '↓',
+                      }[header.column.getIsSorted() as string] ?? '⇅'
+                    }}
+                  </span>
+                </div>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow
+              v-for="row in table.getRowModel().rows"
+              :key="row.id"
+              :data-state="row.getIsSelected() && 'selected'"
+              :class="cn(selectable && 'cursor-pointer')"
+              @click="selectable && selectionMode === 'single' && handleRowClick(row)"
             >
-              <RenderCell :cell="cell" :row="row" :table="table" />
-            </TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
+              <TableCell
+                v-for="cell in row.getVisibleCells()"
+                :key="cell.id"
+                :class="
+                  cn(
+                    (cell.column.columnDef.meta as any)?.align === 'center' && 'text-center',
+                    (cell.column.columnDef.meta as any)?.align === 'right' && 'text-right',
+                  )
+                "
+              >
+                <RenderCell :cell="cell" :row="row" :table="table" />
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
     </div>
 
     <!-- Pagination -->
