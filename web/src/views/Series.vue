@@ -11,7 +11,9 @@
       <MediaHero
         class="mb-1"
         :title="data.title"
+        :tagline="data.tagline"
         :subtitle="seriesSubTitle"
+        :credits="creatorCredits"
         :overview="data.overview"
         :backdrop-url="backdropUrl"
         :chips="seriesChips"
@@ -20,8 +22,6 @@
           <Poster :item="data" size="large" :clickable="false" :is-downloading="isDownloading" />
         </template>
       </MediaHero>
-
-      <WatchProviders :providers="data.watchProviders" />
 
       <div v-if="data.seasons?.length" class="space-y-4">
         <h2 class="text-xl font-semibold">Seasons</h2>
@@ -32,48 +32,49 @@
             v-model:open="openSeasons[season.seasonNumber]"
             class="border rounded-lg overflow-hidden"
           >
-            <div
-              class="flex items-center justify-between p-4 bg-muted/30 hover:bg-muted/50 transition-colors"
-            >
-              <CollapsibleTrigger class="flex items-center gap-4 flex-1 text-left">
-                <ChevronRight
-                  :class="[
-                    'size-4 transition-transform',
-                    openSeasons[season.seasonNumber] ? 'rotate-90' : '',
-                  ]"
-                />
-                <div class="flex items-center gap-2">
-                  <h3 class="font-medium">Season {{ season.seasonNumber }}</h3>
-                  <Badge
-                    v-if="getSeasonStatus(season) === 'available'"
-                    class="bg-green-500/90 text-white hover:bg-green-500"
-                  >
-                    Available
-                  </Badge>
-                  <Badge
-                    v-else-if="getSeasonStatus(season) === 'partial'"
-                    class="bg-amber-500/90 text-white hover:bg-amber-500"
-                  >
-                    Partial
-                  </Badge>
-                  <Badge
-                    v-else-if="getSeasonStatus(season) === 'downloading'"
-                    class="bg-blue-500/90 text-white hover:bg-blue-500"
-                  >
-                    Downloading
-                  </Badge>
-                  <Badge
-                    v-else-if="getSeasonStatus(season) === 'importing'"
-                    class="bg-blue-500/90 text-white hover:bg-blue-500"
-                  >
-                    Importing
-                  </Badge>
+            <CollapsibleTrigger as-child>
+              <div
+                class="flex items-center justify-between p-4 bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
+              >
+                <div class="flex items-center gap-4 flex-1 text-left">
+                  <ChevronRight
+                    :class="[
+                      'size-4 transition-transform',
+                      openSeasons[season.seasonNumber] ? 'rotate-90' : '',
+                    ]"
+                  />
+                  <div class="flex items-center gap-2">
+                    <h3 class="font-medium">Season {{ season.seasonNumber }}</h3>
+                    <Badge
+                      v-if="getSeasonStatus(season) === 'available'"
+                      class="bg-green-500/90 text-white hover:bg-green-500"
+                    >
+                      Available
+                    </Badge>
+                    <Badge
+                      v-else-if="getSeasonStatus(season) === 'partial'"
+                      class="bg-amber-500/90 text-white hover:bg-amber-500"
+                    >
+                      Partial
+                    </Badge>
+                    <Badge
+                      v-else-if="getSeasonStatus(season) === 'downloading'"
+                      class="bg-blue-500/90 text-white hover:bg-blue-500"
+                    >
+                      Downloading
+                    </Badge>
+                    <Badge
+                      v-else-if="getSeasonStatus(season) === 'importing'"
+                      class="bg-blue-500/90 text-white hover:bg-blue-500"
+                    >
+                      Importing
+                    </Badge>
+                  </div>
+                  <p v-if="season.airDate" class="text-xs text-muted-foreground ml-2">
+                    {{ season.airDate }}
+                  </p>
                 </div>
-                <p v-if="season.airDate" class="text-xs text-muted-foreground ml-2">
-                  {{ season.airDate }}
-                </p>
-              </CollapsibleTrigger>
-              <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2">
                 <!-- Season pack downloading -->
                 <template v-if="getSeasonPackJob(season.seasonNumber)">
                   <CircularProgress
@@ -109,7 +110,8 @@
                   </Button>
                 </template>
               </div>
-            </div>
+              </div>
+            </CollapsibleTrigger>
             <CollapsibleContent>
               <div class="p-4 bg-background border-t space-y-4">
                 <p v-if="season.overview" class="text-sm text-muted-foreground">
@@ -121,6 +123,15 @@
                     :key="episode.episodeNumber"
                     class="flex items-start gap-4 p-3 rounded-md hover:bg-muted/20 border border-transparent hover:border-border transition-all"
                   >
+                    <div class="shrink-0 hidden sm:block">
+                      <img
+                        v-if="episode.stillPath"
+                        :src="`https://image.tmdb.org/t/p/w300${episode.stillPath}`"
+                        :alt="episode.title"
+                        class="w-[120px] aspect-video rounded object-cover bg-muted"
+                      />
+                      <div v-else class="w-[120px] aspect-video rounded bg-muted" />
+                    </div>
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center gap-2 mb-1">
                         <span class="text-xs font-mono text-muted-foreground">
@@ -207,6 +218,8 @@
 
       <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
       <RailVideos v-if="data.videos?.length" title="Videos" :videos="data.videos" />
+
+      <WatchProviders :providers="data.watchProviders" />
     </template>
   </div>
 </template>
@@ -288,6 +301,14 @@ const backdropUrl = computed(() =>
     ? `https://image.tmdb.org/t/p/w1280/${data.value.backdropPath}`
     : undefined,
 )
+
+const creatorCredits = computed(() => {
+  const creators = data.value?.credits?.crew?.filter(
+    (c) => c.job === 'Creator' || c.department === 'Creator',
+  )
+  if (!creators?.length) return undefined
+  return `Created by ${creators.map((c) => c.name).join(', ')}`
+})
 
 const seriesChips = computed(() => {
   const chips: string[] = []

@@ -1,77 +1,78 @@
 <template>
-  <section v-if="hasProviders" class="space-y-4">
-    <h2 class="text-xl font-semibold">Where to Watch</h2>
-
-    <div class="space-y-4">
-      <!-- Streaming providers -->
-      <div v-if="providers?.flatrate?.length" class="space-y-2">
-        <h3 class="text-sm font-medium text-muted-foreground">Stream</h3>
-        <div class="flex flex-wrap gap-2">
-          <ProviderLogo
-            v-for="provider in providers.flatrate"
-            :key="provider.providerId"
-            :provider="provider"
-          />
-        </div>
+  <Rail v-if="dedupedProviders.length" title="Where to Watch">
+    <template #title>
+      <div class="flex items-baseline gap-2">
+        <h2 class="text-xl font-semibold">Where to Watch</h2>
+        <p class="text-xs text-muted-foreground/60">
+          via
+          <a
+            v-if="providers?.link"
+            :href="providers.link"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="underline hover:text-muted-foreground transition-colors"
+          >
+            JustWatch
+          </a>
+          <span v-else>JustWatch</span>
+        </p>
       </div>
+    </template>
 
-      <!-- Rent providers -->
-      <div v-if="providers?.rent?.length" class="space-y-2">
-        <h3 class="text-sm font-medium text-muted-foreground">Rent</h3>
-        <div class="flex flex-wrap gap-2">
-          <ProviderLogo
-            v-for="provider in providers.rent"
-            :key="provider.providerId"
-            :provider="provider"
-          />
-        </div>
+    <a
+      v-for="p in dedupedProviders"
+      :key="p.providerId"
+      :href="providers?.link"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="flex-shrink-0 flex flex-col items-center gap-2 w-20 group"
+    >
+      <img
+        :src="`https://image.tmdb.org/t/p/w92${p.logoPath}`"
+        :alt="p.providerName"
+        class="size-14 rounded-xl shadow-sm group-hover:scale-105 transition-transform"
+        loading="lazy"
+      />
+      <div class="text-center w-full">
+        <p class="text-xs font-medium truncate">{{ p.providerName }}</p>
+        <p class="text-[10px] text-muted-foreground">{{ p.tier }}</p>
       </div>
-
-      <!-- Buy providers -->
-      <div v-if="providers?.buy?.length" class="space-y-2">
-        <h3 class="text-sm font-medium text-muted-foreground">Buy</h3>
-        <div class="flex flex-wrap gap-2">
-          <ProviderLogo
-            v-for="provider in providers.buy"
-            :key="provider.providerId"
-            :provider="provider"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- JustWatch attribution -->
-    <p class="text-xs text-muted-foreground">
-      Data provided by
-      <a
-        v-if="providers?.link"
-        :href="providers.link"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="underline hover:text-foreground transition-colors"
-      >
-        JustWatch
-      </a>
-      <span v-else>JustWatch</span>
-    </p>
-  </section>
+    </a>
+  </Rail>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ModelWatchProviders } from '@/client/types.gen'
-import ProviderLogo from './ProviderLogo.vue'
+import type { ModelWatchProviders, ModelWatchProvider } from '@/client/types.gen'
+import Rail from '@/components/rails/Rail.vue'
+
+type DedupedProvider = ModelWatchProvider & { tier: string }
 
 const props = defineProps<{
   providers?: ModelWatchProviders
 }>()
 
-const hasProviders = computed(() => {
-  if (!props.providers) return false
-  return (
-    (props.providers.flatrate?.length ?? 0) > 0 ||
-    (props.providers.rent?.length ?? 0) > 0 ||
-    (props.providers.buy?.length ?? 0) > 0
-  )
+// Priority: Stream > Rent > Buy. Each provider shown once with best tier.
+const dedupedProviders = computed<DedupedProvider[]>(() => {
+  if (!props.providers) return []
+
+  const map = new Map<number, DedupedProvider>()
+
+  const tiers: { list: ModelWatchProvider[] | undefined; label: string; rank: number }[] = [
+    { list: props.providers.flatrate, label: 'Stream', rank: 0 },
+    { list: props.providers.rent, label: 'Rent', rank: 1 },
+    { list: props.providers.buy, label: 'Buy', rank: 2 },
+  ]
+
+  for (const { list, label, rank } of tiers) {
+    for (const provider of list ?? []) {
+      const existing = map.get(provider.providerId)
+      if (!existing || rank < (tiers.find((t) => t.label === existing.tier)?.rank ?? 3)) {
+        map.set(provider.providerId, { ...provider, tier: label })
+      }
+    }
+  }
+
+  return [...map.values()].sort((a, b) => a.displayPriority - b.displayPriority)
 })
 </script>

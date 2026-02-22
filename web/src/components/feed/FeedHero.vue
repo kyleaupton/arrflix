@@ -1,5 +1,5 @@
 <template>
-  <section class="feed-hero relative h-80 overflow-hidden rounded-lg">
+  <section class="feed-hero relative h-80 overflow-hidden -mx-4 -mt-4">
     <img
       :src="`https://image.tmdb.org/t/p/original${hero.backdropPath}`"
       :alt="hero.title"

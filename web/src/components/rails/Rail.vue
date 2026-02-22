@@ -1,7 +1,9 @@
 <template>
   <div class="rail space-y-2">
     <div class="rail-header flex items-center justify-between">
-      <h2 class="text-xl font-semibold">{{ title }}</h2>
+      <slot name="title">
+        <h2 class="text-xl font-semibold">{{ title }}</h2>
+      </slot>
       <div class="flex items-center gap-2">
         <Button
           variant="outline"

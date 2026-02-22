@@ -11,7 +11,9 @@
       <MediaHero
         class="mb-1"
         :title="data.title"
+        :tagline="data.tagline"
         :subtitle="movieSubtitle"
+        :credits="directorCredits"
         :overview="data.overview"
         :backdrop-url="backdropUrl"
         :chips="movieChips"
@@ -27,8 +29,6 @@
           </Button>
         </template>
       </MediaHero>
-
-      <WatchProviders :providers="data.watchProviders" />
 
       <div v-if="data.files?.length" class="space-y-4">
         <h2 class="text-xl font-semibold">Local Files</h2>
@@ -60,6 +60,8 @@
           series: [],
         }"
       />
+
+      <WatchProviders :providers="data.watchProviders" />
     </template>
   </div>
 </template>
@@ -136,6 +138,12 @@ const backdropUrl = computed(() =>
     ? `https://image.tmdb.org/t/p/w1280/${data.value.backdropPath}`
     : undefined,
 )
+
+const directorCredits = computed(() => {
+  const directors = data.value?.credits?.crew?.filter((c) => c.job === 'Director')
+  if (!directors?.length) return undefined
+  return `Directed by ${directors.map((d) => d.name).join(', ')}`
+})
 
 const movieChips = computed(() => {
   const chips: string[] = []

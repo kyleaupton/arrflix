@@ -21,7 +21,9 @@
               <slot name="actions" />
             </div>
           </div>
+          <p v-if="tagline" class="text-sm italic opacity-70 mt-1">"{{ tagline }}"</p>
           <p v-if="subtitle" class="subtitle text-sm opacity-80 mt-1">{{ subtitle }}</p>
+          <p v-if="credits" class="text-sm opacity-70 mt-0.5">{{ credits }}</p>
 
           <div v-if="chips && chips.length" class="chips mt-3 flex flex-wrap gap-2">
             <Badge v-for="(chip, i) in chips" :key="i">{{ chip }}</Badge>
@@ -56,6 +58,8 @@ import { Badge } from '@/components/ui/badge'
 const props = defineProps<{
   title: string
   subtitle?: string
+  tagline?: string
+  credits?: string
   overview?: string
   posterUrl?: string
   backdropUrl?: string
