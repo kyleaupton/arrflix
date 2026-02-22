@@ -94,6 +94,16 @@ func (m *DownloadJobMachine) IsTerminalStr(status string) bool {
 	return m.IsTerminal(DownloadJobStatus(status))
 }
 
+// CanRetry returns true if the status allows retrying (only failed).
+func (m *DownloadJobMachine) CanRetry(status DownloadJobStatus) bool {
+	return status == DownloadFailed
+}
+
+// CanRetryStr returns true if the string status allows retrying.
+func (m *DownloadJobMachine) CanRetryStr(status string) bool {
+	return m.CanRetry(DownloadJobStatus(status))
+}
+
 // ImportTaskMachine validates import task state transitions.
 type ImportTaskMachine struct{}
 

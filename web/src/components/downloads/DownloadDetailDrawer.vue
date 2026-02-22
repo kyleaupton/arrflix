@@ -22,6 +22,7 @@ const jobs = useDownloadJobsStore()
 const emit = defineEmits<{
   (e: 'reimport', jobId: string, all: boolean): void
   (e: 'cancel', jobId: string): void
+  (e: 'retry', jobId: string): void
 }>()
 
 // Status config for unified import_status
@@ -63,6 +64,10 @@ const canCancel = computed(() => {
   return job.value?.import_status === 'download_pending'
 })
 
+const canRetry = computed(() => {
+  return job.value?.import_status === 'download_failed'
+})
+
 const canReimport = computed(() => {
   if (!job.value) return false
   return ['partial_failure', 'import_failed', 'fully_imported'].includes(job.value.import_status)
@@ -91,6 +96,12 @@ function handleOpenChange(open: boolean) {
 function handleCancel() {
   if (job.value) {
     emit('cancel', job.value.id)
+  }
+}
+
+function handleRetry() {
+  if (job.value) {
+    emit('retry', job.value.id)
   }
 }
 
@@ -250,6 +261,10 @@ function getTaskStatusConfig(status: string) {
       </ScrollArea>
 
       <SheetFooter class="px-6 pb-6 pt-4 border-t flex-row gap-2">
+        <Button v-if="canRetry" variant="outline" size="sm" @click="handleRetry">
+          <RefreshCw class="mr-2 size-4" />
+          Retry Download
+        </Button>
         <Button v-if="canCancel" variant="destructive" size="sm" @click="handleCancel">
           Cancel Download
         </Button>

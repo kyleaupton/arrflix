@@ -31,7 +31,7 @@ VALUES (
   sqlc.arg(library_id),
   sqlc.arg(name_template_id)
 )
-ON CONFLICT (indexer_id, guid) DO UPDATE
+ON CONFLICT (indexer_id, guid) WHERE status NOT IN ('failed', 'cancelled') DO UPDATE
 SET updated_at = now()
 RETURNING *;
 
@@ -181,6 +181,62 @@ LEFT JOIN import_task it ON it.download_job_id = dj.id
 WHERE dj.id = $1
 GROUP BY dj.id, mi.tmdb_id, ms.season_number, me.episode_number;
 
+-- name: RetryDownloadJob :one
+-- Creates a new download job by copying from a failed job, setting previous_job_id
+INSERT INTO download_job (
+  status,
+  protocol,
+  media_type,
+  media_item_id,
+  season_id,
+  episode_id,
+  indexer_id,
+  guid,
+  candidate_title,
+  candidate_link,
+  downloader_id,
+  library_id,
+  name_template_id,
+  previous_job_id
+)
+SELECT
+  'created',
+  old.protocol,
+  old.media_type,
+  old.media_item_id,
+  old.season_id,
+  old.episode_id,
+  old.indexer_id,
+  old.guid,
+  old.candidate_title,
+  old.candidate_link,
+  old.downloader_id,
+  old.library_id,
+  old.name_template_id,
+  old.id
+FROM download_job old
+WHERE old.id = $1
+RETURNING *;
+
+-- name: GetDownloadJobHistory :many
+-- Get retry chain for a job (follows previous_job_id links)
+WITH RECURSIVE job_chain AS (
+  -- Start with the given job
+  SELECT dj.*, 0 AS chain_depth
+  FROM download_job dj
+  WHERE dj.id = $1
+
+  UNION ALL
+
+  -- Follow previous_job_id links
+  SELECT prev.*, jc.chain_depth + 1
+  FROM download_job prev
+  JOIN job_chain jc ON jc.previous_job_id = prev.id
+  WHERE jc.chain_depth < 50  -- Safety limit
+)
+SELECT * FROM job_chain
+ORDER BY chain_depth ASC;
+
 -- name: GetDownloadJobTimeline :many
 -- Combined event log for a download job (download events + related import events)
 SELECT
@@ -215,7 +271,7 @@ WHERE it.download_job_id = $1
 ORDER BY created_at ASC;
 
 -- name: ListDownloadJobsWithImportSummary :many
--- Returns all download jobs with computed import status summary
+-- Returns leaf download jobs (no child retry pointing to them) with computed import status summary
 -- Counts "leaf" tasks (most recent in each reimport chain) to show current state
 SELECT
   dj.*,
@@ -248,5 +304,9 @@ LEFT JOIN import_task it ON it.download_job_id = dj.id
     SELECT 1 FROM import_task child
     WHERE child.previous_task_id = it.id
   )
+WHERE NOT EXISTS (
+  SELECT 1 FROM download_job child
+  WHERE child.previous_job_id = dj.id
+)
 GROUP BY dj.id, mi.tmdb_id, ms.season_number, me.episode_number
 ORDER BY dj.updated_at DESC;

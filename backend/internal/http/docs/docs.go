@@ -398,6 +398,46 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/download-jobs/{id}/history": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "download-jobs"
+                ],
+                "summary": "Get download job retry history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID (uuid)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dbgen.GetDownloadJobHistoryRow"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/download-jobs/{id}/import-tasks": {
             "get": {
                 "produces": [
@@ -480,6 +520,52 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/download-jobs/{id}/retry": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "download-jobs"
+                ],
+                "summary": "Retry failed download job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID (uuid)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dbgen.GetDownloadJobWithImportSummaryRow"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3783,6 +3869,7 @@ const docTemplate = `{
                 "media_type",
                 "name_template_id",
                 "next_run_at",
+                "previous_job_id",
                 "progress",
                 "protocol",
                 "save_path",
@@ -3846,6 +3933,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "next_run_at": {
+                    "type": "string"
+                },
+                "previous_job_id": {
                     "type": "string"
                 },
                 "progress": {
@@ -3926,6 +4016,121 @@ const docTemplate = `{
                 }
             }
         },
+        "dbgen.GetDownloadJobHistoryRow": {
+            "type": "object",
+            "required": [
+                "attempt_count",
+                "candidate_link",
+                "candidate_title",
+                "chain_depth",
+                "content_path",
+                "created_at",
+                "downloader_external_id",
+                "downloader_id",
+                "downloader_status",
+                "episode_id",
+                "error_category",
+                "guid",
+                "id",
+                "indexer_id",
+                "last_error",
+                "library_id",
+                "media_item_id",
+                "media_type",
+                "name_template_id",
+                "next_run_at",
+                "previous_job_id",
+                "progress",
+                "protocol",
+                "save_path",
+                "season_id",
+                "status",
+                "updated_at"
+            ],
+            "properties": {
+                "attempt_count": {
+                    "type": "integer"
+                },
+                "candidate_link": {
+                    "type": "string"
+                },
+                "candidate_title": {
+                    "type": "string"
+                },
+                "chain_depth": {
+                    "type": "integer"
+                },
+                "content_path": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "downloader_external_id": {
+                    "type": "string"
+                },
+                "downloader_id": {
+                    "type": "string"
+                },
+                "downloader_status": {
+                    "type": "string"
+                },
+                "episode_id": {
+                    "type": "string"
+                },
+                "error_category": {
+                    "type": "string"
+                },
+                "guid": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "indexer_id": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "library_id": {
+                    "type": "string"
+                },
+                "media_item_id": {
+                    "type": "string"
+                },
+                "media_type": {
+                    "type": "string"
+                },
+                "name_template_id": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "previous_job_id": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "number"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "save_path": {
+                    "type": "string"
+                },
+                "season_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "dbgen.GetDownloadJobTimelineRow": {
             "type": "object",
             "required": [
@@ -4001,6 +4206,7 @@ const docTemplate = `{
                 "name_template_id",
                 "next_run_at",
                 "pending_imports",
+                "previous_job_id",
                 "progress",
                 "protocol",
                 "save_path",
@@ -4089,6 +4295,9 @@ const docTemplate = `{
                 },
                 "pending_imports": {
                     "type": "integer"
+                },
+                "previous_job_id": {
+                    "type": "string"
                 },
                 "progress": {
                     "type": "number"
@@ -4505,6 +4714,7 @@ const docTemplate = `{
                 "media_type",
                 "name_template_id",
                 "next_run_at",
+                "previous_job_id",
                 "progress",
                 "protocol",
                 "save_path",
@@ -4574,6 +4784,9 @@ const docTemplate = `{
                 "next_run_at": {
                     "type": "string"
                 },
+                "previous_job_id": {
+                    "type": "string"
+                },
                 "progress": {
                     "type": "number"
                 },
@@ -4626,6 +4839,7 @@ const docTemplate = `{
                 "name_template_id",
                 "next_run_at",
                 "pending_imports",
+                "previous_job_id",
                 "progress",
                 "protocol",
                 "save_path",
@@ -4714,6 +4928,9 @@ const docTemplate = `{
                 },
                 "pending_imports": {
                     "type": "integer"
+                },
+                "previous_job_id": {
+                    "type": "string"
                 },
                 "progress": {
                     "type": "number"

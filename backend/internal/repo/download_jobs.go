@@ -31,6 +31,9 @@ type DownloadJobsRepo interface {
 	ScheduleDownloadJobRetry(ctx context.Context, id pgtype.UUID, lastError string, category apperrors.Category, nextRunAt time.Time) (dbgen.DownloadJob, error)
 	MarkDownloadJobFailed(ctx context.Context, id pgtype.UUID, lastError string, category apperrors.Category) (dbgen.DownloadJob, error)
 
+	RetryDownloadJob(ctx context.Context, id pgtype.UUID) (dbgen.DownloadJob, error)
+	GetDownloadJobHistory(ctx context.Context, id pgtype.UUID) ([]dbgen.GetDownloadJobHistoryRow, error)
+
 	// Event logging
 	CreateDownloadJobEvent(ctx context.Context, arg dbgen.CreateDownloadJobEventParams) (dbgen.DownloadJobEvent, error)
 	ListDownloadJobEvents(ctx context.Context, downloadJobID pgtype.UUID) ([]dbgen.DownloadJobEvent, error)
@@ -123,6 +126,14 @@ func (r *Repository) MarkDownloadJobFailed(ctx context.Context, id pgtype.UUID, 
 		LastError:     &lastError,
 		ErrorCategory: &cat,
 	})
+}
+
+func (r *Repository) RetryDownloadJob(ctx context.Context, id pgtype.UUID) (dbgen.DownloadJob, error) {
+	return r.Q.RetryDownloadJob(ctx, id)
+}
+
+func (r *Repository) GetDownloadJobHistory(ctx context.Context, id pgtype.UUID) ([]dbgen.GetDownloadJobHistoryRow, error) {
+	return r.Q.GetDownloadJobHistory(ctx, id)
 }
 
 func (r *Repository) CreateDownloadJobEvent(ctx context.Context, arg dbgen.CreateDownloadJobEventParams) (dbgen.DownloadJobEvent, error) {

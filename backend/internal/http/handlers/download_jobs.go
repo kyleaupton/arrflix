@@ -19,6 +19,8 @@ func (h *DownloadJobs) RegisterProtected(v1 *echo.Group) {
 	v1.GET("/download-jobs/:id/timeline", h.GetTimeline)
 	v1.GET("/download-jobs/:id/import-tasks", h.ListImportTasks)
 	v1.POST("/download-jobs/:id/reimport", h.Reimport)
+	v1.POST("/download-jobs/:id/retry", h.RetryDownload)
+	v1.GET("/download-jobs/:id/history", h.GetHistory)
 	v1.DELETE("/download-jobs/:id", h.Cancel)
 
 	v1.GET("/movie/:id/download-jobs", h.ListForMovie)
@@ -127,6 +129,49 @@ func (h *DownloadJobs) Reimport(c echo.Context) error {
 	out, err := h.svc.DownloadJobs.ReimportFailed(ctx, id, all)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// Retry a failed download job
+// @Summary Retry failed download job
+// @Tags    download-jobs
+// @Produce json
+// @Param   id path string true "Job ID (uuid)"
+// @Success 200 {object} dbgen.GetDownloadJobWithImportSummaryRow
+// @Failure 400 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Router  /v1/download-jobs/{id}/retry [post]
+func (h *DownloadJobs) RetryDownload(c echo.Context) error {
+	var id pgtype.UUID
+	if err := id.Scan(c.Param("id")); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
+	}
+	ctx := c.Request().Context()
+	out, err := h.svc.DownloadJobs.RetryDownload(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// Get download job retry history
+// @Summary Get download job retry history
+// @Tags    download-jobs
+// @Produce json
+// @Param   id path string true "Job ID (uuid)"
+// @Success 200 {array} dbgen.GetDownloadJobHistoryRow
+// @Failure 400 {object} map[string]string
+// @Router  /v1/download-jobs/{id}/history [get]
+func (h *DownloadJobs) GetHistory(c echo.Context) error {
+	var id pgtype.UUID
+	if err := id.Scan(c.Param("id")); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
+	}
+	ctx := c.Request().Context()
+	out, err := h.svc.DownloadJobs.GetHistory(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
 	}
 	return c.JSON(http.StatusOK, out)
 }

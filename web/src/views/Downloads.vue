@@ -50,6 +50,22 @@ const handleDrawerReimport = (jobId: string, all: boolean) => {
   }
 }
 
+const handleRetry = async (job: DownloadJob) => {
+  try {
+    await jobs.retryDownload(job.id)
+    toast.success('Download retry started')
+  } catch {
+    toast.error('Failed to retry download')
+  }
+}
+
+const handleDrawerRetry = (jobId: string) => {
+  const job = jobs.getJobById(jobId)
+  if (job) {
+    handleRetry(job)
+  }
+}
+
 const handleDrawerCancel = (jobId: string) => {
   const job = jobs.getJobById(jobId)
   if (job) {
@@ -57,7 +73,7 @@ const handleDrawerCancel = (jobId: string) => {
   }
 }
 
-const jobActions = createDownloadJobActions(handleViewDetails, handleReimport, handleCancelJob)
+const jobActions = createDownloadJobActions(handleViewDetails, handleReimport, handleCancelJob, handleRetry)
 
 onMounted(async () => {
   jobs.connectLive()
@@ -105,6 +121,6 @@ onMounted(async () => {
     </div>
 
     <!-- Detail Drawer -->
-    <DownloadDetailDrawer @reimport="handleDrawerReimport" @cancel="handleDrawerCancel" />
+    <DownloadDetailDrawer @reimport="handleDrawerReimport" @cancel="handleDrawerCancel" @retry="handleDrawerRetry" />
   </div>
 </template>

@@ -89,6 +89,7 @@ export const createDownloadJobActions = (
   onViewDetails: (job: DownloadJob) => void,
   onReimport: (job: DownloadJob, all: boolean) => void,
   onCancel: (job: DownloadJob) => void,
+  onRetry: (job: DownloadJob) => void,
 ): TableAction<DownloadJob>[] => [
   {
     key: 'view_details',
@@ -110,6 +111,14 @@ export const createDownloadJobActions = (
       return ['partial_failure', 'import_failed', 'fully_imported'].includes(row.import_status)
     },
     command: (job: DownloadJob) => onReimport(job, true),
+  },
+  {
+    key: 'retry',
+    label: 'Retry Download',
+    visible: (row: DownloadJob) => {
+      return row.import_status === 'download_failed'
+    },
+    command: onRetry,
   },
   {
     key: 'cancel',

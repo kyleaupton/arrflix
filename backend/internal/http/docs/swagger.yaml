@@ -84,6 +84,8 @@ definitions:
         type: string
       next_run_at:
         type: string
+      previous_job_id:
+        type: string
       progress:
         type: number
       protocol:
@@ -116,6 +118,7 @@ definitions:
     - media_type
     - name_template_id
     - next_run_at
+    - previous_job_id
     - progress
     - protocol
     - save_path
@@ -164,6 +167,91 @@ definitions:
     - updated_at
     - url
     - username
+    type: object
+  dbgen.GetDownloadJobHistoryRow:
+    properties:
+      attempt_count:
+        type: integer
+      candidate_link:
+        type: string
+      candidate_title:
+        type: string
+      chain_depth:
+        type: integer
+      content_path:
+        type: string
+      created_at:
+        type: string
+      downloader_external_id:
+        type: string
+      downloader_id:
+        type: string
+      downloader_status:
+        type: string
+      episode_id:
+        type: string
+      error_category:
+        type: string
+      guid:
+        type: string
+      id:
+        type: string
+      indexer_id:
+        type: integer
+      last_error:
+        type: string
+      library_id:
+        type: string
+      media_item_id:
+        type: string
+      media_type:
+        type: string
+      name_template_id:
+        type: string
+      next_run_at:
+        type: string
+      previous_job_id:
+        type: string
+      progress:
+        type: number
+      protocol:
+        type: string
+      save_path:
+        type: string
+      season_id:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+    required:
+    - attempt_count
+    - candidate_link
+    - candidate_title
+    - chain_depth
+    - content_path
+    - created_at
+    - downloader_external_id
+    - downloader_id
+    - downloader_status
+    - episode_id
+    - error_category
+    - guid
+    - id
+    - indexer_id
+    - last_error
+    - library_id
+    - media_item_id
+    - media_type
+    - name_template_id
+    - next_run_at
+    - previous_job_id
+    - progress
+    - protocol
+    - save_path
+    - season_id
+    - status
+    - updated_at
     type: object
   dbgen.GetDownloadJobTimelineRow:
     properties:
@@ -252,6 +340,8 @@ definitions:
         type: string
       pending_imports:
         type: integer
+      previous_job_id:
+        type: string
       progress:
         type: number
       protocol:
@@ -297,6 +387,7 @@ definitions:
     - name_template_id
     - next_run_at
     - pending_imports
+    - previous_job_id
     - progress
     - protocol
     - save_path
@@ -616,6 +707,8 @@ definitions:
         type: string
       next_run_at:
         type: string
+      previous_job_id:
+        type: string
       progress:
         type: number
       protocol:
@@ -651,6 +744,7 @@ definitions:
     - media_type
     - name_template_id
     - next_run_at
+    - previous_job_id
     - progress
     - protocol
     - save_path
@@ -713,6 +807,8 @@ definitions:
         type: string
       pending_imports:
         type: integer
+      previous_job_id:
+        type: string
       progress:
         type: number
       protocol:
@@ -758,6 +854,7 @@ definitions:
     - name_template_id
     - next_run_at
     - pending_imports
+    - previous_job_id
     - progress
     - protocol
     - save_path
@@ -3101,6 +3198,32 @@ paths:
       summary: Get download job with import status summary
       tags:
       - download-jobs
+  /v1/download-jobs/{id}/history:
+    get:
+      parameters:
+      - description: Job ID (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dbgen.GetDownloadJobHistoryRow'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get download job retry history
+      tags:
+      - download-jobs
   /v1/download-jobs/{id}/import-tasks:
     get:
       parameters:
@@ -3159,6 +3282,36 @@ paths:
               type: string
             type: object
       summary: Reimport failed import tasks
+      tags:
+      - download-jobs
+  /v1/download-jobs/{id}/retry:
+    post:
+      parameters:
+      - description: Job ID (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dbgen.GetDownloadJobWithImportSummaryRow'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Retry failed download job
       tags:
       - download-jobs
   /v1/download-jobs/{id}/timeline:

@@ -6,15 +6,17 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/kyleaupton/arrflix/internal/jobs/state"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
 type DownloadJobsService struct {
 	repo *repo.Repository
+	sm   *state.DownloadJobMachine
 }
 
 func NewDownloadJobsService(r *repo.Repository) *DownloadJobsService {
-	return &DownloadJobsService{repo: r}
+	return &DownloadJobsService{repo: r, sm: state.NewDownloadJobMachine()}
 }
 
 func (s *DownloadJobsService) Create(ctx context.Context, arg dbgen.CreateDownloadJobParams) (dbgen.DownloadJob, error) {
@@ -71,6 +73,42 @@ func (s *DownloadJobsService) Cancel(ctx context.Context, id pgtype.UUID) (dbgen
 // ListImportTasks returns all import tasks for a download job.
 func (s *DownloadJobsService) ListImportTasks(ctx context.Context, jobID pgtype.UUID) ([]dbgen.ImportTask, error) {
 	return s.repo.ListImportTasksByDownloadJob(ctx, jobID)
+}
+
+// RetryDownload creates a new download job from a failed one, linking via previous_job_id.
+func (s *DownloadJobsService) RetryDownload(ctx context.Context, id pgtype.UUID) (dbgen.GetDownloadJobWithImportSummaryRow, error) {
+	// Fetch existing job to validate state
+	job, err := s.repo.GetDownloadJob(ctx, id)
+	if err != nil {
+		return dbgen.GetDownloadJobWithImportSummaryRow{}, fmt.Errorf("get job: %w", err)
+	}
+
+	if !s.sm.CanRetryStr(job.Status) {
+		return dbgen.GetDownloadJobWithImportSummaryRow{}, fmt.Errorf("cannot retry job in status %q", job.Status)
+	}
+
+	newJob, err := s.repo.RetryDownloadJob(ctx, id)
+	if err != nil {
+		return dbgen.GetDownloadJobWithImportSummaryRow{}, fmt.Errorf("retry job: %w", err)
+	}
+
+	// Log retry_requested event on the new job
+	msg := fmt.Sprintf("retry of job %s", id.String())
+	_, _ = s.repo.CreateDownloadJobEvent(ctx, dbgen.CreateDownloadJobEventParams{
+		DownloadJobID: newJob.ID,
+		EventType:     "retry_requested",
+		OldStatus:     nil,
+		NewStatus:     nil,
+		Message:       &msg,
+		Metadata:      nil,
+	})
+
+	return s.repo.GetDownloadJobWithImportSummary(ctx, newJob.ID)
+}
+
+// GetHistory returns the retry chain for a download job.
+func (s *DownloadJobsService) GetHistory(ctx context.Context, id pgtype.UUID) ([]dbgen.GetDownloadJobHistoryRow, error) {
+	return s.repo.GetDownloadJobHistory(ctx, id)
 }
 
 // ReimportResult contains the result of a reimport operation.

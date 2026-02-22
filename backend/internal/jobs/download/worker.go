@@ -46,7 +46,7 @@ func DefaultConfig() Config {
 	return Config{
 		PollInterval: 3 * time.Second,
 		ClaimLimit:   20,
-		MaxAttempts:  10,
+		MaxAttempts:  3,
 	}
 }
 

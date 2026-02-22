@@ -213,6 +213,7 @@ type DownloadJob struct {
 	ErrorCategory        *string     `json:"error_category"`
 	CreatedAt            time.Time   `json:"created_at"`
 	UpdatedAt            time.Time   `json:"updated_at"`
+	PreviousJobID        pgtype.UUID `json:"previous_job_id"`
 }
 
 type DownloadJobEvent struct {

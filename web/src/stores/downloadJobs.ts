@@ -8,6 +8,7 @@ import {
   getV1DownloadJobs,
   deleteV1DownloadJobsById,
   postV1DownloadJobsByIdReimport,
+  postV1DownloadJobsByIdRetry,
   getV1DownloadJobsByIdImportTasks,
 } from '@/client/sdk.gen'
 import { useEventsStore } from '@/stores/events'
@@ -130,6 +131,15 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
     return res.data
   }
 
+  async function retryDownload(jobId: string) {
+    await postV1DownloadJobsByIdRetry({
+      throwOnError: true,
+      path: { id: jobId },
+    })
+    closeDetailDrawer()
+    await refresh()
+  }
+
   return {
     jobsById,
     jobsSorted,
@@ -139,6 +149,7 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
     cancelJob,
     getJobById,
     isJobActive,
+    retryDownload,
     // Drawer
     selectedJobId,
     selectedJob,

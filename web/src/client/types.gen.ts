@@ -42,6 +42,7 @@ export type DbgenDownloadJob = {
     media_type: string;
     name_template_id: string;
     next_run_at: string;
+    previous_job_id: string;
     progress: number;
     protocol: string;
     save_path: string;
@@ -63,6 +64,36 @@ export type DbgenDownloader = {
     updated_at: string;
     url: string;
     username: string;
+};
+
+export type DbgenGetDownloadJobHistoryRow = {
+    attempt_count: number;
+    candidate_link: string;
+    candidate_title: string;
+    chain_depth: number;
+    content_path: string;
+    created_at: string;
+    downloader_external_id: string;
+    downloader_id: string;
+    downloader_status: string;
+    episode_id: string;
+    error_category: string;
+    guid: string;
+    id: string;
+    indexer_id: number;
+    last_error: string;
+    library_id: string;
+    media_item_id: string;
+    media_type: string;
+    name_template_id: string;
+    next_run_at: string;
+    previous_job_id: string;
+    progress: number;
+    protocol: string;
+    save_path: string;
+    season_id: string;
+    status: string;
+    updated_at: string;
 };
 
 export type DbgenGetDownloadJobTimelineRow = {
@@ -104,6 +135,7 @@ export type DbgenGetDownloadJobWithImportSummaryRow = {
     name_template_id: string;
     next_run_at: string;
     pending_imports: number;
+    previous_job_id: string;
     progress: number;
     protocol: string;
     save_path: string;
@@ -231,6 +263,7 @@ export type DbgenListDownloadJobsByTmdbSeriesIdRow = {
     media_type: string;
     name_template_id: string;
     next_run_at: string;
+    previous_job_id: string;
     progress: number;
     protocol: string;
     save_path: string;
@@ -267,6 +300,7 @@ export type DbgenListDownloadJobsWithImportSummaryRow = {
     name_template_id: string;
     next_run_at: string;
     pending_imports: number;
+    previous_job_id: string;
     progress: number;
     protocol: string;
     save_path: string;
@@ -1513,6 +1547,38 @@ export type GetV1DownloadJobsByIdResponses = {
 
 export type GetV1DownloadJobsByIdResponse = GetV1DownloadJobsByIdResponses[keyof GetV1DownloadJobsByIdResponses];
 
+export type GetV1DownloadJobsByIdHistoryData = {
+    body?: never;
+    path: {
+        /**
+         * Job ID (uuid)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/v1/download-jobs/{id}/history';
+};
+
+export type GetV1DownloadJobsByIdHistoryErrors = {
+    /**
+     * Bad Request
+     */
+    400: {
+        [key: string]: string;
+    };
+};
+
+export type GetV1DownloadJobsByIdHistoryError = GetV1DownloadJobsByIdHistoryErrors[keyof GetV1DownloadJobsByIdHistoryErrors];
+
+export type GetV1DownloadJobsByIdHistoryResponses = {
+    /**
+     * OK
+     */
+    200: Array<DbgenGetDownloadJobHistoryRow>;
+};
+
+export type GetV1DownloadJobsByIdHistoryResponse = GetV1DownloadJobsByIdHistoryResponses[keyof GetV1DownloadJobsByIdHistoryResponses];
+
 export type GetV1DownloadJobsByIdImportTasksData = {
     body?: never;
     path: {
@@ -1587,6 +1653,44 @@ export type PostV1DownloadJobsByIdReimportResponses = {
 };
 
 export type PostV1DownloadJobsByIdReimportResponse = PostV1DownloadJobsByIdReimportResponses[keyof PostV1DownloadJobsByIdReimportResponses];
+
+export type PostV1DownloadJobsByIdRetryData = {
+    body?: never;
+    path: {
+        /**
+         * Job ID (uuid)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/v1/download-jobs/{id}/retry';
+};
+
+export type PostV1DownloadJobsByIdRetryErrors = {
+    /**
+     * Bad Request
+     */
+    400: {
+        [key: string]: string;
+    };
+    /**
+     * Conflict
+     */
+    409: {
+        [key: string]: string;
+    };
+};
+
+export type PostV1DownloadJobsByIdRetryError = PostV1DownloadJobsByIdRetryErrors[keyof PostV1DownloadJobsByIdRetryErrors];
+
+export type PostV1DownloadJobsByIdRetryResponses = {
+    /**
+     * OK
+     */
+    200: DbgenGetDownloadJobWithImportSummaryRow;
+};
+
+export type PostV1DownloadJobsByIdRetryResponse = PostV1DownloadJobsByIdRetryResponses[keyof PostV1DownloadJobsByIdRetryResponses];
 
 export type GetV1DownloadJobsByIdTimelineData = {
     body?: never;
