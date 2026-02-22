@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -154,11 +155,13 @@ func (h *Libraries) Delete(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-// Scan library
+// Scan library (async)
 // @Summary Scan library
 // @Tags    libraries
 // @Param   id path string true "Library ID"
-// @Success 204 {string} string ""
+// @Produce json
+// @Success 202 {object} map[string]string
+// @Failure 409 {object} map[string]string
 // @Router  /v1/libraries/{id}/scan [post]
 func (h *Libraries) Scan(c echo.Context) error {
 	var id pgtype.UUID
@@ -166,8 +169,12 @@ func (h *Libraries) Scan(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
 	}
 	ctx := c.Request().Context()
-	if _, err := h.svc.Scanner.StartScan(ctx, id); err != nil {
+	scanID, err := h.svc.Scanner.StartScan(ctx, id)
+	if err != nil {
+		if errors.Is(err, service.ErrScanAlreadyRunning) {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "scan already running for this library"})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to scan"})
 	}
-	return c.NoContent(http.StatusNoContent)
+	return c.JSON(http.StatusAccepted, map[string]string{"scanId": scanID})
 }

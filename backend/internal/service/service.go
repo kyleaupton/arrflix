@@ -6,6 +6,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/policy"
 	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/sse"
 )
 
 type Services struct {
@@ -31,7 +32,7 @@ type Services struct {
 	Version            *VersionService
 }
 
-func New(r *repo.Repository, l *logger.Logger, c *config.Config, opts ...Option) *Services {
+func New(r *repo.Repository, l *logger.Logger, c *config.Config, broker *sse.Broker, opts ...Option) *Services {
 	cfg := &cfg{}
 	for _, o := range opts {
 		o.apply(cfg)
@@ -61,7 +62,7 @@ func New(r *repo.Repository, l *logger.Logger, c *config.Config, opts ...Option)
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
 		Policies:           policies,
-		Scanner:            NewScannerService(r, l, tmdb),
+		Scanner:            NewScannerService(r, l, tmdb, broker),
 		Settings:           settings,
 		Setup:              NewSetupService(r, users),
 		Tmdb:               tmdb,

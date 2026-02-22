@@ -2,49 +2,127 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io/fs"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	"github.com/kyleaupton/arrflix/internal/identity"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/sse"
 )
 
+// ErrScanAlreadyRunning is returned when a scan is already in progress for a library.
+var ErrScanAlreadyRunning = errors.New("scan already running for this library")
+
 type ScannerService struct {
-	repo   *repo.Repository
-	logger *logger.Logger
-	tmdb   *TmdbService
+	repo    *repo.Repository
+	logger  *logger.Logger
+	tmdb    *TmdbService
+	broker  *sse.Broker
+	ctx     context.Context // background context for goroutines; cancelled on shutdown
+	running sync.Map        // libraryID string -> scanID string
 }
 
-func NewScannerService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService) *ScannerService {
-	return &ScannerService{repo: r, logger: l, tmdb: tmdb}
+func NewScannerService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, broker *sse.Broker) *ScannerService {
+	return &ScannerService{repo: r, logger: l, tmdb: tmdb, broker: broker, ctx: context.Background()}
 }
 
-type ScanStats struct {
+// SetContext sets the background context used by scan goroutines.
+// Pass a cancellable context to allow graceful shutdown of in-flight scans.
+func (s *ScannerService) SetContext(ctx context.Context) {
+	s.ctx = ctx
+}
+
+type scanStats struct {
 	FilesSeen         int `json:"filesSeen"`
 	MediaItemsCreated int `json:"mediaItemsCreated"`
 	Duration          int `json:"duration"`
 }
 
-func (s *ScannerService) StartScan(ctx context.Context, libraryID pgtype.UUID) (ScanStats, error) {
-	stats := ScanStats{}
-	start := time.Now()
+// StartScan kicks off an async library scan. It returns the scan ID immediately.
+// If a scan is already running for the given library, it returns ErrScanAlreadyRunning.
+func (s *ScannerService) StartScan(ctx context.Context, libraryID pgtype.UUID) (string, error) {
+	libKey := libraryID.String()
 
+	// Concurrency guard: only one scan per library at a time.
+	scanID := uuid.NewString()
+	if _, loaded := s.running.LoadOrStore(libKey, scanID); loaded {
+		return "", ErrScanAlreadyRunning
+	}
+
+	// Validate the library exists before launching the goroutine.
 	library, err := s.repo.GetLibrary(ctx, libraryID)
 	if err != nil {
-		s.logger.Error().Str("library_id", libraryID.String()).Err(err).Msg("Error getting library")
-		return ScanStats{}, err
+		s.running.Delete(libKey)
+		return "", err
 	}
+
+	go func() {
+		defer s.running.Delete(libKey)
+
+		s.publishEvent("scan_started", scanID, libKey, nil)
+
+		stats, err := s.executeScan(s.ctx, library, scanID)
+		if err != nil {
+			s.publishEvent("scan_failed", scanID, libKey, map[string]any{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		// Final progress event so clients see the exact totals before completion.
+		s.publishEvent("scan_progress", scanID, libKey, map[string]any{
+			"filesSeen":         stats.FilesSeen,
+			"mediaItemsCreated": stats.MediaItemsCreated,
+		})
+
+		s.publishEvent("scan_completed", scanID, libKey, map[string]any{
+			"filesSeen":         stats.FilesSeen,
+			"mediaItemsCreated": stats.MediaItemsCreated,
+			"duration":          stats.Duration,
+		})
+	}()
+
+	return scanID, nil
+}
+
+func (s *ScannerService) publishEvent(eventType, scanID, libraryID string, extra map[string]any) {
+	if s.broker == nil {
+		return
+	}
+	payload := map[string]any{
+		"scanId":    scanID,
+		"libraryId": libraryID,
+	}
+	for k, v := range extra {
+		payload[k] = v
+	}
+	data, _ := json.Marshal(payload)
+	s.broker.Publish(sse.Event{
+		Type: eventType,
+		Data: data,
+		ID:   scanID,
+	})
+}
+
+func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library, scanID string) (scanStats, error) {
+	stats := scanStats{}
+	start := time.Now()
+	libKey := library.ID.String()
 
 	s.logger.Info().Str("library_name", library.Name).Str("library_path", library.RootPath).Msg("Starting Scan")
 
-	err = filepath.WalkDir(library.RootPath, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(library.RootPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err // propagate permission/IO errors
 		}
@@ -57,6 +135,14 @@ func (s *ScannerService) StartScan(ctx context.Context, libraryID pgtype.UUID) (
 		s.logger.Debug().Str("path", path).Msg("Processing Media File")
 
 		stats.FilesSeen++
+
+		// Publish progress every 50 files
+		if stats.FilesSeen%50 == 0 {
+			s.publishEvent("scan_progress", scanID, libKey, map[string]any{
+				"filesSeen":         stats.FilesSeen,
+				"mediaItemsCreated": stats.MediaItemsCreated,
+			})
+		}
 
 		relPath, err := filepath.Rel(library.RootPath, path)
 		if err != nil || strings.HasPrefix(relPath, "..") {
@@ -271,10 +357,10 @@ func (s *ScannerService) StartScan(ctx context.Context, libraryID pgtype.UUID) (
 
 	if err != nil {
 		s.logger.Error().Err(err).Msg("Error walking directory")
-		return ScanStats{}, err
+		return scanStats{}, err
 	}
 
-	s.logger.Info().Str("library_id", libraryID.String()).Msg("Scan Complete")
+	s.logger.Info().Str("library_id", libKey).Msg("Scan Complete")
 	stats.Duration = int(time.Since(start).Seconds())
 
 	return stats, nil

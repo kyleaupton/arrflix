@@ -42,11 +42,11 @@ func main() {
 	// Repo
 	repo := repo.New(pool)
 
-	// Services
-	services := service.New(repo, logg, &cfg, service.WithJWTSecret(cfg.JWTSecret))
-
 	// In-process SSE broker
 	broker := sse.NewBroker()
+
+	// Services
+	services := service.New(repo, logg, &cfg, broker, service.WithJWTSecret(cfg.JWTSecret))
 
 	// Downloader Manager
 	downloaderRegistry := downloader.NewRegistry()
@@ -71,6 +71,7 @@ func main() {
 
 	// Download and import workers
 	workerCtx, workerCancel := context.WithCancel(context.Background())
+	services.Scanner.SetContext(workerCtx)
 	dlWorker := downloadworker.New(repo, downloaderManager, logg, broker)
 	impWorker := importworker.New(repo, downloaderManager, logg, broker)
 	go dlWorker.Run(workerCtx)

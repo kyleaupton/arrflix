@@ -3975,11 +3975,21 @@ paths:
         name: id
         required: true
         type: string
+      produces:
+      - application/json
       responses:
-        "204":
-          description: No Content
+        "202":
+          description: Accepted
           schema:
-            type: string
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: Scan library
       tags:
       - libraries

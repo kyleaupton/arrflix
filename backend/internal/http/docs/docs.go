@@ -1734,6 +1734,9 @@ const docTemplate = `{
         },
         "/v1/libraries/{id}/scan": {
             "post": {
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
                     "libraries"
                 ],
@@ -1748,10 +1751,22 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "204": {
-                        "description": "No Content",
+                    "202": {
+                        "description": "Accepted",
                         "schema": {
-                            "type": "string"
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }

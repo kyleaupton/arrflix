@@ -52,12 +52,19 @@ export const useEventsStore = defineStore('events', () => {
   }
 
   async function connect(types?: string[]) {
-    // Merge/replace desired event types
+    // Merge new types into desired set
     if (types?.length) {
-      wantedTypes.value = Array.from(new Set(types))
+      const merged = Array.from(new Set([...wantedTypes.value, ...types]))
+      const changed = merged.length !== wantedTypes.value.length
+      wantedTypes.value = merged
+
+      // If already connected but the filter set grew, reconnect with the full set.
+      if (abort && changed) {
+        disconnect()
+      }
     }
 
-    // If already connected/connecting, no-op (v1); call disconnect() then connect() to change filters.
+    // Already connected/connecting with correct filters — nothing to do.
     if (abort) return
 
     status.value = 'connecting'

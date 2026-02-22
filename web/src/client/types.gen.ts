@@ -2583,11 +2583,24 @@ export type PostV1LibrariesByIdScanData = {
     url: '/v1/libraries/{id}/scan';
 };
 
+export type PostV1LibrariesByIdScanErrors = {
+    /**
+     * Conflict
+     */
+    409: {
+        [key: string]: string;
+    };
+};
+
+export type PostV1LibrariesByIdScanError = PostV1LibrariesByIdScanErrors[keyof PostV1LibrariesByIdScanErrors];
+
 export type PostV1LibrariesByIdScanResponses = {
     /**
-     * No Content
+     * Accepted
      */
-    204: string;
+    202: {
+        [key: string]: string;
+    };
 };
 
 export type PostV1LibrariesByIdScanResponse = PostV1LibrariesByIdScanResponses[keyof PostV1LibrariesByIdScanResponses];
