@@ -7,6 +7,9 @@ interface Props {
     attrs: {
       path: string
       func?: 'clean' | 'sanitize' | null
+      optional?: boolean
+      prefix?: string
+      suffix?: string
     }
   }
 }
@@ -27,14 +30,25 @@ const label = computed(() => {
   }
   return displayValue
 })
+
+const isOptional = computed(() => !!props.node.attrs.optional)
+const prefix = computed(() => props.node.attrs.prefix || '')
+const suffix = computed(() => props.node.attrs.suffix || '')
 </script>
 
 <template>
   <NodeViewWrapper
     as="span"
-    class="variable-mention inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-xs font-medium font-mono whitespace-nowrap border-transparent bg-primary text-primary-foreground cursor-default mx-0.5"
+    class="variable-mention inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-xs font-medium font-mono whitespace-nowrap cursor-default mx-0.5"
+    :class="
+      isOptional
+        ? 'border-dashed border-primary/60 bg-primary/80 text-primary-foreground'
+        : 'border-transparent bg-primary text-primary-foreground'
+    "
   >
+    <span v-if="isOptional && prefix" class="opacity-50">{{ prefix }}</span>
     {{ label }}
+    <span v-if="isOptional && suffix" class="opacity-50">{{ suffix }}</span>
   </NodeViewWrapper>
 </template>
 
@@ -43,4 +57,3 @@ const label = computed(() => {
   opacity: 0.9;
 }
 </style>
-

@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { TEMPLATE_FUNCTIONS } from '@/composables/useTemplateVariables'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Token } from './TemplateTokenEditor.vue'
-import { WrapText, X, Trash2, Sparkles, ChevronRight } from 'lucide-vue-next'
+import { Trash2, ToggleLeft, ToggleRight } from 'lucide-vue-next'
 
 interface Props {
   position: { x: number; y: number }
@@ -12,21 +11,35 @@ interface Props {
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
-  wrap: [funcName: 'clean' | 'sanitize']
-  removeFunction: []
+  toggleOptional: []
+  updateOptional: [attrs: { prefix: string; suffix: string }]
   delete: []
   close: []
 }>()
 
-const hasFunction = computed(() => !!props.token.func)
-const showFunctionSubmenu = ref(false)
+const isOptional = computed(() => !!props.token.optional)
 
-function handleWrap(funcName: 'clean' | 'sanitize') {
-  emit('wrap', funcName)
+const prefixInput = ref(props.token.prefix || '')
+const suffixInput = ref(props.token.suffix || '')
+
+// Sync inputs when token changes
+watch(
+  () => props.token,
+  (token) => {
+    prefixInput.value = token.prefix || ''
+    suffixInput.value = token.suffix || ''
+  },
+)
+
+function handleToggleOptional() {
+  emit('toggleOptional')
 }
 
-function handleRemoveFunction() {
-  emit('removeFunction')
+function handlePrefixSuffixUpdate() {
+  emit('updateOptional', {
+    prefix: prefixInput.value,
+    suffix: suffixInput.value,
+  })
 }
 
 function handleDelete() {
@@ -48,7 +61,6 @@ function handleClickOutside(event: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('keydown', handleKeyDown)
-  // Delay adding click listener to avoid immediate close
   setTimeout(() => {
     document.addEventListener('click', handleClickOutside)
   }, 10)
@@ -58,16 +70,42 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('click', handleClickOutside)
 })
+
+// Teleport into the dialog content element so the menu is inside the dialog's
+// focus trap and dismissable layer, but outside the overflow-auto scroll container.
+// The dialog content has a CSS transform, so position: fixed won't work relative
+// to the viewport — we need to adjust coordinates to be relative to the dialog.
+const teleportTarget = ref<string | Element>('body')
+const adjustedPosition = ref({ x: 0, y: 0 })
+
+onMounted(() => {
+  const dialogContent = document.querySelector('[data-slot="dialog-content"]')
+  if (dialogContent) {
+    teleportTarget.value = dialogContent
+    const rect = dialogContent.getBoundingClientRect()
+    adjustedPosition.value = {
+      x: props.position.x - rect.left,
+      y: props.position.y - rect.top,
+    }
+  } else {
+    // Fallback: no dialog, use body with original coordinates
+    adjustedPosition.value = props.position
+  }
+})
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="teleportTarget">
     <div
       class="token-context-menu fixed z-[200] min-w-56 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
       :style="{
-        top: `${position.y}px`,
-        left: `${position.x}px`,
+        top: `${adjustedPosition.y}px`,
+        left: `${adjustedPosition.x}px`,
       }"
+      @pointerdown.stop
+      @focusin.stop
+      @mousedown.stop
+      @click.stop
     >
       <!-- Token label -->
       <div class="px-2 py-1.5 text-xs font-semibold font-mono text-muted-foreground">
@@ -80,49 +118,38 @@ onUnmounted(() => {
 
       <div class="h-px bg-border my-1" />
 
-      <!-- Wrap with function -->
-      <div
-        class="relative"
-        @mouseenter="showFunctionSubmenu = true"
-        @mouseleave="showFunctionSubmenu = false"
+      <!-- Toggle optional -->
+      <button
+        class="flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+        @click="handleToggleOptional"
       >
-        <button
-          class="flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-        >
-          <Sparkles class="mr-2 h-4 w-4" />
-          <span class="flex-1 text-left">Wrap with function</span>
-          <ChevronRight class="h-4 w-4" />
-        </button>
+        <component :is="isOptional ? ToggleRight : ToggleLeft" class="mr-2 h-4 w-4" />
+        <span>{{ isOptional ? 'Make Required' : 'Make Optional' }}</span>
+      </button>
 
-        <!-- Submenu -->
-        <div
-          v-if="showFunctionSubmenu"
-          class="absolute left-full top-0 ml-1 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-        >
-          <button
-            v-for="func in TEMPLATE_FUNCTIONS"
-            :key="func.name"
-            class="flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-            @click="handleWrap(func.name as 'clean' | 'sanitize')"
-          >
-            <WrapText class="mr-2 h-4 w-4" />
-            <div class="flex flex-col gap-0.5">
-              <span class="font-mono">{{ func.name }}</span>
-              <span class="text-xs text-muted-foreground">{{ func.description }}</span>
-            </div>
-          </button>
+      <!-- Prefix/suffix inputs (only when optional) -->
+      <div v-if="isOptional" class="px-2 py-1.5 space-y-1.5">
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-muted-foreground w-10 shrink-0">Prefix</label>
+          <input
+            v-model="prefixInput"
+            class="flex-1 h-6 rounded border border-input bg-background px-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder="e.g. ' - '"
+            @blur="handlePrefixSuffixUpdate"
+            @keydown.enter="handlePrefixSuffixUpdate"
+          />
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-muted-foreground w-10 shrink-0">Suffix</label>
+          <input
+            v-model="suffixInput"
+            class="flex-1 h-6 rounded border border-input bg-background px-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder="e.g. ']'"
+            @blur="handlePrefixSuffixUpdate"
+            @keydown.enter="handlePrefixSuffixUpdate"
+          />
         </div>
       </div>
-
-      <!-- Remove function (only if wrapped) -->
-      <button
-        v-if="hasFunction"
-        class="flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-        @click="handleRemoveFunction"
-      >
-        <X class="mr-2 h-4 w-4" />
-        <span>Remove function</span>
-      </button>
 
       <div class="h-px bg-border my-1" />
 

@@ -17,11 +17,25 @@ declare module '@tiptap/core' {
       insertVariableMention: (attributes: {
         path: string
         func?: 'clean' | 'sanitize' | null
+        optional?: boolean
+        prefix?: string
+        suffix?: string
       }) => ReturnType
       /**
        * Update a variable mention's function
        */
       updateVariableMentionFunc: (pos: number, func: 'clean' | 'sanitize' | null) => ReturnType
+      /**
+       * Toggle the optional attribute of a variable mention
+       */
+      toggleVariableOptional: (pos: number) => ReturnType
+      /**
+       * Update optional, prefix, and suffix attributes
+       */
+      updateVariableOptional: (
+        pos: number,
+        attrs: { optional?: boolean; prefix?: string; suffix?: string },
+      ) => ReturnType
     }
   }
 }
@@ -69,6 +83,24 @@ export const VariableMention = Node.create<VariableMentionOptions>({
             'data-func': attributes.func,
           }
         },
+      },
+      optional: {
+        default: false,
+        parseHTML: (element) => element.getAttribute('data-optional') === 'true',
+        renderHTML: (attributes) =>
+          attributes.optional ? { 'data-optional': 'true' } : {},
+      },
+      prefix: {
+        default: '',
+        parseHTML: (element) => element.getAttribute('data-prefix') || '',
+        renderHTML: (attributes) =>
+          attributes.prefix ? { 'data-prefix': attributes.prefix } : {},
+      },
+      suffix: {
+        default: '',
+        parseHTML: (element) => element.getAttribute('data-suffix') || '',
+        renderHTML: (attributes) =>
+          attributes.suffix ? { 'data-suffix': attributes.suffix } : {},
       },
     }
   },
@@ -154,6 +186,34 @@ export const VariableMention = Node.create<VariableMentionOptions>({
             tr.setNodeMarkup(pos, undefined, {
               ...node.attrs,
               func,
+            })
+            return true
+          }
+          return false
+        },
+      toggleVariableOptional:
+        (pos) =>
+        ({ tr }) => {
+          const node = tr.doc.nodeAt(pos)
+          if (node && node.type.name === this.name) {
+            tr.setNodeMarkup(pos, undefined, {
+              ...node.attrs,
+              optional: !node.attrs.optional,
+              // Reset prefix/suffix when toggling off
+              ...(!node.attrs.optional ? {} : { prefix: '', suffix: '' }),
+            })
+            return true
+          }
+          return false
+        },
+      updateVariableOptional:
+        (pos, attrs) =>
+        ({ tr }) => {
+          const node = tr.doc.nodeAt(pos)
+          if (node && node.type.name === this.name) {
+            tr.setNodeMarkup(pos, undefined, {
+              ...node.attrs,
+              ...attrs,
             })
             return true
           }

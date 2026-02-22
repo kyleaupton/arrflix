@@ -4,17 +4,16 @@ import { useEditor, EditorContent, type Editor } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { VariableMention } from './extensions/VariableMention'
 import { variableSuggestion } from './extensions/variableSuggestion'
-import { ConditionalBlock } from './extensions/ConditionalBlock'
-import { SlashCommand } from './extensions/SlashCommand'
-import SlashCommandsList from './extensions/SlashCommandsList.vue'
 import TokenContextMenu from './TokenContextMenu.vue'
-import FieldPicker from './extensions/FieldPicker.vue'
 import { cn } from '@/lib/utils'
 
 export interface Token {
   type: 'text' | 'variable'
   value: string
   func?: 'clean' | 'sanitize'
+  optional?: boolean
+  prefix?: string
+  suffix?: string
 }
 
 interface Props {
@@ -40,18 +39,13 @@ const showContextMenu = ref(false)
 const contextMenuPosition = ref({ x: 0, y: 0 })
 const selectedNodePos = ref<number | null>(null)
 
-// Slash commands state
-const showSlashCommands = ref(false)
-const slashCommandPosition = ref({ top: 0, left: 0 })
-
-// Field picker state for conditional insertion
-const showFieldPicker = ref(false)
-const fieldPickerPosition = ref({ top: 0, left: 0 })
-
 // Template parsing regex - matches {{.Var}} or {{func .Var}}
 const TEMPLATE_REGEX = /\{\{(clean|sanitize)?\s*([.\w]+)\}\}/g
-// Conditional regex - matches {{if .Field}}...{{end}}
-const CONDITIONAL_REGEX = /\{\{if\s+([.\w]+)\}\}(.*?)\{\{end\}\}/gs
+
+// Matches {{if [func] .Field}}prefix{{[func] .Field}}suffix{{end}}
+// where the field path is the same in both the condition and the variable
+const OPTIONAL_VAR_REGEX =
+  /\{\{if\s+(?:(clean|sanitize)\s+)?([.\w]+)\}\}(.*?)\{\{(?:(clean|sanitize)\s+)?\2\}\}(.*?)\{\{end\}\}/gs
 
 /**
  * Parse a string segment (handles variables and text)
@@ -109,32 +103,30 @@ function parseTemplateToTiptap(template: string) {
   const content: Array<Record<string, unknown>> = []
   let lastIndex = 0
 
-  // First, handle conditionals
-  CONDITIONAL_REGEX.lastIndex = 0
-  let condMatch
+  // First, handle optional variable patterns
+  OPTIONAL_VAR_REGEX.lastIndex = 0
+  let match
 
-  while ((condMatch = CONDITIONAL_REGEX.exec(template)) !== null) {
-    // Add content before the conditional
-    if (condMatch.index > lastIndex) {
-      const beforeText = template.slice(lastIndex, condMatch.index)
+  while ((match = OPTIONAL_VAR_REGEX.exec(template)) !== null) {
+    // Add content before the match
+    if (match.index > lastIndex) {
+      const beforeText = template.slice(lastIndex, match.index)
       content.push(...parseSegment(beforeText))
     }
 
-    // Parse the content inside the conditional
-    const innerContent = parseSegment(condMatch[2] || '')
-
-    // Add conditional block
+    // Add optional variable mention
     content.push({
-      type: 'conditionalBlock',
+      type: 'variableMention',
       attrs: {
-        field: condMatch[1],
+        path: match[2],
+        func: match[4] || null,
+        optional: true,
+        prefix: match[3] || '',
+        suffix: match[5] || '',
       },
-      // Don't add empty text nodes - TipTap doesn't allow them
-      // If empty, omit content property to let TipTap handle empty inline content
-      content: innerContent.length > 0 ? innerContent : undefined,
     })
 
-    lastIndex = condMatch.index + condMatch[0].length
+    lastIndex = match.index + match[0].length
   }
 
   // Add remaining content
@@ -170,19 +162,15 @@ function serializeTiptapToTemplate(editorInstance: Editor): string {
     if (node.type === 'text') {
       parts.push(node.text || '')
     } else if (node.type === 'variableMention') {
-      const { path, func } = node.attrs || {}
-      if (func) {
-        parts.push(`{{${func} ${path}}}`)
+      const { path, func, optional, prefix, suffix } = node.attrs || {}
+      const varStr = func ? `{{${func} ${path}}}` : `{{${path}}}`
+
+      if (optional) {
+        const condStr = func === 'clean' ? `{{if clean ${path}}}` : `{{if ${path}}}`
+        parts.push(`${condStr}${prefix || ''}${varStr}${suffix || ''}{{end}}`)
       } else {
-        parts.push(`{{${path}}}`)
+        parts.push(varStr)
       }
-    } else if (node.type === 'conditionalBlock') {
-      const { field } = node.attrs || {}
-      parts.push(`{{if ${field}}}`)
-      if (node.content) {
-        node.content.forEach(processNode)
-      }
-      parts.push(`{{end}}`)
     } else if (node.content) {
       node.content.forEach(processNode)
     }
@@ -190,30 +178,6 @@ function serializeTiptapToTemplate(editorInstance: Editor): string {
 
   json.content?.forEach(processNode as (node: Record<string, unknown>) => void)
   return parts.join('')
-}
-
-// Handle showing slash command list
-function handleShowSlashCommands(position: { top: number; left: number }) {
-  slashCommandPosition.value = position
-  showSlashCommands.value = true
-}
-
-// Handle command selection from slash commands
-function handleCommandSelect(commandId: string) {
-  showSlashCommands.value = false
-
-  if (commandId === 'if') {
-    // Remove the typed "/" character
-    if (editor.value) {
-      const { state } = editor.value
-      const { from } = state.selection
-      editor.value.commands.deleteRange({ from: from - 1, to: from })
-    }
-
-    // Show field picker at same position
-    fieldPickerPosition.value = slashCommandPosition.value
-    showFieldPicker.value = true
-  }
 }
 
 // Initialize editor
@@ -236,10 +200,6 @@ const editor = useEditor({
     }),
     VariableMention.configure({
       suggestion: variableSuggestion({ mediaType: props.mediaType }),
-    }),
-    ConditionalBlock,
-    SlashCommand.configure({
-      onShowCommandList: handleShowSlashCommands,
     }),
   ],
   content: parseTemplateToTiptap(props.modelValue),
@@ -293,19 +253,24 @@ function handleNodeContextMenu(event: MouseEvent, pos: number) {
   showContextMenu.value = true
 }
 
-// Set up context menu listener
-if (editor.value) {
-  editor.value.view.dom.addEventListener('contextmenu', (event) => {
-    const target = event.target as HTMLElement
-    if (target.classList.contains('variable-mention')) {
-      // Find the node position
-      const pos = editor.value?.view.posAtDOM(target, 0)
-      if (pos !== undefined) {
-        handleNodeContextMenu(event, pos)
-      }
+// Set up context menu listener once editor is ready
+watch(
+  editor,
+  (ed) => {
+    if (ed) {
+      ed.view.dom.addEventListener('contextmenu', (event) => {
+        const target = event.target as HTMLElement
+        if (target.classList.contains('variable-mention')) {
+          const pos = ed.view.posAtDOM(target, 0)
+          if (pos !== undefined) {
+            handleNodeContextMenu(event, pos)
+          }
+        }
+      })
     }
-  })
-}
+  },
+  { immediate: true },
+)
 
 // Get current selected node
 const selectedNode = ref<{
@@ -323,20 +288,22 @@ watch([showContextMenu, selectedNodePos], () => {
 })
 
 // Context menu handlers
-function handleWrapWithFunction(funcName: 'clean' | 'sanitize') {
+function handleToggleOptional() {
   if (selectedNodePos.value !== null && editor.value) {
-    editor.value.commands.updateVariableMentionFunc(selectedNodePos.value, funcName)
+    editor.value.commands.toggleVariableOptional(selectedNodePos.value)
+    // Re-read the node so the context menu updates
+    const node = editor.value.state.doc.nodeAt(selectedNodePos.value)
+    selectedNode.value = node
   }
-  showContextMenu.value = false
-  selectedNodePos.value = null
 }
 
-function handleRemoveFunction() {
+function handleUpdateOptional(attrs: { prefix: string; suffix: string }) {
   if (selectedNodePos.value !== null && editor.value) {
-    editor.value.commands.updateVariableMentionFunc(selectedNodePos.value, null)
+    editor.value.commands.updateVariableOptional(selectedNodePos.value, attrs)
+    // Re-read the node so the context menu updates
+    const node = editor.value.state.doc.nodeAt(selectedNodePos.value)
+    selectedNode.value = node
   }
-  showContextMenu.value = false
-  selectedNodePos.value = null
 }
 
 function handleDeleteToken() {
@@ -365,21 +332,14 @@ watch(selectedNode, (node) => {
       type: 'variable',
       value: (node.attrs.path as string) || '',
       func: (node.attrs.func as 'clean' | 'sanitize' | undefined) || undefined,
+      optional: (node.attrs.optional as boolean) || false,
+      prefix: (node.attrs.prefix as string) || '',
+      suffix: (node.attrs.suffix as string) || '',
     }
   } else {
     selectedToken.value = null
   }
 })
-
-// Handle field selection for conditional
-function handleFieldSelect(field: string) {
-  if (editor.value) {
-    // Insert the conditional block with cursor positioned inside
-    // The insertConditionalBlock command handles cursor positioning automatically
-    editor.value.chain().focus().insertConditionalBlock({ field }).run()
-  }
-  showFieldPicker.value = false
-}
 
 // Cleanup
 onBeforeUnmount(() => {
@@ -396,51 +356,11 @@ onBeforeUnmount(() => {
       v-if="showContextMenu && selectedToken"
       :position="contextMenuPosition"
       :token="selectedToken"
-      @wrap="handleWrapWithFunction"
-      @remove-function="handleRemoveFunction"
+      @toggle-optional="handleToggleOptional"
+      @update-optional="handleUpdateOptional"
       @delete="handleDeleteToken"
       @close="showContextMenu = false"
     />
-
-    <!-- Slash Commands List -->
-    <Teleport to="body">
-      <div
-        v-if="showSlashCommands"
-        class="fixed z-[100]"
-        :style="{
-          top: `${slashCommandPosition.top}px`,
-          left: `${slashCommandPosition.left}px`,
-        }"
-        @click.stop
-        @mousedown.stop
-      >
-        <SlashCommandsList
-          :commands="[{ id: 'if', title: 'if', description: 'Add conditional block', icon: '🔀' }]"
-          @select="handleCommandSelect"
-          @close="showSlashCommands = false"
-        />
-      </div>
-    </Teleport>
-
-    <!-- Field Picker for Conditionals -->
-    <Teleport to="body">
-      <div
-        v-if="showFieldPicker"
-        class="fixed z-[100]"
-        :style="{
-          top: `${fieldPickerPosition.top}px`,
-          left: `${fieldPickerPosition.left}px`,
-        }"
-        @click.stop
-        @mousedown.stop
-      >
-        <FieldPicker
-          :media-type="mediaType"
-          @select="handleFieldSelect"
-          @close="showFieldPicker = false"
-        />
-      </div>
-    </Teleport>
   </div>
 </template>
 
