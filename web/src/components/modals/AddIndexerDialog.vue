@@ -99,7 +99,7 @@ const prevStep = () => {
   }
 }
 
-const selectIndexerType = (indexer: ModelIndexerDefinition) => {
+const selectIndexerType = (indexer: ModelIndexerDefinition | null) => {
   selectedIndexerType.value = indexer
 }
 

@@ -2,10 +2,7 @@
 import { Search } from 'lucide-vue-next'
 import { type ModelIndexerDefinition } from '@/client/types.gen'
 import DataTable from '@/components/tables/DataTable.vue'
-import {
-  availableIndexerColumns,
-  createAvailableIndexerActions,
-} from '@/components/tables/configs/availableIndexerTableConfig'
+import { availableIndexerColumns } from '@/components/tables/configs/availableIndexerTableConfig'
 import { getV1IndexersSchemaOptions } from '@/client/@tanstack/vue-query.gen'
 
 defineProps<{
@@ -13,15 +10,10 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'indexer-selected': [indexer: ModelIndexerDefinition]
+  'indexer-selected': [indexer: ModelIndexerDefinition | null]
 }>()
 
 const queryOptions = getV1IndexersSchemaOptions()
-
-// Create actions for the available indexers table
-const availableIndexerActions = createAvailableIndexerActions((indexer: ModelIndexerDefinition) => {
-  emit('indexer-selected', indexer)
-})
 </script>
 
 <template>
@@ -31,7 +23,6 @@ const availableIndexerActions = createAvailableIndexerActions((indexer: ModelInd
       ref="dataTableRef"
       :query-options="queryOptions"
       :columns="availableIndexerColumns"
-      :actions="availableIndexerActions"
       :auto-load="false"
       empty-message="No unconfigured indexers available"
       searchable
@@ -43,9 +34,7 @@ const availableIndexerActions = createAvailableIndexerActions((indexer: ModelInd
       selection-mode="single"
       @selection-change="
         (selection) => {
-          if (selection && !Array.isArray(selection)) {
-            emit('indexer-selected', selection)
-          }
+          emit('indexer-selected', !Array.isArray(selection) ? selection : null)
         }
       "
       @data-loaded="(data) => console.log('Loaded indexers:', data.length)"
