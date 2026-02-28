@@ -880,6 +880,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/filesystem/browse": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "filesystem"
+                ],
+                "summary": "Browse filesystem directories",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Directory path to browse (defaults to /)",
+                        "name": "path",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.filesystemBrowseResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/home": {
             "get": {
                 "produces": [
@@ -5742,6 +5796,43 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.filesystemBrowseResponse": {
+            "type": "object",
+            "required": [
+                "current_path",
+                "directories",
+                "parent"
+            ],
+            "properties": {
+                "current_path": {
+                    "type": "string"
+                },
+                "directories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.filesystemDirectoryEntry"
+                    }
+                },
+                "parent": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.filesystemDirectoryEntry": {
+            "type": "object",
+            "required": [
+                "name",
+                "path"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "path": {
                     "type": "string"
                 }
             }

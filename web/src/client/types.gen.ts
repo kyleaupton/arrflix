@@ -565,6 +565,17 @@ export type HandlersUserUpdateRequest = {
     username: string;
 };
 
+export type HandlersFilesystemBrowseResponse = {
+    current_path: string;
+    directories: Array<HandlersFilesystemDirectoryEntry>;
+    parent: string;
+};
+
+export type HandlersFilesystemDirectoryEntry = {
+    name: string;
+    path: string;
+};
+
 export type HandlersInviteSwagger = {
     claimed_at: string;
     created_at: string;
@@ -1932,6 +1943,50 @@ export type PostV1DownloadersByIdTestResponses = {
 };
 
 export type PostV1DownloadersByIdTestResponse = PostV1DownloadersByIdTestResponses[keyof PostV1DownloadersByIdTestResponses];
+
+export type GetV1FilesystemBrowseData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Directory path to browse (defaults to /)
+         */
+        path?: string;
+    };
+    url: '/v1/filesystem/browse';
+};
+
+export type GetV1FilesystemBrowseErrors = {
+    /**
+     * Bad Request
+     */
+    400: {
+        [key: string]: string;
+    };
+    /**
+     * Forbidden
+     */
+    403: {
+        [key: string]: string;
+    };
+    /**
+     * Not Found
+     */
+    404: {
+        [key: string]: string;
+    };
+};
+
+export type GetV1FilesystemBrowseError = GetV1FilesystemBrowseErrors[keyof GetV1FilesystemBrowseErrors];
+
+export type GetV1FilesystemBrowseResponses = {
+    /**
+     * OK
+     */
+    200: HandlersFilesystemBrowseResponse;
+};
+
+export type GetV1FilesystemBrowseResponse = GetV1FilesystemBrowseResponses[keyof GetV1FilesystemBrowseResponses];
 
 export type GetV1HomeData = {
     body?: never;

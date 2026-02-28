@@ -7,6 +7,7 @@ import {
 } from '@/client/@tanstack/vue-query.gen'
 import { type HandlersLibrarySwagger } from '@/client/types.gen'
 import BaseDialog from './BaseDialog.vue'
+import DirectoryBrowserDialog from './DirectoryBrowserDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,6 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { FolderOpen } from 'lucide-vue-next'
+import { useModal } from '@/composables/useModal'
 
 interface Props {
   library?: HandlersLibrarySwagger | null
@@ -26,6 +29,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
+const modal = useModal()
 
 const createLibraryMutation = useMutation(postV1LibrariesMutation())
 const updateLibraryMutation = useMutation(putV1LibrariesByIdMutation())
@@ -64,6 +68,20 @@ watch(
   },
   { immediate: true },
 )
+
+const handleBrowse = () => {
+  modal.open(DirectoryBrowserDialog, {
+    props: {
+      initialPath: libraryForm.value.root_path || '/',
+    },
+    onClose: (result) => {
+      const selectedPath = (result?.data as { selectedPath?: string })?.selectedPath
+      if (selectedPath) {
+        libraryForm.value.root_path = selectedPath
+      }
+    },
+  })
+}
 
 const handleSave = async () => {
   if (!libraryForm.value.name || !libraryForm.value.root_path) {
@@ -138,11 +156,16 @@ const isLoading = computed(
       </div>
       <div class="flex flex-col gap-2">
         <Label for="library-root-path">Root Path</Label>
-        <Input
-          id="library-root-path"
-          v-model="libraryForm.root_path"
-          placeholder="/mnt/media/Movies"
-        />
+        <div class="flex gap-2">
+          <Input
+            id="library-root-path"
+            v-model="libraryForm.root_path"
+            placeholder="/mnt/media/Movies"
+          />
+          <Button variant="outline" size="icon" class="shrink-0" @click="handleBrowse">
+            <FolderOpen class="h-4 w-4" />
+          </Button>
+        </div>
       </div>
       <div class="flex items-center justify-between">
         <Label for="library-enabled">Enabled</Label>

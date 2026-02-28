@@ -1407,6 +1407,31 @@ definitions:
     - is_active
     - username
     type: object
+  handlers.filesystemBrowseResponse:
+    properties:
+      current_path:
+        type: string
+      directories:
+        items:
+          $ref: '#/definitions/handlers.filesystemDirectoryEntry'
+        type: array
+      parent:
+        type: string
+    required:
+    - current_path
+    - directories
+    - parent
+    type: object
+  handlers.filesystemDirectoryEntry:
+    properties:
+      name:
+        type: string
+      path:
+        type: string
+    required:
+    - name
+    - path
+    type: object
   handlers.inviteSwagger:
     properties:
       claimed_at:
@@ -3516,6 +3541,41 @@ paths:
       summary: Test downloader connection with form configuration
       tags:
       - downloaders
+  /v1/filesystem/browse:
+    get:
+      parameters:
+      - description: Directory path to browse (defaults to /)
+        in: query
+        name: path
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.filesystemBrowseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Browse filesystem directories
+      tags:
+      - filesystem
   /v1/home:
     get:
       produces:

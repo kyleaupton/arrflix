@@ -29,6 +29,7 @@ type Services struct {
 	Tmdb               *TmdbService
 	UnmatchedFiles     *UnmatchedFilesService
 	Users              *UsersService
+	Filesystem         *FilesystemService
 	Version            *VersionService
 }
 
@@ -54,6 +55,7 @@ func New(r *repo.Repository, l *logger.Logger, c *config.Config, broker *sse.Bro
 		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, policyEngine),
 		DownloadJobs:       NewDownloadJobsService(r),
 		Invites:            invites,
+		Filesystem:         NewFilesystemService(),
 		Feed:               NewFeedService(r, l, tmdb),
 		Import:             NewImportService(r, l),
 		ImportTasks:        NewImportTasksService(r),
