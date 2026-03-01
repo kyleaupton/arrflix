@@ -341,7 +341,7 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 			identified = append(identified, guessitIdentified...)
 			stats.IdentifiedByGuessit = len(guessitIdentified)
 
-			// Phase 5: Create Unmatched Entries
+			// Create unmatched entries
 			for _, uf := range unmatched {
 				suggestionsJSON, _ := json.Marshal(uf.Suggestions)
 				if _, upsertErr := s.repo.UpsertUnmatchedFile(ctx, library.ID, uf.RelPath, uf.FileSize, suggestionsJSON); upsertErr != nil {
