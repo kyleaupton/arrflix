@@ -40,8 +40,9 @@ RUN S6_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo "aarch64" || echo "x86_64") 
     rm /tmp/*.tar.xz
 
 # Install guessit
+COPY guessit/requirements.txt /opt/guessit/requirements.txt
 RUN python3 -m venv /opt/guessit-venv && \
-    /opt/guessit-venv/bin/pip install --no-cache-dir guessit fastapi uvicorn
+    /opt/guessit-venv/bin/pip install --no-cache-dir -r /opt/guessit/requirements.txt
 
 # Install Prowlarr
 RUN PROWLARR_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo "linux-core-arm64" || echo "linux-core-x64") && \
