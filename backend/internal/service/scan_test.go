@@ -2,7 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
-	"github.com/kyleaupton/arrflix/internal/identity"
+	"github.com/kyleaupton/arrflix/internal/guessit"
 	"github.com/rs/zerolog"
 )
 
@@ -34,6 +38,33 @@ func newTestScanner(r scanRepo, t scanTmdb) *ScannerService {
 	}
 }
 
+func newTestScannerWithGuessit(r scanRepo, t scanTmdb, gc *guessit.Client) *ScannerService {
+	s := newTestScanner(r, t)
+	s.guessit = gc
+	return s
+}
+
+// makeSearchMulti builds a tmdb.SearchMulti via JSON roundtrip to avoid
+// dealing with the anonymous struct and embedded VoteMetrics types.
+func makeSearchMulti(t *testing.T, entries []map[string]any) tmdb.SearchMulti {
+	t.Helper()
+	payload := map[string]any{
+		"page":          1,
+		"total_pages":   1,
+		"total_results": len(entries),
+		"results":       entries,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal search multi: %v", err)
+	}
+	var result tmdb.SearchMulti
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("unmarshal search multi: %v", err)
+	}
+	return result
+}
+
 // ---------------------------------------------------------------------------
 // Fakes
 // ---------------------------------------------------------------------------
@@ -49,11 +80,16 @@ type fakeRepo struct {
 	upsertMediaFileStateFn         func(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error)
 	createMediaFileImportFn        func(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error)
 
+	listMediaFilePathsForLibraryFn     func(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
+	listUnmatchedFilePathsForLibraryFn func(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
+	upsertUnmatchedFileFn              func(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error)
+
 	mu                   sync.Mutex
 	createMediaItemCalls int
 	createMediaFileCalls int
 	upsertSeasonCalls    int
 	upsertEpisodeCalls   int
+	upsertUnmatchedCalls int
 }
 
 func (f *fakeRepo) GetLibrary(ctx context.Context, id pgtype.UUID) (dbgen.Library, error) {
@@ -131,11 +167,36 @@ func (f *fakeRepo) CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMe
 	return dbgen.MediaFileImport{}, nil
 }
 
+func (f *fakeRepo) ListMediaFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+	if f.listMediaFilePathsForLibraryFn != nil {
+		return f.listMediaFilePathsForLibraryFn(ctx, libraryID)
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+	if f.listUnmatchedFilePathsForLibraryFn != nil {
+		return f.listUnmatchedFilePathsForLibraryFn(ctx, libraryID)
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) UpsertUnmatchedFile(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error) {
+	f.mu.Lock()
+	f.upsertUnmatchedCalls++
+	f.mu.Unlock()
+	if f.upsertUnmatchedFileFn != nil {
+		return f.upsertUnmatchedFileFn(ctx, libraryID, path, fileSize, suggestedMatches)
+	}
+	return dbgen.UnmatchedFile{}, nil
+}
+
 type fakeTmdb struct {
 	findByIDFn          func(ctx context.Context, id, source string) (tmdb.FindByID, error)
 	getMovieDetailsFn   func(ctx context.Context, id int64) (tmdb.MovieDetails, error)
 	getSeriesDetailsFn  func(ctx context.Context, id int64) (tmdb.TVDetails, error)
 	getEpisodeDetailsFn func(ctx context.Context, id int64, season int64, episode int64) (tmdb.TVEpisodeDetails, error)
+	multiSearchFn       func(ctx context.Context, query string, page int) (tmdb.SearchMulti, error)
 }
 
 func (f *fakeTmdb) FindByID(ctx context.Context, id, source string) (tmdb.FindByID, error) {
@@ -164,6 +225,13 @@ func (f *fakeTmdb) GetEpisodeDetails(ctx context.Context, id int64, season int64
 		return f.getEpisodeDetailsFn(ctx, id, season, episode)
 	}
 	return tmdb.TVEpisodeDetails{}, nil
+}
+
+func (f *fakeTmdb) MultiSearch(ctx context.Context, query string, page int) (tmdb.SearchMulti, error) {
+	if f.multiSearchFn != nil {
+		return f.multiSearchFn(ctx, query, page)
+	}
+	return tmdb.SearchMulti{}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -217,8 +285,7 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 
 	t.Run("nil season returns nil", func(t *testing.T) {
 		s := newTestScanner(&fakeRepo{}, &fakeTmdb{})
-		ident := identity.Identity{TmdbID: &tmdbID}
-		got, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, ident, "/some/path")
+		got, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, tmdbID, nil, nil, "/some/path")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -234,8 +301,7 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 			},
 		}
 		s := newTestScanner(fr, &fakeTmdb{})
-		ident := identity.Identity{TmdbID: &tmdbID, Season: &seasonNum}
-		got, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, ident, "/some/path")
+		got, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, tmdbID, &seasonNum, nil, "/some/path")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -266,8 +332,7 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 			},
 		}
 		s := newTestScanner(fr, ft)
-		ident := identity.Identity{TmdbID: &tmdbID, Season: &seasonNum, Episode: &episodeNum}
-		got, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, ident, "/some/path")
+		got, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, tmdbID, &seasonNum, &episodeNum, "/some/path")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -286,8 +351,7 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 			},
 		}
 		s := newTestScanner(fr, &fakeTmdb{})
-		ident := identity.Identity{TmdbID: &tmdbID, Season: &seasonNum, Episode: &episodeNum}
-		_, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, ident, "/some/path")
+		_, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, tmdbID, &seasonNum, &episodeNum, "/some/path")
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -305,8 +369,7 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 			},
 		}
 		s := newTestScanner(fr, ft)
-		ident := identity.Identity{TmdbID: &tmdbID, Season: &seasonNum, Episode: &episodeNum}
-		_, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, ident, "/some/path")
+		_, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, tmdbID, &seasonNum, &episodeNum, "/some/path")
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -327,8 +390,7 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 			},
 		}
 		s := newTestScanner(fr, ft)
-		ident := identity.Identity{TmdbID: &tmdbID, Season: &seasonNum, Episode: &episodeNum}
-		_, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, ident, "/some/path")
+		_, err := s.ensureSeasonAndEpisode(context.Background(), mediaItemID, tmdbID, &seasonNum, &episodeNum, "/some/path")
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -359,6 +421,10 @@ func TestStartScan_ConcurrencyGuard(t *testing.T) {
 		getMediaFileByLibraryAndPathFn: func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
 			<-block
 			return dbgen.MediaFile{}, pgx.ErrNoRows
+		},
+		// loadKnownPaths will fail, so scanner falls back to per-file check (which blocks)
+		listMediaFilePathsForLibraryFn: func(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+			return nil, errors.New("block via fallback")
 		},
 	}
 
@@ -395,8 +461,9 @@ func TestExecuteScan_SkipsExistingFiles(t *testing.T) {
 	}
 
 	fr := &fakeRepo{
-		getMediaFileByLibraryAndPathFn: func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
-			return dbgen.MediaFile{}, nil // file already exists
+		// Return the file path as already known
+		listMediaFilePathsForLibraryFn: func(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+			return []string{filepath.Join("Movie {tmdb-100}", "movie.mkv")}, nil
 		},
 	}
 
@@ -454,9 +521,6 @@ func TestExecuteScan_MovieHappyPath(t *testing.T) {
 	mediaFileID := testUUID(11)
 
 	fr := &fakeRepo{
-		getMediaFileByLibraryAndPathFn: func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
-			return dbgen.MediaFile{}, pgx.ErrNoRows
-		},
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
 			return dbgen.MediaItem{}, pgx.ErrNoRows
 		},
@@ -505,6 +569,9 @@ func TestExecuteScan_MovieHappyPath(t *testing.T) {
 	if fr.createMediaFileCalls != 1 {
 		t.Fatalf("expected 1 CreateMediaFile call, got %d", fr.createMediaFileCalls)
 	}
+	if stats.IdentifiedByEmbed != 1 {
+		t.Fatalf("expected 1 identified by embed, got %d", stats.IdentifiedByEmbed)
+	}
 }
 
 func TestExecuteScan_SeriesHappyPath(t *testing.T) {
@@ -523,9 +590,6 @@ func TestExecuteScan_SeriesHappyPath(t *testing.T) {
 	mediaFileID := testUUID(13)
 
 	fr := &fakeRepo{
-		getMediaFileByLibraryAndPathFn: func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
-			return dbgen.MediaFile{}, pgx.ErrNoRows
-		},
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
 			return dbgen.MediaItem{}, pgx.ErrNoRows
 		},
@@ -601,9 +665,6 @@ func TestExecuteScan_ExistingSeriesNewEpisode(t *testing.T) {
 	mediaFileID := testUUID(13)
 
 	fr := &fakeRepo{
-		getMediaFileByLibraryAndPathFn: func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
-			return dbgen.MediaFile{}, pgx.ErrNoRows // file doesn't exist yet
-		},
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
 			return dbgen.MediaItem{ID: mediaItemID}, nil // media item already exists
 		},
@@ -640,22 +701,18 @@ func TestExecuteScan_ExistingSeriesNewEpisode(t *testing.T) {
 	if stats.FilesSeen != 1 {
 		t.Fatalf("expected 1 file seen, got %d", stats.FilesSeen)
 	}
-	// Media item already existed, so shouldn't be counted as created.
 	if stats.MediaItemsCreated != 0 {
 		t.Fatalf("expected 0 media items created, got %d", stats.MediaItemsCreated)
 	}
-	// Should still create season and episode for the new file.
 	if fr.upsertSeasonCalls != 1 {
 		t.Fatalf("expected 1 UpsertSeason call, got %d", fr.upsertSeasonCalls)
 	}
 	if fr.upsertEpisodeCalls != 1 {
 		t.Fatalf("expected 1 UpsertEpisode call, got %d", fr.upsertEpisodeCalls)
 	}
-	// CreateMediaItem should NOT have been called.
 	if fr.createMediaItemCalls != 0 {
 		t.Fatalf("expected 0 CreateMediaItem calls, got %d", fr.createMediaItemCalls)
 	}
-	// CreateMediaFile should have been called.
 	if fr.createMediaFileCalls != 1 {
 		t.Fatalf("expected 1 CreateMediaFile call, got %d", fr.createMediaFileCalls)
 	}
@@ -672,9 +729,6 @@ func TestExecuteScan_EmptyReleaseDate(t *testing.T) {
 	}
 
 	fr := &fakeRepo{
-		getMediaFileByLibraryAndPathFn: func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
-			return dbgen.MediaFile{}, pgx.ErrNoRows
-		},
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
 			return dbgen.MediaItem{}, pgx.ErrNoRows
 		},
@@ -699,11 +753,483 @@ func TestExecuteScan_EmptyReleaseDate(t *testing.T) {
 	if stats.FilesSeen != 1 {
 		t.Fatalf("expected 1 file seen, got %d", stats.FilesSeen)
 	}
-	// File should have been skipped gracefully (no media item created).
 	if stats.MediaItemsCreated != 0 {
 		t.Fatalf("expected 0 media items created, got %d", stats.MediaItemsCreated)
 	}
 	if fr.createMediaItemCalls != 0 {
 		t.Fatalf("expected 0 CreateMediaItem calls, got %d", fr.createMediaItemCalls)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests: Guessit integration
+// ---------------------------------------------------------------------------
+
+// newFakeGuessitServer creates an httptest server that mimics the guessit sidecar.
+func newFakeGuessitServer(t *testing.T, handler func(filenames []string) []guessit.ParseResult) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+		if r.URL.Path == "/parse/batch" {
+			var filenames []string
+			if err := json.NewDecoder(r.Body).Decode(&filenames); err != nil {
+				t.Errorf("decode request: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			results := handler(filenames)
+			json.NewEncoder(w).Encode(results)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+}
+
+func TestExecuteScan_GuessitMovieHappyPath(t *testing.T) {
+	dir := t.TempDir()
+	movieDir := filepath.Join(dir, "The Matrix (1999)")
+	if err := os.MkdirAll(movieDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(movieDir, "The Matrix.mkv"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mediaItemID := testUUID(10)
+	mediaFileID := testUUID(11)
+
+	fr := &fakeRepo{
+		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
+			return dbgen.MediaItem{}, pgx.ErrNoRows
+		},
+		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
+			if *tmdbID != 603 {
+				t.Errorf("expected TMDB ID 603, got %d", *tmdbID)
+			}
+			return dbgen.MediaItem{ID: mediaItemID}, nil
+		},
+		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
+			return dbgen.MediaFile{ID: mediaFileID}, nil
+		},
+	}
+
+	ft := &fakeTmdb{
+		multiSearchFn: func(ctx context.Context, query string, page int) (tmdb.SearchMulti, error) {
+			return makeSearchMulti(t, []map[string]any{
+				{"id": 603, "title": "The Matrix", "media_type": "movie", "release_date": "1999-03-31"},
+			}), nil
+		},
+		getMovieDetailsFn: func(ctx context.Context, id int64) (tmdb.MovieDetails, error) {
+			return tmdb.MovieDetails{Title: "The Matrix", ReleaseDate: "1999-03-31"}, nil
+		},
+	}
+
+	title := "The Matrix"
+	year := 1999
+	srv := newFakeGuessitServer(t, func(filenames []string) []guessit.ParseResult {
+		results := make([]guessit.ParseResult, len(filenames))
+		for i := range filenames {
+			results[i] = guessit.ParseResult{Title: &title, Year: &year}
+		}
+		return results
+	})
+	defer srv.Close()
+
+	gc := guessit.NewClient(srv.URL)
+	s := newTestScannerWithGuessit(fr, ft, gc)
+	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+
+	stats, err := s.executeScan(context.Background(), library, "scan-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.IdentifiedByGuessit != 1 {
+		t.Fatalf("expected 1 identified by guessit, got %d", stats.IdentifiedByGuessit)
+	}
+	if stats.MediaItemsCreated != 1 {
+		t.Fatalf("expected 1 media item created, got %d", stats.MediaItemsCreated)
+	}
+	if fr.createMediaFileCalls != 1 {
+		t.Fatalf("expected 1 CreateMediaFile call, got %d", fr.createMediaFileCalls)
+	}
+}
+
+func TestExecuteScan_GuessitSeriesDedup(t *testing.T) {
+	dir := t.TempDir()
+	seriesDir := filepath.Join(dir, "South Park", "Season 01")
+	if err := os.MkdirAll(seriesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 5; i++ {
+		fname := filepath.Join(seriesDir, fmt.Sprintf("South Park S01E%02d.mkv", i))
+		if err := os.WriteFile(fname, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mediaItemID := testUUID(10)
+	seasonID := testUUID(11)
+	mediaFileID := testUUID(13)
+
+	fr := &fakeRepo{
+		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
+			if tmdbID == 2190 {
+				return dbgen.MediaItem{ID: mediaItemID}, nil
+			}
+			return dbgen.MediaItem{}, pgx.ErrNoRows
+		},
+		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
+			return dbgen.MediaItem{ID: mediaItemID}, nil
+		},
+		upsertSeasonFn: func(ctx context.Context, mid pgtype.UUID, sn int32, ad pgtype.Date) (dbgen.MediaSeason, error) {
+			return dbgen.MediaSeason{ID: seasonID}, nil
+		},
+		upsertEpisodeFn: func(ctx context.Context, sid pgtype.UUID, en int32, title *string, ad pgtype.Date, tid *int64, tvid *int64) (dbgen.MediaEpisode, error) {
+			return dbgen.MediaEpisode{ID: testUUID(byte(20 + en))}, nil
+		},
+		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, epID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
+			return dbgen.MediaFile{ID: mediaFileID}, nil
+		},
+	}
+
+	searchCalls := 0
+	ft := &fakeTmdb{
+		multiSearchFn: func(ctx context.Context, query string, page int) (tmdb.SearchMulti, error) {
+			searchCalls++
+			return makeSearchMulti(t, []map[string]any{
+				{"id": 2190, "name": "South Park", "media_type": "tv", "first_air_date": "1997-08-13"},
+			}), nil
+		},
+		getSeriesDetailsFn: func(ctx context.Context, id int64) (tmdb.TVDetails, error) {
+			return tmdb.TVDetails{Name: "South Park", FirstAirDate: "1997-08-13"}, nil
+		},
+		getEpisodeDetailsFn: func(ctx context.Context, id int64, season int64, episode int64) (tmdb.TVEpisodeDetails, error) {
+			return tmdb.TVEpisodeDetails{Name: fmt.Sprintf("Episode %d", episode)}, nil
+		},
+	}
+
+	title := "South Park"
+	srv := newFakeGuessitServer(t, func(filenames []string) []guessit.ParseResult {
+		results := make([]guessit.ParseResult, len(filenames))
+		for i, f := range filenames {
+			s, e := parseTestSE(f)
+			results[i] = guessit.ParseResult{Title: &title, Season: &s, Episode: &e}
+		}
+		return results
+	})
+	defer srv.Close()
+
+	gc := guessit.NewClient(srv.URL)
+	s := newTestScannerWithGuessit(fr, ft, gc)
+	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "series", Name: "test"}
+
+	stats, err := s.executeScan(context.Background(), library, "scan-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.IdentifiedByGuessit != 5 {
+		t.Fatalf("expected 5 identified by guessit, got %d", stats.IdentifiedByGuessit)
+	}
+	// All 5 episodes should share a single TMDB search
+	if searchCalls != 1 {
+		t.Fatalf("expected 1 TMDB search call (dedup), got %d", searchCalls)
+	}
+	if fr.createMediaFileCalls != 5 {
+		t.Fatalf("expected 5 CreateMediaFile calls, got %d", fr.createMediaFileCalls)
+	}
+}
+
+func TestExecuteScan_GuessitAmbiguous(t *testing.T) {
+	dir := t.TempDir()
+	movieDir := filepath.Join(dir, "Avatar")
+	if err := os.MkdirAll(movieDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(movieDir, "Avatar.mkv"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fr := &fakeRepo{}
+
+	ft := &fakeTmdb{
+		multiSearchFn: func(ctx context.Context, query string, page int) (tmdb.SearchMulti, error) {
+			return makeSearchMulti(t, []map[string]any{
+				{"id": 19995, "title": "Avatar", "media_type": "movie", "release_date": "2009-12-18"},
+				{"id": 76600, "title": "Avatar: The Way of Water", "media_type": "movie", "release_date": "2022-12-16"},
+			}), nil
+		},
+	}
+
+	title := "Avatar"
+	srv := newFakeGuessitServer(t, func(filenames []string) []guessit.ParseResult {
+		results := make([]guessit.ParseResult, len(filenames))
+		for i := range filenames {
+			results[i] = guessit.ParseResult{Title: &title}
+		}
+		return results
+	})
+	defer srv.Close()
+
+	gc := guessit.NewClient(srv.URL)
+	s := newTestScannerWithGuessit(fr, ft, gc)
+	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+
+	stats, err := s.executeScan(context.Background(), library, "scan-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.UnmatchedCount != 1 {
+		t.Fatalf("expected 1 unmatched, got %d", stats.UnmatchedCount)
+	}
+	if stats.IdentifiedByGuessit != 0 {
+		t.Fatalf("expected 0 identified by guessit, got %d", stats.IdentifiedByGuessit)
+	}
+	if fr.upsertUnmatchedCalls != 1 {
+		t.Fatalf("expected 1 UpsertUnmatchedFile call, got %d", fr.upsertUnmatchedCalls)
+	}
+}
+
+func TestExecuteScan_GuessitDown(t *testing.T) {
+	dir := t.TempDir()
+	movieDir := filepath.Join(dir, "Some Movie")
+	if err := os.MkdirAll(movieDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(movieDir, "movie.mkv"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fr := &fakeRepo{}
+
+	gc := guessit.NewClient("http://127.0.0.1:0")
+	s := newTestScannerWithGuessit(fr, &fakeTmdb{}, gc)
+	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+
+	stats, err := s.executeScan(context.Background(), library, "scan-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.SkippedGuessitDown != 1 {
+		t.Fatalf("expected 1 skipped guessit down, got %d", stats.SkippedGuessitDown)
+	}
+	if stats.UnmatchedCount != 0 {
+		t.Fatalf("expected 0 unmatched, got %d", stats.UnmatchedCount)
+	}
+	if fr.upsertUnmatchedCalls != 0 {
+		t.Fatalf("expected 0 UpsertUnmatchedFile calls, got %d", fr.upsertUnmatchedCalls)
+	}
+}
+
+func TestExecuteScan_Mixed(t *testing.T) {
+	dir := t.TempDir()
+
+	// File with embedded ID
+	embedDir := filepath.Join(dir, "Movie A {tmdb-100}")
+	if err := os.MkdirAll(embedDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(embedDir, "movie.mkv"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// File without embedded ID (needs guessit)
+	noIdDir := filepath.Join(dir, "Movie B (2020)")
+	if err := os.MkdirAll(noIdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(noIdDir, "Movie B.mkv"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mediaItemID := testUUID(10)
+	mediaFileID := testUUID(11)
+
+	fr := &fakeRepo{
+		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
+			return dbgen.MediaItem{}, pgx.ErrNoRows
+		},
+		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
+			return dbgen.MediaItem{ID: mediaItemID}, nil
+		},
+		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
+			return dbgen.MediaFile{ID: mediaFileID}, nil
+		},
+	}
+
+	ft := &fakeTmdb{
+		getMovieDetailsFn: func(ctx context.Context, id int64) (tmdb.MovieDetails, error) {
+			if id == 100 {
+				return tmdb.MovieDetails{Title: "Movie A", ReleaseDate: "2020-01-01"}, nil
+			}
+			return tmdb.MovieDetails{Title: "Movie B", ReleaseDate: "2020-06-15"}, nil
+		},
+		multiSearchFn: func(ctx context.Context, query string, page int) (tmdb.SearchMulti, error) {
+			return makeSearchMulti(t, []map[string]any{
+				{"id": 200, "title": "Movie B", "media_type": "movie", "release_date": "2020-06-15"},
+			}), nil
+		},
+	}
+
+	title := "Movie B"
+	year := 2020
+	srv := newFakeGuessitServer(t, func(filenames []string) []guessit.ParseResult {
+		results := make([]guessit.ParseResult, len(filenames))
+		for i := range filenames {
+			results[i] = guessit.ParseResult{Title: &title, Year: &year}
+		}
+		return results
+	})
+	defer srv.Close()
+
+	gc := guessit.NewClient(srv.URL)
+	s := newTestScannerWithGuessit(fr, ft, gc)
+	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+
+	stats, err := s.executeScan(context.Background(), library, "scan-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.FilesSeen != 2 {
+		t.Fatalf("expected 2 files seen, got %d", stats.FilesSeen)
+	}
+	if stats.IdentifiedByEmbed != 1 {
+		t.Fatalf("expected 1 identified by embed, got %d", stats.IdentifiedByEmbed)
+	}
+	if stats.IdentifiedByGuessit != 1 {
+		t.Fatalf("expected 1 identified by guessit, got %d", stats.IdentifiedByGuessit)
+	}
+	if stats.MediaItemsCreated != 2 {
+		t.Fatalf("expected 2 media items created, got %d", stats.MediaItemsCreated)
+	}
+	if fr.createMediaFileCalls != 2 {
+		t.Fatalf("expected 2 CreateMediaFile calls, got %d", fr.createMediaFileCalls)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests: helper functions
+// ---------------------------------------------------------------------------
+
+func TestGuessitInput(t *testing.T) {
+	tests := []struct {
+		libType string
+		relPath string
+		want    string
+	}{
+		{"series", filepath.Join("South Park", "Season 01", "South Park S01E01.mkv"), "South Park S01E01.mkv"},
+		{"movie", filepath.Join("The Matrix (1999)", "The Matrix.mkv"), "The Matrix (1999)"},
+		{"movie", "movie.mkv", "movie.mkv"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.relPath, func(t *testing.T) {
+			got := guessitInput(tt.libType, tt.relPath)
+			if got != tt.want {
+				t.Errorf("guessitInput(%q, %q) = %q, want %q", tt.libType, tt.relPath, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildSearchKey(t *testing.T) {
+	title := "South Park"
+	year := 1999
+	movieTitle := "The Matrix"
+
+	t.Run("series groups by top dir", func(t *testing.T) {
+		r1 := guessit.ParseResult{Title: &title, Season: intPtr(1), Episode: intPtr(1)}
+		r2 := guessit.ParseResult{Title: &title, Season: intPtr(1), Episode: intPtr(2)}
+		k1 := buildSearchKey("series", filepath.Join("South Park", "Season 01", "S01E01.mkv"), r1)
+		k2 := buildSearchKey("series", filepath.Join("South Park", "Season 01", "S01E02.mkv"), r2)
+		if k1.String() != k2.String() {
+			t.Errorf("expected same key, got %q and %q", k1.String(), k2.String())
+		}
+	})
+
+	t.Run("movie groups by title+year", func(t *testing.T) {
+		r := guessit.ParseResult{Title: &movieTitle, Year: &year}
+		k := buildSearchKey("movie", filepath.Join("The Matrix (1999)", "The Matrix.mkv"), r)
+		if k.Query != "The Matrix" {
+			t.Errorf("expected query 'The Matrix', got %q", k.Query)
+		}
+		if k.Year == nil || *k.Year != 1999 {
+			t.Errorf("expected year 1999, got %v", k.Year)
+		}
+	})
+}
+
+func TestEvaluateSearchResults(t *testing.T) {
+	t.Run("single match auto-matches", func(t *testing.T) {
+		sr := makeSearchMulti(t, []map[string]any{
+			{"id": 603, "title": "The Matrix", "media_type": "movie", "release_date": "1999-03-31"},
+		})
+		year := 1999
+		key := tmdbSearchKey{Query: "The Matrix", Year: &year, Type: "movie"}
+		match, suggestions := evaluateSearchResults("movie", key, sr)
+		if match == nil {
+			t.Fatal("expected auto-match")
+		}
+		if match.tmdbID != 603 {
+			t.Errorf("expected tmdbID 603, got %d", match.tmdbID)
+		}
+		if len(suggestions) != 0 {
+			t.Errorf("expected 0 suggestions, got %d", len(suggestions))
+		}
+	})
+
+	t.Run("multiple results returns suggestions", func(t *testing.T) {
+		sr := makeSearchMulti(t, []map[string]any{
+			{"id": 19995, "title": "Avatar", "media_type": "movie", "release_date": "2009-12-18"},
+			{"id": 76600, "title": "Avatar 2", "media_type": "movie", "release_date": "2022-12-16"},
+		})
+		key := tmdbSearchKey{Query: "Avatar", Type: "movie"}
+		match, suggestions := evaluateSearchResults("movie", key, sr)
+		if match != nil {
+			t.Fatal("expected no auto-match for ambiguous results")
+		}
+		if len(suggestions) != 2 {
+			t.Fatalf("expected 2 suggestions, got %d", len(suggestions))
+		}
+	})
+
+	t.Run("filters by media type", func(t *testing.T) {
+		sr := makeSearchMulti(t, []map[string]any{
+			{"id": 123, "name": "Test Show", "media_type": "tv", "first_air_date": "2020-01-01"},
+			{"id": 456, "name": "Test Person", "media_type": "person"},
+		})
+		key := tmdbSearchKey{Query: "Test Show", Type: "series"}
+		match, _ := evaluateSearchResults("series", key, sr)
+		if match == nil {
+			t.Fatal("expected auto-match (only 1 tv result after filtering)")
+		}
+		if match.tmdbID != 123 {
+			t.Errorf("expected tmdbID 123, got %d", match.tmdbID)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Test utilities
+// ---------------------------------------------------------------------------
+
+func intPtr(n int) *int { return &n }
+
+// parseTestSE extracts S##E## from a filename for test fixtures
+func parseTestSE(filename string) (int, int) {
+	for i := 0; i < len(filename)-5; i++ {
+		if (filename[i] == 'S' || filename[i] == 's') &&
+			filename[i+1] >= '0' && filename[i+1] <= '9' &&
+			filename[i+2] >= '0' && filename[i+2] <= '9' &&
+			(filename[i+3] == 'E' || filename[i+3] == 'e') &&
+			filename[i+4] >= '0' && filename[i+4] <= '9' &&
+			filename[i+5] >= '0' && filename[i+5] <= '9' {
+			s := int(filename[i+1]-'0')*10 + int(filename[i+2]-'0')
+			e := int(filename[i+4]-'0')*10 + int(filename[i+5]-'0')
+			return s, e
+		}
+	}
+	return 0, 0
 }

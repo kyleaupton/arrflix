@@ -244,6 +244,14 @@ where success = false
 order by attempted_at desc
 limit sqlc.arg(limit_val);
 
+-- Bulk path loading for scanner
+
+-- name: ListMediaFilePathsForLibrary :many
+SELECT path FROM media_file WHERE library_id = $1;
+
+-- name: ListUnmatchedFilePathsForLibrary :many
+SELECT path FROM unmatched_file WHERE library_id = $1 AND resolved_at IS NULL;
+
 -- Unmatched File queries
 
 -- name: CreateUnmatchedFile :one

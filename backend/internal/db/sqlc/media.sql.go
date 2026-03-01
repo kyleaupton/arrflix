@@ -844,6 +844,32 @@ func (q *Queries) ListImportsForMediaFile(ctx context.Context, mediaFileID pgtyp
 	return items, nil
 }
 
+const listMediaFilePathsForLibrary = `-- name: ListMediaFilePathsForLibrary :many
+
+SELECT path FROM media_file WHERE library_id = $1
+`
+
+// Bulk path loading for scanner
+func (q *Queries) ListMediaFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listMediaFilePathsForLibrary, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		items = append(items, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMediaFilesForItem = `-- name: ListMediaFilesForItem :many
 select
   mf.id,
@@ -1122,6 +1148,30 @@ func (q *Queries) ListSeasonsForMedia(ctx context.Context, mediaItemID pgtype.UU
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnmatchedFilePathsForLibrary = `-- name: ListUnmatchedFilePathsForLibrary :many
+SELECT path FROM unmatched_file WHERE library_id = $1 AND resolved_at IS NULL
+`
+
+func (q *Queries) ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listUnmatchedFilePathsForLibrary, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		items = append(items, path)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

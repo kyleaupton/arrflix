@@ -16,6 +16,9 @@ RUN apt-get update && \
         nginx \
         ca-certificates \
         mediainfo \
+        python3 \
+        python3-pip \
+        python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go
@@ -42,6 +45,11 @@ RUN S6_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo "aarch64" || echo "x86_64") 
     curl -fsSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-${S6_ARCH}.tar.xz -o /tmp/s6-overlay-arch.tar.xz && \
     tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz && \
     rm /tmp/s6-overlay-arch.tar.xz
+
+# Install guessit
+COPY guessit/ /opt/guessit/
+RUN python3 -m venv /opt/guessit-venv && \
+    /opt/guessit-venv/bin/pip install --no-cache-dir -r /opt/guessit/requirements.txt
 
 # Install Prowlarr
 ARG PROWLARR_VERSION=2.3.0.5236

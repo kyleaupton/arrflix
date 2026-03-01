@@ -1,0 +1,1 @@
+bash /etc/s6-overlay/scripts/wait-for-guessit.sh

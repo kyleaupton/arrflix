@@ -85,6 +85,8 @@ GPL-3.0
 
 ## Third-Party Software
 
-This project may deploy third-party services via Docker, including Prowlarr,
-which is licensed under GPL-3.0. Each service is distributed under its own
-license.
+This project bundles the following third-party software, each distributed under
+its own license:
+
+- [Prowlarr](https://github.com/Prowlarr/Prowlarr) — GPL-3.0
+- [guessit](https://github.com/guessit-io/guessit) — LGPL-3.0
