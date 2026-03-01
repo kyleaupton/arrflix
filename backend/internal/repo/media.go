@@ -50,6 +50,10 @@ type MediaRepo interface {
 	GetEpisodeByNumber(ctx context.Context, seasonID pgtype.UUID, episodeNumber int32) (dbgen.MediaEpisode, error)
 	UpsertEpisode(ctx context.Context, seasonID pgtype.UUID, episodeNumber int32, title *string, airDate pgtype.Date, tmdbID *int64, tvdbID *int64) (dbgen.MediaEpisode, error)
 
+	// File path loading for scanner
+	ListMediaFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
+	ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
+
 	// Files (removed season_id and status)
 	GetMediaFile(ctx context.Context, id pgtype.UUID) (dbgen.MediaFile, error)
 	GetMediaFileByLibraryAndPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error)
@@ -241,6 +245,14 @@ func (r *Repository) ListEpisodeAvailabilityForSeries(ctx context.Context, media
 
 func (r *Repository) DeleteMediaFile(ctx context.Context, id pgtype.UUID) error {
 	return r.Q.DeleteMediaFile(ctx, id)
+}
+
+func (r *Repository) ListMediaFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+	return r.Q.ListMediaFilePathsForLibrary(ctx, libraryID)
+}
+
+func (r *Repository) ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+	return r.Q.ListUnmatchedFilePathsForLibrary(ctx, libraryID)
 }
 
 // CheckMediaItemsInLibrary returns a map of tmdbID -> true for items that exist in library

@@ -2,6 +2,7 @@ package service
 
 import (
 	"github.com/kyleaupton/arrflix/internal/config"
+	"github.com/kyleaupton/arrflix/internal/guessit"
 	prowlarradapter "github.com/kyleaupton/arrflix/internal/indexer/prowlarr"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/policy"
@@ -64,7 +65,7 @@ func New(r *repo.Repository, l *logger.Logger, c *config.Config, broker *sse.Bro
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
 		Policies:           policies,
-		Scanner:            NewScannerService(r, l, tmdb, broker),
+		Scanner:            NewScannerService(r, l, tmdb, broker, guessit.NewClient("")),
 		Settings:           settings,
 		Setup:              NewSetupService(r, users),
 		Tmdb:               tmdb,

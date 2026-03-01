@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/kyleaupton/arrflix/internal/guessit"
 	"github.com/kyleaupton/arrflix/internal/identity"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/repo"
@@ -36,6 +38,9 @@ type scanRepo interface {
 	CreateMediaFile(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error)
 	UpsertMediaFileState(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error)
 	CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error)
+	ListMediaFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
+	ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
+	UpsertUnmatchedFile(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error)
 }
 
 // scanTmdb is the subset of TmdbService used by the scanner.
@@ -44,6 +49,7 @@ type scanTmdb interface {
 	GetMovieDetails(ctx context.Context, id int64) (tmdb.MovieDetails, error)
 	GetSeriesDetails(ctx context.Context, id int64) (tmdb.TVDetails, error)
 	GetEpisodeDetails(ctx context.Context, id int64, season int64, episode int64) (tmdb.TVEpisodeDetails, error)
+	MultiSearch(ctx context.Context, query string, page int) (tmdb.SearchMulti, error)
 }
 
 type ScannerService struct {
@@ -51,12 +57,13 @@ type ScannerService struct {
 	logger  *logger.Logger
 	tmdb    scanTmdb
 	broker  *sse.Broker
+	guessit *guessit.Client
 	ctx     context.Context // background context for goroutines; cancelled on shutdown
 	running sync.Map        // libraryID string -> scanID string
 }
 
-func NewScannerService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, broker *sse.Broker) *ScannerService {
-	return &ScannerService{repo: r, logger: l, tmdb: tmdb, broker: broker, ctx: context.Background()}
+func NewScannerService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, broker *sse.Broker, gc *guessit.Client) *ScannerService {
+	return &ScannerService{repo: r, logger: l, tmdb: tmdb, broker: broker, guessit: gc, ctx: context.Background()}
 }
 
 // SetContext sets the background context used by scan goroutines.
@@ -66,9 +73,48 @@ func (s *ScannerService) SetContext(ctx context.Context) {
 }
 
 type scanStats struct {
-	FilesSeen         int `json:"filesSeen"`
-	MediaItemsCreated int `json:"mediaItemsCreated"`
-	Duration          int `json:"duration"`
+	FilesSeen           int `json:"filesSeen"`
+	FilesSkipped        int `json:"filesSkipped"`
+	IdentifiedByEmbed   int `json:"identifiedByEmbed"`
+	IdentifiedByGuessit int `json:"identifiedByGuessit"`
+	MediaItemsCreated   int `json:"mediaItemsCreated"`
+	UnmatchedCount      int `json:"unmatchedCount"`
+	SkippedGuessitDown  int `json:"skippedGuessitDown"`
+	Duration            int `json:"duration"`
+}
+
+// Internal pipeline types
+
+type collectedFile struct {
+	RelPath  string
+	AbsPath  string
+	FileSize *int64
+}
+
+type identifiedFile struct {
+	collectedFile
+	TmdbID  int64
+	Season  *int32
+	Episode *int32
+}
+
+type unmatchedFileEntry struct {
+	collectedFile
+	Suggestions []SuggestedMatch
+}
+
+// tmdbSearchKey is used to deduplicate TMDB searches for files that likely belong to the same title.
+type tmdbSearchKey struct {
+	Query string
+	Year  *int
+	Type  string // "movie" or "series"
+}
+
+func (k tmdbSearchKey) String() string {
+	if k.Year != nil {
+		return fmt.Sprintf("%s|%d|%s", k.Query, *k.Year, k.Type)
+	}
+	return fmt.Sprintf("%s||%s", k.Query, k.Type)
 }
 
 // StartScan kicks off an async library scan. It returns the scan ID immediately.
@@ -109,9 +155,12 @@ func (s *ScannerService) StartScan(ctx context.Context, libraryID pgtype.UUID) (
 		})
 
 		s.publishEvent("scan_completed", scanID, libKey, map[string]any{
-			"filesSeen":         stats.FilesSeen,
-			"mediaItemsCreated": stats.MediaItemsCreated,
-			"duration":          stats.Duration,
+			"filesSeen":           stats.FilesSeen,
+			"identifiedByEmbed":   stats.IdentifiedByEmbed,
+			"identifiedByGuessit": stats.IdentifiedByGuessit,
+			"mediaItemsCreated":   stats.MediaItemsCreated,
+			"unmatchedCount":      stats.UnmatchedCount,
+			"duration":            stats.Duration,
 		})
 	}()
 
@@ -139,28 +188,28 @@ func (s *ScannerService) publishEvent(eventType, scanID, libraryID string, extra
 
 // ensureSeasonAndEpisode upserts the season and episode for a series media file.
 // Returns the episode ID if one was created, or nil for movies / missing season info.
-func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID pgtype.UUID, ident identity.Identity, path string) (*pgtype.UUID, error) {
-	if ident.Season == nil {
+func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID pgtype.UUID, tmdbID int64, season, episode *int32, path string) (*pgtype.UUID, error) {
+	if season == nil {
 		return nil, nil
 	}
 
-	seasonRow, err := s.repo.UpsertSeason(ctx, mediaItemID, *ident.Season, pgtype.Date{})
+	seasonRow, err := s.repo.UpsertSeason(ctx, mediaItemID, *season, pgtype.Date{})
 	if err != nil {
 		s.logger.Error().Err(err).Str("path", path).Msg("Error upserting season")
 		return nil, err
 	}
 
-	if ident.Episode == nil {
+	if episode == nil {
 		return nil, nil
 	}
 
-	episode, err := s.tmdb.GetEpisodeDetails(ctx, *ident.TmdbID, int64(*ident.Season), int64(*ident.Episode))
+	ep, err := s.tmdb.GetEpisodeDetails(ctx, tmdbID, int64(*season), int64(*episode))
 	if err != nil {
 		s.logger.Error().Err(err).Str("path", path).Msg("Error getting episode details from TMDB")
 		return nil, err
 	}
 
-	episodeRow, err := s.repo.UpsertEpisode(ctx, seasonRow.ID, *ident.Episode, &episode.Name, pgtype.Date{}, nil, nil)
+	episodeRow, err := s.repo.UpsertEpisode(ctx, seasonRow.ID, *episode, &ep.Name, pgtype.Date{}, nil, nil)
 	if err != nil {
 		s.logger.Error().Err(err).Str("path", path).Msg("Error upserting episode")
 		return nil, err
@@ -169,6 +218,10 @@ func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID
 	return &episodeRow.ID, nil
 }
 
+// ---------------------------------------------------------------------------
+// Pipeline: executeScan
+// ---------------------------------------------------------------------------
+
 func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library, scanID string) (scanStats, error) {
 	stats := scanStats{}
 	start := time.Now()
@@ -176,26 +229,28 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 
 	s.logger.Info().Str("library_name", library.Name).Str("library_path", library.RootPath).Msg("Starting Scan")
 
-	err := filepath.WalkDir(library.RootPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err // propagate permission/IO errors
-		}
+	// Phase 1: Walk & Collect
+	knownPaths, err := s.loadKnownPaths(ctx, library.ID)
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("Failed to bulk-load known paths, falling back to per-file checks")
+		knownPaths = nil // will fall back to per-file DB lookups
+	}
 
-		// Stop walking if the context has been cancelled.
+	var collected []collectedFile
+
+	err = filepath.WalkDir(library.RootPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-
 		if d.IsDir() || !isMediaFile(path) {
-			s.logger.Debug().Str("path", path).Msg("Skipping Directory or Non-Media File")
 			return nil
 		}
 
-		s.logger.Debug().Str("path", path).Msg("Processing Media File")
-
 		stats.FilesSeen++
 
-		// Publish progress every 50 files
 		if stats.FilesSeen%50 == 0 {
 			s.publishEvent("scan_progress", scanID, libKey, map[string]any{
 				"filesSeen":         stats.FilesSeen,
@@ -209,210 +264,528 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 			return nil
 		}
 
-		// see if path exists in media_file
-		// if it does, skip
-		_, err = s.repo.GetMediaFileByLibraryAndPath(ctx, library.ID, relPath)
-		if err != nil && err != pgx.ErrNoRows {
-			return err
-		}
-		if err == nil {
-			s.logger.Debug().Str("path", path).Msg("Media file already exists")
-			return nil
-		}
-
-		// attempt to get identification
-		ident, err := identity.Resolve(library, path)
-		if err != nil {
-			s.logger.Error().Str("path", path).Err(err).Msg("Error resolving identity")
-			return nil
-		}
-
-		if ident.TmdbID == nil {
-			// If we got an identity, but no tmdb id, we'll need to convert to one.
-			// This is a best effort to get a tmdb id. If we don't get one, we'll skip the file.
-			var id string
-			var provider string
-
-			if ident.TvdbID != nil {
-				id = strconv.FormatInt(*ident.TvdbID, 10)
-				provider = "tvdb_id"
-			} else if ident.ImdbID != nil {
-				id = *ident.ImdbID
-				provider = "imdb_id"
-			}
-
-			s.logger.Debug().Str("path", path).Str("provider", provider).Str("id", id).Msg("Identity has no tmdb id, converting to tmdb id")
-
-			// This is like a general "search for this external id" type of thing.
-			// It will return a list of results categorized by the type of media it is.
-			// For now, we'll just grab the first item from the right category and use that.
-			// TODO: We should probably do something more intelligent here.
-			res, err := s.tmdb.FindByID(ctx, id, provider)
-			if err != nil {
-				s.logger.Error().Str("path", path).Err(err).Msg("Error getting find by id")
+		// Dedup against known paths
+		if knownPaths != nil {
+			if _, exists := knownPaths[relPath]; exists {
+				stats.FilesSkipped++
 				return nil
 			}
-
-			var tmdbId *int64
-			switch library.Type {
-			case "movie":
-				if len(res.MovieResults) == 0 {
-					s.logger.Error().Str("path", path).Msg("No movie results found")
-					return nil
-				}
-
-				tmdbId = &res.MovieResults[0].ID
-			case "series":
-				if len(res.TvResults) == 0 {
-					s.logger.Error().Str("path", path).Msg("No series results found")
-					return nil
-				}
-
-				tmdbId = &res.TvResults[0].ID
-			}
-
-			ident.TmdbID = tmdbId
-		}
-
-		if ident.TmdbID == nil {
-			// We can't do anything without a tmdb id, so we'll skip the file.
-			// TODO: keep track of files that we couldn't do anything with so we can alert the user.
-			s.logger.Error().Str("path", path).Msg("No tmdb id found")
-			return nil
-		}
-
-		// See if the tmdb id exists within media_item, scoped to the library type
-		// to avoid collisions between movies and series sharing the same TMDB ID.
-		mediaItem, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, *ident.TmdbID, library.Type)
-		if err != nil && err != pgx.ErrNoRows {
-			s.logger.Error().Str("path", path).Err(err).Msg("Error getting media item by tmdb id")
-			return err
-		}
-
-		var mediaItemId pgtype.UUID
-
-		if err == pgx.ErrNoRows {
-			// If we get here then mediaItem doesn't exists, so we need to make it.
-			s.logger.Debug().Str("path", path).Msg("Media item not found, grabbing things")
-
-			var title string
-			var year int32
-
-			switch library.Type {
-			case "movie":
-				movie, err := s.tmdb.GetMovieDetails(ctx, *ident.TmdbID)
-				if err != nil {
-					s.logger.Error().Str("path", path).Err(err).Msg("Error getting movie details")
-					return nil
-				}
-
-				title = movie.Title
-
-				if movie.ReleaseDate == "" {
-					s.logger.Error().Str("path", path).Msg("Movie has empty release date")
-					return nil
-				}
-
-				yearStr := strings.Split(movie.ReleaseDate, "-")[0]
-				year64, err := strconv.ParseInt(yearStr, 10, 32)
-				if err != nil {
-					s.logger.Error().Str("path", path).Err(err).Msg("Error parsing movie release year")
-					return nil
-				}
-
-				year = int32(year64)
-			case "series":
-				tv, err := s.tmdb.GetSeriesDetails(ctx, *ident.TmdbID)
-				if err != nil {
-					s.logger.Error().Str("path", path).Err(err).Msg("Error getting series details")
-					return nil
-				}
-
-				title = tv.Name
-
-				if tv.FirstAirDate == "" {
-					s.logger.Error().Str("path", path).Msg("Series has empty first air date")
-					return nil
-				}
-
-				yearStr := strings.Split(tv.FirstAirDate, "-")[0]
-				year64, err := strconv.ParseInt(yearStr, 10, 32)
-				if err != nil {
-					s.logger.Error().Str("path", path).Err(err).Msg("Error parsing series first air date year")
-					return nil
-				}
-
-				year = int32(year64)
-			}
-
-			s.logger.Debug().Str("title", title).Int32("year", year).Int64("tmdb_id", *ident.TmdbID).Msg("Creating media_item")
-
-			// create media_item if it doesn't exist
-			createdMediaItem, err := s.repo.CreateMediaItem(
-				ctx,
-				library.Type,
-				title,
-				&year,
-				ident.TmdbID,
-			)
-			if err != nil {
-				s.logger.Error().Str("path", path).Err(err).Msg("Error creating media_item")
-				return nil
-			}
-
-			s.logger.Debug().Str("path", path).Str("media_item_id", createdMediaItem.ID.String()).Msg("Media item created")
-			mediaItemId = createdMediaItem.ID
-			stats.MediaItemsCreated++
 		} else {
-			mediaItemId = mediaItem.ID
+			// Fallback: per-file DB check
+			_, dbErr := s.repo.GetMediaFileByLibraryAndPath(ctx, library.ID, relPath)
+			if dbErr == nil {
+				stats.FilesSkipped++
+				return nil
+			}
+			if dbErr != pgx.ErrNoRows {
+				return dbErr
+			}
 		}
 
-		// Ensure season/episode records for series files.
-		episodeId, err := s.ensureSeasonAndEpisode(ctx, mediaItemId, ident, path)
-		if err != nil {
-			return nil // skip file, continue walking
-		}
-
-		// create media_file (removed seasonId - derived from episode)
-		mf, err := s.repo.CreateMediaFile(ctx, library.ID, mediaItemId, episodeId, relPath)
-		if err != nil {
-			s.logger.Error().Err(err).Str("path", relPath).Msg("Failed to create media file")
-			return nil
-		}
-
-		// Create file state for the new file
-		info, _ := d.Info()
 		var fileSize *int64
-		if info != nil {
+		if info, infoErr := d.Info(); infoErr == nil && info != nil {
 			size := info.Size()
 			fileSize = &size
 		}
-		if _, err := s.repo.UpsertMediaFileState(ctx, mf.ID, true, fileSize); err != nil {
-			s.logger.Warn().Err(err).Msg("Failed to create media file state")
-		}
 
-		// Record import history (method: scan)
-		if _, err := s.repo.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
-			MediaFileID: mf.ID,
-			Method:      "scan",
-			DestPath:    path,
-			Success:     true,
-		}); err != nil {
-			s.logger.Warn().Err(err).Msg("Failed to record import history")
-		}
+		collected = append(collected, collectedFile{
+			RelPath:  relPath,
+			AbsPath:  path,
+			FileSize: fileSize,
+		})
 
 		return nil
 	})
-
 	if err != nil {
-		s.logger.Error().Err(err).Msg("Error walking directory")
 		return scanStats{}, err
+	}
+
+	s.logger.Info().Int("collected", len(collected)).Int("seen", stats.FilesSeen).Msg("Phase 1 complete: Walk & Collect")
+
+	// Phase 2: Embedded ID Resolution
+	var identified []identifiedFile
+	var needsParsing []collectedFile
+
+	for _, f := range collected {
+		ident, resolveErr := identity.Resolve(library, f.AbsPath)
+		if resolveErr != nil {
+			needsParsing = append(needsParsing, f)
+			continue
+		}
+
+		tmdbID, convertErr := s.resolveTmdbID(ctx, library, ident)
+		if convertErr != nil {
+			s.logger.Debug().Err(convertErr).Str("path", f.RelPath).Msg("Could not resolve TMDB ID from embedded identity")
+			needsParsing = append(needsParsing, f)
+			continue
+		}
+
+		identified = append(identified, identifiedFile{
+			collectedFile: f,
+			TmdbID:        tmdbID,
+			Season:        ident.Season,
+			Episode:       ident.Episode,
+		})
+		stats.IdentifiedByEmbed++
+	}
+
+	s.logger.Info().Int("identified", len(identified)).Int("needsParsing", len(needsParsing)).Msg("Phase 2 complete: Embedded ID Resolution")
+
+	// Phase 3: Guessit + TMDB Search
+	if len(needsParsing) > 0 {
+		guessitIdentified, unmatched, guessitErr := s.processWithGuessit(ctx, library, needsParsing)
+		if guessitErr != nil {
+			s.logger.Warn().Err(guessitErr).Msg("Guessit processing failed")
+			stats.SkippedGuessitDown = len(needsParsing)
+		} else {
+			identified = append(identified, guessitIdentified...)
+			stats.IdentifiedByGuessit = len(guessitIdentified)
+
+			// Phase 5: Create Unmatched Entries
+			for _, uf := range unmatched {
+				suggestionsJSON, _ := json.Marshal(uf.Suggestions)
+				if _, upsertErr := s.repo.UpsertUnmatchedFile(ctx, library.ID, uf.RelPath, uf.FileSize, suggestionsJSON); upsertErr != nil {
+					s.logger.Warn().Err(upsertErr).Str("path", uf.RelPath).Msg("Failed to upsert unmatched file")
+				}
+				stats.UnmatchedCount++
+			}
+		}
+	}
+
+	s.logger.Info().Int("totalIdentified", len(identified)).Msg("Phase 3 complete: Guessit + TMDB Search")
+
+	// Phase 4: Process Identified Files
+	for i, f := range identified {
+		if ctx.Err() != nil {
+			return scanStats{}, ctx.Err()
+		}
+
+		created, processErr := s.processIdentifiedFile(ctx, library, f)
+		if processErr != nil {
+			s.logger.Warn().Err(processErr).Str("path", f.RelPath).Msg("Error processing identified file")
+			continue
+		}
+		if created {
+			stats.MediaItemsCreated++
+		}
+
+		if (i+1)%50 == 0 {
+			s.publishEvent("scan_progress", scanID, libKey, map[string]any{
+				"filesSeen":         stats.FilesSeen,
+				"mediaItemsCreated": stats.MediaItemsCreated,
+			})
+		}
 	}
 
 	s.logger.Info().Str("library_id", libKey).Msg("Scan Complete")
 	stats.Duration = int(time.Since(start).Seconds())
 
 	return stats, nil
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// loadKnownPaths bulk-loads all media_file and unresolved unmatched_file paths
+// for the given library into a set for O(1) dedup during the walk phase.
+func (s *ScannerService) loadKnownPaths(ctx context.Context, libraryID pgtype.UUID) (map[string]struct{}, error) {
+	mediaPaths, err := s.repo.ListMediaFilePathsForLibrary(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+
+	unmatchedPaths, err := s.repo.ListUnmatchedFilePathsForLibrary(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+
+	known := make(map[string]struct{}, len(mediaPaths)+len(unmatchedPaths))
+	for _, p := range mediaPaths {
+		known[p] = struct{}{}
+	}
+	for _, p := range unmatchedPaths {
+		known[p] = struct{}{}
+	}
+	return known, nil
+}
+
+// resolveTmdbID extracts a TMDB ID from an identity, converting from TVDB/IMDB if needed.
+func (s *ScannerService) resolveTmdbID(ctx context.Context, library dbgen.Library, ident identity.Identity) (int64, error) {
+	if ident.TmdbID != nil {
+		return *ident.TmdbID, nil
+	}
+
+	var id string
+	var provider string
+
+	if ident.TvdbID != nil {
+		id = strconv.FormatInt(*ident.TvdbID, 10)
+		provider = "tvdb_id"
+	} else if ident.ImdbID != nil {
+		id = *ident.ImdbID
+		provider = "imdb_id"
+	} else {
+		return 0, fmt.Errorf("identity has no provider IDs")
+	}
+
+	res, err := s.tmdb.FindByID(ctx, id, provider)
+	if err != nil {
+		return 0, err
+	}
+
+	switch library.Type {
+	case "movie":
+		if len(res.MovieResults) > 0 {
+			return res.MovieResults[0].ID, nil
+		}
+	case "series":
+		if len(res.TvResults) > 0 {
+			return res.TvResults[0].ID, nil
+		}
+	}
+
+	return 0, fmt.Errorf("no TMDB results for %s=%s", provider, id)
+}
+
+// ensureMediaItem looks up or creates a media item for the given TMDB ID.
+// Returns the media item ID and whether a new item was created.
+func (s *ScannerService) ensureMediaItem(ctx context.Context, library dbgen.Library, tmdbID int64) (pgtype.UUID, bool, error) {
+	existing, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, library.Type)
+	if err == nil {
+		return existing.ID, false, nil
+	}
+	if err != pgx.ErrNoRows {
+		return pgtype.UUID{}, false, err
+	}
+
+	// Fetch details from TMDB
+	var title string
+	var year int32
+
+	switch library.Type {
+	case "movie":
+		movie, detErr := s.tmdb.GetMovieDetails(ctx, tmdbID)
+		if detErr != nil {
+			return pgtype.UUID{}, false, detErr
+		}
+		title = movie.Title
+		if movie.ReleaseDate == "" {
+			return pgtype.UUID{}, false, fmt.Errorf("movie has empty release date")
+		}
+		yearStr := strings.Split(movie.ReleaseDate, "-")[0]
+		year64, parseErr := strconv.ParseInt(yearStr, 10, 32)
+		if parseErr != nil {
+			return pgtype.UUID{}, false, parseErr
+		}
+		year = int32(year64)
+
+	case "series":
+		tv, detErr := s.tmdb.GetSeriesDetails(ctx, tmdbID)
+		if detErr != nil {
+			return pgtype.UUID{}, false, detErr
+		}
+		title = tv.Name
+		if tv.FirstAirDate == "" {
+			return pgtype.UUID{}, false, fmt.Errorf("series has empty first air date")
+		}
+		yearStr := strings.Split(tv.FirstAirDate, "-")[0]
+		year64, parseErr := strconv.ParseInt(yearStr, 10, 32)
+		if parseErr != nil {
+			return pgtype.UUID{}, false, parseErr
+		}
+		year = int32(year64)
+	}
+
+	item, err := s.repo.CreateMediaItem(ctx, library.Type, title, &year, &tmdbID)
+	if err != nil {
+		return pgtype.UUID{}, false, err
+	}
+
+	return item.ID, true, nil
+}
+
+// processIdentifiedFile creates all DB records for a single identified file.
+// Returns true if a new media item was created.
+func (s *ScannerService) processIdentifiedFile(ctx context.Context, library dbgen.Library, f identifiedFile) (bool, error) {
+	mediaItemID, created, err := s.ensureMediaItem(ctx, library, f.TmdbID)
+	if err != nil {
+		return false, err
+	}
+
+	episodeID, err := s.ensureSeasonAndEpisode(ctx, mediaItemID, f.TmdbID, f.Season, f.Episode, f.AbsPath)
+	if err != nil {
+		return created, nil // skip file, continue
+	}
+
+	mf, err := s.repo.CreateMediaFile(ctx, library.ID, mediaItemID, episodeID, f.RelPath)
+	if err != nil {
+		return created, fmt.Errorf("create media file: %w", err)
+	}
+
+	if _, err := s.repo.UpsertMediaFileState(ctx, mf.ID, true, f.FileSize); err != nil {
+		s.logger.Warn().Err(err).Msg("Failed to create media file state")
+	}
+
+	if _, err := s.repo.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
+		MediaFileID: mf.ID,
+		Method:      "scan",
+		DestPath:    f.AbsPath,
+		Success:     true,
+	}); err != nil {
+		s.logger.Warn().Err(err).Msg("Failed to record import history")
+	}
+
+	return created, nil
+}
+
+// processWithGuessit handles files that couldn't be identified by embedded IDs.
+// It batch-parses filenames via guessit, groups by title, searches TMDB, and
+// either auto-matches or creates unmatched entries with suggestions.
+func (s *ScannerService) processWithGuessit(ctx context.Context, library dbgen.Library, files []collectedFile) ([]identifiedFile, []unmatchedFileEntry, error) {
+	if s.guessit == nil || !s.guessit.Healthy(ctx) {
+		return nil, nil, fmt.Errorf("guessit sidecar unavailable")
+	}
+
+	// Build guessit input strings
+	inputs := make([]string, len(files))
+	for i, f := range files {
+		inputs[i] = guessitInput(library.Type, f.RelPath)
+	}
+
+	// Batch parse in chunks of 200
+	const chunkSize = 200
+	allResults := make([]guessit.ParseResult, 0, len(inputs))
+	for i := 0; i < len(inputs); i += chunkSize {
+		end := i + chunkSize
+		if end > len(inputs) {
+			end = len(inputs)
+		}
+		chunk, err := s.guessit.ParseBatch(ctx, inputs[i:end])
+		if err != nil {
+			return nil, nil, fmt.Errorf("guessit batch parse: %w", err)
+		}
+		allResults = append(allResults, chunk...)
+	}
+
+	// Group files by search key
+	type groupEntry struct {
+		file   collectedFile
+		result guessit.ParseResult
+	}
+	groups := make(map[string][]groupEntry)
+	keyMap := make(map[string]tmdbSearchKey) // string key -> search key
+
+	for i, f := range files {
+		result := allResults[i]
+		key := buildSearchKey(library.Type, f.RelPath, result)
+		keyStr := key.String()
+		groups[keyStr] = append(groups[keyStr], groupEntry{file: f, result: result})
+		keyMap[keyStr] = key
+	}
+
+	s.logger.Info().Int("groups", len(groups)).Int("files", len(files)).Msg("Guessit grouped files for TMDB search")
+
+	var identified []identifiedFile
+	var unmatched []unmatchedFileEntry
+
+	// One TMDB search per unique group key
+	for keyStr, entries := range groups {
+		key := keyMap[keyStr]
+		if key.Query == "" {
+			// Guessit couldn't parse a title — mark all as unmatched with no suggestions
+			for _, e := range entries {
+				unmatched = append(unmatched, unmatchedFileEntry{
+					collectedFile: e.file,
+					Suggestions:   []SuggestedMatch{},
+				})
+			}
+			continue
+		}
+
+		searchResult, err := s.tmdb.MultiSearch(ctx, key.Query, 1)
+		if err != nil {
+			s.logger.Warn().Err(err).Str("query", key.Query).Msg("TMDB multi search failed")
+			for _, e := range entries {
+				unmatched = append(unmatched, unmatchedFileEntry{
+					collectedFile: e.file,
+					Suggestions:   []SuggestedMatch{},
+				})
+			}
+			continue
+		}
+
+		match, suggestions := evaluateSearchResults(library.Type, key, searchResult)
+
+		if match != nil {
+			// Auto-matched: assign TMDB ID to all files in this group
+			for _, e := range entries {
+				idf := identifiedFile{
+					collectedFile: e.file,
+					TmdbID:        match.tmdbID,
+				}
+				// For series, extract season/episode from guessit result
+				if library.Type == "series" && e.result.Season != nil {
+					s32 := int32(*e.result.Season)
+					idf.Season = &s32
+				}
+				if library.Type == "series" && e.result.Episode != nil {
+					e32 := int32(*e.result.Episode)
+					idf.Episode = &e32
+				}
+				identified = append(identified, idf)
+			}
+		} else {
+			for _, e := range entries {
+				unmatched = append(unmatched, unmatchedFileEntry{
+					collectedFile: e.file,
+					Suggestions:   suggestions,
+				})
+			}
+		}
+	}
+
+	return identified, unmatched, nil
+}
+
+// guessitInput picks the best path segment to send to guessit.
+// For series: use the filename (e.g., "South Park S01E01.mkv")
+// For movies: prefer parent directory name (e.g., "The Matrix (1999)"), fall back to filename
+func guessitInput(libraryType, relPath string) string {
+	if libraryType == "series" {
+		return filepath.Base(relPath)
+	}
+
+	// Movie: prefer parent directory
+	dir := filepath.Dir(relPath)
+	if dir != "" && dir != "." {
+		return filepath.Base(dir)
+	}
+	return filepath.Base(relPath)
+}
+
+// buildSearchKey creates a dedup key for grouping files that should share one TMDB search.
+// Series: group by top-level directory name (all episodes of the same show)
+// Movies: group by (title, year) from guessit
+func buildSearchKey(libraryType, relPath string, result guessit.ParseResult) tmdbSearchKey {
+	if libraryType == "series" {
+		// Use the top-level directory name as the search query
+		parts := strings.SplitN(relPath, string(filepath.Separator), 2)
+		topDir := parts[0]
+		// Clean common patterns from directory names for better search
+		query := cleanDirName(topDir)
+		return tmdbSearchKey{Query: query, Type: "series"}
+	}
+
+	// Movie: use title and year from guessit
+	title := ""
+	if result.Title != nil {
+		title = *result.Title
+	}
+	return tmdbSearchKey{Query: title, Year: result.Year, Type: "movie"}
+}
+
+// cleanDirName removes common non-title artifacts from directory names.
+func cleanDirName(name string) string {
+	// Remove year in parentheses or brackets like "(2024)" or "[2024]"
+	// but keep the rest. This gives better TMDB search results.
+	// For series dirs like "South Park", this is already clean.
+	// For "South Park (1997)", we want to search "South Park".
+	name = strings.TrimSpace(name)
+
+	// Remove trailing year patterns
+	for _, sep := range []string{"(", "["} {
+		if idx := strings.LastIndex(name, sep); idx > 0 {
+			candidate := strings.TrimSpace(name[:idx])
+			if candidate != "" {
+				name = candidate
+			}
+		}
+	}
+
+	return name
+}
+
+type tmdbMatch struct {
+	tmdbID int64
+}
+
+// evaluateSearchResults applies conservative matching logic to TMDB search results.
+// Returns a match if exactly 1 relevant result with matching type (and year if available),
+// otherwise returns up to 5 suggestions.
+func evaluateSearchResults(libraryType string, key tmdbSearchKey, searchResult tmdb.SearchMulti) (*tmdbMatch, []SuggestedMatch) {
+	if searchResult.SearchMultiResults == nil {
+		return nil, []SuggestedMatch{}
+	}
+
+	// Map library type to TMDB media type
+	wantMediaType := "movie"
+	if libraryType == "series" {
+		wantMediaType = "tv"
+	}
+
+	// Filter to matching media type
+	type candidate struct {
+		ID    int64
+		Title string
+		Year  int
+	}
+	var candidates []candidate
+
+	for _, r := range searchResult.Results {
+		if r.MediaType != wantMediaType {
+			continue
+		}
+
+		title := r.Title
+		dateStr := r.ReleaseDate
+		if wantMediaType == "tv" {
+			title = r.Name
+			dateStr = r.FirstAirDate
+		}
+
+		year := 0
+		if len(dateStr) >= 4 {
+			if y, err := strconv.Atoi(dateStr[:4]); err == nil {
+				year = y
+			}
+		}
+
+		candidates = append(candidates, candidate{ID: r.ID, Title: title, Year: year})
+	}
+
+	// Conservative auto-match: exactly 1 relevant result AND year matches (or no year to compare)
+	if len(candidates) == 1 {
+		c := candidates[0]
+		yearOK := key.Year == nil || c.Year == 0 || c.Year == *key.Year
+		if yearOK {
+			return &tmdbMatch{tmdbID: c.ID}, nil
+		}
+	}
+
+	// Build suggestions (top 5)
+	limit := 5
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+
+	suggestions := make([]SuggestedMatch, 0, limit)
+	for i := 0; i < limit; i++ {
+		c := candidates[i]
+		score := 100 - (i * 15) // rank-based score: 100, 85, 70, 55, 40
+		if score < 10 {
+			score = 10
+		}
+		suggestions = append(suggestions, SuggestedMatch{
+			TmdbID: c.ID,
+			Title:  c.Title,
+			Year:   c.Year,
+			Type:   libraryType,
+			Score:  score,
+		})
+	}
+
+	return nil, suggestions
 }
 
 func isMediaFile(path string) bool {
