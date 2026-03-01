@@ -80,6 +80,7 @@ type scanStats struct {
 	MediaItemsCreated   int `json:"mediaItemsCreated"`
 	UnmatchedCount      int `json:"unmatchedCount"`
 	SkippedGuessitDown  int `json:"skippedGuessitDown"`
+	EpisodeLookupFailed int `json:"episodeLookupFailed"`
 	Duration            int `json:"duration"`
 }
 
@@ -155,12 +156,13 @@ func (s *ScannerService) StartScan(ctx context.Context, libraryID pgtype.UUID) (
 		})
 
 		s.publishEvent("scan_completed", scanID, libKey, map[string]any{
-			"filesSeen":           stats.FilesSeen,
-			"identifiedByEmbed":   stats.IdentifiedByEmbed,
-			"identifiedByGuessit": stats.IdentifiedByGuessit,
-			"mediaItemsCreated":   stats.MediaItemsCreated,
-			"unmatchedCount":      stats.UnmatchedCount,
-			"duration":            stats.Duration,
+			"filesSeen":            stats.FilesSeen,
+			"identifiedByEmbed":    stats.IdentifiedByEmbed,
+			"identifiedByGuessit":  stats.IdentifiedByGuessit,
+			"mediaItemsCreated":    stats.MediaItemsCreated,
+			"unmatchedCount":       stats.UnmatchedCount,
+			"episodeLookupFailed":  stats.EpisodeLookupFailed,
+			"duration":             stats.Duration,
 		})
 	}()
 
@@ -360,13 +362,16 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 			return scanStats{}, ctx.Err()
 		}
 
-		created, processErr := s.processIdentifiedFile(ctx, library, f)
+		created, epFailed, processErr := s.processIdentifiedFile(ctx, library, f)
 		if processErr != nil {
 			s.logger.Warn().Err(processErr).Str("path", f.RelPath).Msg("Error processing identified file")
 			continue
 		}
 		if created {
 			stats.MediaItemsCreated++
+		}
+		if epFailed {
+			stats.EpisodeLookupFailed++
 		}
 
 		if (i+1)%50 == 0 {
@@ -506,21 +511,21 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library dbgen.Libr
 }
 
 // processIdentifiedFile creates all DB records for a single identified file.
-// Returns true if a new media item was created.
-func (s *ScannerService) processIdentifiedFile(ctx context.Context, library dbgen.Library, f identifiedFile) (bool, error) {
+// Returns (mediaItemCreated, episodeLookupFailed, error).
+func (s *ScannerService) processIdentifiedFile(ctx context.Context, library dbgen.Library, f identifiedFile) (bool, bool, error) {
 	mediaItemID, created, err := s.ensureMediaItem(ctx, library, f.TmdbID)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 
 	episodeID, err := s.ensureSeasonAndEpisode(ctx, mediaItemID, f.TmdbID, f.Season, f.Episode, f.AbsPath)
 	if err != nil {
-		return created, nil // skip file, continue
+		return created, true, nil // skip file, continue
 	}
 
 	mf, err := s.repo.CreateMediaFile(ctx, library.ID, mediaItemID, episodeID, f.RelPath)
 	if err != nil {
-		return created, fmt.Errorf("create media file: %w", err)
+		return created, false, fmt.Errorf("create media file: %w", err)
 	}
 
 	if _, err := s.repo.UpsertMediaFileState(ctx, mf.ID, true, f.FileSize); err != nil {
@@ -536,7 +541,7 @@ func (s *ScannerService) processIdentifiedFile(ctx context.Context, library dbge
 		s.logger.Warn().Err(err).Msg("Failed to record import history")
 	}
 
-	return created, nil
+	return created, false, nil
 }
 
 // processWithGuessit handles files that couldn't be identified by embedded IDs.
