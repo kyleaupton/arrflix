@@ -5,3 +5,13 @@ declare module '*.vue' {
   const component: DefineComponent<{}, {}, any>
   export default component
 }
+
+export {}
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    public?: boolean
+    layout?: 'immersive' | 'auth'
+    setup?: boolean
+  }
+}

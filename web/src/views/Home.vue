@@ -26,24 +26,31 @@
 
     <div v-else class="flex flex-col gap-6">
       <!-- Hero Section -->
-      <FeedHero v-if="data.hero" :hero="data.hero" />
+      <FeedHero v-if="data.hero" :hero="data.hero" :full-bleed="isImmersive" />
 
       <!-- Feed Rows -->
-      <FeedRow
-        v-for="row in data.rows"
-        :key="row.id"
-        :row="row"
-      />
+      <div :class="isImmersive ? 'flex flex-col gap-6 px-6' : 'flex flex-col gap-6'">
+        <FeedRow
+          v-for="row in data.rows"
+          :key="row.id"
+          :row="row"
+        />
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { getV1HomeOptions } from '@/client/@tanstack/vue-query.gen'
 import { Skeleton } from '@/components/ui/skeleton'
 import FeedHero from '@/components/feed/FeedHero.vue'
 import FeedRow from '@/components/feed/FeedRow.vue'
+
+const route = useRoute()
+const isImmersive = computed(() => route.meta.layout === 'immersive')
 
 const { isLoading, isError, data } = useQuery(getV1HomeOptions())
 </script>

@@ -18,6 +18,7 @@
         :backdrop-url="backdropUrl"
         :chips="movieChips"
         :trailer-url="trailerUrl"
+        :full-bleed="isImmersive"
       >
         <template #poster>
           <Poster :item="data" size="large" :clickable="false" :is-downloading="isDownloading" />
@@ -30,38 +31,40 @@
         </template>
       </MediaHero>
 
-      <div v-if="data.files?.length" class="space-y-4">
-        <h2 class="text-xl font-semibold">Local Files</h2>
-        <DataTable
-          :data="filesWithProgress"
-          :columns="movieFilesColumns"
-          :loading="false"
-          empty-message="No files found"
-          :searchable="false"
-          search-placeholder="Search files..."
-          paginator
-          :rows="10"
-        >
-          <template #empty-icon>
-            <File class="size-5" />
-          </template>
-        </DataTable>
+      <div :class="isImmersive ? 'px-6 space-y-6' : 'space-y-6'">
+        <div v-if="data.files?.length" class="space-y-4">
+          <h2 class="text-xl font-semibold">Local Files</h2>
+          <DataTable
+            :data="filesWithProgress"
+            :columns="movieFilesColumns"
+            :loading="false"
+            empty-message="No files found"
+            :searchable="false"
+            search-placeholder="Search files..."
+            paginator
+            :rows="10"
+          >
+            <template #empty-icon>
+              <File class="size-5" />
+            </template>
+          </DataTable>
+        </div>
+
+        <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
+        <RailVideos v-if="data.videos?.length" title="Videos" :videos="data.videos" />
+        <RailMovie
+          v-if="data.recommendations?.length"
+          :rail="{
+            id: 'related-movies',
+            title: 'Related Movies',
+            type: 'movie',
+            movies: data.recommendations,
+            series: [],
+          }"
+        />
+
+        <WatchProviders :providers="data.watchProviders" />
       </div>
-
-      <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
-      <RailVideos v-if="data.videos?.length" title="Videos" :videos="data.videos" />
-      <RailMovie
-        v-if="data.recommendations?.length"
-        :rail="{
-          id: 'related-movies',
-          title: 'Related Movies',
-          type: 'movie',
-          movies: data.recommendations,
-          series: [],
-        }"
-      />
-
-      <WatchProviders :providers="data.watchProviders" />
     </template>
   </div>
 </template>
@@ -69,6 +72,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+
 import { useQuery } from '@tanstack/vue-query'
 import { Download, File } from 'lucide-vue-next'
 import { getV1MovieByIdOptions } from '@/client/@tanstack/vue-query.gen'
@@ -89,6 +93,7 @@ import DownloadCandidatesDialog from '@/components/download-candidates/DownloadC
 import type { ModelFileInfo } from '@/client/types.gen'
 
 const route = useRoute()
+const isImmersive = computed(() => route.meta.layout === 'immersive')
 const modal = useModal()
 const downloadJobs = useDownloadJobsStore()
 

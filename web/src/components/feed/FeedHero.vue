@@ -1,5 +1,8 @@
 <template>
-  <section class="feed-hero relative h-80 overflow-hidden -mx-4 -mt-4">
+  <section
+    class="feed-hero relative overflow-hidden"
+    :class="fullBleed ? 'h-[56vh] min-h-[400px] pt-14' : 'h-80 -mx-4 -mt-4'"
+  >
     <img
       :src="`https://image.tmdb.org/t/p/original${hero.backdropPath}`"
       :alt="hero.title"
@@ -24,7 +27,7 @@ import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import type { ModelHeroItem } from '@/client/types.gen'
 
-const props = defineProps<{ hero: ModelHeroItem }>()
+const props = defineProps<{ hero: ModelHeroItem; fullBleed?: boolean }>()
 const router = useRouter()
 
 const navigateToDetail = () => {

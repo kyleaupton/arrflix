@@ -17,12 +17,14 @@
         :overview="data.overview"
         :backdrop-url="backdropUrl"
         :chips="seriesChips"
+        :full-bleed="isImmersive"
       >
         <template #poster>
           <Poster :item="data" size="large" :clickable="false" :is-downloading="isDownloading" />
         </template>
       </MediaHero>
 
+      <div :class="isImmersive ? 'px-6 space-y-6' : 'space-y-6'">
       <div v-if="data.seasons?.length" class="space-y-4">
         <h2 class="text-xl font-semibold">Seasons</h2>
         <div class="space-y-2">
@@ -220,6 +222,7 @@
       <RailVideos v-if="data.videos?.length" title="Videos" :videos="data.videos" />
 
       <WatchProviders :providers="data.watchProviders" />
+      </div>
     </template>
   </div>
 </template>
@@ -254,6 +257,7 @@ import { useDownloadJobsStore, type DownloadJob } from '@/stores/downloadJobs'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
 
 const route = useRoute()
+const isImmersive = computed(() => route.meta.layout === 'immersive')
 const modal = useModal()
 const downloadJobs = useDownloadJobsStore()
 

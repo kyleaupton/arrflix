@@ -14,6 +14,7 @@
         :subtitle="personSubtitle"
         :overview="data.biography"
         :chips="personChips"
+        :full-bleed="isImmersive"
       >
         <template #poster>
           <div class="relative w-64 aspect-[2/3] rounded-lg overflow-hidden bg-muted flex-shrink-0">
@@ -34,6 +35,7 @@
         </template>
       </MediaHero>
 
+      <div :class="isImmersive ? 'px-6' : ''">
       <div v-if="hasAdditionalInfo" class="space-y-4">
         <div v-if="data.alsoKnownAs?.length" class="space-y-2">
           <h2 class="text-lg font-semibold">Also Known As</h2>
@@ -68,6 +70,7 @@
           </div>
         </div>
       </div>
+      </div>
     </template>
   </div>
 </template>
@@ -75,6 +78,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+
 import { useQuery } from '@tanstack/vue-query'
 import { User, ExternalLink } from 'lucide-vue-next'
 import { getV1PersonByIdOptions } from '@/client/@tanstack/vue-query.gen'
@@ -84,6 +88,7 @@ import { Button } from '@/components/ui/button'
 import MediaHero from '@/components/media/MediaHero.vue'
 
 const route = useRoute()
+const isImmersive = computed(() => route.meta.layout === 'immersive')
 
 const id = computed(() => {
   const attempt = Number(Array.isArray(route.params.id) ? route.params.id[0] : route.params.id)

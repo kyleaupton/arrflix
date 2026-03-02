@@ -1,5 +1,8 @@
 <template>
-  <section class="media-hero relative overflow-hidden -mx-4 -my-4">
+  <section
+    class="media-hero relative overflow-hidden"
+    :class="fullBleed ? 'pt-14' : '-mx-4 -my-4'"
+  >
     <div class="backdrop" :class="{ 'has-image': !!backdropUrl }">
       <img v-if="backdropUrl" :src="backdropUrl" alt="" aria-hidden="true" />
       <div class="backdrop-overlay" />
@@ -65,6 +68,7 @@ const props = defineProps<{
   backdropUrl?: string
   chips?: string[]
   trailerUrl?: string
+  fullBleed?: boolean
 }>()
 
 const openTrailerModal = () => {

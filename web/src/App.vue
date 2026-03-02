@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
-import AppSidebar from '@/components/AppSidebar.vue'
-import AppLayoutHeader from '@/components/AppLayoutHeader.vue'
+import AdminLayout from '@/layouts/AdminLayout.vue'
+import ImmersiveLayout from '@/layouts/ImmersiveLayout.vue'
 import DialogContainer from '@/components/DialogContainer.vue'
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 import 'vue-sonner/style.css'
@@ -20,6 +20,10 @@ const route = useRoute()
 if (appStore.needsSetup && route.path !== '/setup') {
   router.push('/setup')
 }
+
+const layoutComponent = computed(() => {
+  return route.meta.layout === 'immersive' ? ImmersiveLayout : AdminLayout
+})
 </script>
 
 <template>
@@ -33,15 +37,9 @@ if (appStore.needsSetup && route.path !== '/setup') {
       <div class="text-muted-foreground">Loading...</div>
     </div>
     <router-view v-else-if="route.meta.public" />
-    <SidebarProvider v-else-if="authStore.isAuthenticated">
-      <AppSidebar />
-      <SidebarInset>
-        <AppLayoutHeader />
-        <div class="flex flex-1 flex-col gap-4 p-4 pt-19 overflow-y-auto min-w-0">
-          <router-view />
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+    <component v-else-if="authStore.isAuthenticated" :is="layoutComponent">
+      <router-view />
+    </component>
     <router-view v-else />
   </TooltipProvider>
 </template>

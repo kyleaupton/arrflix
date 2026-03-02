@@ -7,6 +7,7 @@ const router = createRouter({
     {
       path: '/',
       component: () => import('@/views/Home.vue'),
+      meta: { layout: 'immersive' },
     },
     {
       path: '/library',
@@ -15,6 +16,7 @@ const router = createRouter({
     {
       path: '/search',
       component: () => import('@/views/Search.vue'),
+      meta: { layout: 'immersive' },
     },
     {
       path: '/downloads',
@@ -93,14 +95,17 @@ const router = createRouter({
     {
       path: '/movie/:id',
       component: () => import('@/views/Movie.vue'),
+      meta: { layout: 'immersive' },
     },
     {
       path: '/series/:id',
       component: () => import('@/views/Series.vue'),
+      meta: { layout: 'immersive' },
     },
     {
       path: '/person/:id',
       component: () => import('@/views/Person.vue'),
+      meta: { layout: 'immersive' },
     },
   ],
 })
