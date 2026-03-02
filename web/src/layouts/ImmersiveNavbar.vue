@@ -8,6 +8,10 @@ import { useScrollProgress } from '@/composables/useScrollProgress'
 import { isMac } from '@/lib/platform'
 import ImmersiveNavUser from './ImmersiveNavUser.vue'
 
+const props = defineProps<{
+  opaque?: boolean
+}>()
+
 const emit = defineEmits<{
   openSearch: []
 }>()
@@ -15,11 +19,20 @@ const emit = defineEmits<{
 const route = useRoute()
 const { progress } = useScrollProgress(300)
 
-const navbarStyle = computed(() => ({
-  backgroundColor: `oklch(0.145 0 0 / ${progress.value * 0.85})`,
-  backdropFilter: `blur(${progress.value * 20}px)`,
-  WebkitBackdropFilter: `blur(${progress.value * 20}px)`,
-}))
+const navbarStyle = computed(() => {
+  if (props.opaque) {
+    return {
+      backgroundColor: 'oklch(0.145 0 0 / 0.85)',
+      backdropFilter: 'blur(20px)',
+      WebkitBackdropFilter: 'blur(20px)',
+    }
+  }
+  return {
+    backgroundColor: `oklch(0.145 0 0 / ${progress.value * 0.85})`,
+    backdropFilter: `blur(${progress.value * 20}px)`,
+    WebkitBackdropFilter: `blur(${progress.value * 20}px)`,
+  }
+})
 
 const navLinks = [
   { label: 'Home', to: '/' },
@@ -36,6 +49,7 @@ const isLinkActive = (to: string) => {
 <template>
   <header
     class="fixed top-0 left-0 right-0 z-50 h-14 flex items-center px-6 transition-colors"
+    :class="{ 'border-b border-border/50': opaque }"
     :style="navbarStyle"
   >
     <!-- Logo -->
