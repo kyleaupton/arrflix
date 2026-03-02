@@ -1,7 +1,7 @@
 <template>
   <section
-    class="media-hero relative overflow-hidden"
-    :class="fullBleed ? 'pt-14' : '-mx-4 -my-4'"
+    class="media-hero relative"
+    :class="fullBleed ? 'pt-14' : '-mx-4 -my-4 overflow-hidden'"
   >
     <div class="backdrop" :class="{ 'has-image': !!backdropUrl }">
       <img v-if="backdropUrl" :src="backdropUrl" alt="" aria-hidden="true" />
@@ -77,13 +77,15 @@ const openTrailerModal = () => {
 </script>
 
 <style scoped>
-.media-hero {
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.35));
-}
-
 .backdrop {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: -6rem;
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom, black 30%, transparent 90%);
+  -webkit-mask-image: linear-gradient(to bottom, black 30%, transparent 90%);
 }
 
 .backdrop img {
@@ -92,6 +94,7 @@ const openTrailerModal = () => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center top;
   filter: blur(6px);
   transform: scale(1.03);
 }
@@ -99,13 +102,7 @@ const openTrailerModal = () => {
 .backdrop-overlay {
   position: absolute;
   inset: 0;
-  /* Darker overlay for better text readability */
-  background: linear-gradient(
-    180deg,
-    rgba(0, 0, 0, 0.7),
-    rgba(0, 0, 0, 0.5) 45%,
-    rgba(0, 0, 0, 0.8)
-  );
+  background: rgba(0, 0, 0, 0.45);
 }
 
 .poster {

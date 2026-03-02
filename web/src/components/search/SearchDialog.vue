@@ -68,7 +68,7 @@ const seeAll = () => {
           ref="inputRef"
           v-model="query"
           placeholder="Search movies, series, people..."
-          class="flex h-11 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+          class="flex h-11 border-0 bg-transparent dark:bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
           @keydown="onKeydown"
         />
       </div>

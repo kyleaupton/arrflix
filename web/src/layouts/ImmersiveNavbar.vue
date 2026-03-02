@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { Popcorn, Search } from 'lucide-vue-next'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { KbdGroup, Kbd } from '@/components/ui/kbd'
 import { useScrollProgress } from '@/composables/useScrollProgress'
 import { isMac } from '@/lib/platform'
@@ -66,16 +67,25 @@ const isLinkActive = (to: string) => {
     <div class="flex-1" />
 
     <!-- Search button -->
-    <button
-      class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-foreground/70 hover:text-foreground hover:bg-white/5 transition-colors mr-2"
-      @click="emit('openSearch')"
-    >
-      <Search class="size-4" />
-      <KbdGroup class="hidden sm:flex">
-        <Kbd class="border border-white/20 text-foreground/50">{{ isMac ? '⌘' : 'Ctrl' }}</Kbd>
-        <Kbd class="border border-white/20 text-foreground/50">K</Kbd>
-      </KbdGroup>
-    </button>
+    <Tooltip>
+      <TooltipTrigger as-child>
+        <button
+          class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-foreground/70 hover:text-foreground hover:bg-white/5 transition-colors mr-2"
+          @click="emit('openSearch')"
+        >
+          <Search class="size-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <div class="flex items-center gap-1.5">
+          <span>Search</span>
+          <KbdGroup>
+            <Kbd>{{ isMac ? '⌘' : 'Ctrl' }}</Kbd>
+            <Kbd>K</Kbd>
+          </KbdGroup>
+        </div>
+      </TooltipContent>
+    </Tooltip>
 
     <!-- User avatar -->
     <ImmersiveNavUser />
