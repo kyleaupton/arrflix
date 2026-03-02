@@ -1,6 +1,6 @@
 <template>
   <section
-    class="media-hero relative"
+    class="media-hero relative min-h-[24rem] md:min-h-[28rem] lg:min-h-[32rem] flex flex-col justify-end"
     :class="fullBleed ? 'pt-14' : '-mx-4 -my-4 overflow-hidden'"
   >
     <div class="backdrop" :class="{ 'has-image': !!backdropUrl }">
@@ -9,31 +9,27 @@
     </div>
 
     <div class="content relative px-4 py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
-      <div class="flex gap-4 md:gap-6 items-start">
-        <div v-if="posterUrl || $slots.poster" class="poster shadow-lg">
+      <div class="flex gap-4 md:gap-6 items-end">
+        <div v-if="posterUrl || $slots.poster" class="poster shadow-xl">
           <slot name="poster">
             <img v-if="posterUrl" :src="posterUrl" :alt="title" loading="eager" decoding="async" />
           </slot>
         </div>
         <div class="flex-1 min-w-0">
-          <div class="flex items-start justify-between gap-3">
-            <h1 class="title text-2xl sm:text-3xl md:text-4xl font-semibold truncate">
-              {{ title }}
-            </h1>
-            <div class="actions shrink-0">
-              <slot name="actions" />
-            </div>
-          </div>
+          <h1 class="title text-3xl sm:text-4xl md:text-5xl font-bold">
+            {{ title }}
+          </h1>
           <p v-if="tagline" class="text-sm italic opacity-70 mt-1">"{{ tagline }}"</p>
-          <p v-if="subtitle" class="subtitle text-sm opacity-80 mt-1">{{ subtitle }}</p>
-          <p v-if="credits" class="text-sm opacity-70 mt-0.5">{{ credits }}</p>
+          <p v-if="subtitle" class="subtitle text-sm md:text-base opacity-80 mt-1">{{ subtitle }}</p>
+          <p v-if="credits" class="text-sm md:text-base opacity-70 mt-0.5">{{ credits }}</p>
 
           <div v-if="chips && chips.length" class="chips mt-3 flex flex-wrap gap-2">
             <Badge v-for="(chip, i) in chips" :key="i">{{ chip }}</Badge>
           </div>
 
-          <div v-if="trailerUrl" class="trailer mt-4">
-            <Button @click="openTrailerModal">
+          <div v-if="$slots.actions || trailerUrl" class="mt-4 flex flex-wrap items-center gap-3">
+            <slot name="actions" />
+            <Button v-if="trailerUrl" variant="outline" @click="openTrailerModal">
               <ExternalLink class="size-4" />
               Watch Trailer
             </Button>
@@ -41,7 +37,7 @@
 
           <p
             v-if="overview"
-            class="overview mt-4 max-w-prose text-sm md:text-base leading-relaxed opacity-90"
+            class="overview mt-4 max-w-3xl text-sm md:text-base leading-relaxed opacity-90"
           >
             {{ overview }}
           </p>
@@ -79,13 +75,9 @@ const openTrailerModal = () => {
 <style scoped>
 .backdrop {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: -6rem;
+  inset: 0 0 -1px 0;
   pointer-events: none;
-  mask-image: linear-gradient(to bottom, black 30%, transparent 90%);
-  -webkit-mask-image: linear-gradient(to bottom, black 30%, transparent 90%);
+  overflow: hidden;
 }
 
 .backdrop img {
@@ -95,14 +87,20 @@ const openTrailerModal = () => {
   height: 100%;
   object-fit: cover;
   object-position: center top;
-  filter: blur(6px);
-  transform: scale(1.03);
+  filter: blur(2px);
+  transform: scale(1.01);
 }
 
 .backdrop-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  /* Bottom fade — strong, ensures text readability */
+  background:
+    linear-gradient(to top, oklch(0.145 0 0) 0%, oklch(0.145 0 0 / 0.9) 18%, transparent 65%),
+    /* Lateral gradient — subtle left-side darkening for text legibility */
+    linear-gradient(to right, rgba(0, 0, 0, 0.45) 0%, transparent 70%),
+    /* Top vignette — subtle top edge for navbar blending */
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.3) 0%, transparent 20%);
 }
 
 .poster {
@@ -112,20 +110,21 @@ const openTrailerModal = () => {
 }
 
 .poster img {
-  width: 8rem; /* 128px */
+  width: 10rem;
   aspect-ratio: 2 / 3;
-  border-radius: 12px;
+  border-radius: 0.75rem;
   object-fit: cover;
 }
 
 @media (min-width: 768px) {
   .poster img {
-    width: 10rem;
+    width: 14rem;
   }
 }
 
 .title {
   color: var(--p-content-color);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 .subtitle {
   color: var(--p-content-color);

@@ -3,7 +3,7 @@
     :is="to ? 'router-link' : 'div'"
     :to="to"
     class="poster-outer"
-    :class="sizeClass"
+    :class="[sizeClass, { 'is-clickable': clickable }]"
   >
     <!-- Inner container: scales on hover, clips image to rounded corners -->
     <div class="poster-inner">
@@ -163,7 +163,7 @@ const onError = () => {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.poster-outer:hover .poster-inner {
+.poster-outer.is-clickable:hover .poster-inner {
   transform: scale(1.05);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   z-index: 10;
@@ -253,7 +253,7 @@ const onError = () => {
   padding: 0.75rem;
 }
 
-.poster-outer:hover .poster-overlay {
+.poster-outer.is-clickable:hover .poster-overlay {
   opacity: 1;
   transform: scale(1.05);
   z-index: 20;

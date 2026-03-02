@@ -9,7 +9,6 @@
     </div>
     <template v-else-if="data">
       <MediaHero
-        class="mb-1"
         :title="data.title"
         :tagline="data.tagline"
         :subtitle="seriesSubTitle"
