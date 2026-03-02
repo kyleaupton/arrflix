@@ -36,89 +36,59 @@
         :episode="data.nextEpisodeToAir"
       />
       <div v-if="data.seasons?.length" class="space-y-4">
-        <!-- Header row with season status + action for selected season -->
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <h2 class="text-xl font-semibold">Seasons</h2>
-            <template v-if="currentSeason">
-              <Badge
-                v-if="getSeasonStatus(currentSeason) === 'available'"
-                class="bg-green-500/90 text-white hover:bg-green-500"
-              >
-                Available
-              </Badge>
-              <Badge
-                v-else-if="getSeasonStatus(currentSeason) === 'partial'"
-                class="bg-amber-500/90 text-white hover:bg-amber-500"
-              >
-                Partial
-              </Badge>
-              <Badge
-                v-else-if="getSeasonStatus(currentSeason) === 'downloading'"
-                class="bg-blue-500/90 text-white hover:bg-blue-500"
-              >
-                Downloading
-              </Badge>
-              <Badge
-                v-else-if="getSeasonStatus(currentSeason) === 'importing'"
-                class="bg-blue-500/90 text-white hover:bg-blue-500"
-              >
-                Importing
-              </Badge>
-            </template>
-          </div>
-          <div v-if="currentSeason" class="flex items-center gap-2">
-            <!-- Season pack downloading -->
-            <template v-if="getSeasonPackJob(currentSeason.seasonNumber)">
-              <CircularProgress
-                :state="getSeasonProgressState(currentSeason.seasonNumber)"
-                :value="getSeasonProgressValue(currentSeason.seasonNumber)"
-                size="sm"
-              />
-            </template>
-            <!-- Individual episodes downloading (no season pack) -->
-            <template v-else-if="hasActiveEpisodeDownloads(currentSeason)">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger as-child>
-                    <span class="flex items-center">
-                      <CircularProgress state="indeterminate" size="sm" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {{ getActiveEpisodeCount(currentSeason) }} episode(s) downloading
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </template>
-            <!-- No active downloads: show search button -->
-            <template v-else>
-              <Button
-                size="sm"
-                variant="ghost"
-                @click="searchForSeasonCandidates(currentSeason.seasonNumber)"
-              >
-                <Download class="size-4 mr-2" />
-                Download S{{ currentSeason.seasonNumber }}
-              </Button>
-            </template>
-          </div>
-        </div>
+        <h2 class="text-xl font-semibold">Seasons</h2>
 
         <!-- Season pill tabs + episode card grid -->
         <Tabs v-model="selectedSeason">
-          <ScrollArea>
-            <TabsList class="inline-flex w-max">
-              <TabsTrigger
-                v-for="season in sortedSeasons"
-                :key="season.seasonNumber"
-                :value="String(season.seasonNumber)"
-              >
-                S{{ season.seasonNumber }}
-              </TabsTrigger>
-            </TabsList>
-            <ScrollBar orientation="horizontal" />
-          </ScrollArea>
+          <div class="flex items-center gap-3">
+            <ScrollArea class="min-w-0">
+              <TabsList class="inline-flex w-max">
+                <TabsTrigger
+                  v-for="season in sortedSeasons"
+                  :key="season.seasonNumber"
+                  :value="String(season.seasonNumber)"
+                >
+                  S{{ season.seasonNumber }}
+                </TabsTrigger>
+              </TabsList>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+
+            <!-- Season-level action: download / progress -->
+            <div v-if="currentSeason" class="shrink-0">
+              <template v-if="getSeasonPackJob(currentSeason.seasonNumber)">
+                <CircularProgress
+                  :state="getSeasonProgressState(currentSeason.seasonNumber)"
+                  :value="getSeasonProgressValue(currentSeason.seasonNumber)"
+                  size="sm"
+                />
+              </template>
+              <template v-else-if="hasActiveEpisodeDownloads(currentSeason)">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <span class="flex items-center">
+                        <CircularProgress state="indeterminate" size="sm" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {{ getActiveEpisodeCount(currentSeason) }} episode(s) downloading
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </template>
+              <template v-else>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  @click="searchForSeasonCandidates(currentSeason.seasonNumber)"
+                >
+                  <Download class="size-4 mr-2" />
+                  Download S{{ currentSeason.seasonNumber }}
+                </Button>
+              </template>
+            </div>
+          </div>
 
           <TabsContent
             v-for="season in sortedSeasons"
@@ -129,7 +99,7 @@
             <p v-if="season.overview" class="text-sm text-muted-foreground">
               {{ season.overview }}
             </p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               <div
                 v-for="episode in season.episodes"
                 :key="episode.episodeNumber"
