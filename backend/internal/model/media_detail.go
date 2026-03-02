@@ -33,6 +33,8 @@ type MovieDetail struct {
 	ReleaseDate   string  `json:"releaseDate,omitempty"`
 	Runtime       int     `json:"runtime,omitempty"`
 	Certification string  `json:"certification,omitempty"`
+	VoteAverage   float64 `json:"voteAverage,omitempty"`
+	VoteCount     int64   `json:"voteCount,omitempty"`
 	Genres        []Genre `json:"genres,omitempty"`
 	PosterPath    string  `json:"posterPath,omitempty"`
 	BackdropPath  string  `json:"backdropPath,omitempty"`
@@ -76,6 +78,8 @@ type SeriesDetail struct {
 	InProduction   bool    `json:"inProduction"`
 	Certification  string  `json:"certification,omitempty"`
 	EpisodeRuntime *int    `json:"episodeRuntime,omitempty"`
+	VoteAverage    float64 `json:"voteAverage,omitempty"`
+	VoteCount      int64   `json:"voteCount,omitempty"`
 	Genres         []Genre `json:"genres,omitempty"`
 	PosterPath     string  `json:"posterPath,omitempty"`
 	BackdropPath   string  `json:"backdropPath,omitempty"`

@@ -1055,6 +1055,8 @@ export type ModelMovieDetail = {
     title: string;
     tmdbId: number;
     videos?: Array<ModelVideo>;
+    voteAverage?: number;
+    voteCount?: number;
     watchProviders?: ModelWatchProviders;
     year?: number;
 };
@@ -1193,6 +1195,8 @@ export type ModelSeriesDetail = {
     title: string;
     tmdbId: number;
     videos?: Array<ModelVideo>;
+    voteAverage?: number;
+    voteCount?: number;
     watchProviders?: ModelWatchProviders;
     year?: number;
 };

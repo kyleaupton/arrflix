@@ -22,6 +22,13 @@
         <template #poster>
           <Poster :item="data" size="large" :clickable="false" :is-downloading="isDownloading" />
         </template>
+        <template v-if="data.voteAverage" #ratings>
+          <RatingBadge
+            source="tmdb"
+            :score="data.voteAverage"
+            :vote-count="data.voteCount"
+          />
+        </template>
         <template #actions>
           <Button @click="searchForDownloadCandidates">
             <Download class="mr-2 size-4" />
@@ -78,6 +85,7 @@ import { getV1MovieByIdOptions } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import MediaHero from '@/components/media/MediaHero.vue'
+import RatingBadge from '@/components/media/RatingBadge.vue'
 import Poster from '@/components/poster/Poster.vue'
 import RailCast from '@/components/rails/RailCast.vue'
 import RailVideos from '@/components/rails/RailVideos.vue'

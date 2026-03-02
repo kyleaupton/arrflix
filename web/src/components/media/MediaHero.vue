@@ -23,6 +23,10 @@
           <p v-if="subtitle" class="subtitle text-sm md:text-base opacity-80 mt-1">{{ subtitle }}</p>
           <p v-if="credits" class="text-sm md:text-base opacity-70 mt-0.5">{{ credits }}</p>
 
+          <div v-if="$slots.ratings" class="mt-2 flex flex-wrap items-center gap-2">
+            <slot name="ratings" />
+          </div>
+
           <div v-if="chips && chips.length" class="chips mt-3 flex flex-wrap gap-2">
             <Badge v-for="(chip, i) in chips" :key="i">{{ chip }}</Badge>
           </div>

@@ -2516,6 +2516,10 @@ definitions:
         items:
           $ref: '#/definitions/model.Video'
         type: array
+      voteAverage:
+        type: number
+      voteCount:
+        type: integer
       watchProviders:
         $ref: '#/definitions/model.WatchProviders'
       year:
@@ -2808,6 +2812,10 @@ definitions:
         items:
           $ref: '#/definitions/model.Video'
         type: array
+      voteAverage:
+        type: number
+      voteCount:
+        type: integer
       watchProviders:
         $ref: '#/definitions/model.WatchProviders'
       year:

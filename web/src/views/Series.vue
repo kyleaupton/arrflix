@@ -21,6 +21,13 @@
         <template #poster>
           <Poster :item="data" size="large" :clickable="false" :is-downloading="isDownloading" />
         </template>
+        <template v-if="data.voteAverage" #ratings>
+          <RatingBadge
+            source="tmdb"
+            :score="data.voteAverage"
+            :vote-count="data.voteCount"
+          />
+        </template>
       </MediaHero>
 
       <div :class="isImmersive ? 'px-6 space-y-6' : 'space-y-6'">
@@ -246,6 +253,7 @@ import {
 import CircularProgress from '@/components/ui/progress/CircularProgress.vue'
 import type { CircularProgressState } from '@/components/ui/progress/CircularProgress.vue'
 import MediaHero from '@/components/media/MediaHero.vue'
+import RatingBadge from '@/components/media/RatingBadge.vue'
 import Poster from '@/components/poster/Poster.vue'
 import RailCast from '@/components/rails/RailCast.vue'
 import RailVideos from '@/components/rails/RailVideos.vue'

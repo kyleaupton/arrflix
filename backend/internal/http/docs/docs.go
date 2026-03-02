@@ -7388,6 +7388,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/model.Video"
                     }
                 },
+                "voteAverage": {
+                    "type": "number"
+                },
+                "voteCount": {
+                    "type": "integer"
+                },
                 "watchProviders": {
                     "$ref": "#/definitions/model.WatchProviders"
                 },
@@ -7811,6 +7817,12 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.Video"
                     }
+                },
+                "voteAverage": {
+                    "type": "number"
+                },
+                "voteCount": {
+                    "type": "integer"
                 },
                 "watchProviders": {
                     "$ref": "#/definitions/model.WatchProviders"
