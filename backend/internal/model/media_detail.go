@@ -65,24 +65,34 @@ type SeasonDetail struct {
 	Episodes     []EpisodeAvailability `json:"episodes"`
 }
 
+type NextEpisode struct {
+	SeasonNumber  int    `json:"seasonNumber"`
+	EpisodeNumber int    `json:"episodeNumber"`
+	Title         string `json:"title"`
+	AirDate       string `json:"airDate,omitempty"`
+	Overview      string `json:"overview,omitempty"`
+	StillPath     string `json:"stillPath,omitempty"`
+}
+
 type SeriesDetail struct {
 	TmdbID int64  `json:"tmdbId"`
 	Title  string `json:"title"`
 	Year   *int32 `json:"year,omitempty"`
 
-	Overview       string  `json:"overview"`
-	Tagline        string  `json:"tagline,omitempty"`
-	Status         string  `json:"status"`
-	FirstAirDate   string  `json:"firstAirDate,omitempty"`
-	LastAirDate    string  `json:"lastAirDate,omitempty"`
-	InProduction   bool    `json:"inProduction"`
-	Certification  string  `json:"certification,omitempty"`
-	EpisodeRuntime *int    `json:"episodeRuntime,omitempty"`
-	VoteAverage    float64 `json:"voteAverage,omitempty"`
-	VoteCount      int64   `json:"voteCount,omitempty"`
-	Genres         []Genre `json:"genres,omitempty"`
-	PosterPath     string  `json:"posterPath,omitempty"`
-	BackdropPath   string  `json:"backdropPath,omitempty"`
+	Overview         string       `json:"overview"`
+	Tagline          string       `json:"tagline,omitempty"`
+	Status           string       `json:"status"`
+	FirstAirDate     string       `json:"firstAirDate,omitempty"`
+	LastAirDate      string       `json:"lastAirDate,omitempty"`
+	InProduction     bool         `json:"inProduction"`
+	Certification    string       `json:"certification,omitempty"`
+	EpisodeRuntime   *int         `json:"episodeRuntime,omitempty"`
+	VoteAverage      float64      `json:"voteAverage,omitempty"`
+	VoteCount        int64        `json:"voteCount,omitempty"`
+	Genres           []Genre      `json:"genres,omitempty"`
+	PosterPath       string       `json:"posterPath,omitempty"`
+	BackdropPath     string       `json:"backdropPath,omitempty"`
+	NextEpisodeToAir *NextEpisode `json:"nextEpisodeToAir,omitempty"`
 
 	Availability   Availability    `json:"availability"`
 	Seasons        []SeasonDetail  `json:"seasons"`

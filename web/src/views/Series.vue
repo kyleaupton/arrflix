@@ -31,6 +31,10 @@
       </MediaHero>
 
       <div :class="isImmersive ? 'px-6 space-y-6' : 'space-y-6'">
+      <NextEpisodeBanner
+        v-if="data.nextEpisodeToAir"
+        :episode="data.nextEpisodeToAir"
+      />
       <div v-if="data.seasons?.length" class="space-y-4">
         <!-- Header row with season status + action for selected season -->
         <div class="flex items-center justify-between">
@@ -259,6 +263,7 @@ import Poster from '@/components/poster/Poster.vue'
 import RailCast from '@/components/rails/RailCast.vue'
 import RailVideos from '@/components/rails/RailVideos.vue'
 import WatchProviders from '@/components/media/WatchProviders.vue'
+import NextEpisodeBanner from '@/components/media/NextEpisodeBanner.vue'
 import { useModal } from '@/composables/useModal'
 import { buildMetadataSubtitle } from '@/lib/utils'
 import { useDownloadJobsStore, type DownloadJob } from '@/stores/downloadJobs'

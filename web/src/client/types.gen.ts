@@ -1074,6 +1074,15 @@ export type ModelMovieRail = {
     year?: number;
 };
 
+export type ModelNextEpisode = {
+    airDate?: string;
+    episodeNumber: number;
+    overview?: string;
+    seasonNumber: number;
+    stillPath?: string;
+    title: string;
+};
+
 export type ModelPaginatedLibraryResponse = {
     data: Array<ModelLibraryItem>;
     pagination: ModelPagination;
@@ -1187,6 +1196,7 @@ export type ModelSeriesDetail = {
     genres?: Array<ModelGenre>;
     inProduction: boolean;
     lastAirDate?: string;
+    nextEpisodeToAir?: ModelNextEpisode;
     overview: string;
     posterPath?: string;
     seasons: Array<ModelSeasonDetail>;
