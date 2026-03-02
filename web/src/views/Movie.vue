@@ -37,8 +37,8 @@
         </template>
       </MediaHero>
 
-      <div :class="isImmersive ? 'px-6 space-y-6' : 'space-y-6'">
-        <div v-if="data.files?.length" class="space-y-4">
+      <div :class="isImmersive ? 'px-6 space-y-10' : 'space-y-10'">
+        <div v-if="data.files?.length" class="bg-card rounded-lg border p-4 sm:p-6 space-y-4">
           <h2 class="text-xl font-semibold">Local Files</h2>
           <DataTable
             :data="filesWithProgress"
@@ -56,8 +56,12 @@
           </DataTable>
         </div>
 
+        <FeaturedTrailer v-if="officialTrailer" :video="officialTrailer" />
+
+        <RailVideos v-if="nonTrailerVideos.length" title="Videos" :videos="nonTrailerVideos" />
+
         <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
-        <RailVideos v-if="data.videos?.length" title="Videos" :videos="data.videos" />
+
         <RailMovie
           v-if="data.recommendations?.length"
           :rail="{
@@ -69,7 +73,13 @@
           }"
         />
 
-        <WatchProviders :providers="data.watchProviders" />
+        <div
+          v-if="data.watchProviders"
+          class="py-6 bg-muted/30 rounded-lg"
+          :class="isImmersive ? '-mx-6 px-6' : ''"
+        >
+          <WatchProviders :providers="data.watchProviders" />
+        </div>
       </div>
     </template>
   </div>
@@ -91,6 +101,7 @@ import RailCast from '@/components/rails/RailCast.vue'
 import RailVideos from '@/components/rails/RailVideos.vue'
 import RailMovie from '@/components/rails/RailMovie.vue'
 import WatchProviders from '@/components/media/WatchProviders.vue'
+import FeaturedTrailer from '@/components/videos/FeaturedTrailer.vue'
 import DataTable from '@/components/tables/DataTable.vue'
 import { movieFilesColumns } from '@/components/tables/configs/movieFilesTableConfig'
 import { useModal } from '@/composables/useModal'
@@ -131,6 +142,14 @@ const trailerUrl = computed(() => {
 const { isLoading, isError, data } = useQuery(
   computed(() => getV1MovieByIdOptions({ path: { id: id.value } })),
 )
+
+const officialTrailer = computed(() => {
+  return data.value?.videos?.find((v) => v.isOfficialTrailer)
+})
+
+const nonTrailerVideos = computed(() => {
+  return data.value?.videos?.filter((v) => !v.isOfficialTrailer) ?? []
+})
 
 const movieSubtitle = computed(() => {
   if (!data.value) return ''
