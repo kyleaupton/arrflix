@@ -138,9 +138,12 @@ export type DbgenGetDownloadJobWithImportSummaryRow = {
     indexer_id: number;
     last_error: string;
     library_id: string;
+    media_certification: string;
     media_item_id: string;
     media_poster_path: string;
+    media_title: string;
     media_type: string;
+    media_year: number;
     name_template_id: string;
     next_run_at: string;
     pending_imports: number;
@@ -310,9 +313,12 @@ export type DbgenListDownloadJobsWithImportSummaryRow = {
     indexer_id: number;
     last_error: string;
     library_id: string;
+    media_certification: string;
     media_item_id: string;
     media_poster_path: string;
+    media_title: string;
     media_type: string;
+    media_year: number;
     name_template_id: string;
     next_run_at: string;
     pending_imports: number;

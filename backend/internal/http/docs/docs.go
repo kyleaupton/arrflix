@@ -4281,9 +4281,12 @@ const docTemplate = `{
                 "indexer_id",
                 "last_error",
                 "library_id",
+                "media_certification",
                 "media_item_id",
                 "media_poster_path",
+                "media_title",
                 "media_type",
+                "media_year",
                 "name_template_id",
                 "next_run_at",
                 "pending_imports",
@@ -4369,14 +4372,23 @@ const docTemplate = `{
                 "library_id": {
                     "type": "string"
                 },
+                "media_certification": {
+                    "type": "string"
+                },
                 "media_item_id": {
                     "type": "string"
                 },
                 "media_poster_path": {
                     "type": "string"
                 },
+                "media_title": {
+                    "type": "string"
+                },
                 "media_type": {
                     "type": "string"
+                },
+                "media_year": {
+                    "type": "integer"
                 },
                 "name_template_id": {
                     "type": "string"
@@ -4942,9 +4954,12 @@ const docTemplate = `{
                 "indexer_id",
                 "last_error",
                 "library_id",
+                "media_certification",
                 "media_item_id",
                 "media_poster_path",
+                "media_title",
                 "media_type",
+                "media_year",
                 "name_template_id",
                 "next_run_at",
                 "pending_imports",
@@ -5030,14 +5045,23 @@ const docTemplate = `{
                 "library_id": {
                     "type": "string"
                 },
+                "media_certification": {
+                    "type": "string"
+                },
                 "media_item_id": {
                     "type": "string"
                 },
                 "media_poster_path": {
                     "type": "string"
                 },
+                "media_title": {
+                    "type": "string"
+                },
                 "media_type": {
                     "type": "string"
+                },
+                "media_year": {
+                    "type": "integer"
                 },
                 "name_template_id": {
                     "type": "string"

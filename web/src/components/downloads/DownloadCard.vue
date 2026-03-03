@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { Film, Tv, RefreshCw, RotateCw } from 'lucide-vue-next'
 import type { DownloadJob } from '@/stores/downloadJobs'
-import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
@@ -35,6 +34,24 @@ const importPercent = computed(() => {
   return Math.round((props.job.completed_imports / props.job.total_import_tasks) * 100)
 })
 
+const posterUrl = computed(() => {
+  if (!props.job.media_poster_path) return ''
+  return `https://image.tmdb.org/t/p/w185${props.job.media_poster_path}`
+})
+
+const subtitle = computed(() => {
+  const parts: string[] = []
+  if (props.job.media_year) parts.push(String(props.job.media_year))
+  if (props.job.media_certification) parts.push(props.job.media_certification)
+  if (props.job.media_type === 'series' && props.job.season_number) {
+    const ep = props.job.episode_number
+      ? `E${String(props.job.episode_number).padStart(2, '0')}`
+      : ''
+    parts.push(`S${String(props.job.season_number).padStart(2, '0')}${ep}`)
+  }
+  return parts.join(' \u00B7 ')
+})
+
 const statsLine = computed(() => {
   const parts: string[] = []
   const speed = formatSpeed(props.job.download_speed)
@@ -48,24 +65,37 @@ const statsLine = computed(() => {
 </script>
 
 <template>
-  <Card
-    class="cursor-pointer transition-colors hover:bg-accent/50"
+  <div
+    class="flex gap-3 p-3 rounded-lg border bg-card cursor-pointer transition-colors hover:bg-accent/50"
     @click="emit('click', job)"
   >
-    <CardContent class="p-4 space-y-3">
-      <!-- Header row -->
-      <div class="flex items-start justify-between gap-3">
-        <div class="flex items-start gap-3 min-w-0">
-          <component
-            :is="job.media_type === 'series' ? Tv : Film"
-            class="size-5 shrink-0 mt-0.5 text-muted-foreground"
-          />
-          <div class="min-w-0">
-            <p class="font-medium text-sm truncate">{{ job.candidate_title }}</p>
-            <p class="text-xs text-muted-foreground">
-              {{ job.protocol }} &middot; {{ job.media_type }}
-            </p>
-          </div>
+    <!-- Poster -->
+    <div class="w-[4.5rem] shrink-0 rounded overflow-hidden bg-muted aspect-[2/3]">
+      <img
+        v-if="posterUrl"
+        :src="posterUrl"
+        :alt="job.media_title || job.candidate_title"
+        class="w-full h-full object-cover"
+      />
+      <div v-else class="w-full h-full flex items-center justify-center">
+        <component
+          :is="job.media_type === 'series' ? Tv : Film"
+          class="size-5 text-muted-foreground"
+        />
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="flex-1 min-w-0 flex flex-col gap-1.5">
+      <!-- Title row -->
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <p class="font-medium text-sm truncate">
+            {{ job.media_title || job.candidate_title }}
+          </p>
+          <p v-if="subtitle" class="text-xs text-muted-foreground">
+            {{ subtitle }}
+          </p>
         </div>
         <Badge :class="`${status.class} border-transparent shrink-0`">
           {{ status.label }}
@@ -73,7 +103,7 @@ const statsLine = computed(() => {
       </div>
 
       <!-- Download progress (active) -->
-      <div v-if="isActive" class="space-y-1.5">
+      <div v-if="isActive" class="space-y-1">
         <div class="flex items-center gap-2">
           <Progress :model-value="progressPercent" class="flex-1" />
           <span class="text-xs text-muted-foreground tabular-nums w-8 text-right">
@@ -86,7 +116,7 @@ const statsLine = computed(() => {
       </div>
 
       <!-- Import progress -->
-      <div v-else-if="isImporting && job.total_import_tasks > 0" class="space-y-1.5">
+      <div v-else-if="isImporting && job.total_import_tasks > 0" class="space-y-1">
         <div class="flex items-center gap-2">
           <Progress :model-value="importPercent" class="flex-1" />
           <span class="text-xs text-muted-foreground tabular-nums">
@@ -98,9 +128,14 @@ const statsLine = computed(() => {
       <!-- Error info -->
       <p
         v-if="isFailed && job.last_error"
-        class="text-xs text-destructive line-clamp-2"
+        class="text-xs text-destructive line-clamp-1"
       >
         {{ job.last_error }}
+      </p>
+
+      <!-- Release name (muted, always visible) -->
+      <p class="text-xs text-muted-foreground/60 truncate">
+        {{ job.candidate_title }}
       </p>
 
       <!-- Inline action buttons for failed states -->
@@ -126,6 +161,6 @@ const statsLine = computed(() => {
           Re-import
         </Button>
       </div>
-    </CardContent>
-  </Card>
+    </div>
+  </div>
 </template>
