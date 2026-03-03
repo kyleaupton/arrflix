@@ -192,6 +192,9 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 		Progress:         ptr(item.Progress),
 		SavePath:         ptr(item.SavePath),
 		ContentPath:      ptr(item.ContentPath),
+		DownloadSpeed:    ptr(item.DownloadSpeed),
+		EtaSeconds:       ptr(item.ETA),
+		TotalSize:        ptr(item.TotalSize),
 	})
 	if err != nil {
 		return fmt.Errorf("update snapshot: %w", err)

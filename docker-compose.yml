@@ -14,6 +14,7 @@ services:
       - "5432:5432" # Postgres (for debugging)
     volumes:
       - ${MEDIA_LIBRARIES}:/data
+      - /tmp/fake-media:/tmp/fake-media
       - ./.data/postgres-data:/var/lib/postgresql/data
 
       # Application code for dev

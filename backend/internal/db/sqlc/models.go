@@ -214,6 +214,9 @@ type DownloadJob struct {
 	CreatedAt            time.Time   `json:"created_at"`
 	UpdatedAt            time.Time   `json:"updated_at"`
 	PreviousJobID        pgtype.UUID `json:"previous_job_id"`
+	DownloadSpeed        *int64      `json:"download_speed"`
+	EtaSeconds           *int64      `json:"eta_seconds"`
+	TotalSize            *int64      `json:"total_size"`
 }
 
 type DownloadJobEvent struct {

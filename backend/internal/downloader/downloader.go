@@ -62,6 +62,10 @@ type Item struct {
 	SavePath    string
 	ContentPath string
 
+	DownloadSpeed int64 // bytes/sec
+	ETA           int64 // seconds remaining
+	TotalSize     int64 // total size in bytes
+
 	AddedAt time.Time
 }
 

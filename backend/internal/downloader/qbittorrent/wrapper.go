@@ -291,6 +291,9 @@ func (c *qBittorrentClient) Get(ctx context.Context, externalID string) (downloa
 		item.Progress = t.Progress
 		item.SavePath = t.SavePath
 		item.ContentPath = t.ContentPath
+		item.DownloadSpeed = int64(t.Dlspeed)
+		item.ETA = int64(t.Eta)
+		item.TotalSize = int64(t.TotalSize)
 		item.AddedAt = time.Unix(t.AddedOn, 0)
 
 		return item, nil
@@ -326,13 +329,16 @@ func (c *qBittorrentClient) List(ctx context.Context) ([]downloader.Item, error)
 		items = make([]downloader.Item, len(torrents))
 		for i, t := range torrents {
 			items[i] = downloader.Item{
-				ExternalID:  t.Hash,
-				Name:        t.Name,
-				Status:      mapStateToStatus(t.State),
-				Progress:    t.Progress,
-				SavePath:    t.SavePath,
-				ContentPath: t.ContentPath,
-				AddedAt:     time.Unix(t.AddedOn, 0),
+				ExternalID:    t.Hash,
+				Name:          t.Name,
+				Status:        mapStateToStatus(t.State),
+				Progress:      t.Progress,
+				SavePath:      t.SavePath,
+				ContentPath:   t.ContentPath,
+				DownloadSpeed: int64(t.Dlspeed),
+				ETA:           int64(t.Eta),
+				TotalSize:     int64(t.TotalSize),
+				AddedAt:       time.Unix(t.AddedOn, 0),
 			}
 		}
 

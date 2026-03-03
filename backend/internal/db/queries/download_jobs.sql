@@ -94,6 +94,9 @@ SET status = sqlc.arg(status),
     progress = sqlc.arg(progress),
     save_path = sqlc.arg(save_path),
     content_path = sqlc.arg(content_path),
+    download_speed = sqlc.arg(download_speed),
+    eta_seconds = sqlc.arg(eta_seconds),
+    total_size = sqlc.arg(total_size),
     updated_at = now()
 WHERE id = sqlc.arg(id)
 RETURNING *;

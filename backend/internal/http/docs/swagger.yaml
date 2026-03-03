@@ -56,6 +56,8 @@ definitions:
         type: string
       created_at:
         type: string
+      download_speed:
+        type: integer
       downloader_external_id:
         type: string
       downloader_id:
@@ -66,6 +68,8 @@ definitions:
         type: string
       error_category:
         type: string
+      eta_seconds:
+        type: integer
       guid:
         type: string
       id:
@@ -96,6 +100,8 @@ definitions:
         type: string
       status:
         type: string
+      total_size:
+        type: integer
       updated_at:
         type: string
     required:
@@ -104,11 +110,13 @@ definitions:
     - candidate_title
     - content_path
     - created_at
+    - download_speed
     - downloader_external_id
     - downloader_id
     - downloader_status
     - episode_id
     - error_category
+    - eta_seconds
     - guid
     - id
     - indexer_id
@@ -124,6 +132,7 @@ definitions:
     - save_path
     - season_id
     - status
+    - total_size
     - updated_at
     type: object
   dbgen.Downloader:
@@ -182,6 +191,8 @@ definitions:
         type: string
       created_at:
         type: string
+      download_speed:
+        type: integer
       downloader_external_id:
         type: string
       downloader_id:
@@ -192,6 +203,8 @@ definitions:
         type: string
       error_category:
         type: string
+      eta_seconds:
+        type: integer
       guid:
         type: string
       id:
@@ -222,6 +235,8 @@ definitions:
         type: string
       status:
         type: string
+      total_size:
+        type: integer
       updated_at:
         type: string
     required:
@@ -231,11 +246,13 @@ definitions:
     - chain_depth
     - content_path
     - created_at
+    - download_speed
     - downloader_external_id
     - downloader_id
     - downloader_status
     - episode_id
     - error_category
+    - eta_seconds
     - guid
     - id
     - indexer_id
@@ -251,6 +268,7 @@ definitions:
     - save_path
     - season_id
     - status
+    - total_size
     - updated_at
     type: object
   dbgen.GetDownloadJobTimelineRow:
@@ -304,6 +322,8 @@ definitions:
         type: string
       created_at:
         type: string
+      download_speed:
+        type: integer
       downloader_external_id:
         type: string
       downloader_id:
@@ -316,6 +336,8 @@ definitions:
         type: integer
       error_category:
         type: string
+      eta_seconds:
+        type: integer
       failed_imports:
         type: integer
       guid:
@@ -358,6 +380,8 @@ definitions:
         type: integer
       total_import_tasks:
         type: integer
+      total_size:
+        type: integer
       updated_at:
         type: string
     required:
@@ -369,12 +393,14 @@ definitions:
     - completed_imports
     - content_path
     - created_at
+    - download_speed
     - downloader_external_id
     - downloader_id
     - downloader_status
     - episode_id
     - episode_number
     - error_category
+    - eta_seconds
     - failed_imports
     - guid
     - id
@@ -396,6 +422,7 @@ definitions:
     - status
     - tmdb_id
     - total_import_tasks
+    - total_size
     - updated_at
     type: object
   dbgen.GetImportTaskHistoryRow:
@@ -677,6 +704,8 @@ definitions:
         type: string
       created_at:
         type: string
+      download_speed:
+        type: integer
       downloader_external_id:
         type: string
       downloader_id:
@@ -689,6 +718,8 @@ definitions:
         type: integer
       error_category:
         type: string
+      eta_seconds:
+        type: integer
       guid:
         type: string
       id:
@@ -721,6 +752,8 @@ definitions:
         type: integer
       status:
         type: string
+      total_size:
+        type: integer
       updated_at:
         type: string
     required:
@@ -729,12 +762,14 @@ definitions:
     - candidate_title
     - content_path
     - created_at
+    - download_speed
     - downloader_external_id
     - downloader_id
     - downloader_status
     - episode_id
     - episode_number
     - error_category
+    - eta_seconds
     - guid
     - id
     - indexer_id
@@ -751,6 +786,7 @@ definitions:
     - season_id
     - season_number
     - status
+    - total_size
     - updated_at
     type: object
   dbgen.ListDownloadJobsWithImportSummaryRow:
@@ -771,6 +807,8 @@ definitions:
         type: string
       created_at:
         type: string
+      download_speed:
+        type: integer
       downloader_external_id:
         type: string
       downloader_id:
@@ -783,6 +821,8 @@ definitions:
         type: integer
       error_category:
         type: string
+      eta_seconds:
+        type: integer
       failed_imports:
         type: integer
       guid:
@@ -825,6 +865,8 @@ definitions:
         type: integer
       total_import_tasks:
         type: integer
+      total_size:
+        type: integer
       updated_at:
         type: string
     required:
@@ -836,12 +878,14 @@ definitions:
     - completed_imports
     - content_path
     - created_at
+    - download_speed
     - downloader_external_id
     - downloader_id
     - downloader_status
     - episode_id
     - episode_number
     - error_category
+    - eta_seconds
     - failed_imports
     - guid
     - id
@@ -863,6 +907,7 @@ definitions:
     - status
     - tmdb_id
     - total_import_tasks
+    - total_size
     - updated_at
     type: object
   dbgen.Policy:

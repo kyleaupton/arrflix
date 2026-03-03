@@ -16,6 +16,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { AlertCircle, FileIcon, RefreshCw, XCircle } from 'lucide-vue-next'
 import type { DbgenImportTask } from '@/client/types.gen'
+import { statusConfig } from './statusConfig'
+import { formatBytes, formatSpeed, formatEta } from '@/lib/format'
 
 const jobs = useDownloadJobsStore()
 
@@ -25,18 +27,6 @@ const emit = defineEmits<{
   (e: 'retry', jobId: string): void
 }>()
 
-// Status config for unified import_status
-const statusConfig: Record<string, { label: string; class: string }> = {
-  download_pending: { label: 'Downloading', class: 'bg-blue-500 text-white' },
-  download_failed: { label: 'Download Failed', class: 'bg-red-500 text-white' },
-  download_cancelled: { label: 'Cancelled', class: 'bg-gray-600 text-white' },
-  awaiting_import: { label: 'Awaiting Import', class: 'bg-yellow-500 text-white' },
-  importing: { label: 'Importing', class: 'bg-yellow-600 text-white' },
-  partial_failure: { label: 'Partial Failure', class: 'bg-orange-500 text-white' },
-  import_failed: { label: 'Import Failed', class: 'bg-red-500 text-white' },
-  fully_imported: { label: 'Imported', class: 'bg-green-500 text-white' },
-  unknown: { label: 'Unknown', class: 'bg-gray-500 text-white' },
-}
 
 // Import task status config
 const taskStatusConfig: Record<string, { label: string; class: string }> = {
@@ -152,6 +142,11 @@ function getTaskStatusConfig(status: string) {
               <span class="text-sm text-muted-foreground">
                 {{ Math.round((job?.progress ?? 0) * 100) }}%
               </span>
+            </div>
+            <div class="flex items-center gap-3 text-xs text-muted-foreground">
+              <span v-if="formatSpeed(job?.download_speed)">{{ formatSpeed(job?.download_speed) }}</span>
+              <span v-if="formatEta(job?.eta_seconds)">ETA: {{ formatEta(job?.eta_seconds) }}</span>
+              <span v-if="formatBytes(job?.total_size)">{{ formatBytes(job?.total_size) }}</span>
             </div>
             <p v-if="job?.downloader_status" class="text-xs text-muted-foreground">
               Downloader status: {{ job.downloader_status }}

@@ -28,6 +28,8 @@ func NewClient(baseURL string) *Client {
 }
 
 // ParseResult holds the output from guessit for a single filename.
+// The guessit sidecar is configured with single_value=True, so all fields
+// are guaranteed to be scalars (not arrays).
 type ParseResult struct {
 	Title        *string `json:"title"`
 	Year         *int    `json:"year"`
