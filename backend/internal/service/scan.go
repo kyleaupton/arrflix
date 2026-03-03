@@ -725,9 +725,9 @@ type tmdbMatch struct {
 	tmdbID int64
 }
 
-// evaluateSearchResults applies conservative matching logic to TMDB search results.
-// Returns a match if exactly 1 relevant result with matching type (and year if available),
-// otherwise returns up to 5 suggestions.
+// evaluateSearchResults matches TMDB search results against a search key.
+// First filters by media type, then narrows by year if available. Returns a
+// match if exactly 1 candidate remains, otherwise returns up to 5 suggestions.
 func evaluateSearchResults(libraryType string, key tmdbSearchKey, searchResult tmdb.SearchMulti) (*tmdbMatch, []SuggestedMatch) {
 	if searchResult.SearchMultiResults == nil {
 		return nil, []SuggestedMatch{}
@@ -769,13 +769,24 @@ func evaluateSearchResults(libraryType string, key tmdbSearchKey, searchResult t
 		candidates = append(candidates, candidate{ID: r.ID, Title: title, Year: year})
 	}
 
-	// Conservative auto-match: exactly 1 relevant result AND year matches (or no year to compare)
-	if len(candidates) == 1 {
-		c := candidates[0]
-		yearOK := key.Year == nil || c.Year == 0 || c.Year == *key.Year
-		if yearOK {
-			return &tmdbMatch{tmdbID: c.ID}, nil
+	// If we have a year from guessit, narrow candidates to those matching the year first.
+	// This lets us auto-match even when TMDB returns multiple results (e.g. sequels/remakes),
+	// as long as only one result has the right year.
+	if key.Year != nil {
+		var yearFiltered []candidate
+		for _, c := range candidates {
+			if c.Year == 0 || c.Year == *key.Year {
+				yearFiltered = append(yearFiltered, c)
+			}
 		}
+		if len(yearFiltered) > 0 {
+			candidates = yearFiltered
+		}
+	}
+
+	// Auto-match: exactly 1 candidate remaining (after year filtering if applicable)
+	if len(candidates) == 1 {
+		return &tmdbMatch{tmdbID: candidates[0].ID}, nil
 	}
 
 	// Build suggestions (top 5)
