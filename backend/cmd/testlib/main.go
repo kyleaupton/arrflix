@@ -40,6 +40,20 @@ func main() {
 			}
 			fmt.Printf("created %s (%d files)\n", sub, len(lib.Files))
 		}
+	case 3:
+		// Lookup by exact fixture name.
+		name := os.Args[2]
+		lib, err := fakelibrary.Lookup(name)
+		if err != nil {
+			fatal(err)
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			fatal(err)
+		}
+		if err := fakelibrary.Create(dir, lib); err != nil {
+			fatal(err)
+		}
+		fmt.Printf("created %s (%d files)\n", dir, len(lib.Files))
 	case 4:
 		typ := os.Args[2]
 		style := os.Args[3]
@@ -60,13 +74,20 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: testlib <dir> [<type> <style>]")
+	fmt.Fprintln(os.Stderr, "usage: testlib <dir> [<name> | <type> <style>]")
+	fmt.Fprintln(os.Stderr, "  name:  exact fixture name (e.g. realworld-movies-flat)")
 	fmt.Fprintln(os.Stderr, "  type:  movie | series")
 	fmt.Fprintln(os.Stderr, "  style: scene | clean | embedded-id")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "examples:")
 	fmt.Fprintln(os.Stderr, "  testlib /tmp/test-movies movie scene")
+	fmt.Fprintln(os.Stderr, "  testlib /tmp/test realworld-series-mixed")
 	fmt.Fprintln(os.Stderr, "  testlib /tmp/test-all")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "available fixtures:")
+	for _, lib := range fakelibrary.All {
+		fmt.Fprintf(os.Stderr, "  %-40s (%s, %d files)\n", lib.Name, lib.Type, len(lib.Files))
+	}
 	os.Exit(1)
 }
 
