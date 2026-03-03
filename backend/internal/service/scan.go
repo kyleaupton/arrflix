@@ -251,6 +251,9 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 		if d.IsDir() || !isMediaFile(path) {
 			return nil
 		}
+		if isExtraFile(path) {
+			return nil
+		}
 
 		stats.FilesSeen++
 
@@ -769,13 +772,14 @@ func evaluateSearchResults(libraryType string, key tmdbSearchKey, searchResult t
 		candidates = append(candidates, candidate{ID: r.ID, Title: title, Year: year})
 	}
 
-	// If we have a year from guessit, narrow candidates to those matching the year first.
+	// If we have a year from guessit, narrow candidates to exact year matches only.
 	// This lets us auto-match even when TMDB returns multiple results (e.g. sequels/remakes),
-	// as long as only one result has the right year.
+	// as long as only one result has the right year. Results with no year (year==0) are
+	// excluded because they are typically obscure entries that would prevent disambiguation.
 	if key.Year != nil {
 		var yearFiltered []candidate
 		for _, c := range candidates {
-			if c.Year == 0 || c.Year == *key.Year {
+			if c.Year == *key.Year {
 				yearFiltered = append(yearFiltered, c)
 			}
 		}
@@ -820,5 +824,26 @@ func isMediaFile(path string) bool {
 	case ".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".m4v", ".webm":
 		return true
 	}
+	return false
+}
+
+// isExtraFile returns true for files in directories that contain bonus content
+// (featurettes, samples, extras, etc.) rather than the main movie/episode.
+func isExtraFile(path string) bool {
+	for _, part := range strings.Split(filepath.Dir(path), string(filepath.Separator)) {
+		switch strings.ToLower(part) {
+		case "featurettes", "featurette", "sample", "samples",
+			"extras", "extra", "bonus", "behind the scenes",
+			"deleted scenes", "interviews", "trailers", "shorts":
+			return true
+		}
+	}
+
+	// Also catch "sample.mkv" or files starting with "sample" at the filename level
+	base := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
+	if base == "sample" || strings.HasPrefix(base, "sample.") || strings.HasPrefix(base, "sample-") {
+		return true
+	}
+
 	return false
 }
