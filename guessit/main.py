@@ -9,11 +9,14 @@ def health():
     return {"status": "ok"}
 
 
+OPTS = {"single_value": True}
+
+
 @app.post("/parse")
 def parse(filename: str):
-    return guessit(filename)
+    return guessit(filename, OPTS)
 
 
 @app.post("/parse/batch")
 def parse_batch(filenames: list[str]):
-    return [guessit(f) for f in filenames]
+    return [guessit(f, OPTS) for f in filenames]
