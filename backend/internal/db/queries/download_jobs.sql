@@ -153,6 +153,7 @@ RETURNING j.*;
 SELECT
   dj.*,
   mi.tmdb_id,
+  mi.poster_path AS media_poster_path,
   ms.season_number,
   me.episode_number,
   COUNT(it.id)::int AS total_import_tasks,
@@ -182,7 +183,7 @@ LEFT JOIN import_task it ON it.download_job_id = dj.id
     WHERE child.previous_task_id = it.id
   )
 WHERE dj.id = $1
-GROUP BY dj.id, mi.tmdb_id, ms.season_number, me.episode_number;
+GROUP BY dj.id, mi.tmdb_id, mi.poster_path, ms.season_number, me.episode_number;
 
 -- name: RetryDownloadJob :one
 -- Creates a new download job by copying from a failed job, setting previous_job_id
@@ -279,6 +280,7 @@ ORDER BY created_at ASC;
 SELECT
   dj.*,
   mi.tmdb_id,
+  mi.poster_path AS media_poster_path,
   ms.season_number,
   me.episode_number,
   COUNT(it.id)::int AS total_import_tasks,
@@ -311,5 +313,5 @@ WHERE NOT EXISTS (
   SELECT 1 FROM download_job child
   WHERE child.previous_job_id = dj.id
 )
-GROUP BY dj.id, mi.tmdb_id, ms.season_number, me.episode_number
+GROUP BY dj.id, mi.tmdb_id, mi.poster_path, ms.season_number, me.episode_number
 ORDER BY dj.updated_at DESC;

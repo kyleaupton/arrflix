@@ -503,6 +503,7 @@ const getDownloadJobWithImportSummary = `-- name: GetDownloadJobWithImportSummar
 SELECT
   dj.id, dj.status, dj.protocol, dj.indexer_id, dj.guid, dj.candidate_title, dj.candidate_link, dj.media_type, dj.media_item_id, dj.season_id, dj.episode_id, dj.library_id, dj.name_template_id, dj.downloader_id, dj.downloader_external_id, dj.downloader_status, dj.progress, dj.save_path, dj.content_path, dj.attempt_count, dj.next_run_at, dj.last_error, dj.error_category, dj.created_at, dj.updated_at, dj.previous_job_id, dj.download_speed, dj.eta_seconds, dj.total_size,
   mi.tmdb_id,
+  mi.poster_path AS media_poster_path,
   ms.season_number,
   me.episode_number,
   COUNT(it.id)::int AS total_import_tasks,
@@ -532,7 +533,7 @@ LEFT JOIN import_task it ON it.download_job_id = dj.id
     WHERE child.previous_task_id = it.id
   )
 WHERE dj.id = $1
-GROUP BY dj.id, mi.tmdb_id, ms.season_number, me.episode_number
+GROUP BY dj.id, mi.tmdb_id, mi.poster_path, ms.season_number, me.episode_number
 `
 
 type GetDownloadJobWithImportSummaryRow struct {
@@ -566,6 +567,7 @@ type GetDownloadJobWithImportSummaryRow struct {
 	EtaSeconds           *int64      `json:"eta_seconds"`
 	TotalSize            *int64      `json:"total_size"`
 	TmdbID               *int64      `json:"tmdb_id"`
+	MediaPosterPath      *string     `json:"media_poster_path"`
 	SeasonNumber         *int32      `json:"season_number"`
 	EpisodeNumber        *int32      `json:"episode_number"`
 	TotalImportTasks     int32       `json:"total_import_tasks"`
@@ -613,6 +615,7 @@ func (q *Queries) GetDownloadJobWithImportSummary(ctx context.Context, id pgtype
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.TmdbID,
+		&i.MediaPosterPath,
 		&i.SeasonNumber,
 		&i.EpisodeNumber,
 		&i.TotalImportTasks,
@@ -897,6 +900,7 @@ const listDownloadJobsWithImportSummary = `-- name: ListDownloadJobsWithImportSu
 SELECT
   dj.id, dj.status, dj.protocol, dj.indexer_id, dj.guid, dj.candidate_title, dj.candidate_link, dj.media_type, dj.media_item_id, dj.season_id, dj.episode_id, dj.library_id, dj.name_template_id, dj.downloader_id, dj.downloader_external_id, dj.downloader_status, dj.progress, dj.save_path, dj.content_path, dj.attempt_count, dj.next_run_at, dj.last_error, dj.error_category, dj.created_at, dj.updated_at, dj.previous_job_id, dj.download_speed, dj.eta_seconds, dj.total_size,
   mi.tmdb_id,
+  mi.poster_path AS media_poster_path,
   ms.season_number,
   me.episode_number,
   COUNT(it.id)::int AS total_import_tasks,
@@ -929,7 +933,7 @@ WHERE NOT EXISTS (
   SELECT 1 FROM download_job child
   WHERE child.previous_job_id = dj.id
 )
-GROUP BY dj.id, mi.tmdb_id, ms.season_number, me.episode_number
+GROUP BY dj.id, mi.tmdb_id, mi.poster_path, ms.season_number, me.episode_number
 ORDER BY dj.updated_at DESC
 `
 
@@ -964,6 +968,7 @@ type ListDownloadJobsWithImportSummaryRow struct {
 	EtaSeconds           *int64      `json:"eta_seconds"`
 	TotalSize            *int64      `json:"total_size"`
 	TmdbID               *int64      `json:"tmdb_id"`
+	MediaPosterPath      *string     `json:"media_poster_path"`
 	SeasonNumber         *int32      `json:"season_number"`
 	EpisodeNumber        *int32      `json:"episode_number"`
 	TotalImportTasks     int32       `json:"total_import_tasks"`
@@ -1017,6 +1022,7 @@ func (q *Queries) ListDownloadJobsWithImportSummary(ctx context.Context) ([]List
 			&i.EtaSeconds,
 			&i.TotalSize,
 			&i.TmdbID,
+			&i.MediaPosterPath,
 			&i.SeasonNumber,
 			&i.EpisodeNumber,
 			&i.TotalImportTasks,

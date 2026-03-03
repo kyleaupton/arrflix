@@ -4282,6 +4282,7 @@ const docTemplate = `{
                 "last_error",
                 "library_id",
                 "media_item_id",
+                "media_poster_path",
                 "media_type",
                 "name_template_id",
                 "next_run_at",
@@ -4369,6 +4370,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "media_item_id": {
+                    "type": "string"
+                },
+                "media_poster_path": {
                     "type": "string"
                 },
                 "media_type": {
@@ -4939,6 +4943,7 @@ const docTemplate = `{
                 "last_error",
                 "library_id",
                 "media_item_id",
+                "media_poster_path",
                 "media_type",
                 "name_template_id",
                 "next_run_at",
@@ -5026,6 +5031,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "media_item_id": {
+                    "type": "string"
+                },
+                "media_poster_path": {
                     "type": "string"
                 },
                 "media_type": {

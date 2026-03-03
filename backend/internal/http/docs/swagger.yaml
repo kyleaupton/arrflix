@@ -354,6 +354,8 @@ definitions:
         type: string
       media_item_id:
         type: string
+      media_poster_path:
+        type: string
       media_type:
         type: string
       name_template_id:
@@ -409,6 +411,7 @@ definitions:
     - last_error
     - library_id
     - media_item_id
+    - media_poster_path
     - media_type
     - name_template_id
     - next_run_at
@@ -839,6 +842,8 @@ definitions:
         type: string
       media_item_id:
         type: string
+      media_poster_path:
+        type: string
       media_type:
         type: string
       name_template_id:
@@ -894,6 +899,7 @@ definitions:
     - last_error
     - library_id
     - media_item_id
+    - media_poster_path
     - media_type
     - name_template_id
     - next_run_at

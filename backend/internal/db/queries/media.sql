@@ -322,3 +322,42 @@ delete from unmatched_file where id = $1;
 delete from unmatched_file
 where resolved_at is not null
   and resolved_at < sqlc.arg(before_time);
+
+-- Metadata enrichment queries
+
+-- name: UpdateMediaItemMetadata :one
+UPDATE media_item
+SET poster_path        = sqlc.arg(poster_path),
+    backdrop_path      = sqlc.arg(backdrop_path),
+    overview           = sqlc.arg(overview),
+    vote_average       = sqlc.arg(vote_average),
+    vote_count         = sqlc.arg(vote_count),
+    runtime            = sqlc.arg(runtime),
+    status             = sqlc.arg(status),
+    certification      = sqlc.arg(certification),
+    genres             = sqlc.arg(genres),
+    release_date       = sqlc.arg(release_date),
+    last_air_date      = sqlc.arg(last_air_date),
+    in_production      = sqlc.arg(in_production),
+    imdb_id            = sqlc.arg(imdb_id),
+    metadata_updated_at = now(),
+    updated_at         = now()
+WHERE id = sqlc.arg(id)
+RETURNING *;
+
+-- name: ListStaleMediaItems :many
+SELECT * FROM media_item
+WHERE tmdb_id IS NOT NULL
+  AND (metadata_updated_at IS NULL OR metadata_updated_at < sqlc.arg(stale_before))
+ORDER BY metadata_updated_at ASC NULLS FIRST
+LIMIT sqlc.arg(batch_size);
+
+-- name: UpsertMediaMetadataSource :exec
+INSERT INTO media_metadata_source (media_item_id, source, data, fetched_at)
+VALUES (sqlc.arg(media_item_id), sqlc.arg(source), sqlc.arg(data), now())
+ON CONFLICT (media_item_id, source)
+DO UPDATE SET data = excluded.data, fetched_at = now();
+
+-- name: GetMediaMetadataSource :one
+SELECT * FROM media_metadata_source
+WHERE media_item_id = sqlc.arg(media_item_id) AND source = sqlc.arg(source);

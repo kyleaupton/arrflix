@@ -224,6 +224,28 @@ func (s *TmdbService) GetTVContentRatings(ctx context.Context, id int64) (tmdb.T
 	}, STATIC_TTL)
 }
 
+// GetMovieDetailsForEnrichment fetches movie details with release_dates appended
+// for certification extraction. Uses STATIC_TTL since enrichment data is stable.
+func (s *TmdbService) GetMovieDetailsForEnrichment(ctx context.Context, id int64) (tmdb.MovieDetails, error) {
+	cacheKey := fmt.Sprintf("tmdb_movie_enrich_%d", id)
+	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.MovieDetails, error) {
+		return s.client.GetMovieDetails(int(id), map[string]string{
+			"append_to_response": "release_dates",
+		})
+	}, STATIC_TTL)
+}
+
+// GetSeriesDetailsForEnrichment fetches series details with content_ratings and external_ids
+// appended for certification and IMDB ID extraction. Uses STATIC_TTL.
+func (s *TmdbService) GetSeriesDetailsForEnrichment(ctx context.Context, id int64) (tmdb.TVDetails, error) {
+	cacheKey := fmt.Sprintf("tmdb_series_enrich_%d", id)
+	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.TVDetails, error) {
+		return s.client.GetTVDetails(int(id), map[string]string{
+			"append_to_response": "content_ratings,external_ids",
+		})
+	}, STATIC_TTL)
+}
+
 // getOrFetchFromCache encapsulates the pattern of:
 // 1) checking API cache
 // 2) calling the provided fetch function on cache miss

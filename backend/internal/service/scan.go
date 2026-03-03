@@ -53,17 +53,18 @@ type scanTmdb interface {
 }
 
 type ScannerService struct {
-	repo    scanRepo
-	logger  *logger.Logger
-	tmdb    scanTmdb
-	broker  *sse.Broker
-	guessit *guessit.Client
-	ctx     context.Context // background context for goroutines; cancelled on shutdown
-	running sync.Map        // libraryID string -> scanID string
+	repo       scanRepo
+	logger     *logger.Logger
+	tmdb       scanTmdb
+	broker     *sse.Broker
+	guessit    *guessit.Client
+	enrichment *EnrichmentService
+	ctx        context.Context // background context for goroutines; cancelled on shutdown
+	running    sync.Map        // libraryID string -> scanID string
 }
 
-func NewScannerService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, broker *sse.Broker, gc *guessit.Client) *ScannerService {
-	return &ScannerService{repo: r, logger: l, tmdb: tmdb, broker: broker, guessit: gc, ctx: context.Background()}
+func NewScannerService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, broker *sse.Broker, gc *guessit.Client, enrichment *EnrichmentService) *ScannerService {
+	return &ScannerService{repo: r, logger: l, tmdb: tmdb, broker: broker, guessit: gc, enrichment: enrichment, ctx: context.Background()}
 }
 
 // SetContext sets the background context used by scan goroutines.
@@ -505,6 +506,15 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library dbgen.Libr
 	item, err := s.repo.CreateMediaItem(ctx, library.Type, title, &year, &tmdbID)
 	if err != nil {
 		return pgtype.UUID{}, false, err
+	}
+
+	// Fire async enrichment so metadata is available quickly
+	if s.enrichment != nil {
+		go func() {
+			if err := s.enrichment.EnrichMediaItem(context.Background(), item); err != nil {
+				s.logger.Warn().Err(err).Str("title", item.Title).Msg("scan-time enrichment failed, worker will retry")
+			}
+		}()
 	}
 
 	return item.ID, true, nil

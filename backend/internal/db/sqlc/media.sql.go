@@ -148,7 +148,7 @@ func (q *Queries) CreateMediaFileState(ctx context.Context, arg CreateMediaFileS
 const createMediaItem = `-- name: CreateMediaItem :one
 insert into media_item (type, title, year, tmdb_id)
 values ($1, $2, $3, $4)
-returning id, type, title, year, tmdb_id, created_at, updated_at
+returning id, type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, imdb_id, metadata_updated_at
 `
 
 type CreateMediaItemParams struct {
@@ -174,6 +174,20 @@ func (q *Queries) CreateMediaItem(ctx context.Context, arg CreateMediaItemParams
 		&i.TmdbID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PosterPath,
+		&i.BackdropPath,
+		&i.Overview,
+		&i.VoteAverage,
+		&i.VoteCount,
+		&i.Runtime,
+		&i.Status,
+		&i.Certification,
+		&i.Genres,
+		&i.ReleaseDate,
+		&i.LastAirDate,
+		&i.InProduction,
+		&i.ImdbID,
+		&i.MetadataUpdatedAt,
 	)
 	return i, err
 }
@@ -403,7 +417,7 @@ func (q *Queries) GetMediaFileState(ctx context.Context, mediaFileID pgtype.UUID
 }
 
 const getMediaItem = `-- name: GetMediaItem :one
-select id, type, title, year, tmdb_id, created_at, updated_at from media_item
+select id, type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, imdb_id, metadata_updated_at from media_item
 where id = $1
 `
 
@@ -418,12 +432,26 @@ func (q *Queries) GetMediaItem(ctx context.Context, id pgtype.UUID) (MediaItem, 
 		&i.TmdbID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PosterPath,
+		&i.BackdropPath,
+		&i.Overview,
+		&i.VoteAverage,
+		&i.VoteCount,
+		&i.Runtime,
+		&i.Status,
+		&i.Certification,
+		&i.Genres,
+		&i.ReleaseDate,
+		&i.LastAirDate,
+		&i.InProduction,
+		&i.ImdbID,
+		&i.MetadataUpdatedAt,
 	)
 	return i, err
 }
 
 const getMediaItemByTmdbID = `-- name: GetMediaItemByTmdbID :one
-select id, type, title, year, tmdb_id, created_at, updated_at from media_item
+select id, type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, imdb_id, metadata_updated_at from media_item
 where tmdb_id = $1
 `
 
@@ -438,12 +466,26 @@ func (q *Queries) GetMediaItemByTmdbID(ctx context.Context, tmdbID *int64) (Medi
 		&i.TmdbID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PosterPath,
+		&i.BackdropPath,
+		&i.Overview,
+		&i.VoteAverage,
+		&i.VoteCount,
+		&i.Runtime,
+		&i.Status,
+		&i.Certification,
+		&i.Genres,
+		&i.ReleaseDate,
+		&i.LastAirDate,
+		&i.InProduction,
+		&i.ImdbID,
+		&i.MetadataUpdatedAt,
 	)
 	return i, err
 }
 
 const getMediaItemByTmdbIDAndType = `-- name: GetMediaItemByTmdbIDAndType :one
-select id, type, title, year, tmdb_id, created_at, updated_at from media_item
+select id, type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, imdb_id, metadata_updated_at from media_item
 where tmdb_id = $1 and type = $2
 `
 
@@ -463,6 +505,20 @@ func (q *Queries) GetMediaItemByTmdbIDAndType(ctx context.Context, arg GetMediaI
 		&i.TmdbID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PosterPath,
+		&i.BackdropPath,
+		&i.Overview,
+		&i.VoteAverage,
+		&i.VoteCount,
+		&i.Runtime,
+		&i.Status,
+		&i.Certification,
+		&i.Genres,
+		&i.ReleaseDate,
+		&i.LastAirDate,
+		&i.InProduction,
+		&i.ImdbID,
+		&i.MetadataUpdatedAt,
 	)
 	return i, err
 }
@@ -495,6 +551,28 @@ func (q *Queries) GetMediaItemsByTmdbIDs(ctx context.Context, arg GetMediaItemsB
 		return nil, err
 	}
 	return items, nil
+}
+
+const getMediaMetadataSource = `-- name: GetMediaMetadataSource :one
+SELECT media_item_id, source, data, fetched_at FROM media_metadata_source
+WHERE media_item_id = $1 AND source = $2
+`
+
+type GetMediaMetadataSourceParams struct {
+	MediaItemID pgtype.UUID `json:"media_item_id"`
+	Source      string      `json:"source"`
+}
+
+func (q *Queries) GetMediaMetadataSource(ctx context.Context, arg GetMediaMetadataSourceParams) (MediaMetadataSource, error) {
+	row := q.db.QueryRow(ctx, getMediaMetadataSource, arg.MediaItemID, arg.Source)
+	var i MediaMetadataSource
+	err := row.Scan(
+		&i.MediaItemID,
+		&i.Source,
+		&i.Data,
+		&i.FetchedAt,
+	)
+	return i, err
 }
 
 const getSeason = `-- name: GetSeason :one
@@ -942,7 +1020,7 @@ func (q *Queries) ListMediaFilesForItem(ctx context.Context, mediaItemID pgtype.
 
 const listMediaItems = `-- name: ListMediaItems :many
 
-select id, type, title, year, tmdb_id, created_at, updated_at from media_item
+select id, type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, imdb_id, metadata_updated_at from media_item
 order by created_at desc
 `
 
@@ -964,6 +1042,20 @@ func (q *Queries) ListMediaItems(ctx context.Context) ([]MediaItem, error) {
 			&i.TmdbID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PosterPath,
+			&i.BackdropPath,
+			&i.Overview,
+			&i.VoteAverage,
+			&i.VoteCount,
+			&i.Runtime,
+			&i.Status,
+			&i.Certification,
+			&i.Genres,
+			&i.ReleaseDate,
+			&i.LastAirDate,
+			&i.InProduction,
+			&i.ImdbID,
+			&i.MetadataUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -977,7 +1069,7 @@ func (q *Queries) ListMediaItems(ctx context.Context) ([]MediaItem, error) {
 
 const listMediaItemsPaginated = `-- name: ListMediaItemsPaginated :many
 
-SELECT id, type, title, year, tmdb_id, created_at, updated_at FROM media_item
+SELECT id, type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, imdb_id, metadata_updated_at FROM media_item
 WHERE
     ($1::text IS NULL OR type = $1) AND
     ($2::text IS NULL OR title ILIKE '%' || $2 || '%')
@@ -1026,6 +1118,20 @@ func (q *Queries) ListMediaItemsPaginated(ctx context.Context, arg ListMediaItem
 			&i.TmdbID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PosterPath,
+			&i.BackdropPath,
+			&i.Overview,
+			&i.VoteAverage,
+			&i.VoteCount,
+			&i.Runtime,
+			&i.Status,
+			&i.Certification,
+			&i.Genres,
+			&i.ReleaseDate,
+			&i.LastAirDate,
+			&i.InProduction,
+			&i.ImdbID,
+			&i.MetadataUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1144,6 +1250,61 @@ func (q *Queries) ListSeasonsForMedia(ctx context.Context, mediaItemID pgtype.UU
 			&i.SeasonNumber,
 			&i.AirDate,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStaleMediaItems = `-- name: ListStaleMediaItems :many
+SELECT id, type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, imdb_id, metadata_updated_at FROM media_item
+WHERE tmdb_id IS NOT NULL
+  AND (metadata_updated_at IS NULL OR metadata_updated_at < $1)
+ORDER BY metadata_updated_at ASC NULLS FIRST
+LIMIT $2
+`
+
+type ListStaleMediaItemsParams struct {
+	StaleBefore pgtype.Timestamptz `json:"stale_before"`
+	BatchSize   int32              `json:"batch_size"`
+}
+
+func (q *Queries) ListStaleMediaItems(ctx context.Context, arg ListStaleMediaItemsParams) ([]MediaItem, error) {
+	rows, err := q.db.Query(ctx, listStaleMediaItems, arg.StaleBefore, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MediaItem
+	for rows.Next() {
+		var i MediaItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.Year,
+			&i.TmdbID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PosterPath,
+			&i.BackdropPath,
+			&i.Overview,
+			&i.VoteAverage,
+			&i.VoteCount,
+			&i.Runtime,
+			&i.Status,
+			&i.Certification,
+			&i.Genres,
+			&i.ReleaseDate,
+			&i.LastAirDate,
+			&i.InProduction,
+			&i.ImdbID,
+			&i.MetadataUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1355,7 +1516,7 @@ set title = $2,
     tmdb_id = $4,
     updated_at = now()
 where id = $1
-returning id, type, title, year, tmdb_id, created_at, updated_at
+returning id, type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, imdb_id, metadata_updated_at
 `
 
 type UpdateMediaItemParams struct {
@@ -1381,6 +1542,104 @@ func (q *Queries) UpdateMediaItem(ctx context.Context, arg UpdateMediaItemParams
 		&i.TmdbID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PosterPath,
+		&i.BackdropPath,
+		&i.Overview,
+		&i.VoteAverage,
+		&i.VoteCount,
+		&i.Runtime,
+		&i.Status,
+		&i.Certification,
+		&i.Genres,
+		&i.ReleaseDate,
+		&i.LastAirDate,
+		&i.InProduction,
+		&i.ImdbID,
+		&i.MetadataUpdatedAt,
+	)
+	return i, err
+}
+
+const updateMediaItemMetadata = `-- name: UpdateMediaItemMetadata :one
+
+UPDATE media_item
+SET poster_path        = $1,
+    backdrop_path      = $2,
+    overview           = $3,
+    vote_average       = $4,
+    vote_count         = $5,
+    runtime            = $6,
+    status             = $7,
+    certification      = $8,
+    genres             = $9,
+    release_date       = $10,
+    last_air_date      = $11,
+    in_production      = $12,
+    imdb_id            = $13,
+    metadata_updated_at = now(),
+    updated_at         = now()
+WHERE id = $14
+RETURNING id, type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, imdb_id, metadata_updated_at
+`
+
+type UpdateMediaItemMetadataParams struct {
+	PosterPath    *string     `json:"poster_path"`
+	BackdropPath  *string     `json:"backdrop_path"`
+	Overview      *string     `json:"overview"`
+	VoteAverage   *float64    `json:"vote_average"`
+	VoteCount     *int32      `json:"vote_count"`
+	Runtime       *int32      `json:"runtime"`
+	Status        *string     `json:"status"`
+	Certification *string     `json:"certification"`
+	Genres        []byte      `json:"genres"`
+	ReleaseDate   pgtype.Date `json:"release_date"`
+	LastAirDate   pgtype.Date `json:"last_air_date"`
+	InProduction  *bool       `json:"in_production"`
+	ImdbID        *string     `json:"imdb_id"`
+	ID            pgtype.UUID `json:"id"`
+}
+
+// Metadata enrichment queries
+func (q *Queries) UpdateMediaItemMetadata(ctx context.Context, arg UpdateMediaItemMetadataParams) (MediaItem, error) {
+	row := q.db.QueryRow(ctx, updateMediaItemMetadata,
+		arg.PosterPath,
+		arg.BackdropPath,
+		arg.Overview,
+		arg.VoteAverage,
+		arg.VoteCount,
+		arg.Runtime,
+		arg.Status,
+		arg.Certification,
+		arg.Genres,
+		arg.ReleaseDate,
+		arg.LastAirDate,
+		arg.InProduction,
+		arg.ImdbID,
+		arg.ID,
+	)
+	var i MediaItem
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Title,
+		&i.Year,
+		&i.TmdbID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PosterPath,
+		&i.BackdropPath,
+		&i.Overview,
+		&i.VoteAverage,
+		&i.VoteCount,
+		&i.Runtime,
+		&i.Status,
+		&i.Certification,
+		&i.Genres,
+		&i.ReleaseDate,
+		&i.LastAirDate,
+		&i.InProduction,
+		&i.ImdbID,
+		&i.MetadataUpdatedAt,
 	)
 	return i, err
 }
@@ -1491,7 +1750,7 @@ on conflict (type, tmdb_id)
 do update set title = excluded.title,
               year = excluded.year,
               updated_at = now()
-returning id, type, title, year, tmdb_id, created_at, updated_at
+returning id, type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, imdb_id, metadata_updated_at
 `
 
 type UpsertMediaItemParams struct {
@@ -1517,8 +1776,40 @@ func (q *Queries) UpsertMediaItem(ctx context.Context, arg UpsertMediaItemParams
 		&i.TmdbID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PosterPath,
+		&i.BackdropPath,
+		&i.Overview,
+		&i.VoteAverage,
+		&i.VoteCount,
+		&i.Runtime,
+		&i.Status,
+		&i.Certification,
+		&i.Genres,
+		&i.ReleaseDate,
+		&i.LastAirDate,
+		&i.InProduction,
+		&i.ImdbID,
+		&i.MetadataUpdatedAt,
 	)
 	return i, err
+}
+
+const upsertMediaMetadataSource = `-- name: UpsertMediaMetadataSource :exec
+INSERT INTO media_metadata_source (media_item_id, source, data, fetched_at)
+VALUES ($1, $2, $3, now())
+ON CONFLICT (media_item_id, source)
+DO UPDATE SET data = excluded.data, fetched_at = now()
+`
+
+type UpsertMediaMetadataSourceParams struct {
+	MediaItemID pgtype.UUID `json:"media_item_id"`
+	Source      string      `json:"source"`
+	Data        []byte      `json:"data"`
+}
+
+func (q *Queries) UpsertMediaMetadataSource(ctx context.Context, arg UpsertMediaMetadataSourceParams) error {
+	_, err := q.db.Exec(ctx, upsertMediaMetadataSource, arg.MediaItemID, arg.Source, arg.Data)
+	return err
 }
 
 const upsertSeason = `-- name: UpsertSeason :one
