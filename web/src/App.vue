@@ -30,10 +30,22 @@ if (appStore.needsSetup && route.path !== '/setup') {
     >
       <div class="text-muted-foreground">Loading...</div>
     </div>
-    <router-view v-else-if="route.meta.public" />
+    <router-view v-else-if="route.meta.public" v-slot="{ Component: publicComponent, route: publicRoute }">
+      <Transition name="page" mode="out-in">
+        <component :is="publicComponent" :key="publicRoute.path" />
+      </Transition>
+    </router-view>
     <ImmersiveLayout v-else-if="authStore.isAuthenticated">
-      <router-view />
+      <router-view v-slot="{ Component, route: resolvedRoute }">
+        <Transition name="page" mode="out-in">
+          <component :is="Component" :key="resolvedRoute.path" />
+        </Transition>
+      </router-view>
     </ImmersiveLayout>
-    <router-view v-else />
+    <router-view v-else v-slot="{ Component: fallbackComponent, route: fallbackRoute }">
+      <Transition name="page" mode="out-in">
+        <component :is="fallbackComponent" :key="fallbackRoute.path" />
+      </Transition>
+    </router-view>
   </TooltipProvider>
 </template>

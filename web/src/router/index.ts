@@ -1,8 +1,21 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
+// Prevent the browser's native scroll restoration from fighting Vue Router
+if ('scrollRestoration' in history) {
+  history.scrollRestoration = 'manual'
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
+  scrollBehavior(_to, _from, savedPosition) {
+    // Delay scroll until after the page transition (150ms) completes
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(savedPosition || { top: 0 })
+      }, 160)
+    })
+  },
   routes: [
     {
       path: '/',

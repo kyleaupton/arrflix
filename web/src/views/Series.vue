@@ -1,13 +1,14 @@
 <template>
   <div class="flex flex-col gap-6">
-    <div v-if="isLoading" class="space-y-4">
-      <Skeleton class="h-96 w-full rounded-lg" />
-    </div>
-    <div v-else-if="isError" class="flex flex-col items-center justify-center py-12 text-center">
-      <p class="text-destructive">Failed to load series</p>
-      <p class="text-sm text-muted-foreground mt-2">Please try again later</p>
-    </div>
-    <template v-else-if="data">
+    <Transition name="fade" mode="out-in">
+      <div v-if="isLoading" key="loading" class="space-y-4">
+        <Skeleton class="h-96 w-full rounded-lg" />
+      </div>
+      <div v-else-if="isError" key="error" class="flex flex-col items-center justify-center py-12 text-center">
+        <p class="text-destructive">Failed to load series</p>
+        <p class="text-sm text-muted-foreground mt-2">Please try again later</p>
+      </div>
+      <div v-else-if="data" key="content" class="flex flex-col gap-6">
       <MediaHero
         :title="data.title"
         :tagline="data.tagline"
@@ -203,7 +204,8 @@
 
       <WatchProviders :providers="data.watchProviders" />
       </div>
-    </template>
+      </div>
+    </Transition>
   </div>
 </template>
 

@@ -118,3 +118,57 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Skeleton shimmer */
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--primary) 6%, transparent) 0%,
+    color-mix(in oklch, var(--primary) 18%, transparent) 50%,
+    color-mix(in oklch, var(--primary) 6%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 2s ease-in-out infinite;
+}
+
+/* Content crossfade */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 200ms ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* Route page fade */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 150ms ease;
+}
+.page-enter-from,
+.page-leave-to {
+  opacity: 0;
+}
+
+/* Staggered reveal */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-stagger-in {
+  animation: fade-in-up 400ms ease-out both;
+  animation-delay: var(--stagger-delay, 0ms);
+}
