@@ -511,7 +511,7 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library dbgen.Libr
 	// Fire async enrichment so metadata is available quickly
 	if s.enrichment != nil {
 		go func() {
-			if err := s.enrichment.EnrichMediaItem(context.Background(), item); err != nil {
+			if err := s.enrichment.EnrichMediaItem(s.ctx, item); err != nil {
 				s.logger.Warn().Err(err).Str("title", item.Title).Msg("scan-time enrichment failed, worker will retry")
 			}
 		}()
