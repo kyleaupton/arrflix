@@ -4,6 +4,7 @@
 package fakelibrary
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,14 +137,14 @@ var EmbeddedIDSeries = Library{
 }
 
 // All is every predefined fixture library.
-var All = []Library{
+var All = append([]Library{
 	SceneMovies,
 	CleanMovies,
 	EmbeddedIDMovies,
 	SceneSeries,
 	CleanSeries,
 	EmbeddedIDSeries,
-}
+}, allRealWorld...)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -195,6 +196,32 @@ func ByType(typ string) []Library {
 		}
 	}
 	return out
+}
+
+// LoadJSON reads a JSON file produced by cmd/dumplib and returns a Library.
+// This lets you turn a real user's library dump into a test fixture.
+func LoadJSON(path string) (Library, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Library{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	var lib Library
+	if err := json.Unmarshal(data, &lib); err != nil {
+		return Library{}, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return lib, nil
+}
+
+// LoadJSONTemp reads a JSON fixture, materialises it in a temp directory,
+// and returns (dir, Library). Handy one-liner for tests.
+func LoadJSONTemp(t *testing.T, path string) (string, Library) {
+	t.Helper()
+	lib, err := LoadJSON(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := CreateTemp(t, lib)
+	return dir, lib
 }
 
 // ByTypeAndStyle returns the fixture matching both type and style suffix.

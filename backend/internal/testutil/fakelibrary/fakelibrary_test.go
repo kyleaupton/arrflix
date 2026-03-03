@@ -71,8 +71,8 @@ func TestLookup(t *testing.T) {
 
 func TestByType(t *testing.T) {
 	movies := ByType("movie")
-	if len(movies) != 3 {
-		t.Fatalf("expected 3 movie fixtures, got %d", len(movies))
+	if len(movies) != 6 {
+		t.Fatalf("expected 6 movie fixtures, got %d", len(movies))
 	}
 	for _, m := range movies {
 		if m.Type != "movie" {
@@ -81,8 +81,8 @@ func TestByType(t *testing.T) {
 	}
 
 	series := ByType("series")
-	if len(series) != 3 {
-		t.Fatalf("expected 3 series fixtures, got %d", len(series))
+	if len(series) != 8 {
+		t.Fatalf("expected 8 series fixtures, got %d", len(series))
 	}
 }
 
