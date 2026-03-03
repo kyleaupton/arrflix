@@ -38,6 +38,11 @@ type MediaRepo interface {
 	UpdateMediaItem(ctx context.Context, id pgtype.UUID, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error)
 	DeleteMediaItem(ctx context.Context, id pgtype.UUID) error
 
+	// Metadata enrichment
+	UpdateMediaItemMetadata(ctx context.Context, params dbgen.UpdateMediaItemMetadataParams) (dbgen.MediaItem, error)
+	ListStaleMediaItems(ctx context.Context, staleBefore time.Time, batchSize int32) ([]dbgen.MediaItem, error)
+	UpsertMediaMetadataSource(ctx context.Context, mediaItemID pgtype.UUID, source string, data []byte) error
+
 	// Seasons
 	ListSeasonsForMedia(ctx context.Context, mediaItemID pgtype.UUID) ([]dbgen.MediaSeason, error)
 	GetSeason(ctx context.Context, id pgtype.UUID) (dbgen.MediaSeason, error)
@@ -160,6 +165,25 @@ func (r *Repository) UpdateMediaItem(ctx context.Context, id pgtype.UUID, title 
 
 func (r *Repository) DeleteMediaItem(ctx context.Context, id pgtype.UUID) error {
 	return r.Q.DeleteMediaItem(ctx, id)
+}
+
+func (r *Repository) UpdateMediaItemMetadata(ctx context.Context, params dbgen.UpdateMediaItemMetadataParams) (dbgen.MediaItem, error) {
+	return r.Q.UpdateMediaItemMetadata(ctx, params)
+}
+
+func (r *Repository) ListStaleMediaItems(ctx context.Context, staleBefore time.Time, batchSize int32) ([]dbgen.MediaItem, error) {
+	return r.Q.ListStaleMediaItems(ctx, dbgen.ListStaleMediaItemsParams{
+		StaleBefore: pgtype.Timestamptz{Time: staleBefore, Valid: true},
+		BatchSize:   batchSize,
+	})
+}
+
+func (r *Repository) UpsertMediaMetadataSource(ctx context.Context, mediaItemID pgtype.UUID, source string, data []byte) error {
+	return r.Q.UpsertMediaMetadataSource(ctx, dbgen.UpsertMediaMetadataSourceParams{
+		MediaItemID: mediaItemID,
+		Source:      source,
+		Data:        data,
+	})
 }
 
 func (r *Repository) ListSeasonsForMedia(ctx context.Context, mediaID pgtype.UUID) ([]dbgen.MediaSeason, error) {

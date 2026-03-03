@@ -28,11 +28,13 @@ export type DbgenDownloadJob = {
     candidate_title: string;
     content_path: string;
     created_at: string;
+    download_speed: number;
     downloader_external_id: string;
     downloader_id: string;
     downloader_status: string;
     episode_id: string;
     error_category: string;
+    eta_seconds: number;
     guid: string;
     id: string;
     indexer_id: number;
@@ -48,6 +50,7 @@ export type DbgenDownloadJob = {
     save_path: string;
     season_id: string;
     status: string;
+    total_size: number;
     updated_at: string;
 };
 
@@ -73,11 +76,13 @@ export type DbgenGetDownloadJobHistoryRow = {
     chain_depth: number;
     content_path: string;
     created_at: string;
+    download_speed: number;
     downloader_external_id: string;
     downloader_id: string;
     downloader_status: string;
     episode_id: string;
     error_category: string;
+    eta_seconds: number;
     guid: string;
     id: string;
     indexer_id: number;
@@ -93,6 +98,7 @@ export type DbgenGetDownloadJobHistoryRow = {
     save_path: string;
     season_id: string;
     status: string;
+    total_size: number;
     updated_at: string;
 };
 
@@ -117,12 +123,14 @@ export type DbgenGetDownloadJobWithImportSummaryRow = {
     completed_imports: number;
     content_path: string;
     created_at: string;
+    download_speed: number;
     downloader_external_id: string;
     downloader_id: string;
     downloader_status: string;
     episode_id: string;
     episode_number: number;
     error_category: string;
+    eta_seconds: number;
     failed_imports: number;
     guid: string;
     id: string;
@@ -130,8 +138,12 @@ export type DbgenGetDownloadJobWithImportSummaryRow = {
     indexer_id: number;
     last_error: string;
     library_id: string;
+    media_certification: string;
     media_item_id: string;
+    media_poster_path: string;
+    media_title: string;
     media_type: string;
+    media_year: number;
     name_template_id: string;
     next_run_at: string;
     pending_imports: number;
@@ -144,6 +156,7 @@ export type DbgenGetDownloadJobWithImportSummaryRow = {
     status: string;
     tmdb_id: number;
     total_import_tasks: number;
+    total_size: number;
     updated_at: string;
 };
 
@@ -248,12 +261,14 @@ export type DbgenListDownloadJobsByTmdbSeriesIdRow = {
     candidate_title: string;
     content_path: string;
     created_at: string;
+    download_speed: number;
     downloader_external_id: string;
     downloader_id: string;
     downloader_status: string;
     episode_id: string;
     episode_number: number;
     error_category: string;
+    eta_seconds: number;
     guid: string;
     id: string;
     indexer_id: number;
@@ -270,6 +285,7 @@ export type DbgenListDownloadJobsByTmdbSeriesIdRow = {
     season_id: string;
     season_number: number;
     status: string;
+    total_size: number;
     updated_at: string;
 };
 
@@ -282,12 +298,14 @@ export type DbgenListDownloadJobsWithImportSummaryRow = {
     completed_imports: number;
     content_path: string;
     created_at: string;
+    download_speed: number;
     downloader_external_id: string;
     downloader_id: string;
     downloader_status: string;
     episode_id: string;
     episode_number: number;
     error_category: string;
+    eta_seconds: number;
     failed_imports: number;
     guid: string;
     id: string;
@@ -295,8 +313,12 @@ export type DbgenListDownloadJobsWithImportSummaryRow = {
     indexer_id: number;
     last_error: string;
     library_id: string;
+    media_certification: string;
     media_item_id: string;
+    media_poster_path: string;
+    media_title: string;
     media_type: string;
+    media_year: number;
     name_template_id: string;
     next_run_at: string;
     pending_imports: number;
@@ -309,6 +331,7 @@ export type DbgenListDownloadJobsWithImportSummaryRow = {
     status: string;
     tmdb_id: number;
     total_import_tasks: number;
+    total_size: number;
     updated_at: string;
 };
 

@@ -15,6 +15,7 @@ type Services struct {
 	Downloaders        *DownloadersService
 	DownloadCandidates *DownloadCandidatesService
 	DownloadJobs       *DownloadJobsService
+	Enrichment         *EnrichmentService
 	Invites            *InvitesService
 	Feed               *FeedService
 	Import             *ImportService
@@ -49,12 +50,14 @@ func New(r *repo.Repository, l *logger.Logger, c *config.Config, broker *sse.Bro
 	policyEngine := policy.NewEngine(r, l)
 	users := NewUsersService(r)
 	invites := NewInvitesService(r)
+	enrichment := NewEnrichmentService(r, l, tmdb)
 
 	return &Services{
 		Auth:               NewAuthService(r, cfg, settings, invites),
 		Downloaders:        NewDownloadersService(r),
 		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, policyEngine),
 		DownloadJobs:       NewDownloadJobsService(r),
+		Enrichment:         enrichment,
 		Invites:            invites,
 		Filesystem:         NewFilesystemService(),
 		Feed:               NewFeedService(r, l, tmdb),
@@ -65,7 +68,7 @@ func New(r *repo.Repository, l *logger.Logger, c *config.Config, broker *sse.Bro
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
 		Policies:           policies,
-		Scanner:            NewScannerService(r, l, tmdb, broker, guessit.NewClient("")),
+		Scanner:            NewScannerService(r, l, tmdb, broker, guessit.NewClient(""), enrichment),
 		Settings:           settings,
 		Setup:              NewSetupService(r, users),
 		Tmdb:               tmdb,

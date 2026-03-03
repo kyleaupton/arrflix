@@ -31,6 +31,28 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
     })
   })
 
+  const activeJobs = computed(() =>
+    jobsSorted.value.filter((j) => j.import_status === 'download_pending'),
+  )
+
+  const importingJobs = computed(() =>
+    jobsSorted.value.filter((j) =>
+      ['awaiting_import', 'importing'].includes(j.import_status),
+    ),
+  )
+
+  const needsAttentionJobs = computed(() =>
+    jobsSorted.value.filter((j) =>
+      ['download_failed', 'partial_failure', 'import_failed'].includes(j.import_status),
+    ),
+  )
+
+  const completedJobs = computed(() =>
+    jobsSorted.value.filter((j) =>
+      ['fully_imported', 'download_cancelled'].includes(j.import_status),
+    ),
+  )
+
   const selectedJob = computed(() => {
     if (!selectedJobId.value) return null
     return jobsById.value[selectedJobId.value] ?? null
@@ -143,6 +165,10 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
   return {
     jobsById,
     jobsSorted,
+    activeJobs,
+    importingJobs,
+    needsAttentionJobs,
+    completedJobs,
     isLoading,
     refresh,
     connectLive,

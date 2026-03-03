@@ -5,7 +5,6 @@ import (
 	"math"
 	"sort"
 	"strconv"
-	"sync"
 	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
@@ -89,8 +88,19 @@ func (s *MediaService) ListLibraryItemsPaginated(ctx context.Context, params Lib
 		return model.PaginatedLibraryResponse{}, err
 	}
 
-	// Enrich with TMDB data concurrently
-	items := s.enrichLibraryItemsConcurrently(ctx, dbItems)
+	// Map DB items directly — poster_path is now stored on the media_item row
+	items := make([]model.LibraryItem, len(dbItems))
+	for i, item := range dbItems {
+		items[i] = model.LibraryItem{
+			ID:         item.ID.String(),
+			Type:       item.Type,
+			Title:      item.Title,
+			Year:       item.Year,
+			TmdbID:     item.TmdbID,
+			PosterPath: coalesce(item.PosterPath, ""),
+			CreatedAt:  item.CreatedAt.Format(time.RFC3339),
+		}
+	}
 
 	// Calculate total pages
 	totalPages := int(math.Ceil(float64(total) / float64(params.PageSize)))
@@ -104,47 +114,6 @@ func (s *MediaService) ListLibraryItemsPaginated(ctx context.Context, params Lib
 			TotalPages: totalPages,
 		},
 	}, nil
-}
-
-// enrichLibraryItemsConcurrently fetches TMDB poster paths for each item concurrently
-func (s *MediaService) enrichLibraryItemsConcurrently(ctx context.Context, dbItems []dbgen.MediaItem) []model.LibraryItem {
-	items := make([]model.LibraryItem, len(dbItems))
-	var wg sync.WaitGroup
-
-	for i, dbItem := range dbItems {
-		wg.Add(1)
-		go func(idx int, item dbgen.MediaItem) {
-			defer wg.Done()
-
-			var posterPath string
-			if item.TmdbID != nil {
-				if item.Type == "movie" {
-					details, err := s.tmdb.GetMovieDetails(ctx, *item.TmdbID)
-					if err == nil {
-						posterPath = details.PosterPath
-					}
-				} else {
-					details, err := s.tmdb.GetSeriesDetails(ctx, *item.TmdbID)
-					if err == nil {
-						posterPath = details.PosterPath
-					}
-				}
-			}
-
-			items[idx] = model.LibraryItem{
-				ID:         item.ID.String(),
-				Type:       item.Type,
-				Title:      item.Title,
-				Year:       item.Year,
-				TmdbID:     item.TmdbID,
-				PosterPath: posterPath,
-				CreatedAt:  item.CreatedAt.Format(time.RFC3339),
-			}
-		}(i, dbItem)
-	}
-
-	wg.Wait()
-	return items
 }
 
 // extractMovieCertification extracts US certification (fallback to GB, CA, AU)

@@ -14,8 +14,10 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { AlertCircle, FileIcon, RefreshCw, XCircle } from 'lucide-vue-next'
+import { AlertCircle, FileIcon, Film, Tv, RefreshCw, XCircle } from 'lucide-vue-next'
 import type { DbgenImportTask } from '@/client/types.gen'
+import { statusConfig } from './statusConfig'
+import { formatBytes, formatSpeed, formatEta } from '@/lib/format'
 
 const jobs = useDownloadJobsStore()
 
@@ -25,18 +27,6 @@ const emit = defineEmits<{
   (e: 'retry', jobId: string): void
 }>()
 
-// Status config for unified import_status
-const statusConfig: Record<string, { label: string; class: string }> = {
-  download_pending: { label: 'Downloading', class: 'bg-blue-500 text-white' },
-  download_failed: { label: 'Download Failed', class: 'bg-red-500 text-white' },
-  download_cancelled: { label: 'Cancelled', class: 'bg-gray-600 text-white' },
-  awaiting_import: { label: 'Awaiting Import', class: 'bg-yellow-500 text-white' },
-  importing: { label: 'Importing', class: 'bg-yellow-600 text-white' },
-  partial_failure: { label: 'Partial Failure', class: 'bg-orange-500 text-white' },
-  import_failed: { label: 'Import Failed', class: 'bg-red-500 text-white' },
-  fully_imported: { label: 'Imported', class: 'bg-green-500 text-white' },
-  unknown: { label: 'Unknown', class: 'bg-gray-500 text-white' },
-}
 
 // Import task status config
 const taskStatusConfig: Record<string, { label: string; class: string }> = {
@@ -75,6 +65,30 @@ const canReimport = computed(() => {
 
 const hasFailedImports = computed(() => {
   return (job.value?.failed_imports ?? 0) > 0
+})
+
+const posterUrl = computed(() => {
+  if (!job.value?.media_poster_path) return ''
+  return `https://image.tmdb.org/t/p/w185${job.value.media_poster_path}`
+})
+
+const drawerTitle = computed(() => {
+  if (!job.value) return 'Download Details'
+  return job.value.media_title || job.value.candidate_title
+})
+
+const drawerSubtitle = computed(() => {
+  if (!job.value) return ''
+  const parts: string[] = []
+  if (job.value.media_year) parts.push(String(job.value.media_year))
+  if (job.value.media_certification) parts.push(job.value.media_certification)
+  if (job.value.media_type === 'series' && job.value.season_number) {
+    const ep = job.value.episode_number
+      ? `E${String(job.value.episode_number).padStart(2, '0')}`
+      : ''
+    parts.push(`S${String(job.value.season_number).padStart(2, '0')}${ep}`)
+  }
+  return parts.join(' \u00B7 ')
 })
 
 // Refresh import tasks when job updates
@@ -131,19 +145,47 @@ function getTaskStatusConfig(status: string) {
   <Sheet :open="isOpen" @update:open="handleOpenChange">
     <SheetContent side="right" class="w-full sm:max-w-lg flex flex-col overflow-hidden">
       <SheetHeader class="px-6 pt-6">
-        <SheetTitle class="flex items-center gap-3">
-          <span class="truncate">{{ job?.candidate_title || 'Download Details' }}</span>
-        </SheetTitle>
-        <SheetDescription class="flex items-center gap-2">
-          <Badge :class="`${statusClass} border-transparent`">
-            {{ statusLabel }}
-          </Badge>
-          <span class="text-muted-foreground">{{ job?.protocol }}</span>
-        </SheetDescription>
+        <div class="flex gap-4">
+          <!-- Poster -->
+          <div class="w-20 shrink-0 rounded overflow-hidden bg-muted aspect-[2/3]">
+            <img
+              v-if="posterUrl"
+              :src="posterUrl"
+              :alt="drawerTitle"
+              class="w-full h-full object-cover"
+            />
+            <div v-else class="w-full h-full flex items-center justify-center">
+              <component
+                :is="job?.media_type === 'series' ? Tv : Film"
+                class="size-6 text-muted-foreground"
+              />
+            </div>
+          </div>
+          <div class="min-w-0 flex-1">
+            <SheetTitle class="truncate">{{ drawerTitle }}</SheetTitle>
+            <p v-if="drawerSubtitle" class="text-xs text-muted-foreground mt-0.5">
+              {{ drawerSubtitle }}
+            </p>
+            <SheetDescription class="flex items-center gap-2 mt-1.5">
+              <Badge :class="`${statusClass} border-transparent`">
+                {{ statusLabel }}
+              </Badge>
+              <span class="text-muted-foreground">{{ job?.protocol }}</span>
+            </SheetDescription>
+          </div>
+        </div>
       </SheetHeader>
 
       <ScrollArea class="flex-1 min-h-0 px-6">
         <div class="space-y-6 py-4">
+          <!-- Release name -->
+          <div v-if="job?.candidate_title" class="space-y-2">
+            <h4 class="text-sm font-medium">Release</h4>
+            <p class="text-xs text-muted-foreground break-all font-mono bg-muted p-2 rounded">
+              {{ job.candidate_title }}
+            </p>
+          </div>
+
           <!-- Progress Section (during download) -->
           <div v-if="job?.import_status === 'download_pending'" class="space-y-2">
             <h4 class="text-sm font-medium">Download Progress</h4>
@@ -152,6 +194,11 @@ function getTaskStatusConfig(status: string) {
               <span class="text-sm text-muted-foreground">
                 {{ Math.round((job?.progress ?? 0) * 100) }}%
               </span>
+            </div>
+            <div class="flex items-center gap-3 text-xs text-muted-foreground">
+              <span v-if="formatSpeed(job?.download_speed)">{{ formatSpeed(job?.download_speed) }}</span>
+              <span v-if="formatEta(job?.eta_seconds)">ETA: {{ formatEta(job?.eta_seconds) }}</span>
+              <span v-if="formatBytes(job?.total_size)">{{ formatBytes(job?.total_size) }}</span>
             </div>
             <p v-if="job?.downloader_status" class="text-xs text-muted-foreground">
               Downloader status: {{ job.downloader_status }}

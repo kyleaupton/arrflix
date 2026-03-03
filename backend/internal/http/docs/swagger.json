@@ -3901,11 +3901,13 @@
                 "candidate_title",
                 "content_path",
                 "created_at",
+                "download_speed",
                 "downloader_external_id",
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
                 "error_category",
+                "eta_seconds",
                 "guid",
                 "id",
                 "indexer_id",
@@ -3921,6 +3923,7 @@
                 "save_path",
                 "season_id",
                 "status",
+                "total_size",
                 "updated_at"
             ],
             "properties": {
@@ -3939,6 +3942,9 @@
                 "created_at": {
                     "type": "string"
                 },
+                "download_speed": {
+                    "type": "integer"
+                },
                 "downloader_external_id": {
                     "type": "string"
                 },
@@ -3953,6 +3959,9 @@
                 },
                 "error_category": {
                     "type": "string"
+                },
+                "eta_seconds": {
+                    "type": "integer"
                 },
                 "guid": {
                     "type": "string"
@@ -3998,6 +4007,9 @@
                 },
                 "status": {
                     "type": "string"
+                },
+                "total_size": {
+                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
@@ -4071,11 +4083,13 @@
                 "chain_depth",
                 "content_path",
                 "created_at",
+                "download_speed",
                 "downloader_external_id",
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
                 "error_category",
+                "eta_seconds",
                 "guid",
                 "id",
                 "indexer_id",
@@ -4091,6 +4105,7 @@
                 "save_path",
                 "season_id",
                 "status",
+                "total_size",
                 "updated_at"
             ],
             "properties": {
@@ -4112,6 +4127,9 @@
                 "created_at": {
                     "type": "string"
                 },
+                "download_speed": {
+                    "type": "integer"
+                },
                 "downloader_external_id": {
                     "type": "string"
                 },
@@ -4126,6 +4144,9 @@
                 },
                 "error_category": {
                     "type": "string"
+                },
+                "eta_seconds": {
+                    "type": "integer"
                 },
                 "guid": {
                     "type": "string"
@@ -4171,6 +4192,9 @@
                 },
                 "status": {
                     "type": "string"
+                },
+                "total_size": {
+                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
@@ -4234,12 +4258,14 @@
                 "completed_imports",
                 "content_path",
                 "created_at",
+                "download_speed",
                 "downloader_external_id",
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
                 "episode_number",
                 "error_category",
+                "eta_seconds",
                 "failed_imports",
                 "guid",
                 "id",
@@ -4247,8 +4273,12 @@
                 "indexer_id",
                 "last_error",
                 "library_id",
+                "media_certification",
                 "media_item_id",
+                "media_poster_path",
+                "media_title",
                 "media_type",
+                "media_year",
                 "name_template_id",
                 "next_run_at",
                 "pending_imports",
@@ -4261,6 +4291,7 @@
                 "status",
                 "tmdb_id",
                 "total_import_tasks",
+                "total_size",
                 "updated_at"
             ],
             "properties": {
@@ -4288,6 +4319,9 @@
                 "created_at": {
                     "type": "string"
                 },
+                "download_speed": {
+                    "type": "integer"
+                },
                 "downloader_external_id": {
                     "type": "string"
                 },
@@ -4305,6 +4339,9 @@
                 },
                 "error_category": {
                     "type": "string"
+                },
+                "eta_seconds": {
+                    "type": "integer"
                 },
                 "failed_imports": {
                     "type": "integer"
@@ -4327,11 +4364,23 @@
                 "library_id": {
                     "type": "string"
                 },
+                "media_certification": {
+                    "type": "string"
+                },
                 "media_item_id": {
+                    "type": "string"
+                },
+                "media_poster_path": {
+                    "type": "string"
+                },
+                "media_title": {
                     "type": "string"
                 },
                 "media_type": {
                     "type": "string"
+                },
+                "media_year": {
+                    "type": "integer"
                 },
                 "name_template_id": {
                     "type": "string"
@@ -4367,6 +4416,9 @@
                     "type": "integer"
                 },
                 "total_import_tasks": {
+                    "type": "integer"
+                },
+                "total_size": {
                     "type": "integer"
                 },
                 "updated_at": {
@@ -4745,12 +4797,14 @@
                 "candidate_title",
                 "content_path",
                 "created_at",
+                "download_speed",
                 "downloader_external_id",
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
                 "episode_number",
                 "error_category",
+                "eta_seconds",
                 "guid",
                 "id",
                 "indexer_id",
@@ -4767,6 +4821,7 @@
                 "season_id",
                 "season_number",
                 "status",
+                "total_size",
                 "updated_at"
             ],
             "properties": {
@@ -4785,6 +4840,9 @@
                 "created_at": {
                     "type": "string"
                 },
+                "download_speed": {
+                    "type": "integer"
+                },
                 "downloader_external_id": {
                     "type": "string"
                 },
@@ -4802,6 +4860,9 @@
                 },
                 "error_category": {
                     "type": "string"
+                },
+                "eta_seconds": {
+                    "type": "integer"
                 },
                 "guid": {
                     "type": "string"
@@ -4851,6 +4912,9 @@
                 "status": {
                     "type": "string"
                 },
+                "total_size": {
+                    "type": "integer"
+                },
                 "updated_at": {
                     "type": "string"
                 }
@@ -4867,12 +4931,14 @@
                 "completed_imports",
                 "content_path",
                 "created_at",
+                "download_speed",
                 "downloader_external_id",
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
                 "episode_number",
                 "error_category",
+                "eta_seconds",
                 "failed_imports",
                 "guid",
                 "id",
@@ -4880,8 +4946,12 @@
                 "indexer_id",
                 "last_error",
                 "library_id",
+                "media_certification",
                 "media_item_id",
+                "media_poster_path",
+                "media_title",
                 "media_type",
+                "media_year",
                 "name_template_id",
                 "next_run_at",
                 "pending_imports",
@@ -4894,6 +4964,7 @@
                 "status",
                 "tmdb_id",
                 "total_import_tasks",
+                "total_size",
                 "updated_at"
             ],
             "properties": {
@@ -4921,6 +4992,9 @@
                 "created_at": {
                     "type": "string"
                 },
+                "download_speed": {
+                    "type": "integer"
+                },
                 "downloader_external_id": {
                     "type": "string"
                 },
@@ -4938,6 +5012,9 @@
                 },
                 "error_category": {
                     "type": "string"
+                },
+                "eta_seconds": {
+                    "type": "integer"
                 },
                 "failed_imports": {
                     "type": "integer"
@@ -4960,11 +5037,23 @@
                 "library_id": {
                     "type": "string"
                 },
+                "media_certification": {
+                    "type": "string"
+                },
                 "media_item_id": {
+                    "type": "string"
+                },
+                "media_poster_path": {
+                    "type": "string"
+                },
+                "media_title": {
                     "type": "string"
                 },
                 "media_type": {
                     "type": "string"
+                },
+                "media_year": {
+                    "type": "integer"
                 },
                 "name_template_id": {
                     "type": "string"
@@ -5000,6 +5089,9 @@
                     "type": "integer"
                 },
                 "total_import_tasks": {
+                    "type": "integer"
+                },
+                "total_size": {
                     "type": "integer"
                 },
                 "updated_at": {

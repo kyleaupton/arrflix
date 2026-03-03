@@ -214,6 +214,9 @@ type DownloadJob struct {
 	CreatedAt            time.Time   `json:"created_at"`
 	UpdatedAt            time.Time   `json:"updated_at"`
 	PreviousJobID        pgtype.UUID `json:"previous_job_id"`
+	DownloadSpeed        *int64      `json:"download_speed"`
+	EtaSeconds           *int64      `json:"eta_seconds"`
+	TotalSize            *int64      `json:"total_size"`
 }
 
 type DownloadJobEvent struct {
@@ -327,13 +330,34 @@ type MediaFileState struct {
 }
 
 type MediaItem struct {
-	ID        pgtype.UUID `json:"id"`
-	Type      string      `json:"type"`
-	Title     string      `json:"title"`
-	Year      *int32      `json:"year"`
-	TmdbID    *int64      `json:"tmdb_id"`
-	CreatedAt time.Time   `json:"created_at"`
-	UpdatedAt time.Time   `json:"updated_at"`
+	ID                pgtype.UUID        `json:"id"`
+	Type              string             `json:"type"`
+	Title             string             `json:"title"`
+	Year              *int32             `json:"year"`
+	TmdbID            *int64             `json:"tmdb_id"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
+	PosterPath        *string            `json:"poster_path"`
+	BackdropPath      *string            `json:"backdrop_path"`
+	Overview          *string            `json:"overview"`
+	VoteAverage       *float64           `json:"vote_average"`
+	VoteCount         *int32             `json:"vote_count"`
+	Runtime           *int32             `json:"runtime"`
+	Status            *string            `json:"status"`
+	Certification     *string            `json:"certification"`
+	Genres            []byte             `json:"genres"`
+	ReleaseDate       pgtype.Date        `json:"release_date"`
+	LastAirDate       pgtype.Date        `json:"last_air_date"`
+	InProduction      *bool              `json:"in_production"`
+	ImdbID            *string            `json:"imdb_id"`
+	MetadataUpdatedAt pgtype.Timestamptz `json:"metadata_updated_at"`
+}
+
+type MediaMetadataSource struct {
+	MediaItemID pgtype.UUID `json:"media_item_id"`
+	Source      string      `json:"source"`
+	Data        []byte      `json:"data"`
+	FetchedAt   time.Time   `json:"fetched_at"`
 }
 
 type MediaSeason struct {

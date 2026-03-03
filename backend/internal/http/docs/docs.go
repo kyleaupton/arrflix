@@ -3909,11 +3909,13 @@ const docTemplate = `{
                 "candidate_title",
                 "content_path",
                 "created_at",
+                "download_speed",
                 "downloader_external_id",
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
                 "error_category",
+                "eta_seconds",
                 "guid",
                 "id",
                 "indexer_id",
@@ -3929,6 +3931,7 @@ const docTemplate = `{
                 "save_path",
                 "season_id",
                 "status",
+                "total_size",
                 "updated_at"
             ],
             "properties": {
@@ -3947,6 +3950,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "download_speed": {
+                    "type": "integer"
+                },
                 "downloader_external_id": {
                     "type": "string"
                 },
@@ -3961,6 +3967,9 @@ const docTemplate = `{
                 },
                 "error_category": {
                     "type": "string"
+                },
+                "eta_seconds": {
+                    "type": "integer"
                 },
                 "guid": {
                     "type": "string"
@@ -4006,6 +4015,9 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                },
+                "total_size": {
+                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
@@ -4079,11 +4091,13 @@ const docTemplate = `{
                 "chain_depth",
                 "content_path",
                 "created_at",
+                "download_speed",
                 "downloader_external_id",
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
                 "error_category",
+                "eta_seconds",
                 "guid",
                 "id",
                 "indexer_id",
@@ -4099,6 +4113,7 @@ const docTemplate = `{
                 "save_path",
                 "season_id",
                 "status",
+                "total_size",
                 "updated_at"
             ],
             "properties": {
@@ -4120,6 +4135,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "download_speed": {
+                    "type": "integer"
+                },
                 "downloader_external_id": {
                     "type": "string"
                 },
@@ -4134,6 +4152,9 @@ const docTemplate = `{
                 },
                 "error_category": {
                     "type": "string"
+                },
+                "eta_seconds": {
+                    "type": "integer"
                 },
                 "guid": {
                     "type": "string"
@@ -4179,6 +4200,9 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                },
+                "total_size": {
+                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
@@ -4242,12 +4266,14 @@ const docTemplate = `{
                 "completed_imports",
                 "content_path",
                 "created_at",
+                "download_speed",
                 "downloader_external_id",
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
                 "episode_number",
                 "error_category",
+                "eta_seconds",
                 "failed_imports",
                 "guid",
                 "id",
@@ -4255,8 +4281,12 @@ const docTemplate = `{
                 "indexer_id",
                 "last_error",
                 "library_id",
+                "media_certification",
                 "media_item_id",
+                "media_poster_path",
+                "media_title",
                 "media_type",
+                "media_year",
                 "name_template_id",
                 "next_run_at",
                 "pending_imports",
@@ -4269,6 +4299,7 @@ const docTemplate = `{
                 "status",
                 "tmdb_id",
                 "total_import_tasks",
+                "total_size",
                 "updated_at"
             ],
             "properties": {
@@ -4296,6 +4327,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "download_speed": {
+                    "type": "integer"
+                },
                 "downloader_external_id": {
                     "type": "string"
                 },
@@ -4313,6 +4347,9 @@ const docTemplate = `{
                 },
                 "error_category": {
                     "type": "string"
+                },
+                "eta_seconds": {
+                    "type": "integer"
                 },
                 "failed_imports": {
                     "type": "integer"
@@ -4335,11 +4372,23 @@ const docTemplate = `{
                 "library_id": {
                     "type": "string"
                 },
+                "media_certification": {
+                    "type": "string"
+                },
                 "media_item_id": {
+                    "type": "string"
+                },
+                "media_poster_path": {
+                    "type": "string"
+                },
+                "media_title": {
                     "type": "string"
                 },
                 "media_type": {
                     "type": "string"
+                },
+                "media_year": {
+                    "type": "integer"
                 },
                 "name_template_id": {
                     "type": "string"
@@ -4375,6 +4424,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "total_import_tasks": {
+                    "type": "integer"
+                },
+                "total_size": {
                     "type": "integer"
                 },
                 "updated_at": {
@@ -4753,12 +4805,14 @@ const docTemplate = `{
                 "candidate_title",
                 "content_path",
                 "created_at",
+                "download_speed",
                 "downloader_external_id",
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
                 "episode_number",
                 "error_category",
+                "eta_seconds",
                 "guid",
                 "id",
                 "indexer_id",
@@ -4775,6 +4829,7 @@ const docTemplate = `{
                 "season_id",
                 "season_number",
                 "status",
+                "total_size",
                 "updated_at"
             ],
             "properties": {
@@ -4793,6 +4848,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "download_speed": {
+                    "type": "integer"
+                },
                 "downloader_external_id": {
                     "type": "string"
                 },
@@ -4810,6 +4868,9 @@ const docTemplate = `{
                 },
                 "error_category": {
                     "type": "string"
+                },
+                "eta_seconds": {
+                    "type": "integer"
                 },
                 "guid": {
                     "type": "string"
@@ -4859,6 +4920,9 @@ const docTemplate = `{
                 "status": {
                     "type": "string"
                 },
+                "total_size": {
+                    "type": "integer"
+                },
                 "updated_at": {
                     "type": "string"
                 }
@@ -4875,12 +4939,14 @@ const docTemplate = `{
                 "completed_imports",
                 "content_path",
                 "created_at",
+                "download_speed",
                 "downloader_external_id",
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
                 "episode_number",
                 "error_category",
+                "eta_seconds",
                 "failed_imports",
                 "guid",
                 "id",
@@ -4888,8 +4954,12 @@ const docTemplate = `{
                 "indexer_id",
                 "last_error",
                 "library_id",
+                "media_certification",
                 "media_item_id",
+                "media_poster_path",
+                "media_title",
                 "media_type",
+                "media_year",
                 "name_template_id",
                 "next_run_at",
                 "pending_imports",
@@ -4902,6 +4972,7 @@ const docTemplate = `{
                 "status",
                 "tmdb_id",
                 "total_import_tasks",
+                "total_size",
                 "updated_at"
             ],
             "properties": {
@@ -4929,6 +5000,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "download_speed": {
+                    "type": "integer"
+                },
                 "downloader_external_id": {
                     "type": "string"
                 },
@@ -4946,6 +5020,9 @@ const docTemplate = `{
                 },
                 "error_category": {
                     "type": "string"
+                },
+                "eta_seconds": {
+                    "type": "integer"
                 },
                 "failed_imports": {
                     "type": "integer"
@@ -4968,11 +5045,23 @@ const docTemplate = `{
                 "library_id": {
                     "type": "string"
                 },
+                "media_certification": {
+                    "type": "string"
+                },
                 "media_item_id": {
+                    "type": "string"
+                },
+                "media_poster_path": {
+                    "type": "string"
+                },
+                "media_title": {
                     "type": "string"
                 },
                 "media_type": {
                     "type": "string"
+                },
+                "media_year": {
+                    "type": "integer"
                 },
                 "name_template_id": {
                     "type": "string"
@@ -5008,6 +5097,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "total_import_tasks": {
+                    "type": "integer"
+                },
+                "total_size": {
                     "type": "integer"
                 },
                 "updated_at": {
