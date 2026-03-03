@@ -1,15 +1,15 @@
 <template>
   <div class="flex flex-col gap-6">
-    <div v-if="isLoading" class="space-y-4">
-      <Skeleton class="h-96 w-full rounded-lg" />
-    </div>
-    <div v-else-if="isError" class="flex flex-col items-center justify-center py-12 text-center">
-      <p class="text-destructive">Failed to load movie</p>
-      <p class="text-sm text-muted-foreground mt-2">Please try again later</p>
-    </div>
-    <template v-else-if="data">
+    <Transition name="fade" mode="out-in">
+      <div v-if="isLoading" key="loading" class="space-y-4">
+        <Skeleton class="h-96 w-full rounded-lg" />
+      </div>
+      <div v-else-if="isError" key="error" class="flex flex-col items-center justify-center py-12 text-center">
+        <p class="text-destructive">Failed to load movie</p>
+        <p class="text-sm text-muted-foreground mt-2">Please try again later</p>
+      </div>
+      <div v-else-if="data" key="content" class="flex flex-col gap-6">
       <MediaHero
-        class="mb-1"
         :title="data.title"
         :tagline="data.tagline"
         :subtitle="movieSubtitle"
@@ -18,9 +18,17 @@
         :backdrop-url="backdropUrl"
         :chips="movieChips"
         :trailer-url="trailerUrl"
+        :full-bleed="isImmersive"
       >
         <template #poster>
           <Poster :item="data" size="large" :clickable="false" :is-downloading="isDownloading" />
+        </template>
+        <template v-if="data.voteAverage" #ratings>
+          <RatingBadge
+            source="tmdb"
+            :score="data.voteAverage"
+            :vote-count="data.voteCount"
+          />
         </template>
         <template #actions>
           <Button @click="searchForDownloadCandidates">
@@ -30,56 +38,72 @@
         </template>
       </MediaHero>
 
-      <div v-if="data.files?.length" class="space-y-4">
-        <h2 class="text-xl font-semibold">Local Files</h2>
-        <DataTable
-          :data="filesWithProgress"
-          :columns="movieFilesColumns"
-          :loading="false"
-          empty-message="No files found"
-          :searchable="false"
-          search-placeholder="Search files..."
-          paginator
-          :rows="10"
+      <div :class="isImmersive ? 'px-6 space-y-10' : 'space-y-10'">
+        <div v-if="data.files?.length" class="bg-card rounded-lg border p-4 sm:p-6 space-y-4">
+          <h2 class="text-xl font-semibold">Local Files</h2>
+          <DataTable
+            :data="filesWithProgress"
+            :columns="movieFilesColumns"
+            :loading="false"
+            empty-message="No files found"
+            :searchable="false"
+            search-placeholder="Search files..."
+            paginator
+            :rows="10"
+          >
+            <template #empty-icon>
+              <File class="size-5" />
+            </template>
+          </DataTable>
+        </div>
+
+        <FeaturedTrailer v-if="officialTrailer" :video="officialTrailer" />
+
+        <RailVideos v-if="nonTrailerVideos.length" title="Videos" :videos="nonTrailerVideos" />
+
+        <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
+
+        <RailMovie
+          v-if="data.recommendations?.length"
+          :rail="{
+            id: 'related-movies',
+            title: 'Related Movies',
+            type: 'movie',
+            movies: data.recommendations,
+            series: [],
+          }"
+        />
+
+        <div
+          v-if="data.watchProviders"
+          class="py-6 bg-muted/30 rounded-lg"
+          :class="isImmersive ? '-mx-6 px-6' : ''"
         >
-          <template #empty-icon>
-            <File class="size-5" />
-          </template>
-        </DataTable>
+          <WatchProviders :providers="data.watchProviders" />
+        </div>
       </div>
-
-      <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
-      <RailVideos v-if="data.videos?.length" title="Videos" :videos="data.videos" />
-      <RailMovie
-        v-if="data.recommendations?.length"
-        :rail="{
-          id: 'related-movies',
-          title: 'Related Movies',
-          type: 'movie',
-          movies: data.recommendations,
-          series: [],
-        }"
-      />
-
-      <WatchProviders :providers="data.watchProviders" />
-    </template>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+
 import { useQuery } from '@tanstack/vue-query'
 import { Download, File } from 'lucide-vue-next'
 import { getV1MovieByIdOptions } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import MediaHero from '@/components/media/MediaHero.vue'
+import RatingBadge from '@/components/media/RatingBadge.vue'
 import Poster from '@/components/poster/Poster.vue'
 import RailCast from '@/components/rails/RailCast.vue'
 import RailVideos from '@/components/rails/RailVideos.vue'
 import RailMovie from '@/components/rails/RailMovie.vue'
 import WatchProviders from '@/components/media/WatchProviders.vue'
+import FeaturedTrailer from '@/components/videos/FeaturedTrailer.vue'
 import DataTable from '@/components/tables/DataTable.vue'
 import { movieFilesColumns } from '@/components/tables/configs/movieFilesTableConfig'
 import { useModal } from '@/composables/useModal'
@@ -89,6 +113,7 @@ import DownloadCandidatesDialog from '@/components/download-candidates/DownloadC
 import type { ModelFileInfo } from '@/client/types.gen'
 
 const route = useRoute()
+const isImmersive = computed(() => route.meta.layout === 'immersive')
 const modal = useModal()
 const downloadJobs = useDownloadJobsStore()
 
@@ -119,6 +144,14 @@ const trailerUrl = computed(() => {
 const { isLoading, isError, data } = useQuery(
   computed(() => getV1MovieByIdOptions({ path: { id: id.value } })),
 )
+
+const officialTrailer = computed(() => {
+  return data.value?.videos?.find((v) => v.isOfficialTrailer)
+})
+
+const nonTrailerVideos = computed(() => {
+  return data.value?.videos?.filter((v) => !v.isOfficialTrailer) ?? []
+})
 
 const movieSubtitle = computed(() => {
   if (!data.value) return ''

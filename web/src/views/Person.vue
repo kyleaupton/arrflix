@@ -1,19 +1,21 @@
 <template>
   <div class="flex flex-col gap-6">
-    <div v-if="isLoading" class="space-y-4">
-      <Skeleton class="h-96 w-full rounded-lg" />
-    </div>
-    <div v-else-if="isError" class="flex flex-col items-center justify-center py-12 text-center">
-      <p class="text-destructive">Failed to load person</p>
-      <p class="text-sm text-muted-foreground mt-2">Please try again later</p>
-    </div>
-    <template v-else-if="data">
+    <Transition name="fade" mode="out-in">
+      <div v-if="isLoading" key="loading" class="space-y-4">
+        <Skeleton class="h-96 w-full rounded-lg" />
+      </div>
+      <div v-else-if="isError" key="error" class="flex flex-col items-center justify-center py-12 text-center">
+        <p class="text-destructive">Failed to load person</p>
+        <p class="text-sm text-muted-foreground mt-2">Please try again later</p>
+      </div>
+      <div v-else-if="data" key="content" class="flex flex-col gap-6">
       <MediaHero
         class="mb-1"
         :title="data.name"
         :subtitle="personSubtitle"
         :overview="data.biography"
         :chips="personChips"
+        :full-bleed="isImmersive"
       >
         <template #poster>
           <div class="relative w-64 aspect-[2/3] rounded-lg overflow-hidden bg-muted flex-shrink-0">
@@ -34,6 +36,7 @@
         </template>
       </MediaHero>
 
+      <div :class="isImmersive ? 'px-6' : ''">
       <div v-if="hasAdditionalInfo" class="space-y-4">
         <div v-if="data.alsoKnownAs?.length" class="space-y-2">
           <h2 class="text-lg font-semibold">Also Known As</h2>
@@ -68,13 +71,16 @@
           </div>
         </div>
       </div>
-    </template>
+      </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+
 import { useQuery } from '@tanstack/vue-query'
 import { User, ExternalLink } from 'lucide-vue-next'
 import { getV1PersonByIdOptions } from '@/client/@tanstack/vue-query.gen'
@@ -84,6 +90,7 @@ import { Button } from '@/components/ui/button'
 import MediaHero from '@/components/media/MediaHero.vue'
 
 const route = useRoute()
+const isImmersive = computed(() => route.meta.layout === 'immersive')
 
 const id = computed(() => {
   const attempt = Number(Array.isArray(route.params.id) ? route.params.id[0] : route.params.id)

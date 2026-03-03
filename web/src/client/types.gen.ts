@@ -1055,6 +1055,8 @@ export type ModelMovieDetail = {
     title: string;
     tmdbId: number;
     videos?: Array<ModelVideo>;
+    voteAverage?: number;
+    voteCount?: number;
     watchProviders?: ModelWatchProviders;
     year?: number;
 };
@@ -1070,6 +1072,15 @@ export type ModelMovieRail = {
     title: string;
     tmdbId: number;
     year?: number;
+};
+
+export type ModelNextEpisode = {
+    airDate?: string;
+    episodeNumber: number;
+    overview?: string;
+    seasonNumber: number;
+    stillPath?: string;
+    title: string;
 };
 
 export type ModelPaginatedLibraryResponse = {
@@ -1185,6 +1196,7 @@ export type ModelSeriesDetail = {
     genres?: Array<ModelGenre>;
     inProduction: boolean;
     lastAirDate?: string;
+    nextEpisodeToAir?: ModelNextEpisode;
     overview: string;
     posterPath?: string;
     seasons: Array<ModelSeasonDetail>;
@@ -1193,6 +1205,8 @@ export type ModelSeriesDetail = {
     title: string;
     tmdbId: number;
     videos?: Array<ModelVideo>;
+    voteAverage?: number;
+    voteCount?: number;
     watchProviders?: ModelWatchProviders;
     year?: number;
 };

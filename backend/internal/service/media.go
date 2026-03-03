@@ -489,6 +489,8 @@ func (s *MediaService) GetMovieDetail(ctx context.Context, tmdbID int64) (model.
 		ReleaseDate:     tmdbDetails.ReleaseDate,
 		Runtime:         tmdbDetails.Runtime,
 		Certification:   certification,
+		VoteAverage:     float64(tmdbDetails.VoteAverage),
+		VoteCount:       int64(tmdbDetails.VoteCount),
 		Genres:          genres,
 		PosterPath:      tmdbDetails.PosterPath,
 		BackdropPath:    tmdbDetails.BackdropPath,
@@ -692,6 +694,19 @@ func (s *MediaService) GetSeriesDetail(ctx context.Context, tmdbID int64) (model
 		watchProviders = extractWatchProviders(tmdbDetails.WatchProviders, region)
 	}
 
+	// Map next episode to air (non-zero ID means data is present)
+	var nextEpisode *model.NextEpisode
+	if tmdbDetails.NextEpisodeToAir.ID != 0 {
+		nextEpisode = &model.NextEpisode{
+			SeasonNumber:  tmdbDetails.NextEpisodeToAir.SeasonNumber,
+			EpisodeNumber: tmdbDetails.NextEpisodeToAir.EpisodeNumber,
+			Title:         tmdbDetails.NextEpisodeToAir.Name,
+			AirDate:       tmdbDetails.NextEpisodeToAir.AirDate,
+			Overview:      tmdbDetails.NextEpisodeToAir.Overview,
+			StillPath:     tmdbDetails.NextEpisodeToAir.StillPath,
+		}
+	}
+
 	return model.SeriesDetail{
 		TmdbID:         tmdbDetails.ID,
 		Title:          tmdbDetails.Name,
@@ -704,10 +719,13 @@ func (s *MediaService) GetSeriesDetail(ctx context.Context, tmdbID int64) (model
 		InProduction:   tmdbDetails.InProduction,
 		Certification:  certification,
 		EpisodeRuntime: episodeRuntime,
+		VoteAverage:    float64(tmdbDetails.VoteAverage),
+		VoteCount:      int64(tmdbDetails.VoteCount),
 		Genres:         genres,
-		PosterPath:     tmdbDetails.PosterPath,
-		BackdropPath:   tmdbDetails.BackdropPath,
-		Availability:   availability,
+		PosterPath:       tmdbDetails.PosterPath,
+		BackdropPath:     tmdbDetails.BackdropPath,
+		NextEpisodeToAir: nextEpisode,
+		Availability:     availability,
 		Seasons:        seasons,
 		Credits:        credits,
 		Videos:         videos,

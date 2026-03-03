@@ -1,12 +1,26 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
+// Prevent the browser's native scroll restoration from fighting Vue Router
+if ('scrollRestoration' in history) {
+  history.scrollRestoration = 'manual'
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
+  scrollBehavior(_to, _from, savedPosition) {
+    // Delay scroll until after the page transition (150ms) completes
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(savedPosition || { top: 0 })
+      }, 160)
+    })
+  },
   routes: [
     {
       path: '/',
       component: () => import('@/views/Home.vue'),
+      meta: { layout: 'immersive' },
     },
     {
       path: '/library',
@@ -15,6 +29,7 @@ const router = createRouter({
     {
       path: '/search',
       component: () => import('@/views/Search.vue'),
+      meta: { layout: 'immersive' },
     },
     {
       path: '/downloads',
@@ -93,14 +108,17 @@ const router = createRouter({
     {
       path: '/movie/:id',
       component: () => import('@/views/Movie.vue'),
+      meta: { layout: 'immersive' },
     },
     {
       path: '/series/:id',
       component: () => import('@/views/Series.vue'),
+      meta: { layout: 'immersive' },
     },
     {
       path: '/person/:id',
       component: () => import('@/views/Person.vue'),
+      meta: { layout: 'immersive' },
     },
   ],
 })

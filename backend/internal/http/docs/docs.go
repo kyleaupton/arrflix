@@ -7388,6 +7388,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/model.Video"
                     }
                 },
+                "voteAverage": {
+                    "type": "number"
+                },
+                "voteCount": {
+                    "type": "integer"
+                },
                 "watchProviders": {
                     "$ref": "#/definitions/model.WatchProviders"
                 },
@@ -7440,6 +7446,34 @@ const docTemplate = `{
                 },
                 "year": {
                     "type": "integer"
+                }
+            }
+        },
+        "model.NextEpisode": {
+            "type": "object",
+            "required": [
+                "episodeNumber",
+                "seasonNumber",
+                "title"
+            ],
+            "properties": {
+                "airDate": {
+                    "type": "string"
+                },
+                "episodeNumber": {
+                    "type": "integer"
+                },
+                "overview": {
+                    "type": "string"
+                },
+                "seasonNumber": {
+                    "type": "integer"
+                },
+                "stillPath": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
                 }
             }
         },
@@ -7782,6 +7816,9 @@ const docTemplate = `{
                 "lastAirDate": {
                     "type": "string"
                 },
+                "nextEpisodeToAir": {
+                    "$ref": "#/definitions/model.NextEpisode"
+                },
                 "overview": {
                     "type": "string"
                 },
@@ -7811,6 +7848,12 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.Video"
                     }
+                },
+                "voteAverage": {
+                    "type": "number"
+                },
+                "voteCount": {
+                    "type": "integer"
                 },
                 "watchProviders": {
                     "$ref": "#/definitions/model.WatchProviders"

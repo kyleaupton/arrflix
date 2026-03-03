@@ -2,6 +2,9 @@ import { defineConfig } from "vitepress";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
+  head: [
+    ['link', { rel: 'icon', href: '/arrflix/favicon.svg' }],
+  ],
   title: "Arrflix Docs",
   description: "Self-hosted media management platform",
   // https://vitepress.dev/guide/deploy#setting-a-public-base-path

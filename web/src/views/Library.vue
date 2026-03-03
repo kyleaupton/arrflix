@@ -26,57 +26,60 @@
       </TabsList>
     </Tabs>
 
-    <!-- Loading State (initial) -->
-    <div
-      v-if="isLoading"
-      class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 max-w-6xl"
-    >
-      <Skeleton v-for="i in pageSize" :key="i" class="aspect-[2/3] rounded-lg" />
-    </div>
-
-    <!-- Error State -->
-    <div v-else-if="isError" class="flex flex-col items-center justify-center py-12 text-center">
-      <p class="text-destructive">Failed to load library</p>
-      <p class="text-sm text-muted-foreground mt-2">{{ error?.message || 'Please try again later' }}</p>
-      <Button variant="outline" class="mt-4" @click="() => refetch()">
-        Try Again
-      </Button>
-    </div>
-
-    <!-- Empty State -->
-    <div v-else-if="items.length === 0" class="flex flex-col items-center justify-center py-12 text-center">
-      <Film class="h-12 w-12 text-muted-foreground mb-4" />
-      <p class="text-lg font-medium">No media found</p>
-      <p class="text-sm text-muted-foreground mt-1">
-        {{ searchQuery ? 'Try adjusting your search or filters' : 'Your library is empty. Add some media to get started!' }}
-      </p>
-    </div>
-
-    <!-- Grid Content -->
-    <template v-else>
+    <Transition name="fade" mode="out-in">
+      <!-- Loading State (initial) -->
       <div
+        v-if="isLoading"
+        key="loading"
         class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 max-w-6xl"
       >
-        <Poster
-          v-for="item in items"
-          :key="item.id"
-          :item="item"
-          :to="getItemRoute(item)"
-          size="medium"
-          responsive
-        />
-
-        <!-- Loading skeletons for next page -->
-        <template v-if="isFetchingNextPage">
-          <Skeleton v-for="i in pageSize" :key="`skeleton-${i}`" class="aspect-[2/3] rounded-lg" />
-        </template>
+        <Skeleton v-for="i in pageSize" :key="i" class="aspect-[2/3] rounded-lg" />
       </div>
 
-      <!-- End of list indicator -->
-      <p v-if="!hasNextPage && items.length > 0" class="text-center text-sm text-muted-foreground py-4">
-        End of library
-      </p>
-    </template>
+      <!-- Error State -->
+      <div v-else-if="isError" key="error" class="flex flex-col items-center justify-center py-12 text-center">
+        <p class="text-destructive">Failed to load library</p>
+        <p class="text-sm text-muted-foreground mt-2">{{ error?.message || 'Please try again later' }}</p>
+        <Button variant="outline" class="mt-4" @click="() => refetch()">
+          Try Again
+        </Button>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else-if="items.length === 0" key="empty" class="flex flex-col items-center justify-center py-12 text-center">
+        <Film class="h-12 w-12 text-muted-foreground mb-4" />
+        <p class="text-lg font-medium">No media found</p>
+        <p class="text-sm text-muted-foreground mt-1">
+          {{ searchQuery ? 'Try adjusting your search or filters' : 'Your library is empty. Add some media to get started!' }}
+        </p>
+      </div>
+
+      <!-- Grid Content -->
+      <div v-else key="content">
+        <div
+          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 max-w-6xl"
+        >
+          <Poster
+            v-for="item in items"
+            :key="item.id"
+            :item="item"
+            :to="getItemRoute(item)"
+            size="medium"
+            responsive
+          />
+
+          <!-- Loading skeletons for next page -->
+          <template v-if="isFetchingNextPage">
+            <Skeleton v-for="i in pageSize" :key="`skeleton-${i}`" class="aspect-[2/3] rounded-lg" />
+          </template>
+        </div>
+
+        <!-- End of list indicator -->
+        <p v-if="!hasNextPage && items.length > 0" class="text-center text-sm text-muted-foreground py-4">
+          End of library
+        </p>
+      </div>
+    </Transition>
   </div>
 </template>
 

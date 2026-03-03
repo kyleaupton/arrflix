@@ -18,84 +18,88 @@
       </TabsList>
     </Tabs>
 
-    <!-- Loading State -->
-    <div
-      v-if="isLoading"
-      class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 max-w-6xl"
-    >
-      <Skeleton v-for="i in 12" :key="i" class="aspect-[2/3] rounded-lg" />
-    </div>
-
-    <!-- Error State -->
-    <div v-else-if="isError" class="flex flex-col items-center justify-center py-12 text-center">
-      <p class="text-destructive">Search failed</p>
-      <p class="text-sm text-muted-foreground mt-2">{{ error?.message || 'Please try again' }}</p>
-    </div>
-
-    <!-- Empty State -->
-    <div v-else-if="!searchQuery" class="flex flex-col items-center justify-center py-12 text-center">
-      <Search class="h-12 w-12 text-muted-foreground mb-4" />
-      <p class="text-lg font-medium">Enter a search query</p>
-      <p class="text-sm text-muted-foreground mt-1">
-        Use the search bar above to find movies, series, and people
-      </p>
-    </div>
-
-    <!-- No Results -->
-    <div v-else-if="filteredResults.length === 0" class="flex flex-col items-center justify-center py-12 text-center">
-      <Search class="h-12 w-12 text-muted-foreground mb-4" />
-      <p class="text-lg font-medium">No results found</p>
-      <p class="text-sm text-muted-foreground mt-1">
-        Try adjusting your search or filters
-      </p>
-    </div>
-
-    <!-- Results Grid -->
-    <div
-      v-else
-      class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 max-w-6xl"
-    >
-      <router-link
-        v-for="result in filteredResults"
-        :key="`${result.mediaType}-${result.id}`"
-        :to="getItemRoute(result)"
-        class="group"
+    <Transition name="fade" mode="out-in">
+      <!-- Loading State -->
+      <div
+        v-if="isLoading"
+        key="loading"
+        class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 max-w-6xl"
       >
-        <div class="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted">
-          <img
-            v-if="result.posterPath"
-            :src="getPosterUrl(result)"
-            :alt="result.title"
-            class="w-full h-full object-cover"
-          />
-          <div v-else class="w-full h-full flex items-center justify-center">
-            <component :is="getPlaceholderIcon(result)" class="h-8 w-8 text-muted-foreground" />
+        <Skeleton v-for="i in 12" :key="i" class="aspect-[2/3] rounded-lg" />
+      </div>
+
+      <!-- Error State -->
+      <div v-else-if="isError" key="error" class="flex flex-col items-center justify-center py-12 text-center">
+        <p class="text-destructive">Search failed</p>
+        <p class="text-sm text-muted-foreground mt-2">{{ error?.message || 'Please try again' }}</p>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else-if="!searchQuery" key="no-query" class="flex flex-col items-center justify-center py-12 text-center">
+        <Search class="h-12 w-12 text-muted-foreground mb-4" />
+        <p class="text-lg font-medium">Enter a search query</p>
+        <p class="text-sm text-muted-foreground mt-1">
+          Use the search bar above to find movies, series, and people
+        </p>
+      </div>
+
+      <!-- No Results -->
+      <div v-else-if="filteredResults.length === 0" key="no-results" class="flex flex-col items-center justify-center py-12 text-center">
+        <Search class="h-12 w-12 text-muted-foreground mb-4" />
+        <p class="text-lg font-medium">No results found</p>
+        <p class="text-sm text-muted-foreground mt-1">
+          Try adjusting your search or filters
+        </p>
+      </div>
+
+      <!-- Results Grid -->
+      <div
+        v-else
+        key="results"
+        class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 max-w-6xl"
+      >
+        <router-link
+          v-for="result in filteredResults"
+          :key="`${result.mediaType}-${result.id}`"
+          :to="getItemRoute(result)"
+          class="group"
+        >
+          <div class="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted">
+            <img
+              v-if="result.posterPath"
+              :src="getPosterUrl(result)"
+              :alt="result.title"
+              class="w-full h-full object-cover"
+            />
+            <div v-else class="w-full h-full flex items-center justify-center">
+              <component :is="getPlaceholderIcon(result)" class="h-8 w-8 text-muted-foreground" />
+            </div>
+
+            <!-- Library badge -->
+            <div v-if="result.isInLibrary" class="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/70 text-xs text-emerald-400">
+              <CheckCircle2 class="h-3 w-3" />
+              <span>In Library</span>
+            </div>
+
+            <!-- Type badge -->
+            <div class="absolute bottom-2 left-2">
+              <Badge variant="secondary" class="text-xs">
+                {{ getMediaTypeLabel(result) }}
+              </Badge>
+            </div>
           </div>
 
-          <!-- Library badge -->
-          <div v-if="result.isInLibrary" class="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/70 text-xs text-emerald-400">
-            <CheckCircle2 class="h-3 w-3" />
-            <span>In Library</span>
+          <div class="mt-2">
+            <p class="font-medium text-sm truncate group-hover:text-primary">
+              {{ result.title }}
+            </p>
+            <p v-if="result.year" class="text-xs text-muted-foreground">
+              {{ result.year }}
+            </p>
           </div>
-
-          <!-- Type badge -->
-          <div class="absolute bottom-2 left-2">
-            <Badge variant="secondary" class="text-xs">
-              {{ getMediaTypeLabel(result) }}
-            </Badge>
-          </div>
-        </div>
-
-        <div class="mt-2">
-          <p class="font-medium text-sm truncate group-hover:text-primary">
-            {{ result.title }}
-          </p>
-          <p v-if="result.year" class="text-xs text-muted-foreground">
-            {{ result.year }}
-          </p>
-        </div>
-      </router-link>
-    </div>
+        </router-link>
+      </div>
+    </Transition>
   </div>
 </template>
 

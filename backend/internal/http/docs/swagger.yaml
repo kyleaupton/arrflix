@@ -2516,6 +2516,10 @@ definitions:
         items:
           $ref: '#/definitions/model.Video'
         type: array
+      voteAverage:
+        type: number
+      voteCount:
+        type: integer
       watchProviders:
         $ref: '#/definitions/model.WatchProviders'
       year:
@@ -2559,6 +2563,25 @@ definitions:
     - releaseDate
     - title
     - tmdbId
+    type: object
+  model.NextEpisode:
+    properties:
+      airDate:
+        type: string
+      episodeNumber:
+        type: integer
+      overview:
+        type: string
+      seasonNumber:
+        type: integer
+      stillPath:
+        type: string
+      title:
+        type: string
+    required:
+    - episodeNumber
+    - seasonNumber
+    - title
     type: object
   model.PaginatedLibraryResponse:
     properties:
@@ -2788,6 +2811,8 @@ definitions:
         type: boolean
       lastAirDate:
         type: string
+      nextEpisodeToAir:
+        $ref: '#/definitions/model.NextEpisode'
       overview:
         type: string
       posterPath:
@@ -2808,6 +2833,10 @@ definitions:
         items:
           $ref: '#/definitions/model.Video'
         type: array
+      voteAverage:
+        type: number
+      voteCount:
+        type: integer
       watchProviders:
         $ref: '#/definitions/model.WatchProviders'
       year:
