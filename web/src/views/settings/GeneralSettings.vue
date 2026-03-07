@@ -138,21 +138,49 @@ async function saveTmdbKey() {
 
       <Card>
         <CardHeader>
-          <CardTitle>TMDB</CardTitle>
+          <CardTitle>Integrations</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div class="flex flex-col gap-2">
-            <Label for="tmdb-key" class="text-sm text-muted-foreground">API Key</Label>
-            <div v-if="tmdbError" class="text-sm text-destructive">{{ tmdbError }}</div>
-            <template v-if="tmdbEditing">
-              <Input
-                id="tmdb-key"
-                v-model="tmdbKeyInput"
-                type="password"
-                placeholder="Enter new TMDB API key"
-                :disabled="tmdbSaving"
-              />
-              <div class="flex gap-2">
+        <CardContent class="grid gap-0">
+          <!-- TMDB -->
+          <div class="py-3 first:pt-0 last:pb-0 border-b last:border-b-0">
+            <div class="flex items-center justify-between">
+              <div class="flex flex-col gap-0.5">
+                <span class="text-sm font-medium">TMDB</span>
+                <span class="text-xs text-muted-foreground">Media metadata provider</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <span
+                  class="flex items-center gap-1.5 text-xs"
+                  :class="tmdbKeyDisplay ? 'text-emerald-500' : 'text-muted-foreground'"
+                >
+                  <span
+                    class="size-1.5 rounded-full"
+                    :class="tmdbKeyDisplay ? 'bg-emerald-500' : 'bg-muted-foreground'"
+                  />
+                  {{ tmdbKeyDisplay ? 'Connected' : 'Not configured' }}
+                </span>
+                <Button
+                  v-if="!tmdbEditing"
+                  size="sm"
+                  variant="outline"
+                  @click="startTmdbEdit"
+                >
+                  {{ tmdbKeyDisplay ? 'Change' : 'Configure' }}
+                </Button>
+              </div>
+            </div>
+            <!-- Inline edit -->
+            <div v-if="tmdbEditing" class="mt-3 flex flex-col gap-2">
+              <div v-if="tmdbError" class="text-sm text-destructive">{{ tmdbError }}</div>
+              <div class="flex items-center gap-2">
+                <Input
+                  id="tmdb-key"
+                  v-model="tmdbKeyInput"
+                  type="password"
+                  placeholder="Enter TMDB API key"
+                  class="flex-1"
+                  :disabled="tmdbSaving"
+                />
                 <Button size="sm" :disabled="tmdbSaving || !tmdbKeyInput" @click="saveTmdbKey">
                   {{ tmdbSaving ? 'Validating...' : 'Save' }}
                 </Button>
@@ -160,21 +188,26 @@ async function saveTmdbKey() {
                   Cancel
                 </Button>
               </div>
-            </template>
-            <template v-else>
-              <div class="flex items-center gap-2">
-                <Input
-                  id="tmdb-key"
-                  :model-value="tmdbKeyDisplay"
-                  type="password"
-                  disabled
-                  :placeholder="tmdbKeyDisplay ? '' : 'Not configured'"
-                />
-                <Button size="sm" variant="outline" @click="startTmdbEdit">
-                  {{ tmdbKeyDisplay ? 'Change' : 'Set' }}
+            </div>
+          </div>
+
+          <!-- OpenSubtitles (placeholder) -->
+          <div class="py-3 first:pt-0 last:pb-0 border-b last:border-b-0">
+            <div class="flex items-center justify-between">
+              <div class="flex flex-col gap-0.5">
+                <span class="text-sm font-medium">OpenSubtitles</span>
+                <span class="text-xs text-muted-foreground">Automatic subtitle downloads</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span class="size-1.5 rounded-full bg-muted-foreground" />
+                  Not configured
+                </span>
+                <Button size="sm" variant="outline" disabled>
+                  Configure
                 </Button>
               </div>
-            </template>
+            </div>
           </div>
         </CardContent>
       </Card>
