@@ -88,7 +88,7 @@ const removeNew = (index: number) => {
             class="py-8"
           >
             <Empty>
-              <EmptyMedia>
+              <EmptyMedia variant="icon">
                 <Shield class="size-5" />
               </EmptyMedia>
               <EmptyContent>
