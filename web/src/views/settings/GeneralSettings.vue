@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { getV1Settings, patchV1Settings } from '@/client/sdk.gen'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -27,6 +27,7 @@ async function loadSettings() {
   try {
     const res = await getV1Settings<true>({ throwOnError: true })
     settings.value = res.data as SettingsMap
+    siteTitleInput.value = String(settings.value['site.title'] ?? '')
   } catch {
     error.value = 'Failed to load settings'
   } finally {
@@ -47,9 +48,12 @@ async function saveSetting(key: string, value: unknown) {
 
 onMounted(loadSettings)
 
-const siteTitle = computed({
-  get: () => String(settings.value['site.title'] ?? ''),
-  set: (v: string) => saveSetting('site.title', v),
+const siteTitleInput = ref('')
+
+let siteTitleTimer: ReturnType<typeof setTimeout>
+watch(siteTitleInput, (v) => {
+  clearTimeout(siteTitleTimer)
+  siteTitleTimer = setTimeout(() => saveSetting('site.title', v), 500)
 })
 
 const signupStrategy = computed({
@@ -128,8 +132,7 @@ async function saveTmdbKey() {
             <Label for="site-title" class="text-sm text-muted-foreground">Site title</Label>
             <Input
               id="site-title"
-              :model-value="siteTitle"
-              @update:model-value="siteTitle = String($event)"
+              v-model="siteTitleInput"
               :disabled="isSaving"
             />
           </div>
