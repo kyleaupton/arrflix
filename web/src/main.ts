@@ -42,7 +42,11 @@ auth.rehydrateToken()
 const appStore = useAppStore()
 try {
   const res = await getV1Bootstrap<true>({ throwOnError: true })
-  appStore.setFromBootstrap({ initialized: res.data.initialized, config: res.data.config })
+  appStore.setFromBootstrap({
+    initialized: res.data.initialized,
+    config: res.data.config,
+    setup: res.data.setup,
+  })
   if (res.data.user) {
     auth.setUserFromBootstrap(res.data.user)
   } else if (auth.token) {

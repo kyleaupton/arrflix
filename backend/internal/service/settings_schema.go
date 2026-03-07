@@ -10,9 +10,10 @@ const (
 )
 
 type SettingSpec struct {
-	Key     string
-	Type    SettingType
-	Default any
+	Key       string
+	Type      SettingType
+	Default   any
+	Sensitive bool
 }
 
 // Registry enumerates all supported settings and their types/defaults.
@@ -21,4 +22,5 @@ var Registry = map[string]SettingSpec{
 	"site.title":            {Key: "site.title", Type: SettingText, Default: "Arrflix"},
 	"auth.signup_strategy":  {Key: "auth.signup_strategy", Type: SettingText, Default: "invite_only"},
 	"requests.max_per_user": {Key: "requests.max_per_user", Type: SettingInt, Default: int64(5)},
+	"tmdb.api_key":          {Key: "tmdb.api_key", Type: SettingText, Default: "", Sensitive: true},
 }

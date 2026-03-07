@@ -1064,6 +1064,8 @@ definitions:
         $ref: '#/definitions/handlers.BootstrapConfig'
       initialized:
         type: boolean
+      setup:
+        $ref: '#/definitions/service.SetupSteps'
       user:
         $ref: '#/definitions/handlers.BootstrapUser'
     required:
@@ -1445,8 +1447,24 @@ definitions:
     properties:
       initialized:
         type: boolean
+      steps:
+        $ref: '#/definitions/service.SetupSteps'
     required:
     - initialized
+    type: object
+  handlers.SetupTmdbRequest:
+    properties:
+      api_key:
+        type: string
+    required:
+    - api_key
+    type: object
+  handlers.SetupTmdbResponse:
+    properties:
+      success:
+        type: boolean
+    required:
+    - success
     type: object
   handlers.SignupRequest:
     properties:
@@ -3048,6 +3066,16 @@ definitions:
     required:
     - created_tasks
     - skipped_count
+    type: object
+  service.SetupSteps:
+    properties:
+      admin_account:
+        type: boolean
+      tmdb_api_key:
+        type: boolean
+    required:
+    - admin_account
+    - tmdb_api_key
     type: object
   service.SuggestedMatch:
     properties:
@@ -5333,6 +5361,33 @@ paths:
           schema:
             $ref: '#/definitions/handlers.SetupStatusResponse'
       summary: Get setup status
+      tags:
+      - setup
+  /v1/setup/tmdb:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: TMDB key request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.SetupTmdbRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.SetupTmdbResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Set TMDB API key
       tags:
       - setup
   /v1/unmatched-files:

@@ -6,17 +6,28 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
 type SettingsService struct {
-	repo *repo.Repository
-	mu   sync.RWMutex
-	mem  map[string]any
+	repo     *repo.Repository
+	mu       sync.RWMutex
+	mem      map[string]any
+	onChange map[string]func(ctx context.Context, val any) error
 }
 
 func NewSettingsService(r *repo.Repository) *SettingsService {
-	return &SettingsService{repo: r, mem: make(map[string]any)}
+	return &SettingsService{
+		repo:     r,
+		mem:      make(map[string]any),
+		onChange: make(map[string]func(ctx context.Context, val any) error),
+	}
+}
+
+// OnChange registers a callback that fires after a setting is persisted.
+func (s *SettingsService) OnChange(key string, fn func(ctx context.Context, val any) error) {
+	s.onChange[key] = fn
 }
 
 // GetAll returns a materialized map of settings with defaults applied and caches it.
@@ -58,10 +69,76 @@ func (s *SettingsService) GetAll(ctx context.Context) (map[string]any, error) {
 	s.mu.Lock()
 	s.mem = out
 	s.mu.Unlock()
-	return out, nil
+
+	// Mask sensitive values in the returned map
+	masked := make(map[string]any, len(out))
+	for k, v := range out {
+		if spec, ok := Registry[k]; ok && spec.Sensitive {
+			if str, ok := v.(string); ok && str != "" {
+				masked[k] = "********"
+			} else {
+				masked[k] = v
+			}
+		} else {
+			masked[k] = v
+		}
+	}
+	return masked, nil
 }
 
-// Set validates and persists a single key/value according to the registry.
+// GetRaw returns the unmasked value for a single key (from DB or default).
+// Used internally for setup status checks and TMDB client init.
+func (s *SettingsService) GetRaw(ctx context.Context, key string) (any, error) {
+	spec, ok := Registry[key]
+	if !ok {
+		return nil, fmt.Errorf("unknown setting key")
+	}
+
+	rows, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, it := range rows {
+		if it.Key == key {
+			switch it.Type {
+			case string(SettingText):
+				var v string
+				_ = json.Unmarshal(it.ValueJson, &v)
+				return v, nil
+			case string(SettingBool):
+				var v bool
+				_ = json.Unmarshal(it.ValueJson, &v)
+				return v, nil
+			case string(SettingInt):
+				var v int64
+				_ = json.Unmarshal(it.ValueJson, &v)
+				return v, nil
+			default:
+				var v any
+				_ = json.Unmarshal(it.ValueJson, &v)
+				return v, nil
+			}
+		}
+	}
+	return spec.Default, nil
+}
+
+// SeedDefaults seeds settings from environment variables if not already in the DB.
+func (s *SettingsService) SeedDefaults(ctx context.Context, cfg *config.Config) error {
+	if cfg.TmdbAPIKey != "" {
+		raw, err := s.GetRaw(ctx, "tmdb.api_key")
+		if err != nil {
+			return err
+		}
+		if str, ok := raw.(string); ok && str == "" {
+			if err := s.Set(ctx, "tmdb.api_key", cfg.TmdbAPIKey); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // GetUserRegion returns the user's region code for watch provider lookups.
 // TODO: Make this configurable via user settings.
 func (s *SettingsService) GetUserRegion(ctx context.Context) string {
@@ -116,5 +193,11 @@ func (s *SettingsService) Set(ctx context.Context, key string, val any) error {
 	s.mu.Lock()
 	s.mem[key] = val
 	s.mu.Unlock()
+
+	if fn, ok := s.onChange[key]; ok {
+		if err := fn(ctx, val); err != nil {
+			return err
+		}
+	}
 	return nil
 }

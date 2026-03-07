@@ -58,7 +58,7 @@ func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, servic
 	bootstrap.RegisterPublic(v1)
 	auth.RegisterPublic(v1)
 	health.RegisterPublic(e)
-	setup.RegisterPublic(v1)
+	setup.RegisterPublic(v1.Group("/setup", middlewares.SetupOnly(services)))
 	version.RegisterPublic(v1)
 
 	// Protected routes

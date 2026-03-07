@@ -392,6 +392,7 @@ export type HandlersBootstrapConfig = {
 export type HandlersBootstrapResponse = {
     config: HandlersBootstrapConfig;
     initialized: boolean;
+    setup?: ServiceSetupSteps;
     user: HandlersBootstrapUser;
 };
 
@@ -567,6 +568,15 @@ export type HandlersSetupInitializeResponse = {
 
 export type HandlersSetupStatusResponse = {
     initialized: boolean;
+    steps?: ServiceSetupSteps;
+};
+
+export type HandlersSetupTmdbRequest = {
+    api_key: string;
+};
+
+export type HandlersSetupTmdbResponse = {
+    success: boolean;
 };
 
 export type HandlersSignupRequest = {
@@ -1296,6 +1306,11 @@ export type ServiceLatestVersionInfo = {
 export type ServiceReimportResult = {
     created_tasks: Array<DbgenImportTask>;
     skipped_count: number;
+};
+
+export type ServiceSetupSteps = {
+    admin_account: boolean;
+    tmdb_api_key: boolean;
 };
 
 export type ServiceSuggestedMatch = {
@@ -3965,6 +3980,36 @@ export type GetV1SetupStatusResponses = {
 };
 
 export type GetV1SetupStatusResponse = GetV1SetupStatusResponses[keyof GetV1SetupStatusResponses];
+
+export type PostV1SetupTmdbData = {
+    /**
+     * TMDB key request
+     */
+    body: HandlersSetupTmdbRequest;
+    path?: never;
+    query?: never;
+    url: '/v1/setup/tmdb';
+};
+
+export type PostV1SetupTmdbErrors = {
+    /**
+     * Bad Request
+     */
+    400: {
+        [key: string]: string;
+    };
+};
+
+export type PostV1SetupTmdbError = PostV1SetupTmdbErrors[keyof PostV1SetupTmdbErrors];
+
+export type PostV1SetupTmdbResponses = {
+    /**
+     * OK
+     */
+    200: HandlersSetupTmdbResponse;
+};
+
+export type PostV1SetupTmdbResponse = PostV1SetupTmdbResponses[keyof PostV1SetupTmdbResponses];
 
 export type GetV1UnmatchedFilesData = {
     body?: never;

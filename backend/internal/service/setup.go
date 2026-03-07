@@ -16,18 +16,77 @@ var (
 	ErrSetupFailed        = errors.New("setup failed")
 )
 
+type SetupSteps struct {
+	AdminAccount bool `json:"admin_account"`
+	TmdbApiKey   bool `json:"tmdb_api_key"`
+}
+
 type SetupService struct {
-	repo  *repo.Repository
-	users *UsersService
+	repo     *repo.Repository
+	users    *UsersService
+	settings *SettingsService
+	tmdb     *TmdbService
 }
 
-func NewSetupService(r *repo.Repository, users *UsersService) *SetupService {
-	return &SetupService{repo: r, users: users}
+func NewSetupService(r *repo.Repository, users *UsersService, settings *SettingsService, tmdb *TmdbService) *SetupService {
+	return &SetupService{repo: r, users: users, settings: settings, tmdb: tmdb}
 }
 
-// IsInitialized checks if the system has been initialized
+// GetSetupSteps returns the completion status of each setup step.
+func (s *SetupService) GetSetupSteps(ctx context.Context) (SetupSteps, error) {
+	steps := SetupSteps{}
+
+	// Admin account: check if system.initialized flag is true (set when admin is created)
+	initialized, err := s.repo.GetSystemInitialized(ctx)
+	if err != nil {
+		return steps, err
+	}
+	steps.AdminAccount = initialized
+
+	// TMDB API key: check if a non-empty key is stored
+	raw, err := s.settings.GetRaw(ctx, "tmdb.api_key")
+	if err != nil {
+		return steps, err
+	}
+	if str, ok := raw.(string); ok && str != "" {
+		steps.TmdbApiKey = true
+	}
+
+	return steps, nil
+}
+
+// IsInitialized returns true when all setup steps are complete.
 func (s *SetupService) IsInitialized(ctx context.Context) (bool, error) {
-	return s.repo.GetSystemInitialized(ctx)
+	// Fast path: if system.initialized is already true, check TMDB key too
+	flagSet, err := s.repo.GetSystemInitialized(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	if !flagSet {
+		return false, nil
+	}
+
+	// Admin is done; also require TMDB key
+	raw, err := s.settings.GetRaw(ctx, "tmdb.api_key")
+	if err != nil {
+		return false, err
+	}
+	if str, ok := raw.(string); ok && str != "" {
+		return true, nil
+	}
+	return false, nil
+}
+
+// SetTmdbKey validates, persists, and hot-reloads the TMDB API key.
+func (s *SetupService) SetTmdbKey(ctx context.Context, apiKey string) error {
+	if err := ValidateTmdbKey(apiKey); err != nil {
+		return err
+	}
+	if err := s.settings.Set(ctx, "tmdb.api_key", apiKey); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Initialize performs the one-time setup operation atomically:

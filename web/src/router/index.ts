@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
 
 // Prevent the browser's native scroll restoration from fighting Vue Router
 if ('scrollRestoration' in history) {
@@ -123,10 +125,35 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
+  const appStore = useAppStore()
 
-  // Public routes (login, setup, auth callback)
+  // Wait for bootstrap to complete before enforcing any guards.
+  // The initial navigation fires before main.ts finishes bootstrap,
+  // so we block here until the app state is known.
+  if (!appStore.isReady) {
+    await new Promise<void>((resolve) => {
+      const unwatch = watch(() => appStore.isReady, (ready) => {
+        if (ready) {
+          unwatch()
+          resolve()
+        }
+      }, { immediate: true })
+    })
+  }
+
+  // If app needs setup, force all non-setup routes to /setup
+  if (appStore.needsSetup && !to.meta.setup) {
+    return { path: '/setup' }
+  }
+
+  // If setup is complete, don't allow visiting /setup
+  if (!appStore.needsSetup && to.meta.setup) {
+    return { path: '/login' }
+  }
+
+  // Public routes (login, signup, auth callback, setup)
   if (to.meta.public) {
     return true
   }

@@ -37,9 +37,10 @@ type BootstrapConfig struct {
 }
 
 type BootstrapResponse struct {
-	Initialized bool            `json:"initialized"`
-	User        *BootstrapUser  `json:"user"`
-	Config      BootstrapConfig `json:"config"`
+	Initialized bool                 `json:"initialized"`
+	User        *BootstrapUser       `json:"user"`
+	Config      BootstrapConfig      `json:"config"`
+	Setup       *service.SetupSteps  `json:"setup,omitempty"`
 }
 
 // GetBootstrap returns initialization status, current user (if authenticated), and public app config.
@@ -57,19 +58,30 @@ func (h *Bootstrap) GetBootstrap(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "bootstrap failed"})
 	}
 
-	// 2. Opportunistic auth — never returns an error, just nil user
+	// 2. Setup steps (only when not fully initialized)
+	var setupSteps *service.SetupSteps
+	if !initialized {
+		steps, err := h.svc.Setup.GetSetupSteps(ctx)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "bootstrap failed"})
+		}
+		setupSteps = &steps
+	}
+
+	// 3. Opportunistic auth — never returns an error, just nil user
 	var user *BootstrapUser
 	if authz := c.Request().Header.Get("Authorization"); len(authz) > 7 && authz[:7] == "Bearer " {
 		user = h.tryParseUser(authz[7:])
 	}
 
-	// 3. Public config
+	// 4. Public config
 	cfg := h.getPublicConfig(ctx)
 
 	return c.JSON(http.StatusOK, BootstrapResponse{
 		Initialized: initialized,
 		User:        user,
 		Config:      cfg,
+		Setup:       setupSteps,
 	})
 }
 

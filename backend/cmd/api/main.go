@@ -47,15 +47,18 @@ func main() {
 	broker := sse.NewBroker()
 
 	// Services
-	services := service.New(repo, logg, &cfg, broker, service.WithJWTSecret(cfg.JWTSecret))
+	ctx := context.Background()
+	services := service.New(ctx, repo, logg, &cfg, broker, service.WithJWTSecret(cfg.JWTSecret))
+
+	// Seed settings from env vars (e.g. TMDB_API_KEY) for backwards compat
+	if err := services.Settings.SeedDefaults(ctx, &cfg); err != nil {
+		logg.Error().Err(err).Msg("failed to seed default settings")
+	}
 
 	// Downloader Manager
 	downloaderRegistry := downloader.NewRegistry()
 	qbittorrent.Register(downloaderRegistry)
 	downloaderManager := downloader.NewManager(downloaderRegistry, repo, logg)
-
-	// Initialize downloader manager (loads all enabled downloaders)
-	ctx := context.Background()
 	if err := downloaderManager.Initialize(ctx); err != nil {
 		logg.Error().Err(err).Msg("failed to initialize downloader manager")
 		// Don't fatal - allow server to start even if downloaders fail

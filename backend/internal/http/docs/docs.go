@@ -3436,6 +3436,48 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/setup/tmdb": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "setup"
+                ],
+                "summary": "Set TMDB API key",
+                "parameters": [
+                    {
+                        "description": "TMDB key request",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.SetupTmdbRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.SetupTmdbResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/unmatched-files": {
             "get": {
                 "description": "List files that couldn't be auto-matched to media items",
@@ -5321,6 +5363,9 @@ const docTemplate = `{
                 "initialized": {
                     "type": "boolean"
                 },
+                "setup": {
+                    "$ref": "#/definitions/service.SetupSteps"
+                },
                 "user": {
                     "$ref": "#/definitions/handlers.BootstrapUser"
                 }
@@ -5864,6 +5909,31 @@ const docTemplate = `{
             ],
             "properties": {
                 "initialized": {
+                    "type": "boolean"
+                },
+                "steps": {
+                    "$ref": "#/definitions/service.SetupSteps"
+                }
+            }
+        },
+        "handlers.SetupTmdbRequest": {
+            "type": "object",
+            "required": [
+                "api_key"
+            ],
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.SetupTmdbResponse": {
+            "type": "object",
+            "required": [
+                "success"
+            ],
+            "properties": {
+                "success": {
                     "type": "boolean"
                 }
             }
@@ -8160,6 +8230,21 @@ const docTemplate = `{
                 },
                 "skipped_count": {
                     "type": "integer"
+                }
+            }
+        },
+        "service.SetupSteps": {
+            "type": "object",
+            "required": [
+                "admin_account",
+                "tmdb_api_key"
+            ],
+            "properties": {
+                "admin_account": {
+                    "type": "boolean"
+                },
+                "tmdb_api_key": {
+                    "type": "boolean"
                 }
             }
         },

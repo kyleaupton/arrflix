@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+
 	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/guessit"
 	prowlarradapter "github.com/kyleaupton/arrflix/internal/indexer/prowlarr"
@@ -35,22 +37,36 @@ type Services struct {
 	Version            *VersionService
 }
 
-func New(r *repo.Repository, l *logger.Logger, c *config.Config, broker *sse.Broker, opts ...Option) *Services {
+func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Config, broker *sse.Broker, opts ...Option) *Services {
 	cfg := &cfg{}
 	for _, o := range opts {
 		o.apply(cfg)
 	}
 
-	tmdb := NewTmdbService(r, l)
+	settings := NewSettingsService(r)
+
+	// Resolve TMDB API key: prefer DB setting, fall back to env var
+	tmdbKey := c.TmdbAPIKey
+	if raw, err := settings.GetRaw(ctx, "tmdb.api_key"); err == nil {
+		if str, ok := raw.(string); ok && str != "" {
+			tmdbKey = str
+		}
+	}
+
+	tmdb := NewTmdbService(r, l, tmdbKey)
 	indexer := NewIndexerService(r, l, c)
 	indexerSource := prowlarradapter.New(indexer.Client(), l)
-	settings := NewSettingsService(r)
 	media := NewMediaService(r, l, tmdb, settings)
 	policies := NewPoliciesService(r, l)
 	policyEngine := policy.NewEngine(r, l)
 	users := NewUsersService(r)
 	invites := NewInvitesService(r)
 	enrichment := NewEnrichmentService(r, l, tmdb)
+
+	// Register onChange hook so TMDB key changes hot-reload the client
+	settings.OnChange("tmdb.api_key", func(ctx context.Context, val any) error {
+		return tmdb.InitClient(val.(string))
+	})
 
 	return &Services{
 		Auth:               NewAuthService(r, cfg, settings, invites),
@@ -70,7 +86,7 @@ func New(r *repo.Repository, l *logger.Logger, c *config.Config, broker *sse.Bro
 		Policies:           policies,
 		Scanner:            NewScannerService(r, l, tmdb, broker, guessit.NewClient(""), enrichment),
 		Settings:           settings,
-		Setup:              NewSetupService(r, users),
+		Setup:              NewSetupService(r, users, settings, tmdb),
 		Tmdb:               tmdb,
 		UnmatchedFiles:     NewUnmatchedFilesService(r, l, tmdb),
 		Users:              users,
