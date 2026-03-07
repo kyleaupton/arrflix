@@ -1192,6 +1192,39 @@ definitions:
     - guid
     - indexerId
     type: object
+  handlers.FullPolicy:
+    properties:
+      actions:
+        items:
+          $ref: '#/definitions/dbgen.Action'
+        type: array
+      created_at:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      priority:
+        type: integer
+      rule:
+        $ref: '#/definitions/dbgen.Rule'
+      updated_at:
+        type: string
+    required:
+    - actions
+    - created_at
+    - description
+    - enabled
+    - id
+    - name
+    - priority
+    - rule
+    - updated_at
+    type: object
   handlers.InviteCreateRequest:
     properties:
       email:
@@ -4993,6 +5026,20 @@ paths:
               $ref: '#/definitions/model.FieldDefinition'
             type: array
       summary: Get field definitions
+      tags:
+      - policies
+  /v1/policies/full:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.FullPolicy'
+            type: array
+      summary: List full policies
       tags:
       - policies
   /v1/roles:

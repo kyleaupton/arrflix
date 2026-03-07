@@ -244,6 +244,70 @@ func (q *Queries) ListActionsForPolicy(ctx context.Context, policyID pgtype.UUID
 	return items, nil
 }
 
+const listAllActions = `-- name: ListAllActions :many
+SELECT id, policy_id, type, value, "order", created_at, updated_at FROM action ORDER BY policy_id, "order" ASC
+`
+
+func (q *Queries) ListAllActions(ctx context.Context) ([]Action, error) {
+	rows, err := q.db.Query(ctx, listAllActions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Action
+	for rows.Next() {
+		var i Action
+		if err := rows.Scan(
+			&i.ID,
+			&i.PolicyID,
+			&i.Type,
+			&i.Value,
+			&i.Order,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllRules = `-- name: ListAllRules :many
+SELECT id, policy_id, left_operand, operator, right_operand, created_at, updated_at FROM rule ORDER BY policy_id
+`
+
+func (q *Queries) ListAllRules(ctx context.Context) ([]Rule, error) {
+	rows, err := q.db.Query(ctx, listAllRules)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Rule
+	for rows.Next() {
+		var i Rule
+		if err := rows.Scan(
+			&i.ID,
+			&i.PolicyID,
+			&i.LeftOperand,
+			&i.Operator,
+			&i.RightOperand,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPolicies = `-- name: ListPolicies :many
 
 select id, name, description, enabled, priority, created_at, updated_at from policy
@@ -354,6 +418,21 @@ func (q *Queries) UpdatePolicy(ctx context.Context, arg UpdatePolicyParams) (Pol
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updatePolicyPriority = `-- name: UpdatePolicyPriority :exec
+UPDATE policy SET priority = $1, updated_at = now()
+WHERE id = $2
+`
+
+type UpdatePolicyPriorityParams struct {
+	Priority int32       `json:"priority"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) UpdatePolicyPriority(ctx context.Context, arg UpdatePolicyPriorityParams) error {
+	_, err := q.db.Exec(ctx, updatePolicyPriority, arg.Priority, arg.ID)
+	return err
 }
 
 const updateRule = `-- name: UpdateRule :one

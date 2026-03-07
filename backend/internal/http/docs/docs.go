@@ -2566,6 +2566,28 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/policies/full": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "policies"
+                ],
+                "summary": "List full policies",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handlers.FullPolicy"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/policies/{id}": {
             "get": {
                 "produces": [
@@ -5472,6 +5494,52 @@ const docTemplate = `{
                 },
                 "season": {
                     "type": "integer"
+                }
+            }
+        },
+        "handlers.FullPolicy": {
+            "type": "object",
+            "required": [
+                "actions",
+                "created_at",
+                "description",
+                "enabled",
+                "id",
+                "name",
+                "priority",
+                "rule",
+                "updated_at"
+            ],
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dbgen.Action"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "rule": {
+                    "$ref": "#/definitions/dbgen.Rule"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },

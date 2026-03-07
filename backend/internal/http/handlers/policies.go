@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/release"
 	"github.com/kyleaupton/arrflix/internal/service"
@@ -17,11 +18,11 @@ func NewPolicies(s *service.Services) *Policies { return &Policies{svc: s} }
 func (h *Policies) RegisterProtected(v1 *echo.Group) {
 	v1.GET("/policies", h.List)
 	v1.POST("/policies", h.Create)
+	v1.GET("/policies/full", h.ListFull)
+	v1.GET("/policies/fields", h.GetFields)
 	v1.GET("/policies/:id", h.Get)
 	v1.PUT("/policies/:id", h.Update)
 	v1.DELETE("/policies/:id", h.Delete)
-
-	v1.GET("/policies/fields", h.GetFields)
 
 	v1.GET("/policies/:id/rule", h.GetRule)
 	v1.POST("/policies/:id/rule", h.CreateRule)
@@ -81,6 +82,13 @@ type ActionUpdateRequest struct {
 	Order int32  `json:"order"`
 }
 
+// FullPolicy is a policy with its rule and actions nested
+type FullPolicy struct {
+	dbgen.Policy
+	Rule    *dbgen.Rule    `json:"rule"`
+	Actions []dbgen.Action `json:"actions"`
+}
+
 // List policies
 // @Summary List policies
 // @Tags    policies
@@ -94,6 +102,49 @@ func (h *Policies) List(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list policies"})
 	}
 	return c.JSON(http.StatusOK, policies)
+}
+
+// ListFull returns all policies with nested rules and actions
+// @Summary List full policies
+// @Tags    policies
+// @Produce json
+// @Success 200 {array} handlers.FullPolicy
+// @Router  /v1/policies/full [get]
+func (h *Policies) ListFull(c echo.Context) error {
+	ctx := c.Request().Context()
+	policies, rules, actions, err := h.svc.Policies.ListFull(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list policies"})
+	}
+
+	// Index rules by policy_id
+	ruleMap := make(map[string]*dbgen.Rule)
+	for i := range rules {
+		key := rules[i].PolicyID.Bytes
+		ruleMap[string(key[:])] = &rules[i]
+	}
+
+	// Index actions by policy_id
+	actionMap := make(map[string][]dbgen.Action)
+	for _, a := range actions {
+		key := string(a.PolicyID.Bytes[:])
+		actionMap[key] = append(actionMap[key], a)
+	}
+
+	result := make([]FullPolicy, len(policies))
+	for i, p := range policies {
+		key := string(p.ID.Bytes[:])
+		result[i] = FullPolicy{
+			Policy:  p,
+			Rule:    ruleMap[key],
+			Actions: actionMap[key],
+		}
+		if result[i].Actions == nil {
+			result[i].Actions = []dbgen.Action{}
+		}
+	}
+
+	return c.JSON(http.StatusOK, result)
 }
 
 // Create policy

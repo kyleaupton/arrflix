@@ -80,3 +80,13 @@ returning *;
 -- name: DeleteAction :exec
 delete from action where id = $1;
 
+-- name: ListAllRules :many
+SELECT * FROM rule ORDER BY policy_id;
+
+-- name: ListAllActions :many
+SELECT * FROM action ORDER BY policy_id, "order" ASC;
+
+-- name: UpdatePolicyPriority :exec
+UPDATE policy SET priority = sqlc.arg(priority), updated_at = now()
+WHERE id = sqlc.arg(id);
+

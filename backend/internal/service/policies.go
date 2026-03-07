@@ -28,6 +28,23 @@ func (s *PoliciesService) List(ctx context.Context) ([]dbgen.Policy, error) {
 	return s.repo.ListPolicies(ctx)
 }
 
+// ListFull returns all policies with their rules and actions assembled.
+func (s *PoliciesService) ListFull(ctx context.Context) ([]dbgen.Policy, []dbgen.Rule, []dbgen.Action, error) {
+	policies, err := s.repo.ListPolicies(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	rules, err := s.repo.ListAllRules(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	actions, err := s.repo.ListAllActions(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return policies, rules, actions, nil
+}
+
 func (s *PoliciesService) Get(ctx context.Context, id pgtype.UUID) (dbgen.Policy, error) {
 	return s.repo.GetPolicy(ctx, id)
 }

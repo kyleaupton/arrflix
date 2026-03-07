@@ -1,85 +1,61 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { Plus, Shield } from 'lucide-vue-next'
-import { getV1PoliciesOptions } from '@/client/@tanstack/vue-query.gen'
-import { type DbgenPolicy } from '@/client/types.gen'
-import DataTable from '@/components/tables/DataTable.vue'
-import { policyColumns, createPolicyActions } from '@/components/tables/configs/policyTableConfig'
-import { useModal } from '@/composables/useModal'
+import {
+  getV1PoliciesFullOptions,
+  getV1PoliciesFieldsOptions,
+  getV1LibrariesOptions,
+  getV1NameTemplatesOptions,
+  getV1DownloadersOptions,
+} from '@/client/@tanstack/vue-query.gen'
+import PolicyCard from '@/components/settings/PolicyCard.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import PolicyDialog from '@/components/modals/PolicyDialog.vue'
-import RuleDialog from '@/components/modals/RuleDialog.vue'
-import ActionsDialog from '@/components/modals/ActionsDialog.vue'
-
-const modal = useModal()
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 
 // Data queries
-const { data: policies, isLoading, refetch } = useQuery(getV1PoliciesOptions())
+const {
+  data: policies,
+  isLoading: policiesLoading,
+  refetch,
+} = useQuery(getV1PoliciesFullOptions())
+const { data: fields, isLoading: fieldsLoading } = useQuery(getV1PoliciesFieldsOptions())
+const { data: libraries } = useQuery(getV1LibrariesOptions())
+const { data: nameTemplates } = useQuery(getV1NameTemplatesOptions())
+const { data: downloaders } = useQuery(getV1DownloadersOptions())
 
-// Policy handlers
+// New policy cards
+const newPolicies = ref<null[]>([])
+
 const handleAddPolicy = () => {
-  modal.open(PolicyDialog, {
-    props: {
-      policy: null,
-    },
-    onClose: () => {
-      refetch()
-    },
-  })
+  newPolicies.value.push(null)
 }
 
-const handleEditPolicy = (policy: DbgenPolicy) => {
-  modal.open(PolicyDialog, {
-    props: {
-      policy,
-    },
-    onClose: () => {
-      refetch()
-    },
-  })
-}
-
-const handleEditRule = (policy: DbgenPolicy) => {
-  modal.open(RuleDialog, {
-    props: {
-      policy,
-    },
-    onClose: () => {
-      refetch()
-    },
-  })
-}
-
-const handleEditActions = (policy: DbgenPolicy) => {
-  modal.open(ActionsDialog, {
-    props: {
-      policy,
-    },
-    onClose: () => {
-      refetch()
-    },
-  })
-}
-
-const handleDeletePolicy = async (policy: DbgenPolicy) => {
-  const confirmed = await modal.confirm({
-    title: 'Delete Policy',
-    message: `Are you sure you want to delete "${policy.name}"?`,
-    severity: 'danger',
-  })
-  if (!confirmed) return
-  // The delete will be handled by the DataTable actions
+const handleSaved = () => {
   refetch()
 }
 
-const policyActions = createPolicyActions(
-  handleEditPolicy,
-  handleEditRule,
-  handleEditActions,
-  handleDeletePolicy,
-)
+const handleNewSaved = (index: number) => {
+  newPolicies.value.splice(index, 1)
+  refetch()
+}
+
+const handleDeleted = () => {
+  refetch()
+}
+
+const removeNew = (index: number) => {
+  newPolicies.value.splice(index, 1)
+}
 </script>
 
 <template>
@@ -100,27 +76,62 @@ const policyActions = createPolicyActions(
         </div>
       </CardHeader>
       <CardContent>
-        <div v-if="isLoading" class="space-y-3">
+        <div v-if="policiesLoading || fieldsLoading" class="space-y-3">
           <Skeleton class="h-12 w-full" />
           <Skeleton class="h-12 w-full" />
           <Skeleton class="h-12 w-full" />
         </div>
-        <DataTable
-          v-else
-          :data="policies || []"
-          :columns="policyColumns"
-          :actions="policyActions"
-          :loading="isLoading"
-          empty-message="No policies configured"
-          searchable
-          search-placeholder="Search policies..."
-          paginator
-          :rows="10"
-        >
-          <template #empty-icon>
-            <Shield class="size-5" />
-          </template>
-        </DataTable>
+
+        <template v-else>
+          <div
+            v-if="(!policies || policies.length === 0) && newPolicies.length === 0"
+            class="py-8"
+          >
+            <Empty>
+              <EmptyMedia>
+                <Shield class="size-5" />
+              </EmptyMedia>
+              <EmptyContent>
+                <EmptyHeader>
+                  <EmptyTitle>No policies configured</EmptyTitle>
+                </EmptyHeader>
+                <EmptyDescription>
+                  Click "Add Policy" to create your first policy.
+                </EmptyDescription>
+              </EmptyContent>
+            </Empty>
+          </div>
+
+          <div v-else class="space-y-3">
+            <!-- Existing policies -->
+            <PolicyCard
+              v-for="policy in policies"
+              :key="policy.id"
+              :policy="policy"
+              :fields="fields || []"
+              :libraries="libraries || []"
+              :name-templates="nameTemplates || []"
+              :downloaders="downloaders || []"
+              @saved="handleSaved"
+              @deleted="handleDeleted"
+            />
+
+            <!-- New policy cards -->
+            <PolicyCard
+              v-for="(_, idx) in newPolicies"
+              :key="`new-${idx}`"
+              :policy="null"
+              :fields="fields || []"
+              :libraries="libraries || []"
+              :name-templates="nameTemplates || []"
+              :downloaders="downloaders || []"
+              :is-new="true"
+              @saved="handleNewSaved(idx)"
+              @cancelled="removeNew(idx)"
+              @deleted="removeNew(idx)"
+            />
+          </div>
+        </template>
       </CardContent>
     </Card>
   </div>

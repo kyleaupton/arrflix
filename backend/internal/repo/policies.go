@@ -25,6 +25,10 @@ type PolicyRepo interface {
 	CreateAction(ctx context.Context, policyID pgtype.UUID, actionType, value string, order int32) (dbgen.Action, error)
 	UpdateAction(ctx context.Context, id pgtype.UUID, actionType, value string, order int32) (dbgen.Action, error)
 	DeleteAction(ctx context.Context, id pgtype.UUID) error
+
+	ListAllRules(ctx context.Context) ([]dbgen.Rule, error)
+	ListAllActions(ctx context.Context) ([]dbgen.Action, error)
+	UpdatePolicyPriority(ctx context.Context, id pgtype.UUID, priority int32) error
 }
 
 func (r *Repository) ListPolicies(ctx context.Context) ([]dbgen.Policy, error) {
@@ -116,4 +120,19 @@ func (r *Repository) UpdateAction(ctx context.Context, id pgtype.UUID, actionTyp
 
 func (r *Repository) DeleteAction(ctx context.Context, id pgtype.UUID) error {
 	return r.Q.DeleteAction(ctx, id)
+}
+
+func (r *Repository) ListAllRules(ctx context.Context) ([]dbgen.Rule, error) {
+	return r.Q.ListAllRules(ctx)
+}
+
+func (r *Repository) ListAllActions(ctx context.Context) ([]dbgen.Action, error) {
+	return r.Q.ListAllActions(ctx)
+}
+
+func (r *Repository) UpdatePolicyPriority(ctx context.Context, id pgtype.UUID, priority int32) error {
+	return r.Q.UpdatePolicyPriority(ctx, dbgen.UpdatePolicyPriorityParams{
+		ID:       id,
+		Priority: priority,
+	})
 }

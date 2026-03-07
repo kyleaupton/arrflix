@@ -451,6 +451,18 @@ export type HandlersEnqueueCandidateRequest = {
     season?: number;
 };
 
+export type HandlersFullPolicy = {
+    actions: Array<DbgenAction>;
+    created_at: string;
+    description: string;
+    enabled: boolean;
+    id: string;
+    name: string;
+    priority: number;
+    rule: DbgenRule;
+    updated_at: string;
+};
+
 export type HandlersInviteCreateRequest = {
     email: string;
 };
@@ -3290,6 +3302,22 @@ export type GetV1PoliciesFieldsResponses = {
 };
 
 export type GetV1PoliciesFieldsResponse = GetV1PoliciesFieldsResponses[keyof GetV1PoliciesFieldsResponses];
+
+export type GetV1PoliciesFullData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/policies/full';
+};
+
+export type GetV1PoliciesFullResponses = {
+    /**
+     * OK
+     */
+    200: Array<HandlersFullPolicy>;
+};
+
+export type GetV1PoliciesFullResponse = GetV1PoliciesFullResponses[keyof GetV1PoliciesFullResponses];
 
 export type DeleteV1PoliciesByIdData = {
     body?: never;
