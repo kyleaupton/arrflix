@@ -207,7 +207,7 @@ const protocolOptions = [
 
       <div class="flex flex-col gap-2">
         <Label for="downloader-name">Name</Label>
-        <Input id="downloader-name" v-model="downloaderForm.name" placeholder="My qBittorrent" />
+        <Input id="downloader-name" v-model="downloaderForm.name" placeholder="Downloader name" />
       </div>
 
       <div class="flex flex-col gap-2">
@@ -226,7 +226,7 @@ const protocolOptions = [
 
       <div class="flex flex-col gap-2">
         <Label for="downloader-protocol">Protocol</Label>
-        <Select v-model="downloaderForm.protocol">
+        <Select v-model="downloaderForm.protocol" disabled>
           <SelectTrigger id="downloader-protocol" class="w-full">
             <SelectValue placeholder="Select protocol" />
           </SelectTrigger>
