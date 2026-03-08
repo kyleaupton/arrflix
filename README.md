@@ -6,6 +6,8 @@ It’s an experiment in simplifying personal media automation — with a focus o
 
 This project is **actively evolving** and not yet production-ready.
 
+![Arrflix home screen](docs/public/screenshots/home.jpg)
+
 ## Project Status
 
 Arrflix is:
