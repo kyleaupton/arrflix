@@ -35,6 +35,13 @@ export default defineConfig({
           { text: "Importing & Hardlinks", link: "/guide/importing-and-hardlinks" },
         ],
       },
+      {
+        text: "Project",
+        collapsed: false,
+        items: [
+          { text: "Roadmap", link: "/guide/roadmap" },
+        ],
+      },
     ],
 
     socialLinks: [
