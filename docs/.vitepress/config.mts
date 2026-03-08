@@ -22,6 +22,19 @@ export default defineConfig({
           { text: "Getting Started", link: "/guide/getting-started" },
         ],
       },
+      {
+        text: "Concepts",
+        collapsed: false,
+        items: [
+          { text: "How Arrflix Works", link: "/guide/how-arrflix-works" },
+          { text: "Libraries", link: "/guide/libraries" },
+          { text: "Indexers", link: "/guide/indexers" },
+          { text: "Downloaders", link: "/guide/downloaders" },
+          { text: "Name Templates", link: "/guide/name-templates" },
+          { text: "Policy Engine", link: "/guide/policy-engine" },
+          { text: "Importing & Hardlinks", link: "/guide/importing-and-hardlinks" },
+        ],
+      },
     ],
 
     socialLinks: [
