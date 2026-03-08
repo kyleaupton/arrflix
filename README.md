@@ -54,7 +54,6 @@ If you’re here to hack on Arrflix, the dev setup is lightweight.
 2. Create a `.env` file:
 
    ```env
-   TMDB_API_KEY=your_tmdb_api_key_here
    MEDIA_LIBRARIES=/path/to/test/media
    ```
 
