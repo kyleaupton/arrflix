@@ -2,9 +2,9 @@
 
 ## Introduction
 
-Arrflix is an open source, self-hosted media manager that combines the core functionality of Sonarr and Radarr into a single application.
+Arrflix is an open source, self-hosted media manager for movies and series. Browse what's trending, search for something specific, download it, and have it organized in your library automatically.
 
-Setting up and maintaining a media automation stack today often means stitching together multiple services, learning their individual quirks, and keeping everything in sync. Arrflix takes a different approach. One app, one container, one UI for both movies and series. Browse trending and popular content, find something you want, and download it. No need to know exactly what you're looking for ahead of time.
+Setting up and maintaining a media automation stack today often means stitching together multiple services, learning their individual quirks, and keeping everything in sync. Arrflix takes a different approach. One app, one container, one UI. Movies and series managed together instead of across separate tools.
 
 ## What It Does Today
 
