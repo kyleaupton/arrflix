@@ -5,7 +5,7 @@ layout: home
 hero:
   name: "Arrflix"
   text: "Self-hosted media management"
-  tagline: Unify Sonarr, Radarr, and Overseerr in one platform
+  tagline: Unify Sonarr and Radarr in one platform
   actions:
     - theme: brand
       text: Get Started

@@ -1,21 +1,21 @@
 # Policy Engine
 
-The Policy Engine automates decisions about how downloads are handled. It determines which downloader to use, which library to import into, and which name template to apply — based on rules you define.
+The Policy Engine automates decisions about how downloads are handled. It determines which downloader to use, which library to import into, and which name template to apply, based on rules you define.
 
 ## Do I Need Policies?
 
-No. If you set default values for your downloader, library, and name template, Arrflix will use those for everything. Policies are useful when you want different behavior based on the content — for example, routing 4K releases to a dedicated library.
+No. If you set default values for your downloader, library, and name template, Arrflix will use those for everything. Policies are useful when you want different behavior based on the content, like routing 4K releases to a dedicated library.
 
 ## How Policies Work
 
 Each policy has two parts:
 
-1. **A rule** (optional) — A condition that determines whether this policy applies
-2. **Actions** — What to do when the rule matches
+1. **A rule** (optional) - A condition that determines whether this policy applies.
+2. **Actions** - What to do when the rule matches.
 
 Policies are evaluated in **priority order** (highest first). The first policy whose rule matches has its actions applied. If a policy has no rule, it always matches.
 
-The combined result of all matching actions is called a **plan** — the final set of instructions for how to handle the download.
+The combined result of all matching actions is called a **plan**, the final set of instructions for how to handle the download.
 
 ### Example
 
@@ -29,22 +29,22 @@ When you download a 2160p release, this policy matches and routes the file to yo
 
 Rules are built using three parts: a **field**, an **operator**, and a **value**.
 
-The field and operator are selected from dropdowns. The value input adapts based on the field type — some fields offer a dropdown of predefined options (like resolution), while others accept free-form input (like a minimum seeder count).
+The field and operator are selected from dropdowns. The value input adapts based on the field type. Some fields offer a dropdown of predefined options (like resolution), while others accept free-form input (like a minimum seeder count).
 
 ### Available Fields
 
 Fields are organized by namespace:
 
-**Candidate** — Information about the release itself:
+**Candidate.** Information about the release itself:
 `size`, `title`, `indexer`, `protocol`, `seeders`, `peers`, `age`, `grabs`
 
-**Quality** — Parsed quality attributes:
+**Quality.** Parsed quality attributes:
 `resolution`, `source`, `is_remux`, `is_repack`
 
-**Release** — Release metadata:
+**Release.** Release metadata:
 `release_group`, `edition`
 
-**Media** — Information about the movie or series:
+**Media.** Information about the movie or series:
 `type`, `title`, `year`, `tmdb_id`, `season`, `episode`
 
 ### Operators
@@ -69,7 +69,7 @@ Each policy can have one or more actions:
 | **Set Name Template** | Apply a specific naming template |
 | **Stop Processing** | Skip all remaining policies |
 
-Actions are applied in order. Multiple policies can contribute actions — for example, one policy might set the library while another sets the name template.
+Actions are applied in order. Multiple policies can contribute actions. For example, one policy might set the library while another sets the name template.
 
 ### Stop Processing
 

@@ -17,20 +17,21 @@ Create a `docker-compose.yml` file with the following configuration:
 services:
   arrflix:
     image: ghcr.io/kyleaupton/arrflix:latest
+    container_name: arrflix
     ports:
-      - "8484:8484"
+      - 8484:8484
     volumes:
-      - /path/to/libraries/:/data
-      - arrflix_pg_data:/var/lib/postgresql/data
+      - /path/to/media:/data
+      - arrflix_postgres:/var/lib/postgresql/data
     restart: unless-stopped
 
 volumes:
-  arrflix_pg_data:
+  arrflix_postgres:
 ```
 
 ### Configuration Steps
 
-1. **Update the volume path** — Replace `/path/to/libraries/` with the actual path to your media library directory.
+1. **Update the volume path** - Replace `/path/to/media` with the actual path to your media directory.
 
 2. **Start Arrflix**:
 
@@ -40,7 +41,7 @@ volumes:
 
 3. **Access the web interface** at `http://localhost:8484`
 
-4. **Complete onboarding** — Create an admin account and add your TMDB API key. Arrflix uses [TMDB](https://www.themoviedb.org/) to fetch metadata for movies and TV shows — you can get a free API key from your [TMDB account settings](https://www.themoviedb.org/settings/api).
+4. **Complete onboarding** - Create an admin account and add your TMDB API key. Arrflix uses [TMDB](https://www.themoviedb.org/) to fetch metadata for movies and TV shows. You can get a free API key from your [TMDB account settings](https://www.themoviedb.org/settings/api).
 
 ## Next Steps
 

@@ -6,17 +6,17 @@ A downloader is the client that actually fetches files from the sources your ind
 
 Currently supported:
 
-- **qBittorrent** — For torrent downloads
+- **qBittorrent** for torrent downloads
 
 ## Configuration
 
 Each downloader needs:
 
-- **Name** — A label for your reference
-- **Type** — The client type (e.g., `qbittorrent`)
-- **Protocol** — `torrent` or `usenet`, determines which indexer results it can handle
-- **URL** — The base URL of your download client (e.g., `http://localhost:8080`)
-- **Username / Password** — Credentials, if your client requires authentication
+- **Name.** A label for your reference.
+- **Type.** The client type (e.g., `qbittorrent`).
+- **Protocol.** `torrent` or `usenet`, determines which indexer results it can handle.
+- **URL.** The base URL of your download client (e.g., `http://localhost:8080`).
+- **Username / Password.** Credentials, if your client requires authentication.
 
 ### Default Downloaders
 

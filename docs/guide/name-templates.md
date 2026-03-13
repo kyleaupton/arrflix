@@ -19,15 +19,15 @@ Name templates control how files are named and organized when imported into a li
 Templates differ depending on the media type:
 
 **Movies** have two template fields:
-- **Directory template** — The folder name (e.g., `{{.Media.CleanTitle}} ({{.Media.Year}})`)
-- **File template** — The filename (e.g., `{{.Media.CleanTitle}} ({{.Media.Year}}) [{{.Quality.Resolution}}]`)
+- **Directory template.** The folder name (e.g., `{{.Media.CleanTitle}} ({{.Media.Year}})`)
+- **File template.** The filename (e.g., `{{.Media.CleanTitle}} ({{.Media.Year}}) [{{.Quality.Resolution}}]`)
 
 **Series** have three template fields:
-- **Show template** — The top-level folder (e.g., `{{.Media.Title}} ({{.Media.Year}})`)
-- **Season template** — The season subfolder (e.g., `Season {{.Media.Season}}`)
-- **File template** — The episode filename
+- **Show template.** The top-level folder (e.g., `{{.Media.Title}} ({{.Media.Year}})`)
+- **Season template.** The season subfolder (e.g., `Season {{.Media.Season}}`)
+- **File template.** The episode filename
 
-File extensions are added automatically — you don't need to include them in your template.
+File extensions are added automatically. You don't need to include them in your template.
 
 ## Available Variables
 
@@ -76,8 +76,8 @@ These variables are only available after the file has been downloaded and analyz
 
 Two functions are available for sanitizing values:
 
-- **`clean`** — Removes filesystem-unsafe characters and returns empty string for "unknown" values. Use this for optional fields like episode titles: `{{clean .Media.EpisodeTitle}}`
-- **`sanitize`** — Removes filesystem-unsafe characters but always returns a value.
+- **`clean`** removes filesystem-unsafe characters and returns empty string for "unknown" values. Use this for optional fields like episode titles: `{{clean .Media.EpisodeTitle}}`
+- **`sanitize`** removes filesystem-unsafe characters but always returns a value.
 
 ## Conditional Sections
 

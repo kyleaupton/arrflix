@@ -2,32 +2,30 @@
 
 ## Introduction
 
-Arrflix is an **early-stage**, **open source project** that aims to simplify personal media automation.
+Arrflix is an open source, self-hosted media manager that combines the core functionality of Sonarr and Radarr into a single application.
 
-It exists because setting up and maintaining a media automation stack today is often **brittle, time-consuming, and harder than it needs to be**. Many existing solutions work well once they’re running, but getting there usually involves stitching together multiple services, learning their quirks, and hoping they continue to behave the way you expect.
+Setting up and maintaining a media automation stack today often means stitching together multiple services, learning their individual quirks, and keeping everything in sync. Arrflix takes a different approach. One app, one container, one UI for both movies and series. Browse trending and popular content, find something you want, and download it. No need to know exactly what you're looking for ahead of time.
 
-Arrflix is an attempt to make that whole process simpler, more consistent, and easier to reason about.
+## What It Does Today
 
-## Status & Expectations
+Arrflix handles the core media management workflow:
 
-Arrflix is:
+- **Search** indexers for movies and series via bundled Prowlarr integration
+- **Download** releases through your existing download client (qBittorrent)
+- **Import** completed downloads into your library with customizable naming
+- **Scan** existing media on disk and match it against TMDB metadata
+- **Organize** content across multiple libraries with a flexible policy engine
 
-- Actively evolving
-- Opinionated
-- Incomplete
-- Experimental
-- Documentation will lag behind implementation.
-- Breaking changes will happen.
-- Features may be redesigned or removed.
+## What’s Coming
 
-This project exists because the author wanted something better—and clearer—than what currently exists. If it becomes useful to others along the way, that’s a win.
+Arrflix is under active development. The core workflows are solid, but some larger features are still on the [roadmap](./roadmap):
+
+- **Automated monitoring.** Track titles and download new releases automatically.
+- **Request system.** Let other users request content.
+- **Quality profiles.** Auto-select the best release based on your preferences.
 
 ## Who This Is For
 
-Arrflix is for people who:
+Arrflix is for people who want a simpler media management setup without running and coordinating multiple applications. If you’re comfortable being an early adopter and don’t mind reporting the occasional bug, give it a try.
 
-- Want a simpler setup
-- Are frustrated by fragile or over-complicated configurations
-- Don’t mind experimenting with unfinished software
-
-If you need something stable and fully polished today, Arrflix probably isn’t the right choice yet. If you’re interested in a more straightforward approach and don’t mind early-stage software, you’re welcome to follow along or contribute.
+Feedback and bug reports are welcome on [GitHub](https://github.com/kyleaupton/arrflix/issues).

@@ -4,7 +4,7 @@ Indexers are the sources Arrflix searches when you look for content to download.
 
 ## How Indexers Work
 
-Arrflix uses [Prowlarr](https://prowlarr.com/) under the hood to manage indexer connections. Prowlarr is bundled with Arrflix — you don't need to install it separately.
+Arrflix uses [Prowlarr](https://prowlarr.com/) under the hood to manage indexer connections. Prowlarr is bundled with Arrflix, so you don't need to install it separately.
 
 When you search for a movie or series:
 
@@ -27,4 +27,4 @@ Prowlarr supports a wide range of public and private trackers. Check the [Prowla
 
 ## Indexer and Downloader Compatibility
 
-Indexers produce results with a specific **protocol** — either torrent or usenet. Your [downloader](./downloaders) must support the same protocol to handle the result. For example, a torrent indexer's results can only be sent to a torrent-capable download client like qBittorrent.
+Indexers produce results with a specific **protocol**, either torrent or usenet. Your [downloader](./downloaders) must support the same protocol to handle the result. For example, a torrent indexer's results can only be sent to a torrent-capable download client like qBittorrent.
