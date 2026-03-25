@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	"github.com/kyleaupton/arrflix/internal/repo"
-	qbt "github.com/superturkey650/go-qbittorrent/qbt"
 )
 
 type DownloadersService struct {
@@ -130,49 +129,3 @@ func (s *DownloadersService) Delete(ctx context.Context, id pgtype.UUID) error {
 	return s.repo.DeleteDownloader(ctx, id)
 }
 
-// EnqueueDownload adds a torrent to the specified downloader
-func (s *DownloadersService) EnqueueDownload(ctx context.Context, downloaderID pgtype.UUID, torrentURL, savePath, category string, tags []string) error {
-	downloader, err := s.repo.GetDownloader(ctx, downloaderID)
-	if err != nil {
-		return errors.New("downloader not found")
-	}
-
-	if !downloader.Enabled {
-		return errors.New("downloader is disabled")
-	}
-
-	// Create appropriate client based on type
-	switch downloader.Type {
-	case "qbittorrent":
-		username := ""
-		password := ""
-		if downloader.Username != nil {
-			username = *downloader.Username
-		}
-		if downloader.Password != nil {
-			password = *downloader.Password
-		}
-
-		// Use go-qbittorrent library
-		client := qbt.NewClient(downloader.Url)
-		if err := client.Login(username, password); err != nil {
-			return err
-		}
-		defer client.Logout()
-
-		// Build download options
-		opts := qbt.DownloadOptions{}
-		if savePath != "" {
-			opts.Savepath = &savePath
-		}
-		if category != "" {
-			opts.Category = &category
-		}
-
-		// Add tags if provided (library doesn't support tags in DownloadOptions, so we'd need to add them separately)
-		// For now, just download the torrent
-		return client.DownloadLinks([]string{torrentURL}, opts)
-	default:
-		return errors.New("unsupported downloader type")
-	}
-}
