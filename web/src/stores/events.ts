@@ -1,21 +1,22 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, onScopeDispose } from 'vue'
 import { client } from '@/client/client.gen'
 
 type EventCallback = (data: unknown) => void
 
-export type EventsConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
+export type EventsConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error'
 
 export const useEventsStore = defineStore('events', () => {
   const status = ref<EventsConnectionStatus>('disconnected')
   const lastError = ref<string | null>(null)
-
   const wantedTypes = ref<string[]>([])
 
   let abort: AbortController | null = null
   const listeners = new Map<string, Set<EventCallback>>()
 
   const isConnected = computed(() => status.value === 'connected')
+
+  // --- Pub/sub for event listeners ---
 
   function on(type: string, cb: EventCallback) {
     const set = listeners.get(type) ?? new Set<EventCallback>()
@@ -41,6 +42,8 @@ export const useEventsStore = defineStore('events', () => {
       }
     }
   }
+
+  // --- Connection management ---
 
   function buildUrl(types?: string[]) {
     const base = '/v1/events'
@@ -71,6 +74,8 @@ export const useEventsStore = defineStore('events', () => {
     lastError.value = null
     abort = new AbortController()
 
+    let hasConnectedBefore = false
+
     try {
       const url = buildUrl()
       const { stream } = await client.sse.get({
@@ -78,16 +83,41 @@ export const useEventsStore = defineStore('events', () => {
         signal: abort.signal,
         onSseEvent: (ev) => {
           if (!ev.event) return
+
+          // The server sends a "ready" event on every new connection.
+          // Use it as a reliable signal that we're (re)connected.
+          if (ev.event === 'ready') {
+            const wasDisconnected = status.value !== 'connected'
+            status.value = 'connected'
+            lastError.value = null
+
+            if (hasConnectedBefore && wasDisconnected) {
+              // Reconnected after a drop — emit an internal event so consumers
+              // can refresh their data if needed.
+              emit('_reconnected', null)
+            }
+            hasConnectedBefore = true
+          }
+
           emit(ev.event, ev.data)
         },
         onSseError: (err) => {
-          lastError.value = err instanceof Error ? err.message : String(err)
+          const msg = err instanceof Error ? err.message : String(err)
+          lastError.value = msg
+
+          // If we've connected before, this is a reconnection attempt.
+          // If we haven't, we're still in the initial connection phase.
+          if (hasConnectedBefore) {
+            status.value = 'reconnecting'
+          } else {
+            status.value = 'error'
+          }
         },
       })
 
       status.value = 'connected'
 
-      // Keep the generator alive until aborted or error.
+      // Keep the generator alive until aborted or the stream ends.
       ;(async () => {
         try {
           for await (const _ of stream) {
@@ -118,6 +148,41 @@ export const useEventsStore = defineStore('events', () => {
     status.value = 'disconnected'
   }
 
+  /**
+   * Force-drop the current connection and re-establish it.
+   * Useful as an escape hatch if the connection is in a bad state.
+   */
+  function reconnect() {
+    const types = [...wantedTypes.value]
+    disconnect()
+    wantedTypes.value = []
+    connect(types)
+  }
+
+  // --- Visibility change handling ---
+  // When a tab is backgrounded for a long time, the browser/OS may kill the
+  // connection. When the tab regains focus, force a reconnect + data refresh.
+
+  function handleVisibilityChange() {
+    if (document.visibilityState !== 'visible') return
+
+    if (status.value === 'error' || status.value === 'disconnected') {
+      // Connection is dead — reconnect.
+      reconnect()
+    } else if (status.value === 'connected' || status.value === 'reconnecting') {
+      // Connection may be alive but we could have missed events while
+      // backgrounded. Emit _visibility_restored so consumers can refresh.
+      emit('_visibility_restored', null)
+    }
+  }
+
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+
+  onScopeDispose(() => {
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    disconnect()
+  })
+
   return {
     status,
     lastError,
@@ -125,5 +190,6 @@ export const useEventsStore = defineStore('events', () => {
     on,
     connect,
     disconnect,
+    reconnect,
   }
 })

@@ -1,17 +1,32 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { RefreshCw, Download } from 'lucide-vue-next'
+import { Download, AlertTriangle } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { useEventsStore } from '@/stores/events'
-import { useDownloadJobsStore, type DownloadJob } from '@/stores/downloadJobs'
+import { useDownloadJobsStore, type DownloadJob, type DownloadFilter } from '@/stores/downloadJobs'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import DownloadSection from '@/components/downloads/DownloadSection.vue'
 import DownloadCard from '@/components/downloads/DownloadCard.vue'
 import DownloadDetailDrawer from '@/components/downloads/DownloadDetailDrawer.vue'
 
 const events = useEventsStore()
 const jobs = useDownloadJobsStore()
+
+const filters: { key: DownloadFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'active', label: 'Active' },
+  { key: 'attention', label: 'Needs Attention' },
+  { key: 'completed', label: 'Completed' },
+]
+
+function filterCount(key: DownloadFilter): number {
+  switch (key) {
+    case 'active': return jobs.activeJobs.length
+    case 'attention': return jobs.needsAttentionJobs.length
+    case 'completed': return jobs.completedJobs.length
+    default: return jobs.jobsSorted.length
+  }
+}
 
 const handleViewDetails = (job: DownloadJob) => {
   jobs.openDetailDrawer(job.id)
@@ -85,32 +100,59 @@ onMounted(async () => {
     <div class="space-y-4">
       <!-- Header bar -->
       <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3 text-sm text-muted-foreground">
-          <span v-if="jobs.activeJobs.length" class="flex items-center gap-1.5">
-            <span class="size-2 rounded-full bg-blue-500" />
-            {{ jobs.activeJobs.length }} Active
-          </span>
-          <span v-if="jobs.importingJobs.length" class="flex items-center gap-1.5">
-            <span class="size-2 rounded-full bg-yellow-500" />
-            {{ jobs.importingJobs.length }} Importing
-          </span>
-          <span v-if="jobs.needsAttentionJobs.length" class="flex items-center gap-1.5">
-            <span class="size-2 rounded-full bg-red-500" />
-            {{ jobs.needsAttentionJobs.length }} Needs Attention
-          </span>
-          <span v-if="!jobs.jobsSorted.length && !jobs.isLoading" class="text-muted-foreground">
-            No downloads
-          </span>
+        <!-- Filter chips -->
+        <div class="flex items-center gap-1.5">
+          <button
+            v-for="f in filters"
+            :key="f.key"
+            class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors"
+            :class="
+              jobs.filter === f.key
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+            "
+            @click="jobs.setFilter(f.key)"
+          >
+            {{ f.label }}
+            <span
+              v-if="filterCount(f.key) > 0"
+              class="rounded-full px-1.5 py-0.5 text-[10px] leading-none font-semibold"
+              :class="
+                jobs.filter === f.key
+                  ? 'bg-primary-foreground/20 text-primary-foreground'
+                  : 'bg-foreground/10 text-muted-foreground'
+              "
+            >
+              {{ filterCount(f.key) }}
+            </span>
+          </button>
         </div>
-        <div class="flex items-center gap-2">
-          <div class="text-xs text-muted-foreground">
-            {{ events.status }}
-          </div>
-          <Button variant="outline" size="sm" @click="jobs.refresh()">
-            <RefreshCw class="mr-2 size-4" />
-            Refresh
-          </Button>
+        <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span
+            class="size-2 rounded-full"
+            :class="events.isConnected ? 'bg-green-500' : 'bg-red-500'"
+          />
+          {{ events.isConnected ? 'Live' : events.status === 'reconnecting' ? 'Reconnecting' : 'Disconnected' }}
         </div>
+      </div>
+
+      <!-- Attention banner -->
+      <div
+        v-if="jobs.needsAttentionJobs.length > 0 && jobs.filter !== 'attention'"
+        class="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3"
+      >
+        <AlertTriangle class="size-4 text-destructive shrink-0" />
+        <span class="text-sm text-destructive">
+          {{ jobs.needsAttentionJobs.length }}
+          download{{ jobs.needsAttentionJobs.length > 1 ? 's' : '' }}
+          need{{ jobs.needsAttentionJobs.length === 1 ? 's' : '' }} attention
+        </span>
+        <button
+          class="ml-auto text-xs font-medium text-destructive hover:underline"
+          @click="jobs.setFilter('attention')"
+        >
+          View
+        </button>
       </div>
 
       <!-- Loading state -->
@@ -129,73 +171,31 @@ onMounted(async () => {
         <p class="text-sm">No download jobs</p>
       </div>
 
-      <!-- Sections -->
-      <div v-else class="space-y-6">
-        <!-- Needs Attention -->
-        <DownloadSection
-          title="Needs Attention"
-          :count="jobs.needsAttentionJobs.length"
-        >
-          <DownloadCard
-            v-for="job in jobs.needsAttentionJobs"
-            :key="job.id"
-            :job="job"
-            @click="handleViewDetails"
-            @cancel="handleCancelJob"
-            @retry="handleRetry"
-            @reimport="handleReimport"
-          />
-        </DownloadSection>
+      <!-- Empty filter state -->
+      <div
+        v-else-if="!jobs.filteredJobs.length"
+        class="flex flex-col items-center justify-center py-16 text-muted-foreground"
+      >
+        <p class="text-sm">No {{ jobs.filter === 'all' ? '' : jobs.filter }} downloads</p>
+      </div>
 
-        <!-- Active Downloads -->
-        <DownloadSection
-          title="Active Downloads"
-          :count="jobs.activeJobs.length"
-        >
-          <DownloadCard
-            v-for="job in jobs.activeJobs"
-            :key="job.id"
-            :job="job"
-            @click="handleViewDetails"
-            @cancel="handleCancelJob"
-            @retry="handleRetry"
-            @reimport="handleReimport"
-          />
-        </DownloadSection>
+      <!-- Flat job list -->
+      <div v-else class="space-y-3">
+        <DownloadCard
+          v-for="job in jobs.visibleJobs"
+          :key="job.id"
+          :job="job"
+          @click="handleViewDetails"
+          @cancel="handleCancelJob"
+          @retry="handleRetry"
+          @reimport="handleReimport"
+        />
 
-        <!-- Importing -->
-        <DownloadSection
-          title="Importing"
-          :count="jobs.importingJobs.length"
-        >
-          <DownloadCard
-            v-for="job in jobs.importingJobs"
-            :key="job.id"
-            :job="job"
-            @click="handleViewDetails"
-            @cancel="handleCancelJob"
-            @retry="handleRetry"
-            @reimport="handleReimport"
-          />
-        </DownloadSection>
-
-        <!-- Completed -->
-        <DownloadSection
-          title="Completed"
-          :count="jobs.completedJobs.length"
-          collapsible
-          :default-open="jobs.completedJobs.length <= 5"
-        >
-          <DownloadCard
-            v-for="job in jobs.completedJobs"
-            :key="job.id"
-            :job="job"
-            @click="handleViewDetails"
-            @cancel="handleCancelJob"
-            @retry="handleRetry"
-            @reimport="handleReimport"
-          />
-        </DownloadSection>
+        <div v-if="jobs.hasMore" class="flex justify-center pt-2">
+          <Button variant="ghost" size="sm" @click="jobs.showMore()">
+            Show more
+          </Button>
+        </div>
       </div>
     </div>
 
