@@ -28,8 +28,8 @@ type DownloadJobsRepo interface {
 	SetDownloadJobDownloadSnapshot(ctx context.Context, arg dbgen.SetDownloadJobDownloadSnapshotParams) (dbgen.DownloadJob, error)
 	SetDownloadJobCompleted(ctx context.Context, id pgtype.UUID, savePath, contentPath string) (dbgen.DownloadJob, error)
 
-	ScheduleDownloadJobRetry(ctx context.Context, id pgtype.UUID, lastError string, category apperrors.Category, nextRunAt time.Time) (dbgen.DownloadJob, error)
-	MarkDownloadJobFailed(ctx context.Context, id pgtype.UUID, lastError string, category apperrors.Category) (dbgen.DownloadJob, error)
+	ScheduleDownloadJobRetry(ctx context.Context, id pgtype.UUID, lastError string, kind apperrors.Kind, nextRunAt time.Time) (dbgen.DownloadJob, error)
+	MarkDownloadJobFailed(ctx context.Context, id pgtype.UUID, lastError string, kind apperrors.Kind) (dbgen.DownloadJob, error)
 
 	RetryDownloadJob(ctx context.Context, id pgtype.UUID) (dbgen.DownloadJob, error)
 	GetDownloadJobHistory(ctx context.Context, id pgtype.UUID) ([]dbgen.GetDownloadJobHistoryRow, error)
@@ -109,23 +109,39 @@ func (r *Repository) SetDownloadJobCompleted(ctx context.Context, id pgtype.UUID
 	})
 }
 
-func (r *Repository) ScheduleDownloadJobRetry(ctx context.Context, id pgtype.UUID, lastError string, category apperrors.Category, nextRunAt time.Time) (dbgen.DownloadJob, error) {
-	cat := string(category)
+func (r *Repository) ScheduleDownloadJobRetry(ctx context.Context, id pgtype.UUID, lastError string, kind apperrors.Kind, nextRunAt time.Time) (dbgen.DownloadJob, error) {
 	return r.Q.ScheduleDownloadJobRetry(ctx, dbgen.ScheduleDownloadJobRetryParams{
-		ID:            id,
-		LastError:     &lastError,
-		ErrorCategory: &cat,
-		NextRunAt:     nextRunAt,
+		ID:        id,
+		LastError: &lastError,
+		ErrorKind: nullableKind(kind),
+		NextRunAt: nextRunAt,
 	})
 }
 
-func (r *Repository) MarkDownloadJobFailed(ctx context.Context, id pgtype.UUID, lastError string, category apperrors.Category) (dbgen.DownloadJob, error) {
-	cat := string(category)
+func (r *Repository) MarkDownloadJobFailed(ctx context.Context, id pgtype.UUID, lastError string, kind apperrors.Kind) (dbgen.DownloadJob, error) {
 	return r.Q.MarkDownloadJobFailed(ctx, dbgen.MarkDownloadJobFailedParams{
-		ID:            id,
-		LastError:     &lastError,
-		ErrorCategory: &cat,
+		ID:        id,
+		LastError: &lastError,
+		ErrorKind: nullableKind(kind),
 	})
+}
+
+// nullableKind converts an in-memory apperrors.Kind into the dbgen.NullErrorKind
+// shape SQLC expects for the nullable error_kind column. KindUnspecified — the
+// naked-error fallback — becomes NULL rather than a nonexistent enum value.
+//
+// We deliberately don't use a SQLC type override mapping error_kind directly to
+// apperrors.Kind because the swaggo doc generator can't resolve the aliased
+// import. The values are identical between dbgen.ErrorKind and apperrors.Kind,
+// so the cast is free.
+func nullableKind(k apperrors.Kind) dbgen.NullErrorKind {
+	if k == apperrors.KindUnspecified {
+		return dbgen.NullErrorKind{Valid: false}
+	}
+	return dbgen.NullErrorKind{
+		ErrorKind: dbgen.ErrorKind(k),
+		Valid:     true,
+	}
 }
 
 func (r *Repository) RetryDownloadJob(ctx context.Context, id pgtype.UUID) (dbgen.DownloadJob, error) {

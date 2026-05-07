@@ -66,8 +66,8 @@ definitions:
         type: string
       episode_id:
         type: string
-      error_category:
-        type: string
+      error_kind:
+        $ref: '#/definitions/dbgen.NullErrorKind'
       eta_seconds:
         type: integer
       guid:
@@ -115,7 +115,7 @@ definitions:
     - downloader_id
     - downloader_status
     - episode_id
-    - error_category
+    - error_kind
     - eta_seconds
     - guid
     - id
@@ -177,6 +177,24 @@ definitions:
     - url
     - username
     type: object
+  dbgen.ErrorKind:
+    enum:
+    - not_found
+    - conflict
+    - validation
+    - forbidden
+    - unauthenticated
+    - bad_gateway
+    - internal
+    type: string
+    x-enum-varnames:
+    - ErrorKindNotFound
+    - ErrorKindConflict
+    - ErrorKindValidation
+    - ErrorKindForbidden
+    - ErrorKindUnauthenticated
+    - ErrorKindBadGateway
+    - ErrorKindInternal
   dbgen.GetDownloadJobHistoryRow:
     properties:
       attempt_count:
@@ -201,8 +219,8 @@ definitions:
         type: string
       episode_id:
         type: string
-      error_category:
-        type: string
+      error_kind:
+        $ref: '#/definitions/dbgen.NullErrorKind'
       eta_seconds:
         type: integer
       guid:
@@ -251,7 +269,7 @@ definitions:
     - downloader_id
     - downloader_status
     - episode_id
-    - error_category
+    - error_kind
     - eta_seconds
     - guid
     - id
@@ -334,8 +352,8 @@ definitions:
         type: string
       episode_number:
         type: integer
-      error_category:
-        type: string
+      error_kind:
+        $ref: '#/definitions/dbgen.NullErrorKind'
       eta_seconds:
         type: integer
       failed_imports:
@@ -407,7 +425,7 @@ definitions:
     - downloader_status
     - episode_id
     - episode_number
-    - error_category
+    - error_kind
     - eta_seconds
     - failed_imports
     - guid
@@ -451,8 +469,8 @@ definitions:
         type: string
       episode_id:
         type: string
-      error_category:
-        type: string
+      error_kind:
+        $ref: '#/definitions/dbgen.NullErrorKind'
       id:
         type: string
       import_method:
@@ -488,7 +506,7 @@ definitions:
     - dest_path
     - download_job_id
     - episode_id
-    - error_category
+    - error_kind
     - id
     - import_method
     - last_error
@@ -522,8 +540,8 @@ definitions:
         type: integer
       episode_title:
         type: string
-      error_category:
-        type: string
+      error_kind:
+        $ref: '#/definitions/dbgen.NullErrorKind'
       id:
         type: string
       import_method:
@@ -583,7 +601,7 @@ definitions:
     - episode_id
     - episode_number
     - episode_title
-    - error_category
+    - error_kind
     - id
     - import_method
     - last_error
@@ -622,8 +640,8 @@ definitions:
         type: string
       episode_id:
         type: string
-      error_category:
-        type: string
+      error_kind:
+        $ref: '#/definitions/dbgen.NullErrorKind'
       id:
         type: string
       import_method:
@@ -658,7 +676,7 @@ definitions:
     - dest_path
     - download_job_id
     - episode_id
-    - error_category
+    - error_kind
     - id
     - import_method
     - last_error
@@ -728,8 +746,8 @@ definitions:
         type: string
       episode_number:
         type: integer
-      error_category:
-        type: string
+      error_kind:
+        $ref: '#/definitions/dbgen.NullErrorKind'
       eta_seconds:
         type: integer
       guid:
@@ -780,7 +798,7 @@ definitions:
     - downloader_status
     - episode_id
     - episode_number
-    - error_category
+    - error_kind
     - eta_seconds
     - guid
     - id
@@ -831,8 +849,8 @@ definitions:
         type: string
       episode_number:
         type: integer
-      error_category:
-        type: string
+      error_kind:
+        $ref: '#/definitions/dbgen.NullErrorKind'
       eta_seconds:
         type: integer
       failed_imports:
@@ -904,7 +922,7 @@ definitions:
     - downloader_status
     - episode_id
     - episode_number
-    - error_category
+    - error_kind
     - eta_seconds
     - failed_imports
     - guid
@@ -933,6 +951,17 @@ definitions:
     - total_import_tasks
     - total_size
     - updated_at
+    type: object
+  dbgen.NullErrorKind:
+    properties:
+      error_kind:
+        $ref: '#/definitions/dbgen.ErrorKind'
+      valid:
+        description: Valid is true if ErrorKind is not NULL
+        type: boolean
+    required:
+    - error_kind
+    - valid
     type: object
   dbgen.Policy:
     properties:

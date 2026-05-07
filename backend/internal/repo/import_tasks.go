@@ -25,10 +25,10 @@ type ImportTasksRepo interface {
 
 	SetImportTaskInProgress(ctx context.Context, id pgtype.UUID) (dbgen.ImportTask, error)
 	SetImportTaskCompleted(ctx context.Context, id pgtype.UUID, destPath, importMethod string, mediaFileID pgtype.UUID) (dbgen.ImportTask, error)
-	SetImportTaskFailed(ctx context.Context, id pgtype.UUID, lastError string, category apperrors.Category) (dbgen.ImportTask, error)
+	SetImportTaskFailed(ctx context.Context, id pgtype.UUID, lastError string, kind apperrors.Kind) (dbgen.ImportTask, error)
 	CancelImportTask(ctx context.Context, id pgtype.UUID) (dbgen.ImportTask, error)
 	CancelPendingImportTasksForJob(ctx context.Context, downloadJobID pgtype.UUID) error
-	ScheduleImportTaskRetry(ctx context.Context, id pgtype.UUID, lastError string, category apperrors.Category, nextRunAt time.Time) (dbgen.ImportTask, error)
+	ScheduleImportTaskRetry(ctx context.Context, id pgtype.UUID, lastError string, kind apperrors.Kind, nextRunAt time.Time) (dbgen.ImportTask, error)
 	UpdateImportTaskSourcePath(ctx context.Context, id pgtype.UUID, sourcePath string) error
 
 	// Event logging
@@ -101,12 +101,11 @@ func (r *Repository) SetImportTaskCompleted(ctx context.Context, id pgtype.UUID,
 	})
 }
 
-func (r *Repository) SetImportTaskFailed(ctx context.Context, id pgtype.UUID, lastError string, category apperrors.Category) (dbgen.ImportTask, error) {
-	cat := string(category)
+func (r *Repository) SetImportTaskFailed(ctx context.Context, id pgtype.UUID, lastError string, kind apperrors.Kind) (dbgen.ImportTask, error) {
 	return r.Q.SetImportTaskFailed(ctx, dbgen.SetImportTaskFailedParams{
-		ID:            id,
-		LastError:     &lastError,
-		ErrorCategory: &cat,
+		ID:        id,
+		LastError: &lastError,
+		ErrorKind: nullableKind(kind),
 	})
 }
 
@@ -118,13 +117,12 @@ func (r *Repository) CancelPendingImportTasksForJob(ctx context.Context, downloa
 	return r.Q.CancelPendingImportTasksForJob(ctx, downloadJobID)
 }
 
-func (r *Repository) ScheduleImportTaskRetry(ctx context.Context, id pgtype.UUID, lastError string, category apperrors.Category, nextRunAt time.Time) (dbgen.ImportTask, error) {
-	cat := string(category)
+func (r *Repository) ScheduleImportTaskRetry(ctx context.Context, id pgtype.UUID, lastError string, kind apperrors.Kind, nextRunAt time.Time) (dbgen.ImportTask, error) {
 	return r.Q.ScheduleImportTaskRetry(ctx, dbgen.ScheduleImportTaskRetryParams{
-		ID:            id,
-		LastError:     &lastError,
-		ErrorCategory: &cat,
-		NextRunAt:     nextRunAt,
+		ID:        id,
+		LastError: &lastError,
+		ErrorKind: nullableKind(kind),
+		NextRunAt: nextRunAt,
 	})
 }
 

@@ -18,7 +18,7 @@ SET status = 'cancelled',
     updated_at = now()
 WHERE id = $1
   AND status = 'pending'
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
 `
 
 func (q *Queries) CancelImportTask(ctx context.Context, id pgtype.UUID) (ImportTask, error) {
@@ -42,9 +42,9 @@ func (q *Queries) CancelImportTask(ctx context.Context, id pgtype.UUID) (ImportT
 		&i.MaxAttempts,
 		&i.NextRunAt,
 		&i.LastError,
-		&i.ErrorCategory,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ErrorKind,
 	)
 	return i, err
 }
@@ -78,7 +78,7 @@ SET status = 'in_progress',
     updated_at = now()
 FROM cte
 WHERE t.id = cte.id
-RETURNING t.id, t.status, t.download_job_id, t.source_path, t.previous_task_id, t.media_type, t.media_item_id, t.episode_id, t.library_id, t.name_template_id, t.dest_path, t.import_method, t.media_file_id, t.attempt_count, t.max_attempts, t.next_run_at, t.last_error, t.error_category, t.created_at, t.updated_at
+RETURNING t.id, t.status, t.download_job_id, t.source_path, t.previous_task_id, t.media_type, t.media_item_id, t.episode_id, t.library_id, t.name_template_id, t.dest_path, t.import_method, t.media_file_id, t.attempt_count, t.max_attempts, t.next_run_at, t.last_error, t.created_at, t.updated_at, t.error_kind
 `
 
 // Claims tasks that are ready to be processed (pending only, not in_progress)
@@ -110,9 +110,9 @@ func (q *Queries) ClaimRunnableImportTasks(ctx context.Context, limit int32) ([]
 			&i.MaxAttempts,
 			&i.NextRunAt,
 			&i.LastError,
-			&i.ErrorCategory,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ErrorKind,
 		); err != nil {
 			return nil, err
 		}
@@ -179,7 +179,7 @@ VALUES (
   $7,
   $8
 )
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
 `
 
 type CreateImportTaskParams struct {
@@ -224,15 +224,15 @@ func (q *Queries) CreateImportTask(ctx context.Context, arg CreateImportTaskPara
 		&i.MaxAttempts,
 		&i.NextRunAt,
 		&i.LastError,
-		&i.ErrorCategory,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ErrorKind,
 	)
 	return i, err
 }
 
 const getImportTask = `-- name: GetImportTask :one
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
 WHERE id = $1
 `
 
@@ -257,9 +257,9 @@ func (q *Queries) GetImportTask(ctx context.Context, id pgtype.UUID) (ImportTask
 		&i.MaxAttempts,
 		&i.NextRunAt,
 		&i.LastError,
-		&i.ErrorCategory,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ErrorKind,
 	)
 	return i, err
 }
@@ -267,44 +267,44 @@ func (q *Queries) GetImportTask(ctx context.Context, id pgtype.UUID) (ImportTask
 const getImportTaskHistory = `-- name: GetImportTaskHistory :many
 WITH RECURSIVE task_chain AS (
   -- Start with the given task
-  SELECT it.id, it.status, it.download_job_id, it.source_path, it.previous_task_id, it.media_type, it.media_item_id, it.episode_id, it.library_id, it.name_template_id, it.dest_path, it.import_method, it.media_file_id, it.attempt_count, it.max_attempts, it.next_run_at, it.last_error, it.error_category, it.created_at, it.updated_at, 0 AS chain_depth
+  SELECT it.id, it.status, it.download_job_id, it.source_path, it.previous_task_id, it.media_type, it.media_item_id, it.episode_id, it.library_id, it.name_template_id, it.dest_path, it.import_method, it.media_file_id, it.attempt_count, it.max_attempts, it.next_run_at, it.last_error, it.created_at, it.updated_at, it.error_kind, 0 AS chain_depth
   FROM import_task it
   WHERE it.id = $1
 
   UNION ALL
 
   -- Follow previous_task_id links
-  SELECT prev.id, prev.status, prev.download_job_id, prev.source_path, prev.previous_task_id, prev.media_type, prev.media_item_id, prev.episode_id, prev.library_id, prev.name_template_id, prev.dest_path, prev.import_method, prev.media_file_id, prev.attempt_count, prev.max_attempts, prev.next_run_at, prev.last_error, prev.error_category, prev.created_at, prev.updated_at, tc.chain_depth + 1
+  SELECT prev.id, prev.status, prev.download_job_id, prev.source_path, prev.previous_task_id, prev.media_type, prev.media_item_id, prev.episode_id, prev.library_id, prev.name_template_id, prev.dest_path, prev.import_method, prev.media_file_id, prev.attempt_count, prev.max_attempts, prev.next_run_at, prev.last_error, prev.created_at, prev.updated_at, prev.error_kind, tc.chain_depth + 1
   FROM import_task prev
   JOIN task_chain tc ON tc.previous_task_id = prev.id
   WHERE tc.chain_depth < 50  -- Safety limit
 )
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at, chain_depth FROM task_chain
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, chain_depth FROM task_chain
 ORDER BY chain_depth ASC
 `
 
 type GetImportTaskHistoryRow struct {
-	ID             pgtype.UUID `json:"id"`
-	Status         string      `json:"status"`
-	DownloadJobID  pgtype.UUID `json:"download_job_id"`
-	SourcePath     string      `json:"source_path"`
-	PreviousTaskID pgtype.UUID `json:"previous_task_id"`
-	MediaType      string      `json:"media_type"`
-	MediaItemID    pgtype.UUID `json:"media_item_id"`
-	EpisodeID      pgtype.UUID `json:"episode_id"`
-	LibraryID      pgtype.UUID `json:"library_id"`
-	NameTemplateID pgtype.UUID `json:"name_template_id"`
-	DestPath       *string     `json:"dest_path"`
-	ImportMethod   *string     `json:"import_method"`
-	MediaFileID    pgtype.UUID `json:"media_file_id"`
-	AttemptCount   int32       `json:"attempt_count"`
-	MaxAttempts    int32       `json:"max_attempts"`
-	NextRunAt      time.Time   `json:"next_run_at"`
-	LastError      *string     `json:"last_error"`
-	ErrorCategory  *string     `json:"error_category"`
-	CreatedAt      time.Time   `json:"created_at"`
-	UpdatedAt      time.Time   `json:"updated_at"`
-	ChainDepth     int32       `json:"chain_depth"`
+	ID             pgtype.UUID   `json:"id"`
+	Status         string        `json:"status"`
+	DownloadJobID  pgtype.UUID   `json:"download_job_id"`
+	SourcePath     string        `json:"source_path"`
+	PreviousTaskID pgtype.UUID   `json:"previous_task_id"`
+	MediaType      string        `json:"media_type"`
+	MediaItemID    pgtype.UUID   `json:"media_item_id"`
+	EpisodeID      pgtype.UUID   `json:"episode_id"`
+	LibraryID      pgtype.UUID   `json:"library_id"`
+	NameTemplateID pgtype.UUID   `json:"name_template_id"`
+	DestPath       *string       `json:"dest_path"`
+	ImportMethod   *string       `json:"import_method"`
+	MediaFileID    pgtype.UUID   `json:"media_file_id"`
+	AttemptCount   int32         `json:"attempt_count"`
+	MaxAttempts    int32         `json:"max_attempts"`
+	NextRunAt      time.Time     `json:"next_run_at"`
+	LastError      *string       `json:"last_error"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+	ErrorKind      NullErrorKind `json:"error_kind"`
+	ChainDepth     int32         `json:"chain_depth"`
 }
 
 // Get reimport chain for a task (follows previous_task_id links)
@@ -335,9 +335,9 @@ func (q *Queries) GetImportTaskHistory(ctx context.Context, id pgtype.UUID) ([]G
 			&i.MaxAttempts,
 			&i.NextRunAt,
 			&i.LastError,
-			&i.ErrorCategory,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ErrorKind,
 			&i.ChainDepth,
 		); err != nil {
 			return nil, err
@@ -352,7 +352,7 @@ func (q *Queries) GetImportTaskHistory(ctx context.Context, id pgtype.UUID) ([]G
 
 const getImportTaskWithDetails = `-- name: GetImportTaskWithDetails :one
 SELECT
-  it.id, it.status, it.download_job_id, it.source_path, it.previous_task_id, it.media_type, it.media_item_id, it.episode_id, it.library_id, it.name_template_id, it.dest_path, it.import_method, it.media_file_id, it.attempt_count, it.max_attempts, it.next_run_at, it.last_error, it.error_category, it.created_at, it.updated_at,
+  it.id, it.status, it.download_job_id, it.source_path, it.previous_task_id, it.media_type, it.media_item_id, it.episode_id, it.library_id, it.name_template_id, it.dest_path, it.import_method, it.media_file_id, it.attempt_count, it.max_attempts, it.next_run_at, it.last_error, it.created_at, it.updated_at, it.error_kind,
   mi.title AS media_title,
   mi.year AS media_year,
   mi.tmdb_id AS media_tmdb_id,
@@ -378,40 +378,40 @@ WHERE it.id = $1
 `
 
 type GetImportTaskWithDetailsRow struct {
-	ID                   pgtype.UUID `json:"id"`
-	Status               string      `json:"status"`
-	DownloadJobID        pgtype.UUID `json:"download_job_id"`
-	SourcePath           string      `json:"source_path"`
-	PreviousTaskID       pgtype.UUID `json:"previous_task_id"`
-	MediaType            string      `json:"media_type"`
-	MediaItemID          pgtype.UUID `json:"media_item_id"`
-	EpisodeID            pgtype.UUID `json:"episode_id"`
-	LibraryID            pgtype.UUID `json:"library_id"`
-	NameTemplateID       pgtype.UUID `json:"name_template_id"`
-	DestPath             *string     `json:"dest_path"`
-	ImportMethod         *string     `json:"import_method"`
-	MediaFileID          pgtype.UUID `json:"media_file_id"`
-	AttemptCount         int32       `json:"attempt_count"`
-	MaxAttempts          int32       `json:"max_attempts"`
-	NextRunAt            time.Time   `json:"next_run_at"`
-	LastError            *string     `json:"last_error"`
-	ErrorCategory        *string     `json:"error_category"`
-	CreatedAt            time.Time   `json:"created_at"`
-	UpdatedAt            time.Time   `json:"updated_at"`
-	MediaTitle           string      `json:"media_title"`
-	MediaYear            *int32      `json:"media_year"`
-	MediaTmdbID          *int64      `json:"media_tmdb_id"`
-	MediaItemType        string      `json:"media_item_type"`
-	EpisodeNumber        *int32      `json:"episode_number"`
-	EpisodeTitle         *string     `json:"episode_title"`
-	SeasonNumber         *int32      `json:"season_number"`
-	LibraryName          string      `json:"library_name"`
-	LibraryRootPath      string      `json:"library_root_path"`
-	NameTemplate         string      `json:"name_template"`
-	MovieDirTemplate     *string     `json:"movie_dir_template"`
-	SeriesShowTemplate   *string     `json:"series_show_template"`
-	SeriesSeasonTemplate *string     `json:"series_season_template"`
-	CandidateTitle       *string     `json:"candidate_title"`
+	ID                   pgtype.UUID   `json:"id"`
+	Status               string        `json:"status"`
+	DownloadJobID        pgtype.UUID   `json:"download_job_id"`
+	SourcePath           string        `json:"source_path"`
+	PreviousTaskID       pgtype.UUID   `json:"previous_task_id"`
+	MediaType            string        `json:"media_type"`
+	MediaItemID          pgtype.UUID   `json:"media_item_id"`
+	EpisodeID            pgtype.UUID   `json:"episode_id"`
+	LibraryID            pgtype.UUID   `json:"library_id"`
+	NameTemplateID       pgtype.UUID   `json:"name_template_id"`
+	DestPath             *string       `json:"dest_path"`
+	ImportMethod         *string       `json:"import_method"`
+	MediaFileID          pgtype.UUID   `json:"media_file_id"`
+	AttemptCount         int32         `json:"attempt_count"`
+	MaxAttempts          int32         `json:"max_attempts"`
+	NextRunAt            time.Time     `json:"next_run_at"`
+	LastError            *string       `json:"last_error"`
+	CreatedAt            time.Time     `json:"created_at"`
+	UpdatedAt            time.Time     `json:"updated_at"`
+	ErrorKind            NullErrorKind `json:"error_kind"`
+	MediaTitle           string        `json:"media_title"`
+	MediaYear            *int32        `json:"media_year"`
+	MediaTmdbID          *int64        `json:"media_tmdb_id"`
+	MediaItemType        string        `json:"media_item_type"`
+	EpisodeNumber        *int32        `json:"episode_number"`
+	EpisodeTitle         *string       `json:"episode_title"`
+	SeasonNumber         *int32        `json:"season_number"`
+	LibraryName          string        `json:"library_name"`
+	LibraryRootPath      string        `json:"library_root_path"`
+	NameTemplate         string        `json:"name_template"`
+	MovieDirTemplate     *string       `json:"movie_dir_template"`
+	SeriesShowTemplate   *string       `json:"series_show_template"`
+	SeriesSeasonTemplate *string       `json:"series_season_template"`
+	CandidateTitle       *string       `json:"candidate_title"`
 }
 
 // Get import task with related media info and name template
@@ -436,9 +436,9 @@ func (q *Queries) GetImportTaskWithDetails(ctx context.Context, id pgtype.UUID) 
 		&i.MaxAttempts,
 		&i.NextRunAt,
 		&i.LastError,
-		&i.ErrorCategory,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ErrorKind,
 		&i.MediaTitle,
 		&i.MediaYear,
 		&i.MediaTmdbID,
@@ -458,7 +458,7 @@ func (q *Queries) GetImportTaskWithDetails(ctx context.Context, id pgtype.UUID) 
 }
 
 const listImportTasks = `-- name: ListImportTasks :many
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
 ORDER BY created_at DESC
 LIMIT $2
 OFFSET $1
@@ -496,9 +496,9 @@ func (q *Queries) ListImportTasks(ctx context.Context, arg ListImportTasksParams
 			&i.MaxAttempts,
 			&i.NextRunAt,
 			&i.LastError,
-			&i.ErrorCategory,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ErrorKind,
 		); err != nil {
 			return nil, err
 		}
@@ -511,7 +511,7 @@ func (q *Queries) ListImportTasks(ctx context.Context, arg ListImportTasksParams
 }
 
 const listImportTasksByDownloadJob = `-- name: ListImportTasksByDownloadJob :many
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
 WHERE download_job_id = $1
 ORDER BY created_at DESC
 `
@@ -543,9 +543,9 @@ func (q *Queries) ListImportTasksByDownloadJob(ctx context.Context, downloadJobI
 			&i.MaxAttempts,
 			&i.NextRunAt,
 			&i.LastError,
-			&i.ErrorCategory,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ErrorKind,
 		); err != nil {
 			return nil, err
 		}
@@ -558,7 +558,7 @@ func (q *Queries) ListImportTasksByDownloadJob(ctx context.Context, downloadJobI
 }
 
 const listImportTasksByEpisode = `-- name: ListImportTasksByEpisode :many
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
 WHERE episode_id = $1
 ORDER BY created_at DESC
 `
@@ -590,9 +590,9 @@ func (q *Queries) ListImportTasksByEpisode(ctx context.Context, episodeID pgtype
 			&i.MaxAttempts,
 			&i.NextRunAt,
 			&i.LastError,
-			&i.ErrorCategory,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ErrorKind,
 		); err != nil {
 			return nil, err
 		}
@@ -605,7 +605,7 @@ func (q *Queries) ListImportTasksByEpisode(ctx context.Context, episodeID pgtype
 }
 
 const listImportTasksByMediaItem = `-- name: ListImportTasksByMediaItem :many
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
 WHERE media_item_id = $1
 ORDER BY created_at DESC
 `
@@ -637,9 +637,9 @@ func (q *Queries) ListImportTasksByMediaItem(ctx context.Context, mediaItemID pg
 			&i.MaxAttempts,
 			&i.NextRunAt,
 			&i.LastError,
-			&i.ErrorCategory,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ErrorKind,
 		); err != nil {
 			return nil, err
 		}
@@ -652,7 +652,7 @@ func (q *Queries) ListImportTasksByMediaItem(ctx context.Context, mediaItemID pg
 }
 
 const listImportTasksByStatus = `-- name: ListImportTasksByStatus :many
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
 WHERE status = $1
 ORDER BY created_at DESC
 LIMIT $3
@@ -692,9 +692,9 @@ func (q *Queries) ListImportTasksByStatus(ctx context.Context, arg ListImportTas
 			&i.MaxAttempts,
 			&i.NextRunAt,
 			&i.LastError,
-			&i.ErrorCategory,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ErrorKind,
 		); err != nil {
 			return nil, err
 		}
@@ -710,24 +710,24 @@ const scheduleImportTaskRetry = `-- name: ScheduleImportTaskRetry :one
 UPDATE import_task
 SET attempt_count = attempt_count + 1,
     last_error = $1,
-    error_category = $2,
+    error_kind = $2,
     next_run_at = $3,
     updated_at = now()
 WHERE id = $4
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
 `
 
 type ScheduleImportTaskRetryParams struct {
-	LastError     *string     `json:"last_error"`
-	ErrorCategory *string     `json:"error_category"`
-	NextRunAt     time.Time   `json:"next_run_at"`
-	ID            pgtype.UUID `json:"id"`
+	LastError *string       `json:"last_error"`
+	ErrorKind NullErrorKind `json:"error_kind"`
+	NextRunAt time.Time     `json:"next_run_at"`
+	ID        pgtype.UUID   `json:"id"`
 }
 
 func (q *Queries) ScheduleImportTaskRetry(ctx context.Context, arg ScheduleImportTaskRetryParams) (ImportTask, error) {
 	row := q.db.QueryRow(ctx, scheduleImportTaskRetry,
 		arg.LastError,
-		arg.ErrorCategory,
+		arg.ErrorKind,
 		arg.NextRunAt,
 		arg.ID,
 	)
@@ -750,9 +750,9 @@ func (q *Queries) ScheduleImportTaskRetry(ctx context.Context, arg ScheduleImpor
 		&i.MaxAttempts,
 		&i.NextRunAt,
 		&i.LastError,
-		&i.ErrorCategory,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ErrorKind,
 	)
 	return i, err
 }
@@ -765,7 +765,7 @@ SET status = 'completed',
     media_file_id = $3,
     updated_at = now()
 WHERE id = $4
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
 `
 
 type SetImportTaskCompletedParams struct {
@@ -801,9 +801,9 @@ func (q *Queries) SetImportTaskCompleted(ctx context.Context, arg SetImportTaskC
 		&i.MaxAttempts,
 		&i.NextRunAt,
 		&i.LastError,
-		&i.ErrorCategory,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ErrorKind,
 	)
 	return i, err
 }
@@ -812,20 +812,20 @@ const setImportTaskFailed = `-- name: SetImportTaskFailed :one
 UPDATE import_task
 SET status = 'failed',
     last_error = $1,
-    error_category = $2,
+    error_kind = $2,
     updated_at = now()
 WHERE id = $3
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
 `
 
 type SetImportTaskFailedParams struct {
-	LastError     *string     `json:"last_error"`
-	ErrorCategory *string     `json:"error_category"`
-	ID            pgtype.UUID `json:"id"`
+	LastError *string       `json:"last_error"`
+	ErrorKind NullErrorKind `json:"error_kind"`
+	ID        pgtype.UUID   `json:"id"`
 }
 
 func (q *Queries) SetImportTaskFailed(ctx context.Context, arg SetImportTaskFailedParams) (ImportTask, error) {
-	row := q.db.QueryRow(ctx, setImportTaskFailed, arg.LastError, arg.ErrorCategory, arg.ID)
+	row := q.db.QueryRow(ctx, setImportTaskFailed, arg.LastError, arg.ErrorKind, arg.ID)
 	var i ImportTask
 	err := row.Scan(
 		&i.ID,
@@ -845,9 +845,9 @@ func (q *Queries) SetImportTaskFailed(ctx context.Context, arg SetImportTaskFail
 		&i.MaxAttempts,
 		&i.NextRunAt,
 		&i.LastError,
-		&i.ErrorCategory,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ErrorKind,
 	)
 	return i, err
 }
@@ -857,7 +857,7 @@ UPDATE import_task
 SET status = 'in_progress',
     updated_at = now()
 WHERE id = $1
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, error_category, created_at, updated_at
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, media_file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
 `
 
 func (q *Queries) SetImportTaskInProgress(ctx context.Context, id pgtype.UUID) (ImportTask, error) {
@@ -881,9 +881,9 @@ func (q *Queries) SetImportTaskInProgress(ctx context.Context, id pgtype.UUID) (
 		&i.MaxAttempts,
 		&i.NextRunAt,
 		&i.LastError,
-		&i.ErrorCategory,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ErrorKind,
 	)
 	return i, err
 }

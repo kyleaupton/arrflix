@@ -3970,7 +3970,7 @@
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
-                "error_category",
+                "error_kind",
                 "eta_seconds",
                 "guid",
                 "id",
@@ -4021,8 +4021,8 @@
                 "episode_id": {
                     "type": "string"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "eta_seconds": {
                     "type": "integer"
@@ -4138,6 +4138,27 @@
                 }
             }
         },
+        "dbgen.ErrorKind": {
+            "type": "string",
+            "enum": [
+                "not_found",
+                "conflict",
+                "validation",
+                "forbidden",
+                "unauthenticated",
+                "bad_gateway",
+                "internal"
+            ],
+            "x-enum-varnames": [
+                "ErrorKindNotFound",
+                "ErrorKindConflict",
+                "ErrorKindValidation",
+                "ErrorKindForbidden",
+                "ErrorKindUnauthenticated",
+                "ErrorKindBadGateway",
+                "ErrorKindInternal"
+            ]
+        },
         "dbgen.GetDownloadJobHistoryRow": {
             "type": "object",
             "required": [
@@ -4152,7 +4173,7 @@
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
-                "error_category",
+                "error_kind",
                 "eta_seconds",
                 "guid",
                 "id",
@@ -4206,8 +4227,8 @@
                 "episode_id": {
                     "type": "string"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "eta_seconds": {
                     "type": "integer"
@@ -4328,7 +4349,7 @@
                 "downloader_status",
                 "episode_id",
                 "episode_number",
-                "error_category",
+                "error_kind",
                 "eta_seconds",
                 "failed_imports",
                 "guid",
@@ -4401,8 +4422,8 @@
                 "episode_number": {
                     "type": "integer"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "eta_seconds": {
                     "type": "integer"
@@ -4499,7 +4520,7 @@
                 "dest_path",
                 "download_job_id",
                 "episode_id",
-                "error_category",
+                "error_kind",
                 "id",
                 "import_method",
                 "last_error",
@@ -4534,8 +4555,8 @@
                 "episode_id": {
                     "type": "string"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "id": {
                     "type": "string"
@@ -4592,7 +4613,7 @@
                 "episode_id",
                 "episode_number",
                 "episode_title",
-                "error_category",
+                "error_kind",
                 "id",
                 "import_method",
                 "last_error",
@@ -4644,8 +4665,8 @@
                 "episode_title": {
                     "type": "string"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "id": {
                     "type": "string"
@@ -4732,7 +4753,7 @@
                 "dest_path",
                 "download_job_id",
                 "episode_id",
-                "error_category",
+                "error_kind",
                 "id",
                 "import_method",
                 "last_error",
@@ -4764,8 +4785,8 @@
                 "episode_id": {
                     "type": "string"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "id": {
                     "type": "string"
@@ -4867,7 +4888,7 @@
                 "downloader_status",
                 "episode_id",
                 "episode_number",
-                "error_category",
+                "error_kind",
                 "eta_seconds",
                 "guid",
                 "id",
@@ -4922,8 +4943,8 @@
                 "episode_number": {
                     "type": "integer"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "eta_seconds": {
                     "type": "integer"
@@ -5001,7 +5022,7 @@
                 "downloader_status",
                 "episode_id",
                 "episode_number",
-                "error_category",
+                "error_kind",
                 "eta_seconds",
                 "failed_imports",
                 "guid",
@@ -5074,8 +5095,8 @@
                 "episode_number": {
                     "type": "integer"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "eta_seconds": {
                     "type": "integer"
@@ -5160,6 +5181,22 @@
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "dbgen.NullErrorKind": {
+            "type": "object",
+            "required": [
+                "error_kind",
+                "valid"
+            ],
+            "properties": {
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.ErrorKind"
+                },
+                "valid": {
+                    "description": "Valid is true if ErrorKind is not NULL",
+                    "type": "boolean"
                 }
             }
         },

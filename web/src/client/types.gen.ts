@@ -33,7 +33,7 @@ export type DbgenDownloadJob = {
     downloader_id: string;
     downloader_status: string;
     episode_id: string;
-    error_category: string;
+    error_kind: DbgenNullErrorKind;
     eta_seconds: number;
     guid: string;
     id: string;
@@ -69,6 +69,8 @@ export type DbgenDownloader = {
     username: string;
 };
 
+export type DbgenErrorKind = 'not_found' | 'conflict' | 'validation' | 'forbidden' | 'unauthenticated' | 'bad_gateway' | 'internal';
+
 export type DbgenGetDownloadJobHistoryRow = {
     attempt_count: number;
     candidate_link: string;
@@ -81,7 +83,7 @@ export type DbgenGetDownloadJobHistoryRow = {
     downloader_id: string;
     downloader_status: string;
     episode_id: string;
-    error_category: string;
+    error_kind: DbgenNullErrorKind;
     eta_seconds: number;
     guid: string;
     id: string;
@@ -129,7 +131,7 @@ export type DbgenGetDownloadJobWithImportSummaryRow = {
     downloader_status: string;
     episode_id: string;
     episode_number: number;
-    error_category: string;
+    error_kind: DbgenNullErrorKind;
     eta_seconds: number;
     failed_imports: number;
     guid: string;
@@ -167,7 +169,7 @@ export type DbgenGetImportTaskHistoryRow = {
     dest_path: string;
     download_job_id: string;
     episode_id: string;
-    error_category: string;
+    error_kind: DbgenNullErrorKind;
     id: string;
     import_method: string;
     last_error: string;
@@ -193,7 +195,7 @@ export type DbgenGetImportTaskWithDetailsRow = {
     episode_id: string;
     episode_number: number;
     episode_title: string;
-    error_category: string;
+    error_kind: DbgenNullErrorKind;
     id: string;
     import_method: string;
     last_error: string;
@@ -227,7 +229,7 @@ export type DbgenImportTask = {
     dest_path: string;
     download_job_id: string;
     episode_id: string;
-    error_category: string;
+    error_kind: DbgenNullErrorKind;
     id: string;
     import_method: string;
     last_error: string;
@@ -267,7 +269,7 @@ export type DbgenListDownloadJobsByTmdbSeriesIdRow = {
     downloader_status: string;
     episode_id: string;
     episode_number: number;
-    error_category: string;
+    error_kind: DbgenNullErrorKind;
     eta_seconds: number;
     guid: string;
     id: string;
@@ -304,7 +306,7 @@ export type DbgenListDownloadJobsWithImportSummaryRow = {
     downloader_status: string;
     episode_id: string;
     episode_number: number;
-    error_category: string;
+    error_kind: DbgenNullErrorKind;
     eta_seconds: number;
     failed_imports: number;
     guid: string;
@@ -333,6 +335,14 @@ export type DbgenListDownloadJobsWithImportSummaryRow = {
     total_import_tasks: number;
     total_size: number;
     updated_at: string;
+};
+
+export type DbgenNullErrorKind = {
+    error_kind: DbgenErrorKind;
+    /**
+     * Valid is true if ErrorKind is not NULL
+     */
+    valid: boolean;
 };
 
 export type DbgenPolicy = {

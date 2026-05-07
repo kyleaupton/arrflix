@@ -143,12 +143,12 @@ func (w *Worker) processTask(ctx context.Context, task dbgen.ImportTask) error {
 	srcInfo, err := os.Stat(task.SourcePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return apperrors.AsPermanent(fmt.Errorf("source file not found: %s", task.SourcePath))
+			return apperrors.Internalf("source file not found: %s", task.SourcePath).NotRetryable()
 		}
 		return fmt.Errorf("stat source: %w", err)
 	}
 	if srcInfo.IsDir() {
-		return apperrors.AsPermanent(fmt.Errorf("source is a directory, expected file: %s", task.SourcePath))
+		return apperrors.Internalf("source is a directory, expected file: %s", task.SourcePath).NotRetryable()
 	}
 
 	// Extract mediainfo from source file for template rendering
@@ -166,7 +166,7 @@ func (w *Worker) processTask(ctx context.Context, task dbgen.ImportTask) error {
 	// Compute destination path using name template
 	destPath, err := w.computeDestPath(task, taskDetails, mi)
 	if err != nil {
-		return apperrors.AsPermanent(fmt.Errorf("compute dest path: %w", err))
+		return apperrors.Internalf("compute dest path: %w", err).NotRetryable()
 	}
 
 	// Full absolute destination
@@ -185,7 +185,7 @@ func (w *Worker) processTask(ctx context.Context, task dbgen.ImportTask) error {
 			}
 		} else {
 			// Not a reimport, fail
-			return apperrors.AsPermanent(fmt.Errorf("destination already exists: %s", fullDest))
+			return apperrors.Internalf("destination already exists: %s", fullDest).NotRetryable()
 		}
 	}
 
@@ -341,27 +341,27 @@ func (w *Worker) computeDestPath(task dbgen.ImportTask, details dbgen.GetImportT
 
 func (w *Worker) handleError(ctx context.Context, task dbgen.ImportTask, err error) {
 	msg := err.Error()
-	category := apperrors.CategoryOf(err)
+	kind := apperrors.KindOf(err)
 
 	w.log.Error().
 		Err(err).
 		Str("task_id", task.ID.String()).
-		Str("category", string(category)).
+		Str("kind", string(kind)).
 		Msg("import task error")
 
 	w.logEvent(ctx, task.ID, "error", msg, map[string]any{
-		"category":      category,
+		"kind":          kind,
 		"attempt_count": task.AttemptCount + 1,
 	})
 
-	// Permanent errors fail immediately
-	if category == apperrors.Permanent {
-		_, _ = w.repo.SetImportTaskFailed(ctx, task.ID, msg, category)
+	// Non-retryable errors fail immediately.
+	if !apperrors.IsRetryable(err) {
+		_, _ = w.repo.SetImportTaskFailed(ctx, task.ID, msg, kind)
 		w.publishTaskUpdated(ctx, task)
 		return
 	}
 
-	// Check if we've exceeded max attempts
+	// Retryable errors: respect the per-task or worker-level ceiling.
 	attempt := int(task.AttemptCount) + 1
 	maxAttempts := int(task.MaxAttempts)
 	if maxAttempts == 0 {
@@ -371,7 +371,7 @@ func (w *Worker) handleError(ctx context.Context, task dbgen.ImportTask, err err
 	if attempt >= maxAttempts {
 		_, _ = w.repo.SetImportTaskFailed(ctx, task.ID,
 			fmt.Sprintf("max attempts (%d) exceeded: %s", maxAttempts, msg),
-			apperrors.Transient)
+			kind)
 		w.publishTaskUpdated(ctx, task)
 		return
 	}
@@ -385,7 +385,7 @@ func (w *Worker) handleError(ctx context.Context, task dbgen.ImportTask, err err
 		"backoff":     backoff.String(),
 	})
 
-	_, _ = w.repo.ScheduleImportTaskRetry(ctx, task.ID, msg, category, nextRun)
+	_, _ = w.repo.ScheduleImportTaskRetry(ctx, task.ID, msg, kind, nextRun)
 	w.publishTaskUpdated(ctx, task)
 }
 
@@ -489,7 +489,7 @@ func (w *Worker) deriveSourcePath(ctx context.Context, task dbgen.ImportTask) (s
 	if task.MediaType == "movie" {
 		mainFile, ok := importer.PickMainMovieFile(files)
 		if !ok {
-			return "", apperrors.AsPermanent(fmt.Errorf("no video files found in download"))
+			return "", apperrors.Internalf("no video files found in download").NotRetryable()
 		}
 		rawPath = mainFile.Path
 	} else {
@@ -517,7 +517,7 @@ func (w *Worker) deriveSourcePath(ctx context.Context, task dbgen.ImportTask) (s
 		if f, ok := matched[epNum]; ok {
 			rawPath = f.Path
 		} else {
-			return "", apperrors.AsPermanent(fmt.Errorf("no file matched episode S%02dE%02d", seasonNum, epNum))
+			return "", apperrors.Internalf("no file matched episode S%02dE%02d", seasonNum, epNum).NotRetryable()
 		}
 	}
 

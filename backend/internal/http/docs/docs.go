@@ -3978,7 +3978,7 @@ const docTemplate = `{
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
-                "error_category",
+                "error_kind",
                 "eta_seconds",
                 "guid",
                 "id",
@@ -4029,8 +4029,8 @@ const docTemplate = `{
                 "episode_id": {
                     "type": "string"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "eta_seconds": {
                     "type": "integer"
@@ -4146,6 +4146,27 @@ const docTemplate = `{
                 }
             }
         },
+        "dbgen.ErrorKind": {
+            "type": "string",
+            "enum": [
+                "not_found",
+                "conflict",
+                "validation",
+                "forbidden",
+                "unauthenticated",
+                "bad_gateway",
+                "internal"
+            ],
+            "x-enum-varnames": [
+                "ErrorKindNotFound",
+                "ErrorKindConflict",
+                "ErrorKindValidation",
+                "ErrorKindForbidden",
+                "ErrorKindUnauthenticated",
+                "ErrorKindBadGateway",
+                "ErrorKindInternal"
+            ]
+        },
         "dbgen.GetDownloadJobHistoryRow": {
             "type": "object",
             "required": [
@@ -4160,7 +4181,7 @@ const docTemplate = `{
                 "downloader_id",
                 "downloader_status",
                 "episode_id",
-                "error_category",
+                "error_kind",
                 "eta_seconds",
                 "guid",
                 "id",
@@ -4214,8 +4235,8 @@ const docTemplate = `{
                 "episode_id": {
                     "type": "string"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "eta_seconds": {
                     "type": "integer"
@@ -4336,7 +4357,7 @@ const docTemplate = `{
                 "downloader_status",
                 "episode_id",
                 "episode_number",
-                "error_category",
+                "error_kind",
                 "eta_seconds",
                 "failed_imports",
                 "guid",
@@ -4409,8 +4430,8 @@ const docTemplate = `{
                 "episode_number": {
                     "type": "integer"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "eta_seconds": {
                     "type": "integer"
@@ -4507,7 +4528,7 @@ const docTemplate = `{
                 "dest_path",
                 "download_job_id",
                 "episode_id",
-                "error_category",
+                "error_kind",
                 "id",
                 "import_method",
                 "last_error",
@@ -4542,8 +4563,8 @@ const docTemplate = `{
                 "episode_id": {
                     "type": "string"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "id": {
                     "type": "string"
@@ -4600,7 +4621,7 @@ const docTemplate = `{
                 "episode_id",
                 "episode_number",
                 "episode_title",
-                "error_category",
+                "error_kind",
                 "id",
                 "import_method",
                 "last_error",
@@ -4652,8 +4673,8 @@ const docTemplate = `{
                 "episode_title": {
                     "type": "string"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "id": {
                     "type": "string"
@@ -4740,7 +4761,7 @@ const docTemplate = `{
                 "dest_path",
                 "download_job_id",
                 "episode_id",
-                "error_category",
+                "error_kind",
                 "id",
                 "import_method",
                 "last_error",
@@ -4772,8 +4793,8 @@ const docTemplate = `{
                 "episode_id": {
                     "type": "string"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "id": {
                     "type": "string"
@@ -4875,7 +4896,7 @@ const docTemplate = `{
                 "downloader_status",
                 "episode_id",
                 "episode_number",
-                "error_category",
+                "error_kind",
                 "eta_seconds",
                 "guid",
                 "id",
@@ -4930,8 +4951,8 @@ const docTemplate = `{
                 "episode_number": {
                     "type": "integer"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "eta_seconds": {
                     "type": "integer"
@@ -5009,7 +5030,7 @@ const docTemplate = `{
                 "downloader_status",
                 "episode_id",
                 "episode_number",
-                "error_category",
+                "error_kind",
                 "eta_seconds",
                 "failed_imports",
                 "guid",
@@ -5082,8 +5103,8 @@ const docTemplate = `{
                 "episode_number": {
                     "type": "integer"
                 },
-                "error_category": {
-                    "type": "string"
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.NullErrorKind"
                 },
                 "eta_seconds": {
                     "type": "integer"
@@ -5168,6 +5189,22 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "dbgen.NullErrorKind": {
+            "type": "object",
+            "required": [
+                "error_kind",
+                "valid"
+            ],
+            "properties": {
+                "error_kind": {
+                    "$ref": "#/definitions/dbgen.ErrorKind"
+                },
+                "valid": {
+                    "description": "Valid is true if ErrorKind is not NULL",
+                    "type": "boolean"
                 }
             }
         },

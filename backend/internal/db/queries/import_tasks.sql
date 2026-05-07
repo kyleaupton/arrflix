@@ -97,7 +97,7 @@ RETURNING *;
 UPDATE import_task
 SET status = 'failed',
     last_error = sqlc.arg(last_error),
-    error_category = sqlc.arg(error_category),
+    error_kind = sqlc.arg(error_kind),
     updated_at = now()
 WHERE id = sqlc.arg(id)
 RETURNING *;
@@ -122,7 +122,7 @@ WHERE download_job_id = $1
 UPDATE import_task
 SET attempt_count = attempt_count + 1,
     last_error = sqlc.arg(last_error),
-    error_category = sqlc.arg(error_category),
+    error_kind = sqlc.arg(error_kind),
     next_run_at = sqlc.arg(next_run_at),
     updated_at = now()
 WHERE id = sqlc.arg(id)

@@ -16,3 +16,7 @@ sql:
             go_type: "time.Time"
           - db_type: "timestamp"
             go_type: "time.Time"
+          # error_kind: deliberately NOT overridden to apperrors.Kind because
+          # swaggo can't resolve the aliased import and breaks API doc gen.
+          # The repo layer converts between dbgen.ErrorKind and apperrors.Kind;
+          # the values are identical, so it's a free cast.

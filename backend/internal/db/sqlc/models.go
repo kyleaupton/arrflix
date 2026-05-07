@@ -54,6 +54,53 @@ func (ns NullAuthProvider) Value() (driver.Value, error) {
 	return string(ns.AuthProvider), nil
 }
 
+type ErrorKind string
+
+const (
+	ErrorKindNotFound        ErrorKind = "not_found"
+	ErrorKindConflict        ErrorKind = "conflict"
+	ErrorKindValidation      ErrorKind = "validation"
+	ErrorKindForbidden       ErrorKind = "forbidden"
+	ErrorKindUnauthenticated ErrorKind = "unauthenticated"
+	ErrorKindBadGateway      ErrorKind = "bad_gateway"
+	ErrorKindInternal        ErrorKind = "internal"
+)
+
+func (e *ErrorKind) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ErrorKind(s)
+	case string:
+		*e = ErrorKind(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ErrorKind: %T", src)
+	}
+	return nil
+}
+
+type NullErrorKind struct {
+	ErrorKind ErrorKind `json:"error_kind"`
+	Valid     bool      `json:"valid"` // Valid is true if ErrorKind is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullErrorKind) Scan(value interface{}) error {
+	if value == nil {
+		ns.ErrorKind, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ErrorKind.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullErrorKind) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ErrorKind), nil
+}
+
 type GrantEffect string
 
 const (
@@ -188,35 +235,35 @@ type AuthAudit struct {
 }
 
 type DownloadJob struct {
-	ID                   pgtype.UUID `json:"id"`
-	Status               string      `json:"status"`
-	Protocol             string      `json:"protocol"`
-	IndexerID            int64       `json:"indexer_id"`
-	Guid                 string      `json:"guid"`
-	CandidateTitle       string      `json:"candidate_title"`
-	CandidateLink        string      `json:"candidate_link"`
-	MediaType            string      `json:"media_type"`
-	MediaItemID          pgtype.UUID `json:"media_item_id"`
-	SeasonID             pgtype.UUID `json:"season_id"`
-	EpisodeID            pgtype.UUID `json:"episode_id"`
-	LibraryID            pgtype.UUID `json:"library_id"`
-	NameTemplateID       pgtype.UUID `json:"name_template_id"`
-	DownloaderID         pgtype.UUID `json:"downloader_id"`
-	DownloaderExternalID *string     `json:"downloader_external_id"`
-	DownloaderStatus     *string     `json:"downloader_status"`
-	Progress             *float64    `json:"progress"`
-	SavePath             *string     `json:"save_path"`
-	ContentPath          *string     `json:"content_path"`
-	AttemptCount         int32       `json:"attempt_count"`
-	NextRunAt            time.Time   `json:"next_run_at"`
-	LastError            *string     `json:"last_error"`
-	ErrorCategory        *string     `json:"error_category"`
-	CreatedAt            time.Time   `json:"created_at"`
-	UpdatedAt            time.Time   `json:"updated_at"`
-	PreviousJobID        pgtype.UUID `json:"previous_job_id"`
-	DownloadSpeed        *int64      `json:"download_speed"`
-	EtaSeconds           *int64      `json:"eta_seconds"`
-	TotalSize            *int64      `json:"total_size"`
+	ID                   pgtype.UUID   `json:"id"`
+	Status               string        `json:"status"`
+	Protocol             string        `json:"protocol"`
+	IndexerID            int64         `json:"indexer_id"`
+	Guid                 string        `json:"guid"`
+	CandidateTitle       string        `json:"candidate_title"`
+	CandidateLink        string        `json:"candidate_link"`
+	MediaType            string        `json:"media_type"`
+	MediaItemID          pgtype.UUID   `json:"media_item_id"`
+	SeasonID             pgtype.UUID   `json:"season_id"`
+	EpisodeID            pgtype.UUID   `json:"episode_id"`
+	LibraryID            pgtype.UUID   `json:"library_id"`
+	NameTemplateID       pgtype.UUID   `json:"name_template_id"`
+	DownloaderID         pgtype.UUID   `json:"downloader_id"`
+	DownloaderExternalID *string       `json:"downloader_external_id"`
+	DownloaderStatus     *string       `json:"downloader_status"`
+	Progress             *float64      `json:"progress"`
+	SavePath             *string       `json:"save_path"`
+	ContentPath          *string       `json:"content_path"`
+	AttemptCount         int32         `json:"attempt_count"`
+	NextRunAt            time.Time     `json:"next_run_at"`
+	LastError            *string       `json:"last_error"`
+	CreatedAt            time.Time     `json:"created_at"`
+	UpdatedAt            time.Time     `json:"updated_at"`
+	PreviousJobID        pgtype.UUID   `json:"previous_job_id"`
+	DownloadSpeed        *int64        `json:"download_speed"`
+	EtaSeconds           *int64        `json:"eta_seconds"`
+	TotalSize            *int64        `json:"total_size"`
+	ErrorKind            NullErrorKind `json:"error_kind"`
 }
 
 type DownloadJobEvent struct {
@@ -246,26 +293,26 @@ type Downloader struct {
 }
 
 type ImportTask struct {
-	ID             pgtype.UUID `json:"id"`
-	Status         string      `json:"status"`
-	DownloadJobID  pgtype.UUID `json:"download_job_id"`
-	SourcePath     string      `json:"source_path"`
-	PreviousTaskID pgtype.UUID `json:"previous_task_id"`
-	MediaType      string      `json:"media_type"`
-	MediaItemID    pgtype.UUID `json:"media_item_id"`
-	EpisodeID      pgtype.UUID `json:"episode_id"`
-	LibraryID      pgtype.UUID `json:"library_id"`
-	NameTemplateID pgtype.UUID `json:"name_template_id"`
-	DestPath       *string     `json:"dest_path"`
-	ImportMethod   *string     `json:"import_method"`
-	MediaFileID    pgtype.UUID `json:"media_file_id"`
-	AttemptCount   int32       `json:"attempt_count"`
-	MaxAttempts    int32       `json:"max_attempts"`
-	NextRunAt      time.Time   `json:"next_run_at"`
-	LastError      *string     `json:"last_error"`
-	ErrorCategory  *string     `json:"error_category"`
-	CreatedAt      time.Time   `json:"created_at"`
-	UpdatedAt      time.Time   `json:"updated_at"`
+	ID             pgtype.UUID   `json:"id"`
+	Status         string        `json:"status"`
+	DownloadJobID  pgtype.UUID   `json:"download_job_id"`
+	SourcePath     string        `json:"source_path"`
+	PreviousTaskID pgtype.UUID   `json:"previous_task_id"`
+	MediaType      string        `json:"media_type"`
+	MediaItemID    pgtype.UUID   `json:"media_item_id"`
+	EpisodeID      pgtype.UUID   `json:"episode_id"`
+	LibraryID      pgtype.UUID   `json:"library_id"`
+	NameTemplateID pgtype.UUID   `json:"name_template_id"`
+	DestPath       *string       `json:"dest_path"`
+	ImportMethod   *string       `json:"import_method"`
+	MediaFileID    pgtype.UUID   `json:"media_file_id"`
+	AttemptCount   int32         `json:"attempt_count"`
+	MaxAttempts    int32         `json:"max_attempts"`
+	NextRunAt      time.Time     `json:"next_run_at"`
+	LastError      *string       `json:"last_error"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+	ErrorKind      NullErrorKind `json:"error_kind"`
 }
 
 type ImportTaskEvent struct {
