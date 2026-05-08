@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 )
 
 type AuthRepo interface {
@@ -32,100 +33,114 @@ type AuthRepo interface {
 }
 
 func (r *Repository) GetUserByEmail(ctx context.Context, email string) (dbgen.AppUser, error) {
-	return r.Q.GetUserByEmail(ctx, email)
+	u, err := r.Q.GetUserByEmail(ctx, email)
+	return u, apperrors.FromPg(err, "user %q not found", email)
 }
 
 func (r *Repository) GetUserByLogin(ctx context.Context, login string) (dbgen.AppUser, error) {
-	return r.Q.GetUserByLogin(ctx, login)
+	u, err := r.Q.GetUserByLogin(ctx, login)
+	return u, apperrors.FromPg(err, "user %q not found", login)
 }
 
 func (r *Repository) UpdateUserPassword(ctx context.Context, userID pgtype.UUID, newHash string) error {
-	return r.Q.UpdateUserPassword(ctx, dbgen.UpdateUserPasswordParams{ID: userID, PasswordHash: &newHash})
+	return apperrors.FromPg(r.Q.UpdateUserPassword(ctx, dbgen.UpdateUserPasswordParams{ID: userID, PasswordHash: &newHash}), "update password for user %s", userID)
 }
 
 // User CRUD implementations
 
 func (r *Repository) ListUsers(ctx context.Context) ([]dbgen.ListUsersRow, error) {
-	return r.Q.ListUsers(ctx)
+	users, err := r.Q.ListUsers(ctx)
+	return users, apperrors.FromPg(err, "list users")
 }
 
 func (r *Repository) GetUser(ctx context.Context, id pgtype.UUID) (dbgen.GetUserRow, error) {
-	return r.Q.GetUser(ctx, id)
+	u, err := r.Q.GetUser(ctx, id)
+	return u, apperrors.FromPg(err, "user %s not found", id)
 }
 
 func (r *Repository) CreateUser(ctx context.Context, email, username, passwordHash string, isActive bool) (dbgen.AppUser, error) {
-	return r.Q.CreateUser(ctx, dbgen.CreateUserParams{
+	u, err := r.Q.CreateUser(ctx, dbgen.CreateUserParams{
 		Email:        &email,
 		Username:     username,
 		PasswordHash: &passwordHash,
 		IsActive:     isActive,
 	})
+	return u, apperrors.FromPg(err, "create user %q", username)
 }
 
 func (r *Repository) UpdateUser(ctx context.Context, id pgtype.UUID, email, username string, isActive bool) (dbgen.AppUser, error) {
-	return r.Q.UpdateUser(ctx, dbgen.UpdateUserParams{
+	u, err := r.Q.UpdateUser(ctx, dbgen.UpdateUserParams{
 		ID:       id,
 		Email:    &email,
 		Username: username,
 		IsActive: isActive,
 	})
+	return u, apperrors.FromPg(err, "update user %s", id)
 }
 
 func (r *Repository) DeleteUser(ctx context.Context, id pgtype.UUID) error {
-	return r.Q.DeleteUser(ctx, id)
+	return apperrors.FromPg(r.Q.DeleteUser(ctx, id), "delete user %s", id)
 }
 
 // Role Management implementations
 
 func (r *Repository) ListRoles(ctx context.Context) ([]dbgen.Role, error) {
-	return r.Q.ListRoles(ctx)
+	roles, err := r.Q.ListRoles(ctx)
+	return roles, apperrors.FromPg(err, "list roles")
 }
 
 func (r *Repository) ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]dbgen.Role, error) {
-	return r.Q.ListUserRoles(ctx, userID)
+	roles, err := r.Q.ListUserRoles(ctx, userID)
+	return roles, apperrors.FromPg(err, "list roles for user %s", userID)
 }
 
 func (r *Repository) GetRoleByName(ctx context.Context, name string) (dbgen.Role, error) {
-	return r.Q.GetRoleByName(ctx, name)
+	role, err := r.Q.GetRoleByName(ctx, name)
+	return role, apperrors.FromPg(err, "role %q not found", name)
 }
 
 func (r *Repository) AssignRole(ctx context.Context, userID, roleID pgtype.UUID) error {
-	return r.Q.AssignRole(ctx, dbgen.AssignRoleParams{
+	return apperrors.FromPg(r.Q.AssignRole(ctx, dbgen.AssignRoleParams{
 		UserID: userID,
 		RoleID: roleID,
-	})
+	}), "assign role %s to user %s", roleID, userID)
 }
 
 func (r *Repository) UnassignAllRoles(ctx context.Context, userID pgtype.UUID) error {
-	return r.Q.UnassignAllRoles(ctx, userID)
+	return apperrors.FromPg(r.Q.UnassignAllRoles(ctx, userID), "unassign roles for user %s", userID)
 }
 
 func (r *Repository) CountUsersByRole(ctx context.Context, roleID pgtype.UUID) (int64, error) {
-	return r.Q.CountUsersByRole(ctx, roleID)
+	count, err := r.Q.CountUsersByRole(ctx, roleID)
+	return count, apperrors.FromPg(err, "count users by role %s", roleID)
 }
 
 func (r *Repository) GetUserByID(ctx context.Context, id pgtype.UUID) (dbgen.AppUser, error) {
-	return r.Q.GetUserByID(ctx, id)
+	u, err := r.Q.GetUserByID(ctx, id)
+	return u, apperrors.FromPg(err, "user %s not found", id)
 }
 
 func (r *Repository) CreateUserNoPassword(ctx context.Context, email, username string, isActive bool) (dbgen.AppUser, error) {
-	return r.Q.CreateUser(ctx, dbgen.CreateUserParams{
+	u, err := r.Q.CreateUser(ctx, dbgen.CreateUserParams{
 		Email:        &email,
 		Username:     username,
 		PasswordHash: nil,
 		IsActive:     isActive,
 	})
+	return u, apperrors.FromPg(err, "create user %q", username)
 }
 
 // Identity implementations
 
 func (r *Repository) GetIdentityByProviderSubject(ctx context.Context, provider dbgen.AuthProvider, subject string) (dbgen.UserIdentity, error) {
-	return r.Q.GetIdentityByProviderSubject(ctx, dbgen.GetIdentityByProviderSubjectParams{
+	ident, err := r.Q.GetIdentityByProviderSubject(ctx, dbgen.GetIdentityByProviderSubjectParams{
 		Provider: provider,
 		Subject:  subject,
 	})
+	return ident, apperrors.FromPg(err, "identity %s/%q not found", provider, subject)
 }
 
 func (r *Repository) UpsertIdentity(ctx context.Context, params dbgen.UpsertIdentityParams) (dbgen.UserIdentity, error) {
-	return r.Q.UpsertIdentity(ctx, params)
+	ident, err := r.Q.UpsertIdentity(ctx, params)
+	return ident, apperrors.FromPg(err, "upsert identity %s/%q", params.Provider, params.Subject)
 }

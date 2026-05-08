@@ -4306,8 +4306,8 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/handlers.librarySwagger'
-        "400":
-          description: Bad Request
+        "422":
+          description: Unprocessable Entity
           schema:
             additionalProperties:
               type: string
@@ -4364,8 +4364,8 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handlers.librarySwagger'
-        "400":
-          description: Bad Request
+        "422":
+          description: Unprocessable Entity
           schema:
             additionalProperties:
               type: string

@@ -2,6 +2,8 @@ package repo
 
 import (
 	"context"
+
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 )
 
 type SetupRepo interface {
@@ -11,13 +13,15 @@ type SetupRepo interface {
 }
 
 func (r *Repository) GetSystemInitialized(ctx context.Context) (bool, error) {
-	return r.Q.GetSystemInitialized(ctx)
+	ok, err := r.Q.GetSystemInitialized(ctx)
+	return ok, apperrors.FromPg(err, "get system initialized")
 }
 
 func (r *Repository) SetSystemInitialized(ctx context.Context) error {
-	return r.Q.SetSystemInitialized(ctx)
+	return apperrors.FromPg(r.Q.SetSystemInitialized(ctx), "set system initialized")
 }
 
 func (r *Repository) CountUsers(ctx context.Context) (int64, error) {
-	return r.Q.CountUsers(ctx)
+	count, err := r.Q.CountUsers(ctx)
+	return count, apperrors.FromPg(err, "count users")
 }

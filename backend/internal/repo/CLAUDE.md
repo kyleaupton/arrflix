@@ -36,6 +36,58 @@ func (r *Repository) CreateLibrary(ctx context.Context, name, typ, rootPath stri
 
 `FromPg` is nil-safe: if the SQLC call returns `nil`, `FromPg` returns `nil`. No `if err != nil` boilerplate.
 
+## Format strings
+
+The `FromPg` format string becomes the wire `detail` for 4xx kinds (NotFound, Conflict, Validation). Pick the verb based on what's being interpolated:
+
+- **`%q` for arbitrary strings** — paths, names, slugs, external identifiers, IdP subjects, titles, search keys. The quotes make whitespace and empty strings visible and prevent the value from blending into surrounding prose.
+- **`%s` for UUIDs and enum-shaped values** — `pgtype.UUID`, kinds, types, protocols, statuses. These are already opaque tokens; quoting adds noise.
+- **`%d` for numeric IDs** — TMDB IDs, indexer IDs, season/episode numbers.
+
+Good:
+
+```go
+return lib, apperrors.FromPg(err, "library %s not found", id)              // UUID → %s
+return inv, apperrors.FromPg(err, "invite for %q not found", email)        // arbitrary string → %q
+return ident, apperrors.FromPg(err, "identity %s/%s not found",            // enum + arbitrary
+    provider, subject)                                                     // ↑ enum %s, but subject is arbitrary — see note
+return mf, apperrors.FromPg(err, "media file at %q in library %s ...",     // path %q, UUID %s
+    path, libraryID)
+return item, apperrors.FromPg(err, "media item with tmdb id %d ...", tmdbID) // numeric → %d
+```
+
+Bad:
+
+```go
+return lib, apperrors.FromPg(err, "library %q not found", id)              // pgtype.UUID isn't arbitrary text
+return inv, apperrors.FromPg(err, "invite for %s not found", email)        // bare email blends into prose
+```
+
+Note on IdP subjects: although `subject` is an external token, it's still arbitrary user-controlled text and should be `%q`. See `repo/auth.go::GetIdentityByProviderSubject`.
+
+## Create methods
+
+Create methods always include a natural identifier in the format string. A bare `"create X"` makes "X already exists" conflicts impossible to localize without reading logs. Pick the most distinguishing field the method received:
+
+- **Named entities** (libraries, downloaders, name templates, policies) → use the name: `"create library %q"`, `"create downloader %q"`.
+- **Relational rows** (download job events, import task events, rules tied to a policy) → use the parent ID with a label: `"create download job %s event"`, `"create rule for policy %s"`.
+- **Tasks/jobs** without an obvious name → use the most distinguishing attribute the row carries (media item ID, indexer+guid, etc.): `"create download job for media %s"`, not `"create download job"`.
+
+Good:
+
+```go
+return lib, apperrors.FromPg(err, "create library %q", name)
+return ev, apperrors.FromPg(err, "create download job %s event", arg.DownloadJobID)
+return rule, apperrors.FromPg(err, "create rule for policy %s", policyID)
+```
+
+Bad:
+
+```go
+return job, apperrors.FromPg(err, "create download job")        // no identifier — which one collided?
+return task, apperrors.FromPg(err, "create import task")        // ditto
+```
+
 ## What `FromPg` translates
 
 - `pgx.ErrNoRows` → `KindNotFound` (404)

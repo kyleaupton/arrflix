@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 )
 
 type CacheEntry struct {
@@ -29,7 +30,7 @@ func (r *Repository) GetApiCache(ctx context.Context, key string) (CacheEntry, b
 		}
 
 		// real error
-		return CacheEntry{}, false, err
+		return CacheEntry{}, false, apperrors.FromPg(err, "api cache lookup %q", key)
 	}
 
 	// cache miss: expired
@@ -52,7 +53,7 @@ func (r *Repository) GetApiCache(ctx context.Context, key string) (CacheEntry, b
 func (r *Repository) UpsertApiCache(ctx context.Context, key string, category *string, response []byte, status int, contentType *string, headers []byte, ttl time.Duration) error {
 	expires := time.Now().Add(ttl)
 
-	return r.Q.UpsertApiCache(ctx, dbgen.UpsertApiCacheParams{
+	return apperrors.FromPg(r.Q.UpsertApiCache(ctx, dbgen.UpsertApiCacheParams{
 		Key:         key,
 		Category:    category,
 		Response:    response,
@@ -60,9 +61,9 @@ func (r *Repository) UpsertApiCache(ctx context.Context, key string, category *s
 		ContentType: contentType,
 		Headers:     headers,
 		ExpiresAt:   expires,
-	})
+	}), "upsert api cache %q", key)
 }
 
 func (r *Repository) DeleteExpiredApiCache(ctx context.Context) error {
-	return r.Q.DeleteExpiredApiCache(ctx)
+	return apperrors.FromPg(r.Q.DeleteExpiredApiCache(ctx), "delete expired api cache")
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -64,7 +65,7 @@ func (h *Libraries) List(c echo.Context) error {
 	ctx := c.Request().Context()
 	out, err := h.svc.Libraries.List(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list"})
+		return RenderError(c, err)
 	}
 	return c.JSON(http.StatusOK, out)
 }
@@ -76,17 +77,21 @@ func (h *Libraries) List(c echo.Context) error {
 // @Produce json
 // @Param   payload body handlers.LibraryCreateRequest true "Create library"
 // @Success 201 {object} handlers.librarySwagger
-// @Failure 400 {object} map[string]string
+// @Failure 422 {object} map[string]string
 // @Router  /v1/libraries [post]
 func (h *Libraries) Create(c echo.Context) error {
 	var req LibraryCreateRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		// Log the underlying parse error; do NOT include it in the wire
+		// detail (would leak struct internals / parser text).
+		c.Logger().Error(err)
+		return RenderError(c, apperrors.Validation("invalid request body").
+			Op("LibrariesHandler.Create"))
 	}
 	ctx := c.Request().Context()
 	lib, err := h.svc.Libraries.Create(ctx, req.Name, req.Type, req.RootPath, req.Enabled, req.Default)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return RenderError(c, err)
 	}
 	return c.JSON(http.StatusCreated, lib)
 }
@@ -100,12 +105,14 @@ func (h *Libraries) Create(c echo.Context) error {
 func (h *Libraries) Get(c echo.Context) error {
 	var id pgtype.UUID
 	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return RenderError(c, apperrors.Validation("invalid library id",
+			apperrors.Field("path.id", "must be a valid UUID")).
+			Op("LibrariesHandler.Get"))
 	}
 	ctx := c.Request().Context()
 	lib, err := h.svc.Libraries.Get(ctx, id)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+		return RenderError(c, err)
 	}
 	return c.JSON(http.StatusOK, lib)
 }
@@ -118,21 +125,25 @@ func (h *Libraries) Get(c echo.Context) error {
 // @Param   id path string true "Library ID"
 // @Param   payload body handlers.LibraryUpdateRequest true "Update library"
 // @Success 200 {object} handlers.librarySwagger
-// @Failure 400 {object} map[string]string
+// @Failure 422 {object} map[string]string
 // @Router  /v1/libraries/{id} [put]
 func (h *Libraries) Update(c echo.Context) error {
 	var req LibraryUpdateRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		c.Logger().Error(err)
+		return RenderError(c, apperrors.Validation("invalid request body").
+			Op("LibrariesHandler.Update"))
 	}
 	var id pgtype.UUID
 	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return RenderError(c, apperrors.Validation("invalid library id",
+			apperrors.Field("path.id", "must be a valid UUID")).
+			Op("LibrariesHandler.Update"))
 	}
 	ctx := c.Request().Context()
 	lib, err := h.svc.Libraries.Update(ctx, id, req.Name, req.Type, req.RootPath, req.Enabled, req.Default)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return RenderError(c, err)
 	}
 	return c.JSON(http.StatusOK, lib)
 }
@@ -146,11 +157,13 @@ func (h *Libraries) Update(c echo.Context) error {
 func (h *Libraries) Delete(c echo.Context) error {
 	var id pgtype.UUID
 	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return RenderError(c, apperrors.Validation("invalid library id",
+			apperrors.Field("path.id", "must be a valid UUID")).
+			Op("LibrariesHandler.Delete"))
 	}
 	ctx := c.Request().Context()
 	if err := h.svc.Libraries.Delete(ctx, id); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete"})
+		return RenderError(c, err)
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -166,15 +179,21 @@ func (h *Libraries) Delete(c echo.Context) error {
 func (h *Libraries) Scan(c echo.Context) error {
 	var id pgtype.UUID
 	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return RenderError(c, apperrors.Validation("invalid library id",
+			apperrors.Field("path.id", "must be a valid UUID")).
+			Op("LibrariesHandler.Scan"))
 	}
 	ctx := c.Request().Context()
 	scanID, err := h.svc.Scanner.StartScan(ctx, id)
 	if err != nil {
+		// service.ErrScanAlreadyRunning is a legacy sentinel; the scan
+		// service will be migrated in a later pass. Wrap into a typed
+		// Conflict here so the wire response is still RFC 9457.
 		if errors.Is(err, service.ErrScanAlreadyRunning) {
-			return c.JSON(http.StatusConflict, map[string]string{"error": "scan already running for this library"})
+			return RenderError(c, apperrors.Conflictf("scan already running for library %s", id).
+				Op("LibrariesHandler.Scan"))
 		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to scan"})
+		return RenderError(c, err)
 	}
 	return c.JSON(http.StatusAccepted, map[string]string{"scanId": scanID})
 }

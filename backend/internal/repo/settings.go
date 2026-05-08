@@ -4,6 +4,7 @@ import (
 	"context"
 
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 )
 
 type SettingsRepo interface {
@@ -13,11 +14,15 @@ type SettingsRepo interface {
 }
 
 func (r *Repository) Get(ctx context.Context, key string) (dbgen.AppSetting, error) {
-	return r.Q.GetSetting(ctx, key)
+	s, err := r.Q.GetSetting(ctx, key)
+	return s, apperrors.FromPg(err, "setting %q not found", key)
 }
+
 func (r *Repository) List(ctx context.Context) ([]dbgen.AppSetting, error) {
-	return r.Q.ListSettings(ctx)
+	settings, err := r.Q.ListSettings(ctx)
+	return settings, apperrors.FromPg(err, "list settings")
 }
+
 func (r *Repository) Upsert(ctx context.Context, key, typ string, valueJson []byte) error {
-	return r.Q.UpsertSetting(ctx, dbgen.UpsertSettingParams{Key: key, Type: typ, ValueJson: valueJson})
+	return apperrors.FromPg(r.Q.UpsertSetting(ctx, dbgen.UpsertSettingParams{Key: key, Type: typ, ValueJson: valueJson}), "upsert setting %q", key)
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 )
 
 type LibraryRepo interface {
@@ -17,29 +18,33 @@ type LibraryRepo interface {
 }
 
 func (r *Repository) ListLibraries(ctx context.Context) ([]dbgen.Library, error) {
-	return r.Q.ListLibraries(ctx)
+	libs, err := r.Q.ListLibraries(ctx)
+	return libs, apperrors.FromPg(err, "list libraries")
 }
 
 func (r *Repository) GetLibrary(ctx context.Context, id pgtype.UUID) (dbgen.Library, error) {
-	return r.Q.GetLibrary(ctx, id)
+	lib, err := r.Q.GetLibrary(ctx, id)
+	return lib, apperrors.FromPg(err, "library %s not found", id)
 }
 
 func (r *Repository) GetDefaultLibrary(ctx context.Context, typ string) (dbgen.Library, error) {
-	return r.Q.GetDefaultLibrary(ctx, typ)
+	lib, err := r.Q.GetDefaultLibrary(ctx, typ)
+	return lib, apperrors.FromPg(err, "default %s library not found", typ)
 }
 
 func (r *Repository) CreateLibrary(ctx context.Context, name, typ, rootPath string, enabled bool, isDefault bool) (dbgen.Library, error) {
-	return r.Q.CreateLibrary(ctx, dbgen.CreateLibraryParams{
+	lib, err := r.Q.CreateLibrary(ctx, dbgen.CreateLibraryParams{
 		Name:      name,
 		Type:      typ,
 		RootPath:  rootPath,
 		Enabled:   enabled,
 		IsDefault: isDefault,
 	})
+	return lib, apperrors.FromPg(err, "create library %q", name)
 }
 
 func (r *Repository) UpdateLibrary(ctx context.Context, id pgtype.UUID, name, typ, rootPath string, enabled bool, isDefault bool) (dbgen.Library, error) {
-	return r.Q.UpdateLibrary(ctx, dbgen.UpdateLibraryParams{
+	lib, err := r.Q.UpdateLibrary(ctx, dbgen.UpdateLibraryParams{
 		ID:        id,
 		Name:      name,
 		Type:      typ,
@@ -47,8 +52,9 @@ func (r *Repository) UpdateLibrary(ctx context.Context, id pgtype.UUID, name, ty
 		Enabled:   enabled,
 		IsDefault: isDefault,
 	})
+	return lib, apperrors.FromPg(err, "update library %s", id)
 }
 
 func (r *Repository) DeleteLibrary(ctx context.Context, id pgtype.UUID) error {
-	return r.Q.DeleteLibrary(ctx, id)
+	return apperrors.FromPg(r.Q.DeleteLibrary(ctx, id), "delete library %s", id)
 }

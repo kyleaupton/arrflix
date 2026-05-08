@@ -1771,8 +1771,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/handlers.librarySwagger"
                         }
                     },
-                    "400": {
-                        "description": "Bad Request",
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1837,8 +1837,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/handlers.librarySwagger"
                         }
                     },
-                    "400": {
-                        "description": "Bad Request",
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

@@ -2715,9 +2715,9 @@ export type PostV1LibrariesData = {
 
 export type PostV1LibrariesErrors = {
     /**
-     * Bad Request
+     * Unprocessable Entity
      */
-    400: {
+    422: {
         [key: string]: string;
     };
 };
@@ -2787,9 +2787,9 @@ export type PutV1LibrariesByIdData = {
 
 export type PutV1LibrariesByIdErrors = {
     /**
-     * Bad Request
+     * Unprocessable Entity
      */
-    400: {
+    422: {
         [key: string]: string;
     };
 };

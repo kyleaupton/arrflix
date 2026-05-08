@@ -104,13 +104,30 @@ if err != nil {
 
 ### Add op context for logs
 
-For typed errors you're constructing, chain `.Op()`:
+**Every freshly-constructed typed error at a service or handler boundary chains `.Op()`.** The naming convention is `<Type>.<Method>` in PascalCase (e.g., `"LibrariesService.Create"`, `"DownloadCandidatesService.Search"`, `"LibrariesHandler.Scan"`).
 
 ```go
-return apperrors.NotFoundf("library %s not found", id).Op("LibrariesService.Get")
+// Service: chain .Op() on every typed-error construction.
+func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath string, ...) (dbgen.Library, error) {
+    if name == "" {
+        return dbgen.Library{}, apperrors.Validation("invalid library",
+            apperrors.Field("body.name", "required"),
+        ).Op("LibrariesService.Create")
+    }
+    // ...
+}
+
+// Handler: same rule applies at the handler boundary.
+return RenderError(c, apperrors.Conflictf("scan already running for library %s", id).
+    Op("LibrariesHandler.Scan"))
 ```
 
-For non-typed errors from external code, use `WithOp` (returns `error`):
+When the rule does NOT apply:
+
+- **Pass-through repo errors.** The repo's `FromPg` already produced a typed error; don't re-Op it. The op for "this came from the database layer" is implicit in the call path.
+- **`apperrors.Wrap` calls.** `Wrap` is for replacing the user-facing detail with better context — if you also need an op there, use `apperrors.WithOp(apperrors.Wrap(...), "X.Y")` only when the calling context adds operational signal beyond the kind+detail. In practice, plain `Wrap` is fine; reserve `WithOp` for cases where a non-typed external error crosses the service boundary and needs op annotation.
+
+For non-typed errors from external code that you're surfacing as-is (rare), use `WithOp`:
 
 ```go
 lib, err := someExternalAPI()
@@ -118,6 +135,24 @@ return lib, apperrors.WithOp(err, "LibrariesService.Get")
 ```
 
 `Op` and `WithOp` record the operation in structured logs (via `slog.LogValue`) but don't change the wire format.
+
+### `Bind()` failures: shape rule
+
+Echo's `c.Bind(&req)` returns an error when the JSON is unparseable, the Content-Type is wrong, or a struct tag rejects the input. The `err.Error()` text is **leaky** — it can include field paths the API doesn't otherwise document, JSON parser internals, or struct field names that drift away from the wire schema. Don't put it on the wire.
+
+The canonical shape:
+
+```go
+if err := c.Bind(&req); err != nil {
+    c.Logger().Error(err)  // keep the parse detail in logs
+    return RenderError(c, apperrors.Validation("invalid request body").
+        Op("LibrariesHandler.Create"))
+}
+```
+
+- No `apperrors.Field("body", err.Error())` — that's the leak.
+- No field details at all on the wire. The user sees "invalid request body" with status 422; ops sees the underlying parse error in the log line.
+- Op uses the handler+method name so logs can be filtered by route.
 
 ### Override retry semantics for invariant violations
 

@@ -40,90 +40,107 @@ type DownloadJobsRepo interface {
 }
 
 func (r *Repository) CreateDownloadJob(ctx context.Context, arg dbgen.CreateDownloadJobParams) (dbgen.DownloadJob, error) {
-	return r.Q.CreateDownloadJob(ctx, arg)
+	job, err := r.Q.CreateDownloadJob(ctx, arg)
+	return job, apperrors.FromPg(err, "create download job for media %s", arg.MediaItemID)
 }
 
 func (r *Repository) GetDownloadJob(ctx context.Context, id pgtype.UUID) (dbgen.DownloadJob, error) {
-	return r.Q.GetDownloadJob(ctx, id)
+	job, err := r.Q.GetDownloadJob(ctx, id)
+	return job, apperrors.FromPg(err, "download job %s not found", id)
 }
 
 func (r *Repository) GetDownloadJobByCandidate(ctx context.Context, indexerID int64, guid string) (dbgen.DownloadJob, error) {
-	return r.Q.GetDownloadJobByCandidate(ctx, dbgen.GetDownloadJobByCandidateParams{
+	job, err := r.Q.GetDownloadJobByCandidate(ctx, dbgen.GetDownloadJobByCandidateParams{
 		IndexerID: indexerID,
 		Guid:      guid,
 	})
+	return job, apperrors.FromPg(err, "download job for candidate %d/%q not found", indexerID, guid)
 }
 
 func (r *Repository) GetDownloadJobWithImportSummary(ctx context.Context, id pgtype.UUID) (dbgen.GetDownloadJobWithImportSummaryRow, error) {
-	return r.Q.GetDownloadJobWithImportSummary(ctx, id)
+	row, err := r.Q.GetDownloadJobWithImportSummary(ctx, id)
+	return row, apperrors.FromPg(err, "download job %s not found", id)
 }
 
 func (r *Repository) GetDownloadJobTimeline(ctx context.Context, downloadJobID pgtype.UUID) ([]dbgen.GetDownloadJobTimelineRow, error) {
-	return r.Q.GetDownloadJobTimeline(ctx, downloadJobID)
+	rows, err := r.Q.GetDownloadJobTimeline(ctx, downloadJobID)
+	return rows, apperrors.FromPg(err, "download job %s timeline", downloadJobID)
 }
 
 func (r *Repository) ListDownloadJobsByMediaItem(ctx context.Context, mediaItemID pgtype.UUID) ([]dbgen.DownloadJob, error) {
-	return r.Q.ListDownloadJobsByMediaItem(ctx, mediaItemID)
+	jobs, err := r.Q.ListDownloadJobsByMediaItem(ctx, mediaItemID)
+	return jobs, apperrors.FromPg(err, "list download jobs for media item %s", mediaItemID)
 }
 
 func (r *Repository) ListDownloadJobsByTmdbMovieID(ctx context.Context, tmdbMovieID int64) ([]dbgen.DownloadJob, error) {
-	return r.Q.ListDownloadJobsByTmdbMovieID(ctx, &tmdbMovieID)
+	jobs, err := r.Q.ListDownloadJobsByTmdbMovieID(ctx, &tmdbMovieID)
+	return jobs, apperrors.FromPg(err, "list download jobs for tmdb movie %d", tmdbMovieID)
 }
 
 func (r *Repository) ListDownloadJobsByTmdbSeriesID(ctx context.Context, tmdbSeriesID int64) ([]dbgen.ListDownloadJobsByTmdbSeriesIDRow, error) {
-	return r.Q.ListDownloadJobsByTmdbSeriesID(ctx, &tmdbSeriesID)
+	rows, err := r.Q.ListDownloadJobsByTmdbSeriesID(ctx, &tmdbSeriesID)
+	return rows, apperrors.FromPg(err, "list download jobs for tmdb series %d", tmdbSeriesID)
 }
 
 func (r *Repository) ListDownloadJobs(ctx context.Context) ([]dbgen.DownloadJob, error) {
-	return r.Q.ListDownloadJobs(ctx)
+	jobs, err := r.Q.ListDownloadJobs(ctx)
+	return jobs, apperrors.FromPg(err, "list download jobs")
 }
 
 func (r *Repository) ListDownloadJobsWithImportSummary(ctx context.Context) ([]dbgen.ListDownloadJobsWithImportSummaryRow, error) {
-	return r.Q.ListDownloadJobsWithImportSummary(ctx)
+	rows, err := r.Q.ListDownloadJobsWithImportSummary(ctx)
+	return rows, apperrors.FromPg(err, "list download jobs with import summary")
 }
 
 func (r *Repository) CancelDownloadJob(ctx context.Context, id pgtype.UUID) (dbgen.DownloadJob, error) {
-	return r.Q.CancelDownloadJob(ctx, id)
+	job, err := r.Q.CancelDownloadJob(ctx, id)
+	return job, apperrors.FromPg(err, "cancel download job %s", id)
 }
 
 func (r *Repository) ClaimRunnableDownloadJobs(ctx context.Context, limit int32) ([]dbgen.DownloadJob, error) {
-	return r.Q.ClaimRunnableDownloadJobs(ctx, limit)
+	jobs, err := r.Q.ClaimRunnableDownloadJobs(ctx, limit)
+	return jobs, apperrors.FromPg(err, "claim runnable download jobs")
 }
 
 func (r *Repository) SetDownloadJobEnqueued(ctx context.Context, id pgtype.UUID, downloaderExternalID string) (dbgen.DownloadJob, error) {
-	return r.Q.SetDownloadJobEnqueued(ctx, dbgen.SetDownloadJobEnqueuedParams{
+	job, err := r.Q.SetDownloadJobEnqueued(ctx, dbgen.SetDownloadJobEnqueuedParams{
 		ID:                   id,
 		DownloaderExternalID: &downloaderExternalID,
 	})
+	return job, apperrors.FromPg(err, "mark download job %s enqueued", id)
 }
 
 func (r *Repository) SetDownloadJobDownloadSnapshot(ctx context.Context, arg dbgen.SetDownloadJobDownloadSnapshotParams) (dbgen.DownloadJob, error) {
-	return r.Q.SetDownloadJobDownloadSnapshot(ctx, arg)
+	job, err := r.Q.SetDownloadJobDownloadSnapshot(ctx, arg)
+	return job, apperrors.FromPg(err, "update download job %s snapshot", arg.ID)
 }
 
 func (r *Repository) SetDownloadJobCompleted(ctx context.Context, id pgtype.UUID, savePath, contentPath string) (dbgen.DownloadJob, error) {
-	return r.Q.SetDownloadJobCompleted(ctx, dbgen.SetDownloadJobCompletedParams{
+	job, err := r.Q.SetDownloadJobCompleted(ctx, dbgen.SetDownloadJobCompletedParams{
 		ID:          id,
 		SavePath:    &savePath,
 		ContentPath: &contentPath,
 	})
+	return job, apperrors.FromPg(err, "mark download job %s completed", id)
 }
 
 func (r *Repository) ScheduleDownloadJobRetry(ctx context.Context, id pgtype.UUID, lastError string, kind apperrors.Kind, nextRunAt time.Time) (dbgen.DownloadJob, error) {
-	return r.Q.ScheduleDownloadJobRetry(ctx, dbgen.ScheduleDownloadJobRetryParams{
+	job, err := r.Q.ScheduleDownloadJobRetry(ctx, dbgen.ScheduleDownloadJobRetryParams{
 		ID:        id,
 		LastError: &lastError,
 		ErrorKind: nullableKind(kind),
 		NextRunAt: nextRunAt,
 	})
+	return job, apperrors.FromPg(err, "schedule retry for download job %s", id)
 }
 
 func (r *Repository) MarkDownloadJobFailed(ctx context.Context, id pgtype.UUID, lastError string, kind apperrors.Kind) (dbgen.DownloadJob, error) {
-	return r.Q.MarkDownloadJobFailed(ctx, dbgen.MarkDownloadJobFailedParams{
+	job, err := r.Q.MarkDownloadJobFailed(ctx, dbgen.MarkDownloadJobFailedParams{
 		ID:        id,
 		LastError: &lastError,
 		ErrorKind: nullableKind(kind),
 	})
+	return job, apperrors.FromPg(err, "mark download job %s failed", id)
 }
 
 // nullableKind converts an in-memory apperrors.Kind into the dbgen.NullErrorKind
@@ -145,17 +162,21 @@ func nullableKind(k apperrors.Kind) dbgen.NullErrorKind {
 }
 
 func (r *Repository) RetryDownloadJob(ctx context.Context, id pgtype.UUID) (dbgen.DownloadJob, error) {
-	return r.Q.RetryDownloadJob(ctx, id)
+	job, err := r.Q.RetryDownloadJob(ctx, id)
+	return job, apperrors.FromPg(err, "retry download job %s", id)
 }
 
 func (r *Repository) GetDownloadJobHistory(ctx context.Context, id pgtype.UUID) ([]dbgen.GetDownloadJobHistoryRow, error) {
-	return r.Q.GetDownloadJobHistory(ctx, id)
+	rows, err := r.Q.GetDownloadJobHistory(ctx, id)
+	return rows, apperrors.FromPg(err, "download job %s history", id)
 }
 
 func (r *Repository) CreateDownloadJobEvent(ctx context.Context, arg dbgen.CreateDownloadJobEventParams) (dbgen.DownloadJobEvent, error) {
-	return r.Q.CreateDownloadJobEvent(ctx, arg)
+	ev, err := r.Q.CreateDownloadJobEvent(ctx, arg)
+	return ev, apperrors.FromPg(err, "create download job %s event", arg.DownloadJobID)
 }
 
 func (r *Repository) ListDownloadJobEvents(ctx context.Context, downloadJobID pgtype.UUID) ([]dbgen.DownloadJobEvent, error) {
-	return r.Q.ListDownloadJobEvents(ctx, downloadJobID)
+	events, err := r.Q.ListDownloadJobEvents(ctx, downloadJobID)
+	return events, apperrors.FromPg(err, "list events for download job %s", downloadJobID)
 }

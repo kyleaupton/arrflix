@@ -80,7 +80,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Import:             NewImportService(r, l),
 		ImportTasks:        NewImportTasksService(r),
 		Indexer:            indexer,
-		Libraries:          NewLibrariesService(r),
+		Libraries:          NewLibrariesService(r, l),
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
 		Policies:           policies,

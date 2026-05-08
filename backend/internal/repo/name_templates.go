@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 )
 
 type NameTemplateRepo interface {
@@ -17,19 +18,22 @@ type NameTemplateRepo interface {
 }
 
 func (r *Repository) ListNameTemplates(ctx context.Context) ([]dbgen.NameTemplate, error) {
-	return r.Q.ListNameTemplates(ctx)
+	tmpls, err := r.Q.ListNameTemplates(ctx)
+	return tmpls, apperrors.FromPg(err, "list name templates")
 }
 
 func (r *Repository) GetNameTemplate(ctx context.Context, id pgtype.UUID) (dbgen.NameTemplate, error) {
-	return r.Q.GetNameTemplate(ctx, id)
+	tmpl, err := r.Q.GetNameTemplate(ctx, id)
+	return tmpl, apperrors.FromPg(err, "name template %s not found", id)
 }
 
 func (r *Repository) GetDefaultNameTemplate(ctx context.Context, typ string) (dbgen.NameTemplate, error) {
-	return r.Q.GetDefaultNameTemplate(ctx, typ)
+	tmpl, err := r.Q.GetDefaultNameTemplate(ctx, typ)
+	return tmpl, apperrors.FromPg(err, "default %s name template not found", typ)
 }
 
 func (r *Repository) CreateNameTemplate(ctx context.Context, name, typ, template string, showTemplate, seasonTemplate, movieDirTemplate *string, isDefault bool) (dbgen.NameTemplate, error) {
-	return r.Q.CreateNameTemplate(ctx, dbgen.CreateNameTemplateParams{
+	tmpl, err := r.Q.CreateNameTemplate(ctx, dbgen.CreateNameTemplateParams{
 		Name:                 name,
 		Type:                 typ,
 		Template:             template,
@@ -38,10 +42,11 @@ func (r *Repository) CreateNameTemplate(ctx context.Context, name, typ, template
 		MovieDirTemplate:     movieDirTemplate,
 		IsDefault:            isDefault,
 	})
+	return tmpl, apperrors.FromPg(err, "create name template %q", name)
 }
 
 func (r *Repository) UpdateNameTemplate(ctx context.Context, id pgtype.UUID, name, typ, template string, showTemplate, seasonTemplate, movieDirTemplate *string, isDefault bool) (dbgen.NameTemplate, error) {
-	return r.Q.UpdateNameTemplate(ctx, dbgen.UpdateNameTemplateParams{
+	tmpl, err := r.Q.UpdateNameTemplate(ctx, dbgen.UpdateNameTemplateParams{
 		ID:                   id,
 		Name:                 name,
 		Type:                 typ,
@@ -51,8 +56,9 @@ func (r *Repository) UpdateNameTemplate(ctx context.Context, id pgtype.UUID, nam
 		MovieDirTemplate:     movieDirTemplate,
 		IsDefault:            isDefault,
 	})
+	return tmpl, apperrors.FromPg(err, "update name template %s", id)
 }
 
 func (r *Repository) DeleteNameTemplate(ctx context.Context, id pgtype.UUID) error {
-	return r.Q.DeleteNameTemplate(ctx, id)
+	return apperrors.FromPg(r.Q.DeleteNameTemplate(ctx, id), "delete name template %s", id)
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 )
 
 type DownloaderRepo interface {
@@ -17,15 +18,18 @@ type DownloaderRepo interface {
 }
 
 func (r *Repository) ListDownloaders(ctx context.Context) ([]dbgen.Downloader, error) {
-	return r.Q.ListDownloaders(ctx)
+	dls, err := r.Q.ListDownloaders(ctx)
+	return dls, apperrors.FromPg(err, "list downloaders")
 }
 
 func (r *Repository) GetDownloader(ctx context.Context, id pgtype.UUID) (dbgen.Downloader, error) {
-	return r.Q.GetDownloader(ctx, id)
+	dl, err := r.Q.GetDownloader(ctx, id)
+	return dl, apperrors.FromPg(err, "downloader %s not found", id)
 }
 
 func (r *Repository) GetDefaultDownloader(ctx context.Context, protocol string) (dbgen.Downloader, error) {
-	return r.Q.GetDefaultDownloader(ctx, protocol)
+	dl, err := r.Q.GetDefaultDownloader(ctx, protocol)
+	return dl, apperrors.FromPg(err, "default %s downloader not found", protocol)
 }
 
 func (r *Repository) CreateDownloader(ctx context.Context, name, downloaderType, protocol, url string, username, password *string, configJSON []byte, enabled, isDefault bool) (dbgen.Downloader, error) {
@@ -34,7 +38,7 @@ func (r *Repository) CreateDownloader(ctx context.Context, name, downloaderType,
 		configJSONVal = configJSON
 	}
 
-	return r.Q.CreateDownloader(ctx, dbgen.CreateDownloaderParams{
+	dl, err := r.Q.CreateDownloader(ctx, dbgen.CreateDownloaderParams{
 		Name:           name,
 		DownloaderType: downloaderType,
 		Protocol:       protocol,
@@ -45,6 +49,7 @@ func (r *Repository) CreateDownloader(ctx context.Context, name, downloaderType,
 		Enabled:        enabled,
 		IsDefault:      isDefault,
 	})
+	return dl, apperrors.FromPg(err, "create downloader %q", name)
 }
 
 func (r *Repository) UpdateDownloader(ctx context.Context, id pgtype.UUID, name, downloaderType, protocol, url string, username, password *string, configJSON []byte, enabled, isDefault bool) (dbgen.Downloader, error) {
@@ -53,7 +58,7 @@ func (r *Repository) UpdateDownloader(ctx context.Context, id pgtype.UUID, name,
 		configJSONVal = configJSON
 	}
 
-	return r.Q.UpdateDownloader(ctx, dbgen.UpdateDownloaderParams{
+	dl, err := r.Q.UpdateDownloader(ctx, dbgen.UpdateDownloaderParams{
 		ID:             id,
 		Name:           name,
 		DownloaderType: downloaderType,
@@ -65,8 +70,9 @@ func (r *Repository) UpdateDownloader(ctx context.Context, id pgtype.UUID, name,
 		Enabled:        enabled,
 		IsDefault:      isDefault,
 	})
+	return dl, apperrors.FromPg(err, "update downloader %s", id)
 }
 
 func (r *Repository) DeleteDownloader(ctx context.Context, id pgtype.UUID) error {
-	return r.Q.DeleteDownloader(ctx, id)
+	return apperrors.FromPg(r.Q.DeleteDownloader(ctx, id), "delete downloader %s", id)
 }
