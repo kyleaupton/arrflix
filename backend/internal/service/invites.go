@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -22,16 +22,12 @@ func NewInvitesService(r *repo.Repository) *InvitesService {
 func (s *InvitesService) Create(ctx context.Context, email string, invitedBy pgtype.UUID) (dbgen.UserInvite, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
-		return dbgen.UserInvite{}, errors.New("email required")
+		return dbgen.UserInvite{}, apperrors.Validation("invalid invite",
+			apperrors.Field("body.email", "required"),
+		).Op("InvitesService.Create")
 	}
-	invite, err := s.repo.CreateInvite(ctx, email, invitedBy)
-	if err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
-			return dbgen.UserInvite{}, errors.New("email already invited")
-		}
-		return dbgen.UserInvite{}, err
-	}
-	return invite, nil
+	// Repo translates SQLSTATE 23505 unique violation into Conflict; pass through.
+	return s.repo.CreateInvite(ctx, email, invitedBy)
 }
 
 // List returns all invites.
@@ -49,7 +45,12 @@ func (s *InvitesService) Delete(ctx context.Context, id pgtype.UUID) error {
 func (s *InvitesService) CheckAndClaim(ctx context.Context, email string) error {
 	invite, err := s.repo.GetInviteByEmail(ctx, email)
 	if err != nil {
-		return errors.New("no invite found for this email")
+		// Repo's NotFound carries "invite for ... not found"; the user-facing
+		// surface (signup flow) should describe this in invite-claim terms.
+		if apperrors.IsNotFound(err) {
+			return apperrors.Wrap(err, "no invite found for %q", email)
+		}
+		return err
 	}
 	return s.repo.ClaimInvite(ctx, invite.ID)
 }

@@ -2,18 +2,13 @@ package service
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	pw "github.com/kyleaupton/arrflix/internal/password"
 	"github.com/kyleaupton/arrflix/internal/repo"
-)
-
-var (
-	ErrAlreadyInitialized = errors.New("system already initialized")
-	ErrSetupFailed        = errors.New("setup failed")
 )
 
 type SetupSteps struct {
@@ -101,7 +96,7 @@ func (s *SetupService) Initialize(ctx context.Context, email, username, password
 		IsoLevel: pgx.Serializable, // Highest isolation to prevent concurrent setup
 	})
 	if err != nil {
-		return err
+		return apperrors.Internalf("begin tx: %v", err).Op("SetupService.Initialize")
 	}
 	defer tx.Rollback(ctx)
 
@@ -109,32 +104,38 @@ func (s *SetupService) Initialize(ctx context.Context, email, username, password
 	txQueries := s.repo.Q.WithTx(tx)
 	initialized, err := txQueries.GetSystemInitialized(ctx)
 	if err != nil {
-		return err
+		return apperrors.Internalf("check initialized: %v", err).Op("SetupService.Initialize")
 	}
 	if initialized {
-		return ErrAlreadyInitialized
+		return apperrors.Conflictf("system already initialized").
+			Op("SetupService.Initialize")
 	}
 
-	// Validate input
+	// Validate input — collect every field problem before returning.
 	email = strings.TrimSpace(email)
 	username = strings.TrimSpace(username)
+
+	var fields []apperrors.FieldError
 	if email == "" {
-		return errors.New("email required")
+		fields = append(fields, apperrors.Field("body.email", "required"))
 	}
 	if username == "" {
-		return errors.New("username required")
+		fields = append(fields, apperrors.Field("body.username", "required"))
 	}
 	if password == "" {
-		return errors.New("password required")
+		fields = append(fields, apperrors.Field("body.password", "required"))
+	} else if len(password) < 8 {
+		fields = append(fields, apperrors.Field("body.password", "must be at least 8 characters"))
 	}
-	if len(password) < 8 {
-		return errors.New("password must be at least 8 characters")
+	if len(fields) > 0 {
+		return apperrors.Validation("invalid setup input", fields...).
+			Op("SetupService.Initialize")
 	}
 
 	// Hash password
 	passwordHash, err := pw.Hash(password)
 	if err != nil {
-		return errors.New("failed to hash password")
+		return apperrors.Internalf("failed to hash password: %v", err).Op("SetupService.Initialize")
 	}
 
 	// Create admin user within transaction
@@ -145,32 +146,31 @@ func (s *SetupService) Initialize(ctx context.Context, email, username, password
 		IsActive:     true,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
-			return errors.New("email already exists")
-		}
-		return err
+		// Direct SQLC call (in-tx) doesn't go through repo, so route the
+		// pg error through FromPg here so the wire response stays consistent.
+		return apperrors.FromPg(err, "create admin user %q", email)
 	}
 
 	// Assign admin role within transaction
 	role, err := txQueries.GetRoleByName(ctx, "admin")
 	if err != nil {
-		return errors.New("admin role not found")
+		return apperrors.FromPg(err, "admin role not found")
 	}
 	if err := txQueries.AssignRole(ctx, dbgen.AssignRoleParams{
 		UserID: user.ID,
 		RoleID: role.ID,
 	}); err != nil {
-		return err
+		return apperrors.FromPg(err, "assign admin role to user %s", user.ID)
 	}
 
 	// Mark system as initialized (conditional update prevents double-init)
 	if err := txQueries.SetSystemInitialized(ctx); err != nil {
-		return err
+		return apperrors.FromPg(err, "mark system initialized")
 	}
 
 	// Commit transaction
 	if err := tx.Commit(ctx); err != nil {
-		return ErrSetupFailed
+		return apperrors.Internalf("commit setup tx: %v", err).Op("SetupService.Initialize")
 	}
 
 	return nil

@@ -2,15 +2,13 @@ package service
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"path/filepath"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	"github.com/kyleaupton/arrflix/internal/downloader"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/importer"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/mediainfo"
@@ -45,21 +43,23 @@ type ImportResult struct {
 
 func (s *ImportService) ImportMovieFile(ctx context.Context, job dbgen.DownloadJob, sourcePath string) (ImportResult, error) {
 	if !job.MediaItemID.Valid {
-		return ImportResult{}, fmt.Errorf("job missing media_item_id")
+		return ImportResult{}, apperrors.Internalf("download job %s missing media_item_id", job.ID).
+			Op("ImportService.ImportMovieFile").
+			NotRetryable()
 	}
 
 	mediaItem, err := s.repo.GetMediaItem(ctx, job.MediaItemID)
 	if err != nil {
-		return ImportResult{}, fmt.Errorf("get media item: %w", err)
+		return ImportResult{}, err
 	}
 
 	lib, err := s.repo.GetLibrary(ctx, job.LibraryID)
 	if err != nil {
-		return ImportResult{}, fmt.Errorf("get library: %w", err)
+		return ImportResult{}, err
 	}
 	nt, err := s.repo.GetNameTemplate(ctx, job.NameTemplateID)
 	if err != nil {
-		return ImportResult{}, fmt.Errorf("get name template: %w", err)
+		return ImportResult{}, err
 	}
 
 	// Build evaluation context for template rendering
@@ -82,15 +82,21 @@ func (s *ImportService) ImportMovieFile(ctx context.Context, job dbgen.DownloadJ
 		if nt.Type == "series" {
 			showPart, err := template.Render(coalesce(nt.SeriesShowTemplate, ""), templateData)
 			if err != nil {
-				return ImportResult{}, fmt.Errorf("render show template: %w", err)
+				return ImportResult{}, apperrors.Internalf("render show template: %v", err).
+					Op("ImportService.ImportMovieFile").
+					NotRetryable()
 			}
 			seasonPart, err := template.Render(coalesce(nt.SeriesSeasonTemplate, ""), templateData)
 			if err != nil {
-				return ImportResult{}, fmt.Errorf("render season template: %w", err)
+				return ImportResult{}, apperrors.Internalf("render season template: %v", err).
+					Op("ImportService.ImportMovieFile").
+					NotRetryable()
 			}
 			filePart, err := template.Render(nt.Template, templateData)
 			if err != nil {
-				return ImportResult{}, fmt.Errorf("render file template: %w", err)
+				return ImportResult{}, apperrors.Internalf("render file template: %v", err).
+					Op("ImportService.ImportMovieFile").
+					NotRetryable()
 			}
 			rel = filepath.Join(showPart, seasonPart, filePart)
 		} else {
@@ -99,12 +105,16 @@ func (s *ImportService) ImportMovieFile(ctx context.Context, job dbgen.DownloadJ
 			if nt.MovieDirTemplate != nil && *nt.MovieDirTemplate != "" {
 				dirPart, err = template.Render(*nt.MovieDirTemplate, templateData)
 				if err != nil {
-					return ImportResult{}, fmt.Errorf("render movie dir template: %w", err)
+					return ImportResult{}, apperrors.Internalf("render movie dir template: %v", err).
+						Op("ImportService.ImportMovieFile").
+						NotRetryable()
 				}
 			}
 			filePart, err := template.Render(nt.Template, templateData)
 			if err != nil {
-				return ImportResult{}, fmt.Errorf("render file template: %w", err)
+				return ImportResult{}, apperrors.Internalf("render file template: %v", err).
+					Op("ImportService.ImportMovieFile").
+					NotRetryable()
 			}
 			if dirPart != "" {
 				rel = filepath.Join(dirPart, filePart)
@@ -119,21 +129,24 @@ func (s *ImportService) ImportMovieFile(ctx context.Context, job dbgen.DownloadJ
 
 	destRel, err := filepath.Rel(lib.RootPath, dest)
 	if err != nil || strings.HasPrefix(destRel, "..") {
-		return ImportResult{}, fmt.Errorf("compute relative dest: %w", err)
+		return ImportResult{}, apperrors.Internalf("compute relative dest %q: %v", dest, err).
+			Op("ImportService.ImportMovieFile").
+			NotRetryable()
 	}
 
 	method, err := importer.HardlinkOrCopy(sourcePath, dest)
 	if err != nil {
-		return ImportResult{}, err
+		return ImportResult{}, apperrors.Internalf("hardlink or copy %q -> %q: %v", sourcePath, dest, err).
+			Op("ImportService.ImportMovieFile")
 	}
 
 	// Upsert-ish media_file by path
 	mf, err := s.repo.GetMediaFileByLibraryAndPath(ctx, lib.ID, destRel)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if apperrors.IsNotFound(err) {
 			mf, err = s.repo.CreateMediaFile(ctx, lib.ID, mediaItem.ID, nil, destRel)
 			if err != nil {
-				return ImportResult{}, fmt.Errorf("create media file: %w", err)
+				return ImportResult{}, err
 			}
 			// Create file state for the new file
 			if _, err := s.repo.UpsertMediaFileState(ctx, mf.ID, true, nil); err != nil {
@@ -151,7 +164,7 @@ func (s *ImportService) ImportMovieFile(ctx context.Context, job dbgen.DownloadJ
 				s.log.Warn().Err(err).Msg("Failed to record import history")
 			}
 		} else {
-			return ImportResult{}, fmt.Errorf("get media file: %w", err)
+			return ImportResult{}, err
 		}
 	}
 
@@ -167,30 +180,35 @@ func (s *ImportService) ImportMovieFile(ctx context.Context, job dbgen.DownloadJ
 
 func (s *ImportService) ImportSeriesJob(ctx context.Context, job dbgen.DownloadJob, downloaderClient downloader.Client) ([]ImportResult, error) {
 	if !job.MediaItemID.Valid {
-		return nil, fmt.Errorf("job missing media_item_id")
+		return nil, apperrors.Internalf("download job %s missing media_item_id", job.ID).
+			Op("ImportService.ImportSeriesJob").
+			NotRetryable()
 	}
 
 	mediaItem, err := s.repo.GetMediaItem(ctx, job.MediaItemID)
 	if err != nil {
-		return nil, fmt.Errorf("get media item: %w", err)
+		return nil, err
 	}
 
 	lib, err := s.repo.GetLibrary(ctx, job.LibraryID)
 	if err != nil {
-		return nil, fmt.Errorf("get library: %w", err)
+		return nil, err
 	}
 	nt, err := s.repo.GetNameTemplate(ctx, job.NameTemplateID)
 	if err != nil {
-		return nil, fmt.Errorf("get name template: %w", err)
+		return nil, err
 	}
 
 	if job.DownloaderExternalID == nil {
-		return nil, fmt.Errorf("job missing downloader_external_id")
+		return nil, apperrors.Internalf("download job %s missing downloader_external_id", job.ID).
+			Op("ImportService.ImportSeriesJob").
+			NotRetryable()
 	}
 
 	files, err := downloaderClient.ListFiles(ctx, *job.DownloaderExternalID)
 	if err != nil {
-		return nil, fmt.Errorf("list downloader files: %w", err)
+		return nil, apperrors.BadGatewayf("downloader list files for job %s: %v", job.ID, err).
+			Op("ImportService.ImportSeriesJob")
 	}
 
 	// Derive target season and episode from episode_id (season is derived from episode)
@@ -217,13 +235,15 @@ func (s *ImportService) ImportSeriesJob(ctx context.Context, job dbgen.DownloadJ
 		Msg("Matched files to episodes")
 
 	if len(matchedFiles) == 0 {
-		return nil, fmt.Errorf("no files matched target episodes")
+		return nil, apperrors.Conflictf("download job %s: no files matched target episodes", job.ID).
+			Op("ImportService.ImportSeriesJob")
 	}
 
 	// Fetch downloader details to get SavePath
 	dlItem, err := downloaderClient.Get(ctx, *job.DownloaderExternalID)
 	if err != nil {
-		return nil, fmt.Errorf("get downloader item: %w", err)
+		return nil, apperrors.BadGatewayf("downloader get for job %s: %v", job.ID, err).
+			Op("ImportService.ImportSeriesJob")
 	}
 
 	var results []ImportResult

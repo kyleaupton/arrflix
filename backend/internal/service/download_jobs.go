@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/jobs/state"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -58,7 +59,7 @@ func (s *DownloadJobsService) ListBySeries(ctx context.Context, tmdbSeriesID int
 func (s *DownloadJobsService) Cancel(ctx context.Context, id pgtype.UUID) (dbgen.DownloadJob, error) {
 	job, err := s.repo.CancelDownloadJob(ctx, id)
 	if err != nil {
-		return dbgen.DownloadJob{}, fmt.Errorf("cancel job: %w", err)
+		return dbgen.DownloadJob{}, err
 	}
 
 	// Also cancel all pending import tasks for this job
@@ -80,16 +81,17 @@ func (s *DownloadJobsService) RetryDownload(ctx context.Context, id pgtype.UUID)
 	// Fetch existing job to validate state
 	job, err := s.repo.GetDownloadJob(ctx, id)
 	if err != nil {
-		return dbgen.GetDownloadJobWithImportSummaryRow{}, fmt.Errorf("get job: %w", err)
+		return dbgen.GetDownloadJobWithImportSummaryRow{}, err
 	}
 
 	if !s.sm.CanRetryStr(job.Status) {
-		return dbgen.GetDownloadJobWithImportSummaryRow{}, fmt.Errorf("cannot retry job in status %q", job.Status)
+		return dbgen.GetDownloadJobWithImportSummaryRow{}, apperrors.Conflictf("download job %s cannot be retried from status %q", id, job.Status).
+			Op("DownloadJobsService.RetryDownload")
 	}
 
 	newJob, err := s.repo.RetryDownloadJob(ctx, id)
 	if err != nil {
-		return dbgen.GetDownloadJobWithImportSummaryRow{}, fmt.Errorf("retry job: %w", err)
+		return dbgen.GetDownloadJobWithImportSummaryRow{}, err
 	}
 
 	// Log retry_requested event on the new job
@@ -122,7 +124,7 @@ type ReimportResult struct {
 func (s *DownloadJobsService) ReimportFailed(ctx context.Context, jobID pgtype.UUID, all bool) (ReimportResult, error) {
 	tasks, err := s.repo.ListImportTasksByDownloadJob(ctx, jobID)
 	if err != nil {
-		return ReimportResult{}, fmt.Errorf("list import tasks: %w", err)
+		return ReimportResult{}, err
 	}
 
 	// Filter to root tasks only (no previous_task_id) and terminal states
@@ -163,7 +165,7 @@ func (s *DownloadJobsService) ReimportFailed(ctx context.Context, jobID pgtype.U
 			NameTemplateID: task.NameTemplateID,
 		})
 		if err != nil {
-			return ReimportResult{}, fmt.Errorf("create reimport task: %w", err)
+			return ReimportResult{}, err
 		}
 
 		// Log the reimport event

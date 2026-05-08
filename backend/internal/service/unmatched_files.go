@@ -3,12 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -74,12 +72,12 @@ func (s *UnmatchedFilesService) List(ctx context.Context, params ListParams) (Li
 		Offset:    offset,
 	})
 	if err != nil {
-		return ListResult{}, fmt.Errorf("list unmatched files: %w", err)
+		return ListResult{}, err
 	}
 
 	count, err := s.repo.CountUnmatchedFiles(ctx, params.LibraryID)
 	if err != nil {
-		return ListResult{}, fmt.Errorf("count unmatched files: %w", err)
+		return ListResult{}, err
 	}
 
 	items := make([]UnmatchedFileResponse, 0, len(files))
@@ -99,20 +97,17 @@ func (s *UnmatchedFilesService) List(ctx context.Context, params ListParams) (Li
 func (s *UnmatchedFilesService) Get(ctx context.Context, id pgtype.UUID) (UnmatchedFileResponse, error) {
 	file, err := s.repo.GetUnmatchedFile(ctx, id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return UnmatchedFileResponse{}, fmt.Errorf("unmatched file not found")
-		}
-		return UnmatchedFileResponse{}, fmt.Errorf("get unmatched file: %w", err)
+		return UnmatchedFileResponse{}, err
 	}
 	return s.toResponse(file), nil
 }
 
 // MatchRequest contains the parameters for matching an unmatched file
 type MatchRequest struct {
-	TmdbID    int64  `json:"tmdbId"`
-	Type      string `json:"type"`      // movie or series
-	Season    *int   `json:"season"`    // for series
-	Episode   *int   `json:"episode"`   // for series
+	TmdbID  int64  `json:"tmdbId"`
+	Type    string `json:"type"`    // movie or series
+	Season  *int   `json:"season"`  // for series
+	Episode *int   `json:"episode"` // for series
 }
 
 // Match manually matches an unmatched file to a media item
@@ -120,15 +115,13 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 	// Get the unmatched file
 	unmatched, err := s.repo.GetUnmatchedFile(ctx, id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return dbgen.MediaFile{}, fmt.Errorf("unmatched file not found")
-		}
-		return dbgen.MediaFile{}, fmt.Errorf("get unmatched file: %w", err)
+		return dbgen.MediaFile{}, err
 	}
 
 	// Check if already resolved
 	if unmatched.ResolvedAt.Valid {
-		return dbgen.MediaFile{}, fmt.Errorf("file already resolved")
+		return dbgen.MediaFile{}, apperrors.Conflictf("unmatched file %s already resolved", id).
+			Op("UnmatchedFilesService.Match")
 	}
 
 	// Upsert media item
@@ -156,7 +149,7 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 
 	mediaItem, err := s.repo.UpsertMediaItem(ctx, req.Type, title, year, &req.TmdbID)
 	if err != nil {
-		return dbgen.MediaFile{}, fmt.Errorf("upsert media item: %w", err)
+		return dbgen.MediaFile{}, err
 	}
 
 	// For series, upsert season and episode
@@ -164,13 +157,13 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 	if req.Type == "series" && req.Season != nil {
 		season, err := s.repo.UpsertSeason(ctx, mediaItem.ID, int32(*req.Season), pgtype.Date{})
 		if err != nil {
-			return dbgen.MediaFile{}, fmt.Errorf("upsert season: %w", err)
+			return dbgen.MediaFile{}, err
 		}
 
 		if req.Episode != nil {
 			episode, err := s.repo.UpsertEpisode(ctx, season.ID, int32(*req.Episode), nil, pgtype.Date{}, nil, nil)
 			if err != nil {
-				return dbgen.MediaFile{}, fmt.Errorf("upsert episode: %w", err)
+				return dbgen.MediaFile{}, err
 			}
 			episodeID = &episode.ID
 		}
@@ -179,7 +172,7 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 	// Create media file
 	mediaFile, err := s.repo.CreateMediaFile(ctx, unmatched.LibraryID, mediaItem.ID, episodeID, unmatched.Path)
 	if err != nil {
-		return dbgen.MediaFile{}, fmt.Errorf("create media file: %w", err)
+		return dbgen.MediaFile{}, err
 	}
 
 	// Create file state
@@ -207,12 +200,8 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 
 // Dismiss marks an unmatched file as dismissed (resolved without matching)
 func (s *UnmatchedFilesService) Dismiss(ctx context.Context, id pgtype.UUID) error {
-	_, err := s.repo.DismissUnmatchedFile(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("unmatched file not found")
-		}
-		return fmt.Errorf("dismiss unmatched file: %w", err)
+	if _, err := s.repo.DismissUnmatchedFile(ctx, id); err != nil {
+		return err
 	}
 	return nil
 }
@@ -221,16 +210,13 @@ func (s *UnmatchedFilesService) Dismiss(ctx context.Context, id pgtype.UUID) err
 func (s *UnmatchedFilesService) RefreshSuggestions(ctx context.Context, id pgtype.UUID) (UnmatchedFileResponse, error) {
 	file, err := s.repo.GetUnmatchedFile(ctx, id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return UnmatchedFileResponse{}, fmt.Errorf("unmatched file not found")
-		}
-		return UnmatchedFileResponse{}, fmt.Errorf("get unmatched file: %w", err)
+		return UnmatchedFileResponse{}, err
 	}
 
 	// Get library to determine type
 	lib, err := s.repo.GetLibrary(ctx, file.LibraryID)
 	if err != nil {
-		return UnmatchedFileResponse{}, fmt.Errorf("get library: %w", err)
+		return UnmatchedFileResponse{}, err
 	}
 
 	// Generate suggestions based on filename
@@ -240,7 +226,7 @@ func (s *UnmatchedFilesService) RefreshSuggestions(ctx context.Context, id pgtyp
 	suggestionsJSON, _ := json.Marshal(suggestions)
 	file, err = s.repo.UpdateUnmatchedFileSuggestions(ctx, id, suggestionsJSON)
 	if err != nil {
-		return UnmatchedFileResponse{}, fmt.Errorf("update suggestions: %w", err)
+		return UnmatchedFileResponse{}, err
 	}
 
 	return s.toResponse(file), nil

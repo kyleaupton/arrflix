@@ -3,11 +3,11 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/url"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -31,21 +31,33 @@ func (s *DownloadersService) GetDefault(ctx context.Context, protocol string) (d
 	return s.repo.GetDefaultDownloader(ctx, protocol)
 }
 
-func (s *DownloadersService) Create(ctx context.Context, name, downloaderType, protocol, downloaderURL string, username, password *string, configJSON map[string]interface{}, enabled, isDefault bool) (dbgen.Downloader, error) {
+// validateDownloaderInput collects every field-level problem with the supplied
+// downloader payload before returning. Returns nil when the input is valid.
+func validateDownloaderInput(name, downloaderType, protocol, downloaderURL string) *apperrors.Error {
+	var fields []apperrors.FieldError
 	if name == "" {
-		return dbgen.Downloader{}, errors.New("name required")
+		fields = append(fields, apperrors.Field("body.name", "required"))
 	}
 	if downloaderType != "qbittorrent" {
-		return dbgen.Downloader{}, errors.New("invalid downloader type")
+		fields = append(fields, apperrors.Field("body.type", "must be 'qbittorrent'"))
 	}
 	if protocol != "torrent" && protocol != "usenet" {
-		return dbgen.Downloader{}, errors.New("protocol must be 'torrent' or 'usenet'")
+		fields = append(fields, apperrors.Field("body.protocol", "must be 'torrent' or 'usenet'"))
 	}
 	if downloaderURL == "" {
-		return dbgen.Downloader{}, errors.New("url required")
+		fields = append(fields, apperrors.Field("body.url", "required"))
+	} else if _, err := url.Parse(downloaderURL); err != nil {
+		fields = append(fields, apperrors.Field("body.url", "invalid url format"))
 	}
-	if _, err := url.Parse(downloaderURL); err != nil {
-		return dbgen.Downloader{}, errors.New("invalid url format")
+	if len(fields) > 0 {
+		return apperrors.Validation("invalid downloader", fields...)
+	}
+	return nil
+}
+
+func (s *DownloadersService) Create(ctx context.Context, name, downloaderType, protocol, downloaderURL string, username, password *string, configJSON map[string]interface{}, enabled, isDefault bool) (dbgen.Downloader, error) {
+	if err := validateDownloaderInput(name, downloaderType, protocol, downloaderURL); err != nil {
+		return dbgen.Downloader{}, err.Op("DownloadersService.Create")
 	}
 
 	// If setting as default, unset other defaults of same protocol
@@ -66,7 +78,9 @@ func (s *DownloadersService) Create(ctx context.Context, name, downloaderType, p
 		var err error
 		configJSONBytes, err = json.Marshal(configJSON)
 		if err != nil {
-			return dbgen.Downloader{}, errors.New("invalid config_json")
+			return dbgen.Downloader{}, apperrors.Validation("invalid downloader",
+				apperrors.Field("body.config_json", "must be valid JSON"),
+			).Op("DownloadersService.Create")
 		}
 	}
 
@@ -74,20 +88,8 @@ func (s *DownloadersService) Create(ctx context.Context, name, downloaderType, p
 }
 
 func (s *DownloadersService) Update(ctx context.Context, id pgtype.UUID, name, downloaderType, protocol, downloaderURL string, username, password *string, configJSON map[string]interface{}, enabled, isDefault bool) (dbgen.Downloader, error) {
-	if name == "" {
-		return dbgen.Downloader{}, errors.New("name required")
-	}
-	if downloaderType != "qbittorrent" {
-		return dbgen.Downloader{}, errors.New("invalid downloader type")
-	}
-	if protocol != "torrent" && protocol != "usenet" {
-		return dbgen.Downloader{}, errors.New("protocol must be 'torrent' or 'usenet'")
-	}
-	if downloaderURL == "" {
-		return dbgen.Downloader{}, errors.New("url required")
-	}
-	if _, err := url.Parse(downloaderURL); err != nil {
-		return dbgen.Downloader{}, errors.New("invalid url format")
+	if err := validateDownloaderInput(name, downloaderType, protocol, downloaderURL); err != nil {
+		return dbgen.Downloader{}, err.Op("DownloadersService.Update")
 	}
 
 	// If setting as default, unset other defaults of same protocol
@@ -108,7 +110,9 @@ func (s *DownloadersService) Update(ctx context.Context, id pgtype.UUID, name, d
 		var err error
 		configJSONBytes, err = json.Marshal(configJSON)
 		if err != nil {
-			return dbgen.Downloader{}, errors.New("invalid config_json")
+			return dbgen.Downloader{}, apperrors.Validation("invalid downloader",
+				apperrors.Field("body.config_json", "must be valid JSON"),
+			).Op("DownloadersService.Update")
 		}
 	}
 
@@ -117,7 +121,7 @@ func (s *DownloadersService) Update(ctx context.Context, id pgtype.UUID, name, d
 	if password == nil {
 		existing, err := s.repo.GetDownloader(ctx, id)
 		if err != nil {
-			return dbgen.Downloader{}, errors.New("failed to fetch existing downloader: " + err.Error())
+			return dbgen.Downloader{}, err
 		}
 		passwordToUse = existing.Password
 	}
@@ -128,4 +132,3 @@ func (s *DownloadersService) Update(ctx context.Context, id pgtype.UUID, name, d
 func (s *DownloadersService) Delete(ctx context.Context, id pgtype.UUID) error {
 	return s.repo.DeleteDownloader(ctx, id)
 }
-

@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -93,7 +94,7 @@ func (h *Setup) Initialize(c echo.Context) error {
 	ctx := c.Request().Context()
 	err := h.svc.Setup.Initialize(ctx, req.Email, req.Username, req.Password)
 	if err != nil {
-		if err == service.ErrAlreadyInitialized {
+		if apperrors.IsConflict(err) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "system already initialized"})
 		}
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})

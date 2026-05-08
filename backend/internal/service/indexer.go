@@ -13,6 +13,7 @@ import (
 	"golift.io/starr/prowlarr"
 
 	"github.com/kyleaupton/arrflix/internal/config"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
@@ -44,7 +45,8 @@ func (s *IndexerService) ListConfiguredIndexers(ctx context.Context) ([]*prowlar
 	configuredIndexers, err := s.prowlarr.GetIndexersContext(ctx)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("Failed to list configured indexers")
-		return nil, err
+		return nil, apperrors.BadGatewayf("prowlarr list indexers: %v", err).
+			Op("IndexerService.ListConfiguredIndexers")
 	}
 
 	return configuredIndexers, nil
@@ -61,13 +63,16 @@ func (s *IndexerService) GetSchema(ctx context.Context) ([]any, error) {
 		"User-Agent":   "Arrflix/1.0",
 	})
 	if err != nil {
-		return nil, err
+		return nil, apperrors.BadGatewayf("prowlarr indexer schema: %v", err).
+			Op("IndexerService.GetSchema")
 	}
 
 	var schemaData []any
 	err = json.Unmarshal(schema, &schemaData)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.Internalf("unmarshal prowlarr schema: %v", err).
+			Op("IndexerService.GetSchema").
+			NotRetryable()
 	}
 
 	return schemaData, nil
@@ -77,7 +82,8 @@ func (s *IndexerService) GetSchema(ctx context.Context) ([]any, error) {
 func (s *IndexerService) GetIndexer(ctx context.Context, indexerID int64) (*prowlarr.IndexerOutput, error) {
 	res, err := s.prowlarr.GetIndexerContext(ctx, indexerID)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.BadGatewayf("prowlarr get indexer %d: %v", indexerID, err).
+			Op("IndexerService.GetIndexer")
 	}
 
 	return res, nil
@@ -94,7 +100,8 @@ func (s *IndexerService) SaveIndexerConfig(ctx context.Context, input *prowlarr.
 		res, err = s.prowlarr.UpdateIndexerContext(ctx, input, false)
 		if err != nil {
 			s.logger.Error().Int64("indexerID", input.ID).Err(err).Msg("Failed to update indexer")
-			return nil, err
+			return nil, apperrors.BadGatewayf("prowlarr update indexer %d: %v", input.ID, err).
+				Op("IndexerService.SaveIndexerConfig")
 		}
 		s.logger.Info().Int64("indexerID", input.ID).Msg("Successfully updated indexer")
 	} else {
@@ -102,7 +109,8 @@ func (s *IndexerService) SaveIndexerConfig(ctx context.Context, input *prowlarr.
 		res, err = s.prowlarr.AddIndexerContext(ctx, input)
 		if err != nil {
 			s.logger.Error().Str("name", input.Name).Err(err).Msg("Failed to add indexer")
-			return nil, err
+			return nil, apperrors.BadGatewayf("prowlarr add indexer %q: %v", input.Name, err).
+				Op("IndexerService.SaveIndexerConfig")
 		}
 		s.logger.Info().Int64("indexerID", res.ID).Str("name", input.Name).Msg("Successfully added indexer")
 	}
@@ -117,7 +125,8 @@ func (s *IndexerService) DeleteIndexer(ctx context.Context, indexerID int64) err
 	err := s.prowlarr.DeleteIndexerContext(ctx, indexerID)
 	if err != nil {
 		s.logger.Error().Int64("indexerID", indexerID).Err(err).Msg("Failed to delete indexer")
-		return err
+		return apperrors.BadGatewayf("prowlarr delete indexer %d: %v", indexerID, err).
+			Op("IndexerService.DeleteIndexer")
 	}
 
 	s.logger.Info().Int64("indexerID", indexerID).Msg("Successfully deleted indexer")
@@ -132,7 +141,8 @@ func (s *IndexerService) ToggleIndexer(ctx context.Context, indexerID int64) (*p
 	indexer, err := s.prowlarr.GetIndexerContext(ctx, indexerID)
 	if err != nil {
 		s.logger.Error().Int64("indexerID", indexerID).Err(err).Msg("Failed to get indexer")
-		return nil, fmt.Errorf("get indexer: %w", err)
+		return nil, apperrors.BadGatewayf("prowlarr get indexer %d: %v", indexerID, err).
+			Op("IndexerService.ToggleIndexer")
 	}
 
 	// Convert FieldOutput to FieldInput
@@ -163,7 +173,8 @@ func (s *IndexerService) ToggleIndexer(ctx context.Context, indexerID int64) (*p
 	result, err := s.SaveIndexerConfig(ctx, input)
 	if err != nil {
 		s.logger.Error().Int64("indexerID", indexerID).Err(err).Msg("Failed to toggle indexer")
-		return nil, fmt.Errorf("save indexer config: %w", err)
+		// SaveIndexerConfig already returns a typed error.
+		return nil, err
 	}
 
 	s.logger.Info().Int64("indexerID", indexerID).Bool("enabled", result.Enable).Msg("Successfully toggled indexer")
@@ -177,7 +188,9 @@ func (s *IndexerService) Action(ctx context.Context, actionName string, input in
 	// Convert input to JSON bytes
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling input to JSON: %w", err)
+		return nil, apperrors.Internalf("marshal indexer action input: %v", err).
+			Op("IndexerService.Action").
+			NotRetryable()
 	}
 
 	// Add the missing headers that Prowlarr expects
@@ -198,14 +211,17 @@ func (s *IndexerService) Action(ctx context.Context, actionName string, input in
 	actionBytes, err := post(url, headers, bytes.NewReader(inputJSON))
 	if err != nil {
 		s.logger.Error().Err(err).Str("action", actionName).Msg("Failed to perform indexer action")
-		return nil, err
+		return nil, apperrors.BadGatewayf("prowlarr indexer action %q: %v", actionName, err).
+			Op("IndexerService.Action")
 	}
 
 	// Parse the JSON response to avoid base64 encoding when serializing
 	var action any
 	err = json.Unmarshal(actionBytes, &action)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshaling action response: %w", err)
+		return nil, apperrors.Internalf("unmarshal indexer action response: %v", err).
+			Op("IndexerService.Action").
+			NotRetryable()
 	}
 
 	return action, nil
@@ -235,7 +251,8 @@ func (s *IndexerService) TestIndexerByID(ctx context.Context, indexerID int64) (
 	// Get the indexer config from Prowlarr
 	indexer, err := s.prowlarr.GetIndexerContext(ctx, indexerID)
 	if err != nil {
-		return nil, fmt.Errorf("get indexer: %w", err)
+		return nil, apperrors.BadGatewayf("prowlarr get indexer %d: %v", indexerID, err).
+			Op("IndexerService.TestIndexerByID")
 	}
 
 	// Convert to IndexerInput for testing
@@ -273,7 +290,8 @@ func (s *IndexerService) TestAllIndexers(ctx context.Context) ([]*model.IndexerB
 	// First, fetch all configured indexers to get their names
 	indexers, err := s.prowlarr.GetIndexersContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get indexers: %w", err)
+		return nil, apperrors.BadGatewayf("prowlarr list indexers: %v", err).
+			Op("IndexerService.TestAllIndexers")
 	}
 
 	// Create a map of indexer ID to name
@@ -292,13 +310,16 @@ func (s *IndexerService) TestAllIndexers(ctx context.Context) ([]*model.IndexerB
 
 	responseBytes, err := post(url, headers, nil)
 	if err != nil {
-		return nil, fmt.Errorf("testall request failed: %w", err)
+		return nil, apperrors.BadGatewayf("prowlarr testall: %v", err).
+			Op("IndexerService.TestAllIndexers")
 	}
 
 	// Parse Prowlarr response (returns array of test results)
 	var prowlarrResults []map[string]interface{}
 	if err := json.Unmarshal(responseBytes, &prowlarrResults); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
+		return nil, apperrors.Internalf("parse prowlarr testall response: %v", err).
+			Op("IndexerService.TestAllIndexers").
+			NotRetryable()
 	}
 
 	// Convert to our result type
@@ -342,6 +363,9 @@ func (s *IndexerService) TestAllIndexers(ctx context.Context) ([]*model.IndexerB
 
 // httpRequest makes an HTTP request to the given URL and returns the response body as a []byte.
 // It returns an error if the request fails or the response status is not 2xx.
+// The errors are intentionally untyped here; the public IndexerService methods
+// that use this helper wrap the result into typed BadGateway errors at the
+// service boundary.
 func httpRequest(method, url string, headers map[string]string, body io.Reader) ([]byte, error) {
 	client := &http.Client{
 		Timeout: 60 * time.Second, // good default timeout
@@ -349,7 +373,7 @@ func httpRequest(method, url string, headers map[string]string, body io.Reader) 
 
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, apperrors.Internalf("create request: %v", err).NotRetryable()
 	}
 
 	// Optional headers (can pass nil if none)
@@ -359,18 +383,18 @@ func httpRequest(method, url string, headers map[string]string, body io.Reader) 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("performing request: %w", err)
+		return nil, apperrors.BadGatewayf("perform request: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+		return nil, apperrors.BadGatewayf("unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
+		return nil, apperrors.BadGatewayf("read response: %v", err)
 	}
 
 	return responseBody, nil

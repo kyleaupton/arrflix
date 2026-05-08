@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -14,18 +13,15 @@ import (
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/guessit"
 	"github.com/kyleaupton/arrflix/internal/identity"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
-
-// ErrScanAlreadyRunning is returned when a scan is already in progress for a library.
-var ErrScanAlreadyRunning = errors.New("scan already running for this library")
 
 // scanRepo is the subset of repo.Repository used by the scanner.
 type scanRepo interface {
@@ -120,14 +116,15 @@ func (k tmdbSearchKey) String() string {
 }
 
 // StartScan kicks off an async library scan. It returns the scan ID immediately.
-// If a scan is already running for the given library, it returns ErrScanAlreadyRunning.
+// If a scan is already running for the given library, it returns a Conflict error.
 func (s *ScannerService) StartScan(ctx context.Context, libraryID pgtype.UUID) (string, error) {
 	libKey := libraryID.String()
 
 	// Concurrency guard: only one scan per library at a time.
 	scanID := uuid.NewString()
 	if _, loaded := s.running.LoadOrStore(libKey, scanID); loaded {
-		return "", ErrScanAlreadyRunning
+		return "", apperrors.Conflictf("scan already running for library %s", libraryID).
+			Op("ScannerService.StartScan")
 	}
 
 	// Validate the library exists before launching the goroutine.
@@ -283,7 +280,7 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 				stats.FilesSkipped++
 				return nil
 			}
-			if dbErr != pgx.ErrNoRows {
+			if !apperrors.IsNotFound(dbErr) {
 				return dbErr
 			}
 		}
@@ -435,7 +432,9 @@ func (s *ScannerService) resolveTmdbID(ctx context.Context, library dbgen.Librar
 		id = *ident.ImdbID
 		provider = "imdb_id"
 	} else {
-		return 0, fmt.Errorf("identity has no provider IDs")
+		return 0, apperrors.Internalf("embedded identity has no provider IDs").
+			Op("ScannerService.resolveTmdbID").
+			NotRetryable()
 	}
 
 	res, err := s.tmdb.FindByID(ctx, id, provider)
@@ -454,7 +453,8 @@ func (s *ScannerService) resolveTmdbID(ctx context.Context, library dbgen.Librar
 		}
 	}
 
-	return 0, fmt.Errorf("no TMDB results for %s=%s", provider, id)
+	return 0, apperrors.NotFoundf("no TMDB results for %s=%q", provider, id).
+		Op("ScannerService.resolveTmdbID")
 }
 
 // ensureMediaItem looks up or creates a media item for the given TMDB ID.
@@ -464,7 +464,7 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library dbgen.Libr
 	if err == nil {
 		return existing.ID, false, nil
 	}
-	if err != pgx.ErrNoRows {
+	if !apperrors.IsNotFound(err) {
 		return pgtype.UUID{}, false, err
 	}
 
@@ -480,12 +480,14 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library dbgen.Libr
 		}
 		title = movie.Title
 		if movie.ReleaseDate == "" {
-			return pgtype.UUID{}, false, fmt.Errorf("movie has empty release date")
+			return pgtype.UUID{}, false, apperrors.BadGatewayf("tmdb movie %d has empty release date", tmdbID).
+				Op("ScannerService.ensureMediaItem")
 		}
 		yearStr := strings.Split(movie.ReleaseDate, "-")[0]
 		year64, parseErr := strconv.ParseInt(yearStr, 10, 32)
 		if parseErr != nil {
-			return pgtype.UUID{}, false, parseErr
+			return pgtype.UUID{}, false, apperrors.BadGatewayf("tmdb movie %d release date %q unparseable: %v", tmdbID, movie.ReleaseDate, parseErr).
+				Op("ScannerService.ensureMediaItem")
 		}
 		year = int32(year64)
 
@@ -496,12 +498,14 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library dbgen.Libr
 		}
 		title = tv.Name
 		if tv.FirstAirDate == "" {
-			return pgtype.UUID{}, false, fmt.Errorf("series has empty first air date")
+			return pgtype.UUID{}, false, apperrors.BadGatewayf("tmdb series %d has empty first air date", tmdbID).
+				Op("ScannerService.ensureMediaItem")
 		}
 		yearStr := strings.Split(tv.FirstAirDate, "-")[0]
 		year64, parseErr := strconv.ParseInt(yearStr, 10, 32)
 		if parseErr != nil {
-			return pgtype.UUID{}, false, parseErr
+			return pgtype.UUID{}, false, apperrors.BadGatewayf("tmdb series %d first air date %q unparseable: %v", tmdbID, tv.FirstAirDate, parseErr).
+				Op("ScannerService.ensureMediaItem")
 		}
 		year = int32(year64)
 	}
@@ -538,7 +542,7 @@ func (s *ScannerService) processIdentifiedFile(ctx context.Context, library dbge
 
 	mf, err := s.repo.CreateMediaFile(ctx, library.ID, mediaItemID, episodeID, f.RelPath)
 	if err != nil {
-		return created, false, fmt.Errorf("create media file: %w", err)
+		return created, false, err
 	}
 
 	if _, err := s.repo.UpsertMediaFileState(ctx, mf.ID, true, f.FileSize); err != nil {
@@ -562,7 +566,8 @@ func (s *ScannerService) processIdentifiedFile(ctx context.Context, library dbge
 // either auto-matches or creates unmatched entries with suggestions.
 func (s *ScannerService) processWithGuessit(ctx context.Context, library dbgen.Library, files []collectedFile) ([]identifiedFile, []unmatchedFileEntry, error) {
 	if s.guessit == nil || !s.guessit.Healthy(ctx) {
-		return nil, nil, fmt.Errorf("guessit sidecar unavailable")
+		return nil, nil, apperrors.BadGatewayf("guessit sidecar unavailable").
+			Op("ScannerService.processWithGuessit")
 	}
 
 	// Build guessit input strings
@@ -581,7 +586,8 @@ func (s *ScannerService) processWithGuessit(ctx context.Context, library dbgen.L
 		}
 		chunk, err := s.guessit.ParseBatch(ctx, inputs[i:end])
 		if err != nil {
-			return nil, nil, fmt.Errorf("guessit batch parse: %w", err)
+			return nil, nil, apperrors.BadGatewayf("guessit batch parse: %v", err).
+				Op("ScannerService.processWithGuessit")
 		}
 		allResults = append(allResults, chunk...)
 	}

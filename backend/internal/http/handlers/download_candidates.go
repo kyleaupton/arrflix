@@ -1,11 +1,11 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/labstack/echo/v4"
@@ -129,7 +129,7 @@ func (h *DownloadCandidates) PreviewCandidate(c echo.Context) error {
 	ctx := c.Request().Context()
 	trace, err := h.svc.DownloadCandidates.EvaluateCandidate(ctx, movieID, req.IndexerID, req.GUID)
 	if err != nil {
-		if errors.Is(err, service.ErrCandidateNotFound) || errors.Is(err, service.ErrCandidateExpired) {
+		if apperrors.IsNotFound(err) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -168,7 +168,7 @@ func (h *DownloadCandidates) PreviewSeriesCandidate(c echo.Context) error {
 	ctx := c.Request().Context()
 	trace, err := h.svc.DownloadCandidates.EvaluateCandidate(ctx, seriesID, req.IndexerID, req.GUID)
 	if err != nil {
-		if errors.Is(err, service.ErrCandidateNotFound) || errors.Is(err, service.ErrCandidateExpired) {
+		if apperrors.IsNotFound(err) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -207,7 +207,7 @@ func (h *DownloadCandidates) DownloadCandidate(c echo.Context) error {
 	ctx := c.Request().Context()
 	trace, job, err := h.svc.DownloadCandidates.EnqueueCandidate(ctx, movieID, req.IndexerID, req.GUID)
 	if err != nil {
-		if errors.Is(err, service.ErrCandidateNotFound) || errors.Is(err, service.ErrCandidateExpired) {
+		if apperrors.IsNotFound(err) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -249,7 +249,7 @@ func (h *DownloadCandidates) DownloadSeriesCandidate(c echo.Context) error {
 	ctx := c.Request().Context()
 	trace, job, err := h.svc.DownloadCandidates.EnqueueSeriesCandidate(ctx, seriesID, req.IndexerID, req.GUID, req.Season, req.Episode)
 	if err != nil {
-		if errors.Is(err, service.ErrCandidateNotFound) || errors.Is(err, service.ErrCandidateExpired) {
+		if apperrors.IsNotFound(err) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})

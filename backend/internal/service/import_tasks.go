@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/jobs/state"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -77,19 +77,15 @@ func (s *ImportTasksService) GetHistory(ctx context.Context, id pgtype.UUID) ([]
 func (s *ImportTasksService) Cancel(ctx context.Context, id pgtype.UUID) (dbgen.ImportTask, error) {
 	task, err := s.repo.GetImportTask(ctx, id)
 	if err != nil {
-		return dbgen.ImportTask{}, fmt.Errorf("get task: %w", err)
+		return dbgen.ImportTask{}, err
 	}
 
 	if !s.sm.CanTransitionStr(task.Status, "cancelled") {
-		return dbgen.ImportTask{}, errors.New("task cannot be cancelled from current status")
+		return dbgen.ImportTask{}, apperrors.Conflictf("import task %s cannot be cancelled from status %q", id, task.Status).
+			Op("ImportTasksService.Cancel")
 	}
 
-	updated, err := s.repo.CancelImportTask(ctx, id)
-	if err != nil {
-		return dbgen.ImportTask{}, fmt.Errorf("cancel task: %w", err)
-	}
-
-	return updated, nil
+	return s.repo.CancelImportTask(ctx, id)
 }
 
 // Reimport creates a new import task for an existing completed or failed task.
@@ -98,11 +94,12 @@ func (s *ImportTasksService) Cancel(ctx context.Context, id pgtype.UUID) (dbgen.
 func (s *ImportTasksService) Reimport(ctx context.Context, id pgtype.UUID) (dbgen.ImportTask, error) {
 	task, err := s.repo.GetImportTask(ctx, id)
 	if err != nil {
-		return dbgen.ImportTask{}, fmt.Errorf("get task: %w", err)
+		return dbgen.ImportTask{}, err
 	}
 
 	if !s.sm.CanReimportStr(task.Status) {
-		return dbgen.ImportTask{}, errors.New("task must be completed or failed to reimport")
+		return dbgen.ImportTask{}, apperrors.Conflictf("import task %s must be completed or failed to reimport (status %q)", id, task.Status).
+			Op("ImportTasksService.Reimport")
 	}
 
 	// Create new task with previous_task_id set
@@ -117,7 +114,7 @@ func (s *ImportTasksService) Reimport(ctx context.Context, id pgtype.UUID) (dbge
 		NameTemplateID: task.NameTemplateID,
 	})
 	if err != nil {
-		return dbgen.ImportTask{}, fmt.Errorf("create reimport task: %w", err)
+		return dbgen.ImportTask{}, err
 	}
 
 	// Log the reimport event

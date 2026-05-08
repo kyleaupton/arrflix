@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -40,7 +41,8 @@ func (s *EnrichmentService) EnrichMediaItem(ctx context.Context, item dbgen.Medi
 func (s *EnrichmentService) enrichMovie(ctx context.Context, item dbgen.MediaItem) error {
 	details, err := s.tmdb.GetMovieDetailsForEnrichment(ctx, *item.TmdbID)
 	if err != nil {
-		return err
+		return apperrors.BadGatewayf("tmdb movie details for %d: %v", *item.TmdbID, err).
+			Op("EnrichmentService.enrichMovie")
 	}
 
 	// Extract certification from appended release dates
@@ -90,7 +92,8 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item dbgen.MediaIte
 func (s *EnrichmentService) enrichSeries(ctx context.Context, item dbgen.MediaItem) error {
 	details, err := s.tmdb.GetSeriesDetailsForEnrichment(ctx, *item.TmdbID)
 	if err != nil {
-		return err
+		return apperrors.BadGatewayf("tmdb series details for %d: %v", *item.TmdbID, err).
+			Op("EnrichmentService.enrichSeries")
 	}
 
 	// Extract certification from appended content ratings

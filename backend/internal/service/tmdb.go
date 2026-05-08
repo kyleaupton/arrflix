@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -18,8 +18,6 @@ const STATIC_TTL = (24 * time.Hour) * 7
 
 // TTL for dynamic data (1 hour)
 const DYNAMIC_TTL = time.Hour
-
-var ErrTmdbNotConfigured = errors.New("TMDB API key not configured")
 
 type TmdbService struct {
 	repo   *repo.Repository
@@ -48,7 +46,9 @@ func NewTmdbService(r *repo.Repository, l *logger.Logger, apiKey string) *TmdbSe
 func (s *TmdbService) InitClient(apiKey string) error {
 	client, err := tmdb.Init(apiKey)
 	if err != nil {
-		return fmt.Errorf("failed to initialize TMDB client: %w", err)
+		return apperrors.Validation("invalid TMDB API key",
+			apperrors.Field("body.api_key", err.Error()),
+		).Op("TmdbService.InitClient")
 	}
 	s.mu.Lock()
 	s.client = client
@@ -60,7 +60,8 @@ func (s *TmdbService) getClient() (*tmdb.Client, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.client == nil {
-		return nil, ErrTmdbNotConfigured
+		return nil, apperrors.Conflictf("TMDB API key not configured").
+			Op("TmdbService.getClient")
 	}
 	return s.client, nil
 }
@@ -69,11 +70,14 @@ func (s *TmdbService) getClient() (*tmdb.Client, error) {
 func ValidateTmdbKey(apiKey string) error {
 	client, err := tmdb.Init(apiKey)
 	if err != nil {
-		return fmt.Errorf("invalid TMDB API key: %w", err)
+		return apperrors.Validation("invalid TMDB API key",
+			apperrors.Field("body.api_key", err.Error()),
+		).Op("ValidateTmdbKey")
 	}
 	_, err = client.GetMovieDetails(550, map[string]string{})
 	if err != nil {
-		return fmt.Errorf("TMDB API key validation failed: %w", err)
+		return apperrors.BadGatewayf("TMDB API key validation failed: %v", err).
+			Op("ValidateTmdbKey")
 	}
 	return nil
 }
@@ -427,6 +431,10 @@ func (s *TmdbService) GetSeriesDetailsForEnrichment(ctx context.Context, id int6
 // 2) calling the provided fetch function on cache miss
 // 3) storing the fresh response back into the cache
 // 4) returning the typed result
+//
+// Fetch failures are surfaced as BadGateway so upstream-API calls (TMDB,
+// GitHub) get the right wire status and retry semantics. Marshal/unmarshal
+// failures are Internal — they indicate a programming error, not transient.
 func getOrFetchFromCache[T any](ctx context.Context, r *repo.Repository, l *logger.Logger, cacheKey string, fetch func() (*T, error), ttl time.Duration) (T, error) {
 	cacheEntry, found, err := r.GetApiCache(ctx, cacheKey)
 	if err != nil {
@@ -439,7 +447,7 @@ func getOrFetchFromCache[T any](ctx context.Context, r *repo.Repository, l *logg
 		res, err := fetch()
 		if err != nil {
 			var zero T
-			return zero, err
+			return zero, apperrors.BadGatewayf("upstream fetch %q failed: %v", cacheKey, err)
 		}
 
 		category := "tmdb"
@@ -449,7 +457,8 @@ func getOrFetchFromCache[T any](ctx context.Context, r *repo.Repository, l *logg
 		jsonRes, err := json.Marshal(res)
 		if err != nil {
 			var zero T
-			return zero, err
+			return zero, apperrors.Internalf("marshal upstream response %q: %v", cacheKey, err).
+				NotRetryable()
 		}
 
 		// Note: pass nil for headers so the DB receives NULL (valid for jsonb)
@@ -465,7 +474,8 @@ func getOrFetchFromCache[T any](ctx context.Context, r *repo.Repository, l *logg
 	err = json.Unmarshal(cacheEntry.Response, &out)
 	if err != nil {
 		var zero T
-		return zero, err
+		return zero, apperrors.Internalf("unmarshal cached response %q: %v", cacheKey, err).
+			NotRetryable()
 	}
 	return out, nil
 }

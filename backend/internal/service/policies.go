@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
-	"errors"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/policy"
@@ -51,14 +51,18 @@ func (s *PoliciesService) Get(ctx context.Context, id pgtype.UUID) (dbgen.Policy
 
 func (s *PoliciesService) Create(ctx context.Context, name string, description *string, enabled bool, priority int32) (dbgen.Policy, error) {
 	if name == "" {
-		return dbgen.Policy{}, errors.New("name required")
+		return dbgen.Policy{}, apperrors.Validation("invalid policy",
+			apperrors.Field("body.name", "required"),
+		).Op("PoliciesService.Create")
 	}
 	return s.repo.CreatePolicy(ctx, name, description, enabled, priority)
 }
 
 func (s *PoliciesService) Update(ctx context.Context, id pgtype.UUID, name string, description *string, enabled bool, priority int32) (dbgen.Policy, error) {
 	if name == "" {
-		return dbgen.Policy{}, errors.New("name required")
+		return dbgen.Policy{}, apperrors.Validation("invalid policy",
+			apperrors.Field("body.name", "required"),
+		).Op("PoliciesService.Update")
 	}
 	return s.repo.UpdatePolicy(ctx, id, name, description, enabled, priority)
 }
@@ -71,35 +75,27 @@ func (s *PoliciesService) GetRule(ctx context.Context, policyID pgtype.UUID) (db
 	return s.repo.GetRuleForPolicy(ctx, policyID)
 }
 
+// validRuleOperators is the set of operators accepted by rule construction.
+var validRuleOperators = map[string]bool{
+	"==": true, "!=": true, ">": true, ">=": true, "<": true, "<=": true,
+	"contains": true, "in": true, "not in": true, "and": true, "or": true, "not": true,
+}
+
 func (s *PoliciesService) CreateRule(ctx context.Context, policyID pgtype.UUID, leftOperand, operator, rightOperand string) (dbgen.Rule, error) {
-	// Validate operator
-	validOps := []string{"==", "!=", ">", ">=", "<", "<=", "contains", "in", "not in", "and", "or", "not"}
-	valid := false
-	for _, op := range validOps {
-		if operator == op {
-			valid = true
-			break
-		}
-	}
-	if !valid {
-		return dbgen.Rule{}, errors.New("invalid operator")
+	if !validRuleOperators[operator] {
+		return dbgen.Rule{}, apperrors.Validation("invalid rule",
+			apperrors.Field("body.operator", "must be one of: ==, !=, >, >=, <, <=, contains, in, not in, and, or, not"),
+		).Op("PoliciesService.CreateRule")
 	}
 
 	return s.repo.CreateRule(ctx, policyID, leftOperand, operator, rightOperand)
 }
 
 func (s *PoliciesService) UpdateRule(ctx context.Context, id pgtype.UUID, leftOperand, operator, rightOperand string) (dbgen.Rule, error) {
-	// Validate operator
-	validOps := []string{"==", "!=", ">", ">=", "<", "<=", "contains", "in", "not in", "and", "or", "not"}
-	valid := false
-	for _, op := range validOps {
-		if operator == op {
-			valid = true
-			break
-		}
-	}
-	if !valid {
-		return dbgen.Rule{}, errors.New("invalid operator")
+	if !validRuleOperators[operator] {
+		return dbgen.Rule{}, apperrors.Validation("invalid rule",
+			apperrors.Field("body.operator", "must be one of: ==, !=, >, >=, <, <=, contains, in, not in, and, or, not"),
+		).Op("PoliciesService.UpdateRule")
 	}
 
 	return s.repo.UpdateRule(ctx, id, leftOperand, operator, rightOperand)
@@ -117,43 +113,40 @@ func (s *PoliciesService) GetAction(ctx context.Context, id pgtype.UUID) (dbgen.
 	return s.repo.GetAction(ctx, id)
 }
 
-func (s *PoliciesService) CreateAction(ctx context.Context, policyID pgtype.UUID, actionType, value string, order int32) (dbgen.Action, error) {
-	// Validate action type
-	validTypes := []string{"set_downloader", "set_library", "set_name_template", "stop_processing"}
-	valid := false
-	for _, t := range validTypes {
-		if actionType == t {
-			valid = true
-			break
-		}
-	}
-	if !valid {
-		return dbgen.Action{}, errors.New("invalid action type")
-	}
+// validActionTypes is the set of action types accepted on creation/update.
+var validActionTypes = map[string]bool{
+	"set_downloader":    true,
+	"set_library":       true,
+	"set_name_template": true,
+	"stop_processing":   true,
+}
 
+// validateActionInput collects field-level errors for action create/update.
+func validateActionInput(actionType, value string) *apperrors.Error {
+	var fields []apperrors.FieldError
+	if !validActionTypes[actionType] {
+		fields = append(fields, apperrors.Field("body.action_type", "must be one of: set_downloader, set_library, set_name_template, stop_processing"))
+	}
 	if value == "" && actionType != "stop_processing" {
-		return dbgen.Action{}, errors.New("value required for action type")
+		fields = append(fields, apperrors.Field("body.value", "required for this action type"))
+	}
+	if len(fields) > 0 {
+		return apperrors.Validation("invalid action", fields...)
+	}
+	return nil
+}
+
+func (s *PoliciesService) CreateAction(ctx context.Context, policyID pgtype.UUID, actionType, value string, order int32) (dbgen.Action, error) {
+	if err := validateActionInput(actionType, value); err != nil {
+		return dbgen.Action{}, err.Op("PoliciesService.CreateAction")
 	}
 
 	return s.repo.CreateAction(ctx, policyID, actionType, value, order)
 }
 
 func (s *PoliciesService) UpdateAction(ctx context.Context, id pgtype.UUID, actionType, value string, order int32) (dbgen.Action, error) {
-	// Validate action type
-	validTypes := []string{"set_downloader", "set_library", "set_name_template", "stop_processing"}
-	valid := false
-	for _, t := range validTypes {
-		if actionType == t {
-			valid = true
-			break
-		}
-	}
-	if !valid {
-		return dbgen.Action{}, errors.New("invalid action type")
-	}
-
-	if value == "" && actionType != "stop_processing" {
-		return dbgen.Action{}, errors.New("value required for action type")
+	if err := validateActionInput(actionType, value); err != nil {
+		return dbgen.Action{}, err.Op("PoliciesService.UpdateAction")
 	}
 
 	return s.repo.UpdateAction(ctx, id, actionType, value, order)

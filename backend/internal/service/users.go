@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	pw "github.com/kyleaupton/arrflix/internal/password"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -31,22 +31,26 @@ func (s *UsersService) Get(ctx context.Context, id pgtype.UUID) (dbgen.GetUserRo
 
 // Create creates a new user with password and role assignment
 func (s *UsersService) Create(ctx context.Context, email, username, password string, roleName string, isActive bool) (dbgen.AppUser, error) {
-	// Validation
+	// Validation — collect every field problem before returning.
 	email = strings.TrimSpace(email)
 	username = strings.TrimSpace(username)
 
+	var fields []apperrors.FieldError
 	if email == "" {
-		return dbgen.AppUser{}, errors.New("email required")
+		fields = append(fields, apperrors.Field("body.email", "required"))
 	}
 	if username == "" {
-		return dbgen.AppUser{}, errors.New("username required")
+		fields = append(fields, apperrors.Field("body.username", "required"))
 	}
 	if password == "" {
-		return dbgen.AppUser{}, errors.New("password required")
+		fields = append(fields, apperrors.Field("body.password", "required"))
+	} else if len(password) < 8 {
+		fields = append(fields, apperrors.Field("body.password", "must be at least 8 characters"))
 	}
-	if len(password) < 8 {
-		return dbgen.AppUser{}, errors.New("password must be at least 8 characters")
+	if len(fields) > 0 {
+		return dbgen.AppUser{}, apperrors.Validation("invalid user", fields...).Op("UsersService.Create")
 	}
+
 	if roleName == "" {
 		roleName = "user" // Default to 'user' role
 	}
@@ -54,15 +58,12 @@ func (s *UsersService) Create(ctx context.Context, email, username, password str
 	// Hash password
 	passwordHash, err := pw.Hash(password)
 	if err != nil {
-		return dbgen.AppUser{}, errors.New("failed to hash password")
+		return dbgen.AppUser{}, apperrors.Internalf("failed to hash password: %v", err).Op("UsersService.Create")
 	}
 
-	// Create user
+	// Create user. Repo translates unique violation to Conflict.
 	user, err := s.repo.CreateUser(ctx, email, username, passwordHash, isActive)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
-			return dbgen.AppUser{}, errors.New("email or username already exists")
-		}
 		return dbgen.AppUser{}, err
 	}
 
@@ -83,11 +84,15 @@ func (s *UsersService) Update(ctx context.Context, id pgtype.UUID, email, userna
 	email = strings.TrimSpace(email)
 	username = strings.TrimSpace(username)
 
+	var fields []apperrors.FieldError
 	if email == "" {
-		return dbgen.AppUser{}, errors.New("email required")
+		fields = append(fields, apperrors.Field("body.email", "required"))
 	}
 	if username == "" {
-		return dbgen.AppUser{}, errors.New("username required")
+		fields = append(fields, apperrors.Field("body.username", "required"))
+	}
+	if len(fields) > 0 {
+		return dbgen.AppUser{}, apperrors.Validation("invalid user", fields...).Op("UsersService.Update")
 	}
 
 	return s.repo.UpdateUser(ctx, id, email, username, isActive)
@@ -95,16 +100,19 @@ func (s *UsersService) Update(ctx context.Context, id pgtype.UUID, email, userna
 
 // UpdatePassword changes a user's password
 func (s *UsersService) UpdatePassword(ctx context.Context, userID pgtype.UUID, newPassword string) error {
+	var fields []apperrors.FieldError
 	if newPassword == "" {
-		return errors.New("password required")
+		fields = append(fields, apperrors.Field("body.password", "required"))
+	} else if len(newPassword) < 8 {
+		fields = append(fields, apperrors.Field("body.password", "must be at least 8 characters"))
 	}
-	if len(newPassword) < 8 {
-		return errors.New("password must be at least 8 characters")
+	if len(fields) > 0 {
+		return apperrors.Validation("invalid password", fields...).Op("UsersService.UpdatePassword")
 	}
 
 	hash, err := pw.Hash(newPassword)
 	if err != nil {
-		return errors.New("failed to hash password")
+		return apperrors.Internalf("failed to hash password: %v", err).Op("UsersService.UpdatePassword")
 	}
 
 	return s.repo.UpdateUserPassword(ctx, userID, hash)
@@ -114,7 +122,8 @@ func (s *UsersService) UpdatePassword(ctx context.Context, userID pgtype.UUID, n
 func (s *UsersService) AssignRole(ctx context.Context, userID pgtype.UUID, roleName string) error {
 	role, err := s.repo.GetRoleByName(ctx, roleName)
 	if err != nil {
-		return errors.New("role not found")
+		// Repo's NotFound for the role uses the role's name; surface that.
+		return err
 	}
 
 	// Unassign all existing roles first
@@ -136,7 +145,8 @@ func (s *UsersService) Delete(ctx context.Context, id pgtype.UUID) error {
 				adminRole, _ := s.repo.GetRoleByName(ctx, "admin")
 				count, _ := s.repo.CountUsersByRole(ctx, adminRole.ID)
 				if count <= 1 {
-					return errors.New("cannot delete the last admin user")
+					return apperrors.Conflictf("cannot delete the last admin user").
+						Op("UsersService.Delete")
 				}
 			}
 		}

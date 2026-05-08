@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
-	"errors"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -29,18 +29,31 @@ func (s *NameTemplatesService) GetDefault(ctx context.Context, typ string) (dbge
 	return s.repo.GetDefaultNameTemplate(ctx, typ)
 }
 
-func (s *NameTemplatesService) Create(ctx context.Context, name, typ, template string, showTemplate, seasonTemplate, movieDirTemplate *string, isDefault bool) (dbgen.NameTemplate, error) {
+// validateNameTemplateInput collects every field-level problem with the
+// supplied payload. Returns nil when valid.
+func validateNameTemplateInput(name, typ, template string, movieDirTemplate *string) *apperrors.Error {
+	var fields []apperrors.FieldError
 	if name == "" {
-		return dbgen.NameTemplate{}, errors.New("name required")
+		fields = append(fields, apperrors.Field("body.name", "required"))
 	}
 	if typ != "movie" && typ != "series" {
-		return dbgen.NameTemplate{}, errors.New("type must be 'movie' or 'series'")
+		fields = append(fields, apperrors.Field("body.type", "must be 'movie' or 'series'"))
 	}
 	if template == "" {
-		return dbgen.NameTemplate{}, errors.New("template required")
+		fields = append(fields, apperrors.Field("body.template", "required"))
 	}
 	if typ == "movie" && (movieDirTemplate == nil || *movieDirTemplate == "") {
-		return dbgen.NameTemplate{}, errors.New("movie_dir_template required for movie type")
+		fields = append(fields, apperrors.Field("body.movie_dir_template", "required for movie type"))
+	}
+	if len(fields) > 0 {
+		return apperrors.Validation("invalid name template", fields...)
+	}
+	return nil
+}
+
+func (s *NameTemplatesService) Create(ctx context.Context, name, typ, template string, showTemplate, seasonTemplate, movieDirTemplate *string, isDefault bool) (dbgen.NameTemplate, error) {
+	if err := validateNameTemplateInput(name, typ, template, movieDirTemplate); err != nil {
+		return dbgen.NameTemplate{}, err.Op("NameTemplatesService.Create")
 	}
 
 	// If setting as default, unset other defaults of the same type
@@ -54,17 +67,8 @@ func (s *NameTemplatesService) Create(ctx context.Context, name, typ, template s
 }
 
 func (s *NameTemplatesService) Update(ctx context.Context, id pgtype.UUID, name, typ, template string, showTemplate, seasonTemplate, movieDirTemplate *string, isDefault bool) (dbgen.NameTemplate, error) {
-	if name == "" {
-		return dbgen.NameTemplate{}, errors.New("name required")
-	}
-	if typ != "movie" && typ != "series" {
-		return dbgen.NameTemplate{}, errors.New("type must be 'movie' or 'series'")
-	}
-	if template == "" {
-		return dbgen.NameTemplate{}, errors.New("template required")
-	}
-	if typ == "movie" && (movieDirTemplate == nil || *movieDirTemplate == "") {
-		return dbgen.NameTemplate{}, errors.New("movie_dir_template required for movie type")
+	if err := validateNameTemplateInput(name, typ, template, movieDirTemplate); err != nil {
+		return dbgen.NameTemplate{}, err.Op("NameTemplatesService.Update")
 	}
 
 	// If setting as default, unset other defaults of the same type (excluding this one)

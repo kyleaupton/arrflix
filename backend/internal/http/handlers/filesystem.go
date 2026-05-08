@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -46,11 +46,11 @@ func (h *Filesystem) Browse(c echo.Context) error {
 	result, err := h.svc.Filesystem.Browse(ctx, path)
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrPathNotFound):
+		case apperrors.IsNotFound(err):
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
-		case errors.Is(err, service.ErrPermissionDenied):
+		case apperrors.IsForbidden(err):
 			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
-		case errors.Is(err, service.ErrNotADirectory):
+		case apperrors.IsValidation(err):
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		default:
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})

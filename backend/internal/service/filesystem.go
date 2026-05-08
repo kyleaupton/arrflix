@@ -2,18 +2,13 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-)
 
-var (
-	ErrPathNotFound     = errors.New("path not found")
-	ErrPermissionDenied = errors.New("permission denied")
-	ErrNotADirectory    = errors.New("not a directory")
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 )
 
 type DirectoryEntry struct {
@@ -57,23 +52,30 @@ func (s *FilesystemService) Browse(_ context.Context, path string) (*BrowseResul
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: %s", ErrPathNotFound, path)
+			return nil, apperrors.NotFoundf("path %q not found", path).
+				Op("FilesystemService.Browse")
 		}
 		if os.IsPermission(err) {
-			return nil, fmt.Errorf("%w: %s", ErrPermissionDenied, path)
+			return nil, apperrors.Forbiddenf("permission denied for %q", path).
+				Op("FilesystemService.Browse")
 		}
-		return nil, fmt.Errorf("cannot access path: %s", path)
+		return nil, apperrors.Internalf("cannot access path %q: %v", path, err).
+			Op("FilesystemService.Browse")
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("%w: %s", ErrNotADirectory, path)
+		return nil, apperrors.Validation("not a directory",
+			apperrors.Field("query.path", fmt.Sprintf("%q is not a directory", path)),
+		).Op("FilesystemService.Browse")
 	}
 
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		if os.IsPermission(err) {
-			return nil, fmt.Errorf("%w: %s", ErrPermissionDenied, path)
+			return nil, apperrors.Forbiddenf("permission denied for %q", path).
+				Op("FilesystemService.Browse")
 		}
-		return nil, fmt.Errorf("cannot read directory: %s", path)
+		return nil, apperrors.Internalf("cannot read directory %q: %v", path, err).
+			Op("FilesystemService.Browse")
 	}
 
 	isRoot := path == "/"

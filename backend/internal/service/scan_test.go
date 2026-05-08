@@ -13,9 +13,9 @@ import (
 	"testing"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/guessit"
 	"github.com/rs/zerolog"
 )
@@ -103,14 +103,14 @@ func (f *fakeRepo) GetMediaFileByLibraryAndPath(ctx context.Context, libraryID p
 	if f.getMediaFileByLibraryAndPathFn != nil {
 		return f.getMediaFileByLibraryAndPathFn(ctx, libraryID, path)
 	}
-	return dbgen.MediaFile{}, pgx.ErrNoRows
+	return dbgen.MediaFile{}, apperrors.NotFoundf("media file not found")
 }
 
 func (f *fakeRepo) GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
 	if f.getMediaItemByTmdbIDAndTypeFn != nil {
 		return f.getMediaItemByTmdbIDAndTypeFn(ctx, tmdbID, typ)
 	}
-	return dbgen.MediaItem{}, pgx.ErrNoRows
+	return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
 }
 
 func (f *fakeRepo) CreateMediaItem(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
@@ -420,7 +420,7 @@ func TestStartScan_ConcurrencyGuard(t *testing.T) {
 		},
 		getMediaFileByLibraryAndPathFn: func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
 			<-block
-			return dbgen.MediaFile{}, pgx.ErrNoRows
+			return dbgen.MediaFile{}, apperrors.NotFoundf("media file not found")
 		},
 		// loadKnownPaths will fail, so scanner falls back to per-file check (which blocks)
 		listMediaFilePathsForLibraryFn: func(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
@@ -439,8 +439,8 @@ func TestStartScan_ConcurrencyGuard(t *testing.T) {
 	// The running key was stored before the goroutine launched,
 	// so a second scan for the same library must fail.
 	_, err = s.StartScan(context.Background(), libID)
-	if !errors.Is(err, ErrScanAlreadyRunning) {
-		t.Fatalf("expected ErrScanAlreadyRunning, got %v", err)
+	if !apperrors.IsConflict(err) {
+		t.Fatalf("expected Conflict (scan already running), got %v", err)
 	}
 
 	close(block)
@@ -522,7 +522,7 @@ func TestExecuteScan_MovieHappyPath(t *testing.T) {
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{}, pgx.ErrNoRows
+			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
 		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
 			if typ != "movie" {
@@ -591,7 +591,7 @@ func TestExecuteScan_SeriesHappyPath(t *testing.T) {
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{}, pgx.ErrNoRows
+			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
 		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
 			return dbgen.MediaItem{ID: mediaItemID}, nil
@@ -730,7 +730,7 @@ func TestExecuteScan_EmptyReleaseDate(t *testing.T) {
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{}, pgx.ErrNoRows
+			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
 	}
 
@@ -804,7 +804,7 @@ func TestExecuteScan_GuessitMovieHappyPath(t *testing.T) {
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{}, pgx.ErrNoRows
+			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
 		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
 			if *tmdbID != 603 {
@@ -880,7 +880,7 @@ func TestExecuteScan_GuessitSeriesDedup(t *testing.T) {
 			if tmdbID == 2190 {
 				return dbgen.MediaItem{ID: mediaItemID}, nil
 			}
-			return dbgen.MediaItem{}, pgx.ErrNoRows
+			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
 		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
 			return dbgen.MediaItem{ID: mediaItemID}, nil
@@ -1050,7 +1050,7 @@ func TestExecuteScan_Mixed(t *testing.T) {
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{}, pgx.ErrNoRows
+			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
 		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
 			return dbgen.MediaItem{ID: mediaItemID}, nil

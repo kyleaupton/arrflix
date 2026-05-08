@@ -3,10 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sync"
 
 	"github.com/kyleaupton/arrflix/internal/config"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -91,7 +91,8 @@ func (s *SettingsService) GetAll(ctx context.Context) (map[string]any, error) {
 func (s *SettingsService) GetRaw(ctx context.Context, key string) (any, error) {
 	spec, ok := Registry[key]
 	if !ok {
-		return nil, fmt.Errorf("unknown setting key")
+		return nil, apperrors.NotFoundf("unknown setting %q", key).
+			Op("SettingsService.GetRaw")
 	}
 
 	rows, err := s.repo.List(ctx)
@@ -148,7 +149,8 @@ func (s *SettingsService) GetUserRegion(ctx context.Context) string {
 func (s *SettingsService) Set(ctx context.Context, key string, val any) error {
 	spec, ok := Registry[key]
 	if !ok {
-		return fmt.Errorf("unknown setting key")
+		return apperrors.NotFoundf("unknown setting %q", key).
+			Op("SettingsService.Set")
 	}
 	var (
 		typ = string(spec.Type)
@@ -158,11 +160,15 @@ func (s *SettingsService) Set(ctx context.Context, key string, val any) error {
 	switch spec.Type {
 	case SettingText:
 		if _, ok := val.(string); !ok {
-			return fmt.Errorf("invalid type; want text")
+			return apperrors.Validation("invalid setting",
+				apperrors.Field("body.value", "must be text"),
+			).Op("SettingsService.Set")
 		}
 	case SettingBool:
 		if _, ok := val.(bool); !ok {
-			return fmt.Errorf("invalid type; want bool")
+			return apperrors.Validation("invalid setting",
+				apperrors.Field("body.value", "must be boolean"),
+			).Op("SettingsService.Set")
 		}
 	case SettingInt:
 		switch t := val.(type) {
@@ -172,7 +178,9 @@ func (s *SettingsService) Set(ctx context.Context, key string, val any) error {
 			val = int64(t)
 		case int64:
 		default:
-			return fmt.Errorf("invalid type; want int")
+			return apperrors.Validation("invalid setting",
+				apperrors.Field("body.value", "must be integer"),
+			).Op("SettingsService.Set")
 		}
 	case SettingJSON:
 		// any
@@ -181,11 +189,13 @@ func (s *SettingsService) Set(ctx context.Context, key string, val any) error {
 	if key == "auth.signup_strategy" {
 		v, _ := val.(string)
 		if v != "invite_only" && v != "open" {
-			return fmt.Errorf("auth.signup_strategy must be 'invite_only' or 'open'")
+			return apperrors.Validation("invalid setting",
+				apperrors.Field("body.value", "auth.signup_strategy must be 'invite_only' or 'open'"),
+			).Op("SettingsService.Set")
 		}
 	}
 	if b, err = json.Marshal(val); err != nil {
-		return err
+		return apperrors.Internalf("marshal setting value: %v", err).Op("SettingsService.Set")
 	}
 	if err := s.repo.Upsert(ctx, key, typ, b); err != nil {
 		return err

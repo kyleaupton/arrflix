@@ -3,14 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	pw "github.com/kyleaupton/arrflix/internal/password"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -36,18 +34,26 @@ func (s *AuthService) IssueToken(userID pgtype.UUID, email *string, username str
 		"iat":   time.Now().Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(s.jwtSecret))
+	signed, err := token.SignedString([]byte(s.jwtSecret))
+	if err != nil {
+		return "", apperrors.Internalf("sign token: %v", err).Op("AuthService.IssueToken")
+	}
+	return signed, nil
 }
 
 func (s *AuthService) Login(ctx context.Context, login, password string) (string, error) {
 	user, err := s.repo.GetUserByLogin(ctx, login)
 	if err != nil {
-		return "", ErrInvalidCredentials
+		// Don't leak whether the username exists; surface a generic
+		// invalid-credentials response. Original error stays in logs via slog.
+		return "", apperrors.Unauthenticatedf("invalid credentials").
+			Op("AuthService.Login")
 	}
 
 	ok, err := pw.Verify(password, deref(user.PasswordHash))
 	if err != nil || !ok {
-		return "", ErrInvalidCredentials
+		return "", apperrors.Unauthenticatedf("invalid credentials").
+			Op("AuthService.Login")
 	}
 
 	// Opportunistically upgrade hash format/cost
@@ -69,10 +75,11 @@ func (s *AuthService) LoginWithPlex(ctx context.Context, plexSubject, email, use
 		// Returning user — get their account
 		user, err := s.repo.GetUserByID(ctx, identity.UserID)
 		if err != nil {
-			return "", fmt.Errorf("failed to get user: %w", err)
+			return "", err
 		}
 		if !user.IsActive {
-			return "", errors.New("account is disabled")
+			return "", apperrors.Forbiddenf("account is disabled").
+				Op("AuthService.LoginWithPlex")
 		}
 
 		// Update identity with fresh token
@@ -92,7 +99,7 @@ func (s *AuthService) LoginWithPlex(ctx context.Context, plexSubject, email, use
 	// New user — check signup strategy
 	all, err := s.settings.GetAll(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to read settings: %w", err)
+		return "", err
 	}
 	strategy, _ := all["auth.signup_strategy"].(string)
 	if strategy == "" {
@@ -101,17 +108,15 @@ func (s *AuthService) LoginWithPlex(ctx context.Context, plexSubject, email, use
 
 	if strategy == "invite_only" {
 		if err := s.invites.CheckAndClaim(ctx, email); err != nil {
-			return "", fmt.Errorf("no invite found for %s", email)
+			// CheckAndClaim already returns a typed error.
+			return "", err
 		}
 	}
 
-	// Create user without password
+	// Create user without password. Repo translates unique violations to Conflict.
 	user, err := s.repo.CreateUserNoPassword(ctx, email, username, true)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
-			return "", errors.New("email or username already exists")
-		}
-		return "", fmt.Errorf("failed to create user: %w", err)
+		return "", err
 	}
 
 	// Assign default role
@@ -140,11 +145,10 @@ func (s *AuthService) upsertIdentity(ctx context.Context, userID pgtype.UUID, pl
 	}()
 }
 
-var ErrInvalidCredentials = jwt.ErrInvalidKey
-
 func deref(s *string) string {
 	if s == nil {
 		return ""
 	}
 	return *s
 }
+

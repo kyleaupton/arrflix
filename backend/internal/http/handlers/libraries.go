@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -186,13 +185,7 @@ func (h *Libraries) Scan(c echo.Context) error {
 	ctx := c.Request().Context()
 	scanID, err := h.svc.Scanner.StartScan(ctx, id)
 	if err != nil {
-		// service.ErrScanAlreadyRunning is a legacy sentinel; the scan
-		// service will be migrated in a later pass. Wrap into a typed
-		// Conflict here so the wire response is still RFC 9457.
-		if errors.Is(err, service.ErrScanAlreadyRunning) {
-			return RenderError(c, apperrors.Conflictf("scan already running for library %s", id).
-				Op("LibrariesHandler.Scan"))
-		}
+		// Scan service emits typed Conflict on already-running.
 		return RenderError(c, err)
 	}
 	return c.JSON(http.StatusAccepted, map[string]string{"scanId": scanID})
