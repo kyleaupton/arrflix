@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
-import { getV1PoliciesFieldsOptions } from '@/client/@tanstack/vue-query.gen'
-import type { ModelFieldDefinition } from '@/client/types.gen'
+import { policiesGetFieldsOptions } from '@/client/@tanstack/vue-query.gen'
+import type { FieldDefinition } from '@/client/types.gen'
 
 export interface TemplateVariable {
   /** Template syntax path, e.g., ".Title", ".Quality.Resolution" */
@@ -110,13 +110,13 @@ function extractNamespace(apiPath: string): string {
  * Composable for accessing template variables from the API
  */
 export function useTemplateVariables(options?: { mediaType?: 'movie' | 'series' }) {
-  const { data: fields, isLoading, error } = useQuery(getV1PoliciesFieldsOptions())
+  const { data: fields, isLoading, error } = useQuery(policiesGetFieldsOptions())
 
   /** All variables transformed for template use */
   const allVariables = computed<TemplateVariable[]>(() => {
     if (!fields.value) return []
 
-    return fields.value.map((field: ModelFieldDefinition) => ({
+    return fields.value.map((field: FieldDefinition) => ({
       path: toTemplatePath(field.path),
       label: field.label,
       namespace: extractNamespace(field.path),

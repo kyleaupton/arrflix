@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import {
-  type ModelIndexerDefinition,
-  type ModelIndexerOutput,
-  type ModelIndexerInput,
-  type ModelProtocol,
-  type ModelIndexerField,
-  type ModelFieldOutput,
+  type IndexerOutput,
+  type IndexerInput,
+  type FieldOutput,
 } from '@/client/types.gen'
 import { cloneDeep } from '@/utils'
 import ConfigurationStepField from './ConfigurationStepField.vue'
@@ -17,10 +14,10 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 
-const model = defineModel<ModelIndexerInput | undefined>(undefined)
+const model = defineModel<IndexerInput | undefined>(undefined)
 
 const props = defineProps<{
-  selectedIndexer: ModelIndexerDefinition | ModelIndexerOutput
+  selectedIndexer: IndexerOutput
 }>()
 
 onMounted(() => {
@@ -33,14 +30,14 @@ onMounted(() => {
     configContract: copy.configContract,
     implementation: copy.implementation,
     name: copy.name,
-    protocol: copy.protocol as ModelProtocol,
+    protocol: copy.protocol,
     // tags: copy.tags,
-    fields: copy.fields,
+    fields: (copy.fields ?? []).map((f) => ({ name: f.name, value: f.value })),
   }
 })
 
 const handleValueChange = (fieldName: string, value: unknown) => {
-  if (model.value) {
+  if (model.value && model.value.fields) {
     const index = model.value.fields.findIndex((field) => field.name === fieldName)
     if (index !== -1) {
       model.value.fields[index]!.value = value
@@ -49,8 +46,8 @@ const handleValueChange = (fieldName: string, value: unknown) => {
 }
 
 // Create a computed that merges field definitions with their current values
-const getFieldWithValue = (fieldDef: ModelIndexerField | ModelFieldOutput) => {
-  const modelField = model.value?.fields.find((f) => f.name === fieldDef.name)
+const getFieldWithValue = (fieldDef: FieldOutput) => {
+  const modelField = model.value?.fields?.find((f) => f.name === fieldDef.name)
   return {
     ...fieldDef,
     value: modelField?.value ?? fieldDef.value,
@@ -58,13 +55,13 @@ const getFieldWithValue = (fieldDef: ModelIndexerField | ModelFieldOutput) => {
 }
 
 const regularFields = computed(() => {
-  return props.selectedIndexer.fields
+  return (props.selectedIndexer.fields ?? [])
     .filter((field) => !field.advanced)
     .map((field) => getFieldWithValue(field))
 })
 
 const advancedFields = computed(() => {
-  return props.selectedIndexer.fields
+  return (props.selectedIndexer.fields ?? [])
     .filter((field) => field.advanced)
     .map((field) => getFieldWithValue(field))
 })

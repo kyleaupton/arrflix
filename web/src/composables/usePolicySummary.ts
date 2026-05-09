@@ -1,10 +1,10 @@
 import type {
-  DbgenRule,
-  DbgenAction,
-  ModelFieldDefinition,
-  DbgenDownloader,
-  HandlersLibrarySwagger,
-  HandlersNameTemplateSwagger,
+  Rule,
+  Action,
+  FieldDefinition,
+  Downloader,
+  Library,
+  NameTemplate,
 } from '@/client/types.gen'
 import policyOptions from '@/config/policyOptions.json'
 
@@ -14,7 +14,7 @@ function getOperatorLabel(op: string): string {
 }
 
 function resolveRightOperand(
-  field: ModelFieldDefinition | undefined,
+  field: FieldDefinition | undefined,
   value: string,
 ): string {
   if (!field) return value
@@ -30,9 +30,9 @@ function resolveRightOperand(
 function resolveActionValue(
   actionType: string,
   value: string,
-  downloaders: DbgenDownloader[],
-  libraries: HandlersLibrarySwagger[],
-  nameTemplates: HandlersNameTemplateSwagger[],
+  downloaders: Downloader[],
+  libraries: Library[],
+  nameTemplates: NameTemplate[],
 ): string {
   switch (actionType) {
     case 'set_downloader': {
@@ -60,21 +60,23 @@ const actionVerbs: Record<string, string> = {
 }
 
 export function buildPolicySummary(
-  rule: DbgenRule | null | undefined,
-  actions: DbgenAction[],
-  fields: ModelFieldDefinition[],
-  downloaders: DbgenDownloader[],
-  libraries: HandlersLibrarySwagger[],
-  nameTemplates: HandlersNameTemplateSwagger[],
+  rule: Rule | null | undefined,
+  actions: Action[],
+  fields: FieldDefinition[],
+  downloaders: Downloader[],
+  libraries: Library[],
+  nameTemplates: NameTemplate[],
 ): string {
-  if (!rule && actions.length === 0) return 'Unconfigured'
+  // Backend always emits a rule struct; treat absent id as "no rule"
+  const hasRule = !!(rule && rule.id)
+  if (!hasRule && actions.length === 0) return 'Unconfigured'
 
   let ifClause = ''
-  if (rule) {
-    const field = fields.find((f) => f.path === rule.left_operand)
-    const fieldLabel = field?.label || rule.left_operand
-    const opLabel = getOperatorLabel(rule.operator)
-    const valueLabel = resolveRightOperand(field, rule.right_operand)
+  if (hasRule) {
+    const field = fields.find((f) => f.path === rule!.leftOperand)
+    const fieldLabel = field?.label || rule!.leftOperand
+    const opLabel = getOperatorLabel(rule!.operator)
+    const valueLabel = resolveRightOperand(field, rule!.rightOperand)
     ifClause = `IF ${fieldLabel} ${opLabel} ${valueLabel}`
   } else {
     ifClause = 'No condition configured'

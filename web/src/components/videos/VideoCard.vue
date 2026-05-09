@@ -42,10 +42,10 @@
 import { computed, ref } from 'vue'
 import { Play } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
-import { type ModelVideo } from '@/client/types.gen'
+import { type Video } from '@/client/types.gen'
 
 const props = defineProps<{
-  video: ModelVideo
+  video: Video
 }>()
 
 const imageError = ref(false)
@@ -68,7 +68,7 @@ const onImageError = () => {
   imageError.value = true
 }
 
-const getVideoUrl = (video: ModelVideo): string => {
+const getVideoUrl = (video: Video): string => {
   switch (video.site) {
     case 'YouTube':
       return `https://www.youtube.com/watch?v=${video.key}`

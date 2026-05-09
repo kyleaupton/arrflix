@@ -1,5 +1,5 @@
 import { type TableColumn } from '../types'
-import type { ModelFileInfo } from '@/client/types.gen'
+import type { FileInfo } from '@/client/types.gen'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import LibraryReference from '@/components/references/LibraryReference.vue'
@@ -7,13 +7,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Loader2 } from 'lucide-vue-next'
 import { h } from 'vue'
 
-export const movieFilesColumns: TableColumn<ModelFileInfo>[] = [
+export const movieFilesColumns: TableColumn<FileInfo>[] = [
   {
     key: 'path',
     label: 'Path',
     sortable: true,
     filterable: true,
-    render: (value: string, row: ModelFileInfo) => {
+    render: (value: string, row: FileInfo) => {
       const isPredicted = value && value.includes('.{ext}')
       
       if (isPredicted) {
@@ -64,7 +64,7 @@ export const movieFilesColumns: TableColumn<ModelFileInfo>[] = [
     sortable: true,
     filterable: true,
     width: '140px',
-    render: (value: string, row: ModelFileInfo) => {
+    render: (value: string, row: FileInfo) => {
       const statusColors: Record<string, string> = {
         available: 'bg-green-500 text-white',
         downloading: 'bg-blue-500 text-white',
@@ -95,7 +95,7 @@ export const movieFilesColumns: TableColumn<ModelFileInfo>[] = [
     label: 'Progress',
     sortable: true,
     width: '220px',
-    render: (value: number | null | undefined, row: ModelFileInfo) => {
+    render: (value: number | null | undefined, row: FileInfo) => {
       // Only show progress if downloadJobId exists and progress is available
       if (!row.downloadJobId || value === null || value === undefined) {
         return h('span', { class: 'text-xs text-muted-foreground' }, '-')

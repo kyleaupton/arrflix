@@ -28,12 +28,15 @@ Services orchestrate business logic. They consume typed errors from `internal/re
 5. **Don't introduce sentinel errors (`var ErrFoo = errors.New(...)`).**
    Sentinels were how we used to signal "this specific failure" before kinds existed. Now the kind plus the detail message carry that signal. Existing sentinels (e.g., `ErrScanAlreadyRunning`) will be migrated as we touch them; don't add new ones.
 
+6. **Never import `dbgen.*` or `pgtype.*`.**
+   Services and workers speak `model.*` (idiomatic Go domain types). The repo handles the persistence ↔ domain translation. Service signatures take and return `model.*` and `uuid.UUID`; pgtype-shaped values are a repo-internal concern. If a service file imports `github.com/kyleaupton/arrflix/internal/db/sqlc` or `github.com/jackc/pgx/v5/pgtype`, the layering is wrong — fix the repo, not the service. (Same rule applies to `internal/jobs/*` workers.)
+
 ## Patterns
 
 ### Pass-through (the common case)
 
 ```go
-func (s *LibrariesService) Get(ctx context.Context, id pgtype.UUID) (dbgen.Library, error) {
+func (s *LibrariesService) Get(ctx context.Context, id uuid.UUID) (model.Library, error) {
     return s.repo.GetLibrary(ctx, id)  // typed error from repo flows through
 }
 ```
@@ -41,10 +44,10 @@ func (s *LibrariesService) Get(ctx context.Context, id pgtype.UUID) (dbgen.Libra
 ### Override the detail when the service has better context
 
 ```go
-func (s *MediaService) GetBySlug(ctx context.Context, slug string) (dbgen.Media, error) {
+func (s *MediaService) GetBySlug(ctx context.Context, slug string) (model.Media, error) {
     id, err := s.resolveSlug(ctx, slug)
     if err != nil {
-        return dbgen.Media{}, err
+        return model.Media{}, err
     }
     m, err := s.repo.GetMedia(ctx, id)
     if apperrors.IsNotFound(err) {
@@ -58,7 +61,7 @@ func (s *MediaService) GetBySlug(ctx context.Context, slug string) (dbgen.Media,
 ### Input validation — collect all field errors
 
 ```go
-func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath string, ...) (dbgen.Library, error) {
+func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath string, ...) (model.Library, error) {
     var fields []apperrors.FieldError
     if name == "" {
         fields = append(fields, apperrors.Field("body.name", "required"))
@@ -70,7 +73,7 @@ func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath strin
         fields = append(fields, apperrors.Field("body.root_path", "required"))
     }
     if len(fields) > 0 {
-        return dbgen.Library{}, apperrors.Validation("invalid library", fields...)
+        return model.Library{}, apperrors.Validation("invalid library", fields...)
     }
     return s.repo.CreateLibrary(ctx, name, typ, rootPath, ...)
 }
@@ -81,7 +84,7 @@ func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath strin
 ### Conflict for state-based rejections
 
 ```go
-func (s *ScannerService) StartScan(ctx context.Context, libraryID pgtype.UUID) (string, error) {
+func (s *ScannerService) StartScan(ctx context.Context, libraryID uuid.UUID) (string, error) {
     if _, loaded := s.running.LoadOrStore(key, scanID); loaded {
         return "", apperrors.Conflictf("scan already running for library %s", libraryID)
     }
@@ -108,9 +111,9 @@ if err != nil {
 
 ```go
 // Service: chain .Op() on every typed-error construction.
-func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath string, ...) (dbgen.Library, error) {
+func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath string, ...) (model.Library, error) {
     if name == "" {
-        return dbgen.Library{}, apperrors.Validation("invalid library",
+        return model.Library{}, apperrors.Validation("invalid library",
             apperrors.Field("body.name", "required"),
         ).Op("LibrariesService.Create")
     }

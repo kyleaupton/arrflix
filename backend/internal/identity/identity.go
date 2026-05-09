@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strconv"
 
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/kyleaupton/arrflix/internal/model"
 )
 
 type Identity struct {
@@ -20,7 +20,7 @@ var ErrNoIdentityFound = errors.New("no identity found")
 
 // Returns the id and provider for the given media file path.
 // If a tv series, the season and episode number are also returned.
-func Resolve(library dbgen.Library, path string) (Identity, error) {
+func Resolve(library model.Library, path string) (Identity, error) {
 	provider, id, err := getIdFromString(path)
 	if err != nil {
 		return Identity{}, err

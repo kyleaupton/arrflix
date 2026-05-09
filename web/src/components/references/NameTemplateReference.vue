@@ -27,7 +27,7 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import Badge from 'primevue/badge'
-import { getV1NameTemplatesByIdOptions } from '@/client/@tanstack/vue-query.gen'
+import { nameTemplatesGetOptions } from '@/client/@tanstack/vue-query.gen'
 
 const props = defineProps<{
   nameTemplateId: string
@@ -39,7 +39,7 @@ const {
   error,
 } = useQuery(
   computed(() =>
-    getV1NameTemplatesByIdOptions({
+    nameTemplatesGetOptions({
       path: { id: props.nameTemplateId },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any),

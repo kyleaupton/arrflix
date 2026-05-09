@@ -1,20 +1,29 @@
+// auth.go is the humachi-shaped auth handler. It registers login / signup /
+// plex-exchange / me on humachi; the plex-start endpoint is a plain chi
+// handler (see PlexStart below) because it returns a 302 redirect, which
+// huma's JSON-first model doesn't shape cleanly. Public routes bypass JWT
+// via the publicPathSet allowlist in middlewares/chi.go.
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kyleaupton/arrflix/internal/config"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/http/middlewares"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/plex"
 	"github.com/kyleaupton/arrflix/internal/service"
-	"github.com/labstack/echo/v4"
 )
+
+// ----- Handler -----
 
 type Auth struct {
 	cfg  config.Config
@@ -23,89 +32,70 @@ type Auth struct {
 	svc  *service.Services
 }
 
-func (h *Auth) RegisterPublic(v1 *echo.Group) {
-	v1.POST("/auth/login", h.Login)
-	v1.POST("/auth/signup", h.Signup)
-	v1.GET("/auth/plex/start", h.PlexStart)
-	v1.POST("/auth/plex/exchange", h.PlexExchange)
-}
-
-func (h *Auth) RegisterProtected(v1 *echo.Group) {
-	v1.GET("/auth/me", h.Me)
-}
-
 func NewAuth(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, svc *service.Services) *Auth {
 	return &Auth{cfg: cfg, log: log, pool: pool, svc: svc}
 }
 
-type LoginRequest struct {
-	Login    string `json:"login" validate:"required"`
-	Password string `json:"password" validate:"required"`
+// ----- Login -----
+
+// LoginInput carries credentials.
+type LoginInput struct {
+	Body struct {
+		Login    string `json:"login" required:"true" minLength:"1" doc:"Username or email"`
+		Password string `json:"password" required:"true" minLength:"1" doc:"Password"`
+	}
 }
 
+// LoginResponse is the success body for POST /auth/login.
 type LoginResponse struct {
-	Token string `json:"token" validate:"required"`
+	Token string `json:"token" doc:"JWT bearer token"`
 }
 
-// @Summary Login
-// @Tags    auth
-// @Accept  json
-// @Produce json
-// @Param   payload body LoginRequest true "Login request"
-// @Success 200 {object} LoginResponse
-// @Router  /v1/auth/login [post]
-func (h *Auth) Login(c echo.Context) error {
-	var req LoginRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	if req.Login == "" || req.Password == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "login and password required"})
-	}
+// LoginOutput wraps LoginResponse.
+type LoginOutput struct {
+	Body LoginResponse
+}
 
-	ctx := c.Request().Context()
-	signed, err := h.svc.Auth.Login(ctx, req.Login, req.Password)
+// Login validates credentials and issues a JWT. The handler returns the
+// service error directly; the service emits Unauthenticated for bad
+// credentials, which humaerr renders as RFC 9457 problem-details with
+// status 401.
+func (h *Auth) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
+	signed, err := h.svc.Auth.Login(ctx, input.Body.Login, input.Body.Password)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, LoginResponse{Token: signed})
+	return &LoginOutput{Body: LoginResponse{Token: signed}}, nil
 }
 
-type SignupRequest struct {
-	Email    string `json:"email" validate:"required"`
-	Username string `json:"username" validate:"required"`
-	Password string `json:"password" validate:"required"`
+// ----- Signup -----
+
+// SignupInput carries the signup payload.
+type SignupInput struct {
+	Body struct {
+		Email    string `json:"email" required:"true" minLength:"1" format:"email" doc:"Email address"`
+		Username string `json:"username" required:"true" minLength:"1" doc:"Username"`
+		Password string `json:"password" required:"true" minLength:"8" doc:"Password (>= 8 chars)"`
+	}
 }
 
+// SignupResponse is the success body for POST /auth/signup.
 type SignupResponse struct {
-	Success bool `json:"success"`
+	Success bool `json:"success" doc:"Always true on success"`
 }
 
-// @Summary  Signup
-// @Tags     auth
-// @Accept   json
-// @Produce  json
-// @Param    payload body SignupRequest true "Signup request"
-// @Success  201 {object} SignupResponse
-// @Failure  400 {object} map[string]string
-// @Failure  403 {object} map[string]string
-// @Failure  409 {object} map[string]string
-// @Router   /v1/auth/signup [post]
-func (h *Auth) Signup(c echo.Context) error {
-	var req SignupRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	if req.Email == "" || req.Username == "" || req.Password == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "email, username, and password are required"})
-	}
+// SignupOutput wraps SignupResponse.
+type SignupOutput struct {
+	Body SignupResponse
+}
 
-	ctx := c.Request().Context()
-
-	// Check signup strategy
+// Signup creates a new user. Honors the configured signup strategy:
+// invite_only requires a matching invite (Forbidden if missing); open allows
+// arbitrary signups. Service returns typed errors that humaerr translates.
+func (h *Auth) Signup(ctx context.Context, input *SignupInput) (*SignupOutput, error) {
 	all, err := h.svc.Settings.GetAll(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read settings"})
+		return nil, err
 	}
 	strategy, _ := all["auth.signup_strategy"].(string)
 	if strategy == "" {
@@ -113,36 +103,137 @@ func (h *Auth) Signup(c echo.Context) error {
 	}
 
 	if strategy == "invite_only" {
-		if err := h.svc.Invites.CheckAndClaim(ctx, req.Email); err != nil {
-			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+		if err := h.svc.Invites.CheckAndClaim(ctx, input.Body.Email); err != nil {
+			return nil, err
 		}
 	}
 
-	_, err = h.svc.Users.Create(ctx, req.Email, req.Username, req.Password, "user", true)
-	if err != nil {
-		if err.Error() == "email or username already exists" {
-			return c.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
-		}
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if _, err := h.svc.Users.Create(ctx, input.Body.Email, input.Body.Username, input.Body.Password, "user", true); err != nil {
+		return nil, err
 	}
-
-	return c.JSON(http.StatusCreated, SignupResponse{Success: true})
+	return &SignupOutput{Body: SignupResponse{Success: true}}, nil
 }
 
-// PlexStart initiates the Plex SSO flow by creating a PIN and redirecting to Plex.
-func (h *Auth) PlexStart(c echo.Context) error {
-	redirectURI := c.QueryParam("redirect_uri")
+// ----- Plex Exchange -----
+
+// PlexExchangeInput carries the Plex pin id.
+type PlexExchangeInput struct {
+	Body struct {
+		PinID int `json:"pin_id" required:"true" minimum:"1" doc:"Plex pin id returned from /auth/plex/start"`
+	}
+}
+
+// PlexExchangeResponse is the success body for POST /auth/plex/exchange.
+type PlexExchangeResponse struct {
+	Token string `json:"token" doc:"JWT bearer token"`
+}
+
+// PlexExchangeOutput wraps PlexExchangeResponse.
+type PlexExchangeOutput struct {
+	Body PlexExchangeResponse
+}
+
+// PlexExchange polls Plex for the PIN's auth token and, if claimed,
+// upserts/looks-up the local user and issues a JWT. Handler-level errors
+// match the original Echo implementation:
+//   - 400 if the upstream Plex check fails (network / unparseable)
+//   - 401 if the PIN hasn't been claimed yet
+//   - service errors flow through unchanged
+//
+// The 401 here is handler-emitted (PIN-not-yet-claimed), distinct from the
+// middleware-emitted 401 on protected routes. It stays in the Errors slice.
+func (h *Auth) PlexExchange(ctx context.Context, input *PlexExchangeInput) (*PlexExchangeOutput, error) {
+	pc := plex.NewClient()
+
+	pin, err := pc.CheckPin(input.Body.PinID)
+	if err != nil {
+		return nil, apperrors.BadGatewayf("plex check pin failed").
+			Op("AuthHandler.PlexExchange")
+	}
+	if pin.AuthToken == "" {
+		return nil, apperrors.Unauthenticatedf("plex authorization not completed").
+			Op("AuthHandler.PlexExchange")
+	}
+
+	plexUser, err := pc.GetUser(pin.AuthToken)
+	if err != nil {
+		return nil, apperrors.BadGatewayf("plex get user failed").
+			Op("AuthHandler.PlexExchange")
+	}
+
+	raw, _ := json.Marshal(plexUser)
+	plexSubject := strconv.Itoa(plexUser.ID)
+
+	signed, err := h.svc.Auth.LoginWithPlex(ctx, plexSubject, plexUser.Email, plexUser.Username, pin.AuthToken, raw)
+	if err != nil {
+		return nil, err
+	}
+	return &PlexExchangeOutput{Body: PlexExchangeResponse{Token: signed}}, nil
+}
+
+// ----- Me -----
+
+// AuthMeInput is empty; the operation reads claims from the request context.
+type AuthMeInput struct{}
+
+// MeResponse is the success body for GET /auth/me.
+type MeResponse struct {
+	Sub   string  `json:"sub" doc:"User id (UUID string from JWT subject)"`
+	Email *string `json:"email,omitempty" doc:"Email from JWT claims"`
+	Name  *string `json:"name,omitempty" doc:"Username from JWT claims"`
+}
+
+// AuthMeOutput wraps MeResponse.
+type AuthMeOutput struct {
+	Body MeResponse
+}
+
+// Me echoes back the authenticated principal, sourced from the JWT claims
+// that ChiJWT placed on the request context.
+func (h *Auth) Me(ctx context.Context, _ *AuthMeInput) (*AuthMeOutput, error) {
+	claims, ok := middlewares.ClaimsFromContext(ctx)
+	if !ok {
+		return nil, apperrors.Unauthenticatedf("missing credentials").
+			Op("AuthHandler.Me")
+	}
+	sub, _ := claims["sub"].(string)
+	if sub == "" {
+		return nil, apperrors.Unauthenticatedf("invalid token subject").
+			Op("AuthHandler.Me")
+	}
+	resp := MeResponse{Sub: sub}
+	if v, ok := claims["email"].(string); ok && v != "" {
+		resp.Email = &v
+	}
+	if v, ok := claims["name"].(string); ok && v != "" {
+		resp.Name = &v
+	}
+	return &AuthMeOutput{Body: resp}, nil
+}
+
+// ----- Plex Start (plain chi, 302 redirect) -----
+
+// PlexStart is a plain chi handler (not humachi) because it returns a 302
+// redirect — huma is JSON-first and modelling a "Location header + 302
+// status" op is awkward. The FE relies on the browser following the redirect,
+// not on a typed client, so this surface stays outside the OpenAPI spec.
+//
+// Errors render as plain text via http.Error: a 302-redirect endpoint failing
+// on input never has a structured-error consumer, so JSON would be unmotivated.
+func (h *Auth) PlexStart(w http.ResponseWriter, r *http.Request) {
+	redirectURI := r.URL.Query().Get("redirect_uri")
 	if redirectURI == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "redirect_uri required"})
+		http.Error(w, "redirect_uri required", http.StatusBadRequest)
+		return
 	}
 
 	pc := plex.NewClient()
 	pin, err := pc.CreatePin()
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create plex pin"})
+		http.Error(w, "failed to create plex pin", http.StatusInternalServerError)
+		return
 	}
 
-	// Build forward URL: append pinId to the frontend callback
 	sep := "?"
 	if strings.Contains(redirectURI, "?") {
 		sep = "&"
@@ -150,109 +241,58 @@ func (h *Auth) PlexStart(c echo.Context) error {
 	forwardURL := fmt.Sprintf("%s%spinId=%d", redirectURI, sep, pin.ID)
 
 	authURL := plex.AuthURL(pin.Code, forwardURL)
-	return c.Redirect(http.StatusFound, authURL)
+	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
-type PlexExchangeRequest struct {
-	PinID int `json:"pin_id" validate:"required"`
-}
+// ----- Register -----
 
-type PlexExchangeResponse struct {
-	Token string `json:"token" validate:"required"`
-}
+// RegisterHumachi wires the auth operations onto the humachi API. The Plex
+// start route is a plain chi handler (PlexStart, registered directly on the
+// chi router in http.go); everything else lives here.
+//
+// Public paths (login, signup, plex/exchange) bypass the JWT middleware via
+// publicPathSet in middlewares/chi.go. The /auth/me route is protected (no
+// allowlist entry).
+func (h *Auth) RegisterHumachi(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "auth-login",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/auth/login",
+		Summary:     "Login",
+		Description: "Validate username/email + password and issue a JWT.",
+		Tags:        []string{"auth"},
+		// 401 here is handler-emitted (bad credentials), not middleware.
+		Errors: []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnprocessableEntity},
+	}, h.Login)
 
-// @Summary  Exchange Plex PIN for JWT
-// @Tags     auth
-// @Accept   json
-// @Produce  json
-// @Param    payload body PlexExchangeRequest true "Plex exchange request"
-// @Success  200 {object} PlexExchangeResponse
-// @Failure  400 {object} map[string]string
-// @Failure  401 {object} map[string]string
-// @Failure  403 {object} map[string]string
-// @Failure  409 {object} map[string]string
-// @Router   /v1/auth/plex/exchange [post]
-func (h *Auth) PlexExchange(c echo.Context) error {
-	var req PlexExchangeRequest
-	if err := c.Bind(&req); err != nil || req.PinID == 0 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "pin_id required"})
-	}
+	huma.Register(api, huma.Operation{
+		OperationID:   "auth-signup",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/auth/signup",
+		Summary:       "Signup",
+		Description:   "Create a new user. Honors the configured signup strategy (invite_only or open).",
+		Tags:          []string{"auth"},
+		DefaultStatus: http.StatusCreated,
+		Errors:        errs(errsWrite, errsForbidden),
+	}, h.Signup)
 
-	pc := plex.NewClient()
+	huma.Register(api, huma.Operation{
+		OperationID: "auth-plex-exchange",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/auth/plex/exchange",
+		Summary:     "Exchange Plex PIN for JWT",
+		Description: "Polls the Plex API for the PIN's auth token and, if claimed, returns a JWT. Returns 401 when the PIN has not been claimed yet.",
+		Tags:        []string{"auth"},
+		// 401 = PIN-not-yet-claimed (handler-emitted, not middleware).
+		Errors: errs([]int{http.StatusUnauthorized}, errsWrite, errsForbidden, errsUpstream),
+	}, h.PlexExchange)
 
-	// Check if the PIN has been claimed
-	pin, err := pc.CheckPin(req.PinID)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to check plex pin"})
-	}
-	if pin.AuthToken == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "plex authorization not completed"})
-	}
-
-	// Get Plex user info
-	plexUser, err := pc.GetUser(pin.AuthToken)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get plex user info"})
-	}
-
-	// Marshal raw Plex user data for storage
-	raw, _ := json.Marshal(plexUser)
-
-	plexSubject := strconv.Itoa(plexUser.ID)
-	ctx := c.Request().Context()
-
-	signed, err := h.svc.Auth.LoginWithPlex(ctx, plexSubject, plexUser.Email, plexUser.Username, pin.AuthToken, raw)
-	if err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "no invite") {
-			return c.JSON(http.StatusForbidden, map[string]string{"error": msg})
-		}
-		if strings.Contains(msg, "already exists") {
-			return c.JSON(http.StatusConflict, map[string]string{"error": msg})
-		}
-		if strings.Contains(msg, "disabled") {
-			return c.JSON(http.StatusForbidden, map[string]string{"error": msg})
-		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "login failed"})
-	}
-
-	return c.JSON(http.StatusOK, PlexExchangeResponse{Token: signed})
-}
-
-type MeResponse struct {
-	ID       string  `json:"id" validate:"required"`
-	Email    *string `json:"email" validate:"required"`
-	Username *string `json:"username" validate:"required"`
-}
-
-func (h *Auth) Me(c echo.Context) error {
-	authz := c.Request().Header.Get("Authorization")
-	if authz == "" || len(authz) < 8 || authz[:7] != "Bearer " {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "missing bearer token"})
-	}
-	raw := authz[7:]
-	tok, err := jwt.Parse(raw, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, echo.NewHTTPError(http.StatusUnauthorized, "bad token method")
-		}
-		return []byte(h.cfg.JWTSecret), nil
-	})
-	if err != nil || !tok.Valid {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
-	}
-	claims, ok := tok.Claims.(jwt.MapClaims)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token claims"})
-	}
-	sub, _ := claims["sub"].(string)
-	if sub == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token subject"})
-	}
-
-	// For now, just echo back minimal info from token; optionally you can fetch from DB later
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"sub":   sub,
-		"email": claims["email"],
-		"name":  claims["name"],
-	})
+	huma.Register(api, huma.Operation{
+		OperationID: "auth-me",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/auth/me",
+		Summary:     "Current user",
+		Description: "Returns the authenticated principal (from JWT claims).",
+		Tags:        []string{"auth"},
+	}, h.Me)
 }

@@ -1,488 +1,485 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/release"
 	"github.com/kyleaupton/arrflix/internal/service"
-	"github.com/labstack/echo/v4"
 )
+
+// ----- Handler -----
 
 type Policies struct{ svc *service.Services }
 
 func NewPolicies(s *service.Services) *Policies { return &Policies{svc: s} }
 
-func (h *Policies) RegisterProtected(v1 *echo.Group) {
-	v1.GET("/policies", h.List)
-	v1.POST("/policies", h.Create)
-	v1.GET("/policies/full", h.ListFull)
-	v1.GET("/policies/fields", h.GetFields)
-	v1.GET("/policies/:id", h.Get)
-	v1.PUT("/policies/:id", h.Update)
-	v1.DELETE("/policies/:id", h.Delete)
+// ----- Shared body shapes -----
 
-	v1.GET("/policies/:id/rule", h.GetRule)
-	v1.POST("/policies/:id/rule", h.CreateRule)
-	v1.PUT("/policies/:id/rule", h.UpdateRule)
-	v1.DELETE("/policies/:id/rule", h.DeleteRule)
-
-	v1.GET("/policies/:id/actions", h.ListActions)
-	v1.POST("/policies/:id/actions", h.CreateAction)
-	v1.GET("/policies/:id/actions/:actionId", h.GetAction)
-	v1.PUT("/policies/:id/actions/:actionId", h.UpdateAction)
-	v1.DELETE("/policies/:id/actions/:actionId", h.DeleteAction)
-
-	v1.POST("/policies/evaluate", h.Evaluate)
+type policyWriteBody struct {
+	Name        string  `json:"name" required:"true" minLength:"1" doc:"Display name"`
+	Description *string `json:"description,omitempty" doc:"Optional description"`
+	Enabled     bool    `json:"enabled" doc:"Whether the policy is active"`
+	Priority    int32   `json:"priority" doc:"Evaluation priority (higher runs first)"`
 }
 
-// PolicyCreateRequest payload
-type PolicyCreateRequest struct {
-	Name        string  `json:"name"`
-	Description *string `json:"description"`
-	Enabled     bool    `json:"enabled"`
-	Priority    int32   `json:"priority"`
+type ruleWriteBody struct {
+	LeftOperand  string `json:"leftOperand" required:"true" doc:"Left operand of the rule"`
+	Operator     string `json:"operator" required:"true" minLength:"1" doc:"Operator"`
+	RightOperand string `json:"rightOperand" required:"true" doc:"Right operand"`
 }
 
-// PolicyUpdateRequest payload
-type PolicyUpdateRequest struct {
-	Name        string  `json:"name"`
-	Description *string `json:"description"`
-	Enabled     bool    `json:"enabled"`
-	Priority    int32   `json:"priority"`
+type actionWriteBody struct {
+	Type  string `json:"type" required:"true" minLength:"1" doc:"Action type"`
+	Value string `json:"value" doc:"Action value"`
+	Order int32  `json:"order" doc:"Order within the policy's action list"`
 }
 
-// RuleCreateRequest payload
-type RuleCreateRequest struct {
-	LeftOperand  string `json:"left_operand"`
-	Operator     string `json:"operator"`
-	RightOperand string `json:"right_operand"`
+// ----- List -----
+
+type PoliciesListInput struct{}
+
+type PoliciesListOutput struct {
+	Body []model.Policy
 }
 
-// RuleUpdateRequest payload
-type RuleUpdateRequest struct {
-	LeftOperand  string `json:"left_operand"`
-	Operator     string `json:"operator"`
-	RightOperand string `json:"right_operand"`
-}
-
-// ActionCreateRequest payload
-type ActionCreateRequest struct {
-	Type  string `json:"type"`
-	Value string `json:"value"`
-	Order int32  `json:"order"`
-}
-
-// ActionUpdateRequest payload
-type ActionUpdateRequest struct {
-	Type  string `json:"type"`
-	Value string `json:"value"`
-	Order int32  `json:"order"`
-}
-
-// FullPolicy is a policy with its rule and actions nested
-type FullPolicy struct {
-	dbgen.Policy
-	Rule    *dbgen.Rule    `json:"rule"`
-	Actions []dbgen.Action `json:"actions"`
-}
-
-// List policies
-// @Summary List policies
-// @Tags    policies
-// @Produce json
-// @Success 200 {array} dbgen.Policy
-// @Router  /v1/policies [get]
-func (h *Policies) List(c echo.Context) error {
-	ctx := c.Request().Context()
-	policies, err := h.svc.Policies.List(ctx)
+func (h *Policies) List(ctx context.Context, _ *PoliciesListInput) (*PoliciesListOutput, error) {
+	out, err := h.svc.Policies.List(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list policies"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, policies)
+	return &PoliciesListOutput{Body: out}, nil
 }
 
-// ListFull returns all policies with nested rules and actions
-// @Summary List full policies
-// @Tags    policies
-// @Produce json
-// @Success 200 {array} handlers.FullPolicy
-// @Router  /v1/policies/full [get]
-func (h *Policies) ListFull(c echo.Context) error {
-	ctx := c.Request().Context()
-	policies, rules, actions, err := h.svc.Policies.ListFull(ctx)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list policies"})
-	}
+// ----- Get -----
 
-	// Index rules by policy_id
-	ruleMap := make(map[string]*dbgen.Rule)
-	for i := range rules {
-		key := rules[i].PolicyID.Bytes
-		ruleMap[string(key[:])] = &rules[i]
-	}
-
-	// Index actions by policy_id
-	actionMap := make(map[string][]dbgen.Action)
-	for _, a := range actions {
-		key := string(a.PolicyID.Bytes[:])
-		actionMap[key] = append(actionMap[key], a)
-	}
-
-	result := make([]FullPolicy, len(policies))
-	for i, p := range policies {
-		key := string(p.ID.Bytes[:])
-		result[i] = FullPolicy{
-			Policy:  p,
-			Rule:    ruleMap[key],
-			Actions: actionMap[key],
-		}
-		if result[i].Actions == nil {
-			result[i].Actions = []dbgen.Action{}
-		}
-	}
-
-	return c.JSON(http.StatusOK, result)
+type PoliciesGetInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
 }
 
-// Create policy
-// @Summary Create policy
-// @Tags    policies
-// @Accept  json
-// @Produce json
-// @Param   payload body handlers.PolicyCreateRequest true "Create policy"
-// @Success 201 {object} dbgen.Policy
-// @Failure 400 {object} map[string]string
-// @Router  /v1/policies [post]
-func (h *Policies) Create(c echo.Context) error {
-	var req PolicyCreateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	ctx := c.Request().Context()
-	policy, err := h.svc.Policies.Create(ctx, req.Name, req.Description, req.Enabled, req.Priority)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-	return c.JSON(http.StatusCreated, policy)
+type PoliciesGetOutput struct {
+	Body model.Policy
 }
 
-// Get policy
-// @Summary Get policy
-// @Tags    policies
-// @Produce json
-// @Success 200 {object} dbgen.Policy
-// @Router  /v1/policies/{id} [get]
-func (h *Policies) Get(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	policy, err := h.svc.Policies.Get(ctx, id)
+func (h *Policies) Get(ctx context.Context, input *PoliciesGetInput) (*PoliciesGetOutput, error) {
+	out, err := h.svc.Policies.Get(ctx, input.ID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, policy)
+	return &PoliciesGetOutput{Body: out}, nil
 }
 
-// Update policy
-// @Summary Update policy
-// @Tags    policies
-// @Accept  json
-// @Produce json
-// @Param   id path string true "Policy ID"
-// @Param   payload body handlers.PolicyUpdateRequest true "Update policy"
-// @Success 200 {object} dbgen.Policy
-// @Failure 400 {object} map[string]string
-// @Router  /v1/policies/{id} [put]
-func (h *Policies) Update(c echo.Context) error {
-	var req PolicyUpdateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	policy, err := h.svc.Policies.Update(ctx, id, req.Name, req.Description, req.Enabled, req.Priority)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-	return c.JSON(http.StatusOK, policy)
+// ----- Create -----
+
+type PoliciesCreateInput struct {
+	Body policyWriteBody
 }
 
-// Delete policy
-// @Summary Delete policy
-// @Tags    policies
-// @Param   id path string true "Policy ID"
-// @Success 204 {string} string ""
-// @Router  /v1/policies/{id} [delete]
-func (h *Policies) Delete(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	if err := h.svc.Policies.Delete(ctx, id); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete"})
-	}
-	return c.NoContent(http.StatusNoContent)
+type PoliciesCreateOutput struct {
+	Body model.Policy
 }
 
-// Get rule for policy
-// @Summary Get rule for policy
-// @Tags    policies
-// @Produce json
-// @Success 200 {object} dbgen.Rule
-// @Router  /v1/policies/{id}/rule [get]
-func (h *Policies) GetRule(c echo.Context) error {
-	var policyID pgtype.UUID
-	if err := policyID.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	rule, err := h.svc.Policies.GetRule(ctx, policyID)
+func (h *Policies) Create(ctx context.Context, input *PoliciesCreateInput) (*PoliciesCreateOutput, error) {
+	out, err := h.svc.Policies.Create(ctx, input.Body.Name, input.Body.Description, input.Body.Enabled, input.Body.Priority)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, rule)
+	return &PoliciesCreateOutput{Body: out}, nil
 }
 
-// Create rule for policy
-// @Summary Create rule for policy
-// @Tags    policies
-// @Accept  json
-// @Produce json
-// @Param   id path string true "Policy ID"
-// @Param   payload body handlers.RuleCreateRequest true "Create rule"
-// @Success 201 {object} dbgen.Rule
-// @Failure 400 {object} map[string]string
-// @Router  /v1/policies/{id}/rule [post]
-func (h *Policies) CreateRule(c echo.Context) error {
-	var req RuleCreateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	var policyID pgtype.UUID
-	if err := policyID.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	rule, err := h.svc.Policies.CreateRule(ctx, policyID, req.LeftOperand, req.Operator, req.RightOperand)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-	return c.JSON(http.StatusCreated, rule)
+// ----- Update -----
+
+type PoliciesUpdateInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
+	Body policyWriteBody
 }
 
-// Update rule for policy
-// @Summary Update rule for policy
-// @Tags    policies
-// @Accept  json
-// @Produce json
-// @Param   id path string true "Policy ID"
-// @Param   payload body handlers.RuleUpdateRequest true "Update rule"
-// @Success 200 {object} dbgen.Rule
-// @Failure 400 {object} map[string]string
-// @Router  /v1/policies/{id}/rule [put]
-func (h *Policies) UpdateRule(c echo.Context) error {
-	var req RuleUpdateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	var policyID pgtype.UUID
-	if err := policyID.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	// Get existing rule to get its ID
-	existingRule, err := h.svc.Policies.GetRule(ctx, policyID)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "rule not found"})
-	}
-	rule, err := h.svc.Policies.UpdateRule(ctx, existingRule.ID, req.LeftOperand, req.Operator, req.RightOperand)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-	return c.JSON(http.StatusOK, rule)
+type PoliciesUpdateOutput struct {
+	Body model.Policy
 }
 
-// Delete rule for policy
-// @Summary Delete rule for policy
-// @Tags    policies
-// @Param   id path string true "Policy ID"
-// @Success 204 {string} string ""
-// @Router  /v1/policies/{id}/rule [delete]
-func (h *Policies) DeleteRule(c echo.Context) error {
-	var policyID pgtype.UUID
-	if err := policyID.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	rule, err := h.svc.Policies.GetRule(ctx, policyID)
+func (h *Policies) Update(ctx context.Context, input *PoliciesUpdateInput) (*PoliciesUpdateOutput, error) {
+	out, err := h.svc.Policies.Update(ctx, input.ID, input.Body.Name, input.Body.Description, input.Body.Enabled, input.Body.Priority)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "rule not found"})
+		return nil, err
+	}
+	return &PoliciesUpdateOutput{Body: out}, nil
+}
+
+// ----- Delete -----
+
+type PoliciesDeleteInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
+}
+
+type PoliciesDeleteOutput struct{}
+
+func (h *Policies) Delete(ctx context.Context, input *PoliciesDeleteInput) (*PoliciesDeleteOutput, error) {
+	if err := h.svc.Policies.Delete(ctx, input.ID); err != nil {
+		return nil, err
+	}
+	return &PoliciesDeleteOutput{}, nil
+}
+
+// ----- GetRule -----
+
+type PoliciesGetRuleInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
+}
+
+type PoliciesGetRuleOutput struct {
+	Body model.Rule
+}
+
+func (h *Policies) GetRule(ctx context.Context, input *PoliciesGetRuleInput) (*PoliciesGetRuleOutput, error) {
+	out, err := h.svc.Policies.GetRule(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &PoliciesGetRuleOutput{Body: out}, nil
+}
+
+// ----- CreateRule -----
+
+type PoliciesCreateRuleInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
+	Body ruleWriteBody
+}
+
+type PoliciesCreateRuleOutput struct {
+	Body model.Rule
+}
+
+func (h *Policies) CreateRule(ctx context.Context, input *PoliciesCreateRuleInput) (*PoliciesCreateRuleOutput, error) {
+	out, err := h.svc.Policies.CreateRule(ctx, input.ID, input.Body.LeftOperand, input.Body.Operator, input.Body.RightOperand)
+	if err != nil {
+		return nil, err
+	}
+	return &PoliciesCreateRuleOutput{Body: out}, nil
+}
+
+// ----- UpdateRule -----
+
+type PoliciesUpdateRuleInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
+	Body ruleWriteBody
+}
+
+type PoliciesUpdateRuleOutput struct {
+	Body model.Rule
+}
+
+func (h *Policies) UpdateRule(ctx context.Context, input *PoliciesUpdateRuleInput) (*PoliciesUpdateRuleOutput, error) {
+	existingRule, err := h.svc.Policies.GetRule(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.svc.Policies.UpdateRule(ctx, existingRule.ID, input.Body.LeftOperand, input.Body.Operator, input.Body.RightOperand)
+	if err != nil {
+		return nil, err
+	}
+	return &PoliciesUpdateRuleOutput{Body: out}, nil
+}
+
+// ----- DeleteRule -----
+
+type PoliciesDeleteRuleInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
+}
+
+type PoliciesDeleteRuleOutput struct{}
+
+func (h *Policies) DeleteRule(ctx context.Context, input *PoliciesDeleteRuleInput) (*PoliciesDeleteRuleOutput, error) {
+	rule, err := h.svc.Policies.GetRule(ctx, input.ID)
+	if err != nil {
+		return nil, err
 	}
 	if err := h.svc.Policies.DeleteRule(ctx, rule.ID); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete"})
+		return nil, err
 	}
-	return c.NoContent(http.StatusNoContent)
+	return &PoliciesDeleteRuleOutput{}, nil
 }
 
-// List actions for policy
-// @Summary List actions for policy
-// @Tags    policies
-// @Produce json
-// @Success 200 {array} dbgen.Action
-// @Router  /v1/policies/{id}/actions [get]
-func (h *Policies) ListActions(c echo.Context) error {
-	var policyID pgtype.UUID
-	if err := policyID.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	actions, err := h.svc.Policies.ListActions(ctx, policyID)
+// ----- ListActions -----
+
+type PoliciesListActionsInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
+}
+
+type PoliciesListActionsOutput struct {
+	Body []model.Action
+}
+
+func (h *Policies) ListActions(ctx context.Context, input *PoliciesListActionsInput) (*PoliciesListActionsOutput, error) {
+	out, err := h.svc.Policies.ListActions(ctx, input.ID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list actions"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, actions)
+	return &PoliciesListActionsOutput{Body: out}, nil
 }
 
-// Create action for policy
-// @Summary Create action for policy
-// @Tags    policies
-// @Accept  json
-// @Produce json
-// @Param   id path string true "Policy ID"
-// @Param   payload body handlers.ActionCreateRequest true "Create action"
-// @Success 201 {object} dbgen.Action
-// @Failure 400 {object} map[string]string
-// @Router  /v1/policies/{id}/actions [post]
-func (h *Policies) CreateAction(c echo.Context) error {
-	var req ActionCreateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	var policyID pgtype.UUID
-	if err := policyID.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	action, err := h.svc.Policies.CreateAction(ctx, policyID, req.Type, req.Value, req.Order)
+// ----- CreateAction -----
+
+type PoliciesCreateActionInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
+	Body actionWriteBody
+}
+
+type PoliciesCreateActionOutput struct {
+	Body model.Action
+}
+
+func (h *Policies) CreateAction(ctx context.Context, input *PoliciesCreateActionInput) (*PoliciesCreateActionOutput, error) {
+	out, err := h.svc.Policies.CreateAction(ctx, input.ID, input.Body.Type, input.Body.Value, input.Body.Order)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, err
 	}
-	return c.JSON(http.StatusCreated, action)
+	return &PoliciesCreateActionOutput{Body: out}, nil
 }
 
-// Get action
-// @Summary Get action
-// @Tags    policies
-// @Produce json
-// @Success 200 {object} dbgen.Action
-// @Router  /v1/policies/{id}/actions/{actionId} [get]
-func (h *Policies) GetAction(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("actionId")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid action id"})
-	}
-	ctx := c.Request().Context()
-	action, err := h.svc.Policies.GetAction(ctx, id)
+// ----- GetAction -----
+
+type PoliciesGetActionInput struct {
+	ID       uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
+	ActionID uuid.UUID `path:"actionId" format:"uuid" doc:"Action ID"`
+}
+
+type PoliciesGetActionOutput struct {
+	Body model.Action
+}
+
+func (h *Policies) GetAction(ctx context.Context, input *PoliciesGetActionInput) (*PoliciesGetActionOutput, error) {
+	out, err := h.svc.Policies.GetAction(ctx, input.ActionID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, action)
+	return &PoliciesGetActionOutput{Body: out}, nil
 }
 
-// Update action
-// @Summary Update action
-// @Tags    policies
-// @Accept  json
-// @Produce json
-// @Param   id path string true "Policy ID"
-// @Param   actionId path string true "Action ID"
-// @Param   payload body handlers.ActionUpdateRequest true "Update action"
-// @Success 200 {object} dbgen.Action
-// @Failure 400 {object} map[string]string
-// @Router  /v1/policies/{id}/actions/{actionId} [put]
-func (h *Policies) UpdateAction(c echo.Context) error {
-	var req ActionUpdateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("actionId")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid action id"})
-	}
-	ctx := c.Request().Context()
-	action, err := h.svc.Policies.UpdateAction(ctx, id, req.Type, req.Value, req.Order)
+// ----- UpdateAction -----
+
+type PoliciesUpdateActionInput struct {
+	ID       uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
+	ActionID uuid.UUID `path:"actionId" format:"uuid" doc:"Action ID"`
+	Body     actionWriteBody
+}
+
+type PoliciesUpdateActionOutput struct {
+	Body model.Action
+}
+
+func (h *Policies) UpdateAction(ctx context.Context, input *PoliciesUpdateActionInput) (*PoliciesUpdateActionOutput, error) {
+	out, err := h.svc.Policies.UpdateAction(ctx, input.ActionID, input.Body.Type, input.Body.Value, input.Body.Order)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, action)
+	return &PoliciesUpdateActionOutput{Body: out}, nil
 }
 
-// Delete action
-// @Summary Delete action
-// @Tags    policies
-// @Param   id path string true "Policy ID"
-// @Param   actionId path string true "Action ID"
-// @Success 204 {string} string ""
-// @Router  /v1/policies/{id}/actions/{actionId} [delete]
-func (h *Policies) DeleteAction(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("actionId")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid action id"})
-	}
-	ctx := c.Request().Context()
-	if err := h.svc.Policies.DeleteAction(ctx, id); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete"})
-	}
-	return c.NoContent(http.StatusNoContent)
+// ----- DeleteAction -----
+
+type PoliciesDeleteActionInput struct {
+	ID       uuid.UUID `path:"id" format:"uuid" doc:"Policy ID"`
+	ActionID uuid.UUID `path:"actionId" format:"uuid" doc:"Action ID"`
 }
 
-// GetFields returns all available field definitions for policy rules
-// @Summary Get field definitions
-// @Tags    policies
-// @Produce json
-// @Success 200 {array} model.FieldDefinition
-// @Router  /v1/policies/fields [get]
-func (h *Policies) GetFields(c echo.Context) error {
-	ctx := c.Request().Context()
-	fields, err := h.svc.Policies.GetFieldDefinitions(ctx)
+type PoliciesDeleteActionOutput struct{}
+
+func (h *Policies) DeleteAction(ctx context.Context, input *PoliciesDeleteActionInput) (*PoliciesDeleteActionOutput, error) {
+	if err := h.svc.Policies.DeleteAction(ctx, input.ActionID); err != nil {
+		return nil, err
+	}
+	return &PoliciesDeleteActionOutput{}, nil
+}
+
+// ----- GetFields -----
+
+type PoliciesGetFieldsInput struct{}
+
+type PoliciesGetFieldsOutput struct {
+	Body []model.FieldDefinition
+}
+
+func (h *Policies) GetFields(ctx context.Context, _ *PoliciesGetFieldsInput) (*PoliciesGetFieldsOutput, error) {
+	out, err := h.svc.Policies.GetFieldDefinitions(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, fields)
+	return &PoliciesGetFieldsOutput{Body: out}, nil
 }
 
-// Evaluate policies
-// @Summary Evaluate policies against torrent metadata
-// @Tags    policies
-// @Accept  json
-// @Produce json
-// @Param   payload body model.DownloadCandidate true "Download candidate"
-// @Success 200 {object} model.EvaluationTrace
-// @Failure 400 {object} map[string]string
-// @Router  /v1/policies/evaluate [post]
-func (h *Policies) Evaluate(c echo.Context) error {
-	var req model.DownloadCandidate
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
+// ----- Evaluate -----
 
-	// Convert DownloadCandidate to EvaluationContext
-	q := release.Parse(req.Title)
-	evalCtx := model.NewEvaluationContext(req, q)
+type PoliciesEvaluateInput struct {
+	Body model.DownloadCandidate
+}
 
-	ctx := c.Request().Context()
+type PoliciesEvaluateOutput struct {
+	Body model.EvaluationTrace
+}
+
+func (h *Policies) Evaluate(ctx context.Context, input *PoliciesEvaluateInput) (*PoliciesEvaluateOutput, error) {
+	q := release.Parse(input.Body.Title)
+	evalCtx := model.NewEvaluationContext(input.Body, q)
+
 	trace, err := h.svc.Policies.Evaluate(ctx, evalCtx)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, trace)
+	return &PoliciesEvaluateOutput{Body: trace}, nil
+}
+
+// ----- Register -----
+
+func (h *Policies) RegisterHumachi(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "policies-list",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/policies",
+		Summary:     "List policies",
+		Tags:        []string{"policies"},
+	}, h.List)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "policies-create",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/policies",
+		Summary:       "Create policy",
+		Tags:          []string{"policies"},
+		DefaultStatus: http.StatusCreated,
+		Errors:        errsWrite,
+	}, h.Create)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "policies-get-fields",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/policies/fields",
+		Summary:     "Get policy field definitions",
+		Tags:        []string{"policies"},
+	}, h.GetFields)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "policies-get",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/policies/{id}",
+		Summary:     "Get policy",
+		Tags:        []string{"policies"},
+		Errors:      errsRead,
+	}, h.Get)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "policies-update",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/policies/{id}",
+		Summary:     "Update policy",
+		Tags:        []string{"policies"},
+		Errors:      errsUpsert,
+	}, h.Update)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "policies-delete",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/policies/{id}",
+		Summary:       "Delete policy",
+		Tags:          []string{"policies"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsRead,
+	}, h.Delete)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "policies-get-rule",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/policies/{id}/rule",
+		Summary:     "Get rule for policy",
+		Tags:        []string{"policies"},
+		Errors:      errsRead,
+	}, h.GetRule)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "policies-create-rule",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/policies/{id}/rule",
+		Summary:       "Create rule for policy",
+		Tags:          []string{"policies"},
+		DefaultStatus: http.StatusCreated,
+		Errors:        errsUpsert,
+	}, h.CreateRule)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "policies-update-rule",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/policies/{id}/rule",
+		Summary:     "Update rule for policy",
+		Tags:        []string{"policies"},
+		Errors:      errsUpsert,
+	}, h.UpdateRule)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "policies-delete-rule",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/policies/{id}/rule",
+		Summary:       "Delete rule for policy",
+		Tags:          []string{"policies"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsRead,
+	}, h.DeleteRule)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "policies-list-actions",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/policies/{id}/actions",
+		Summary:     "List actions for policy",
+		Tags:        []string{"policies"},
+		Errors:      errsRead,
+	}, h.ListActions)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "policies-create-action",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/policies/{id}/actions",
+		Summary:       "Create action for policy",
+		Tags:          []string{"policies"},
+		DefaultStatus: http.StatusCreated,
+		Errors:        errsUpsert,
+	}, h.CreateAction)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "policies-get-action",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/policies/{id}/actions/{actionId}",
+		Summary:     "Get action",
+		Tags:        []string{"policies"},
+		Errors:      errsRead,
+	}, h.GetAction)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "policies-update-action",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/policies/{id}/actions/{actionId}",
+		Summary:     "Update action",
+		Tags:        []string{"policies"},
+		Errors:      errsUpsert,
+	}, h.UpdateAction)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "policies-delete-action",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/policies/{id}/actions/{actionId}",
+		Summary:       "Delete action",
+		Tags:          []string{"policies"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsRead,
+	}, h.DeleteAction)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "policies-evaluate",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/policies/evaluate",
+		Summary:     "Evaluate policies against a download candidate",
+		Tags:        []string{"policies"},
+		Errors:      errsWrite,
+	}, h.Evaluate)
 }

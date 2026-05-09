@@ -2,9 +2,9 @@
 import { ref, inject, watch, computed } from 'vue'
 import { useMutation, useQuery } from '@tanstack/vue-query'
 import {
-  putV1UsersByIdMutation,
-  putV1UsersByIdRoleMutation,
-  getV1RolesOptions,
+  usersUpdateMutation,
+  usersAssignRoleMutation,
+  rolesListOptions,
 } from '@/client/@tanstack/vue-query.gen'
 import type { User } from '@/components/tables/configs/userTableConfig'
 import BaseDialog from './BaseDialog.vue'
@@ -28,17 +28,17 @@ const props = defineProps<Props>()
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
 
-const updateUserMutation = useMutation(putV1UsersByIdMutation())
-const updateRoleMutation = useMutation(putV1UsersByIdRoleMutation())
+const updateUserMutation = useMutation(usersUpdateMutation())
+const updateRoleMutation = useMutation(usersAssignRoleMutation())
 
 // Fetch roles
-const { data: roles } = useQuery(getV1RolesOptions())
+const { data: roles } = useQuery(rolesListOptions())
 
 const userForm = ref({
   email: '',
   username: '',
   role: 'user',
-  is_active: true,
+  isActive: true,
 })
 
 const userError = ref<string | null>(null)
@@ -64,7 +64,7 @@ watch(
       email: user.email || '',
       username: user.username || '',
       role: roleName,
-      is_active: user.is_active ?? true,
+      isActive: user.isActive ?? true,
     }
     userError.value = null
   },
@@ -83,7 +83,7 @@ const handleSave = async () => {
       body: {
         email: userForm.value.email,
         username: userForm.value.username,
-        is_active: userForm.value.is_active,
+        isActive: userForm.value.isActive,
       },
     })
 
@@ -159,7 +159,7 @@ const isLoading = computed(
       </div>
       <div class="flex items-center justify-between">
         <Label for="user-active">Active</Label>
-        <Switch id="user-active" v-model="userForm.is_active" />
+        <Switch id="user-active" v-model="userForm.isActive" />
       </div>
     </div>
     <template #footer>

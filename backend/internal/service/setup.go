@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	pw "github.com/kyleaupton/arrflix/internal/password"
 	"github.com/kyleaupton/arrflix/internal/repo"
@@ -85,32 +83,9 @@ func (s *SetupService) SetTmdbKey(ctx context.Context, apiKey string) error {
 }
 
 // Initialize performs the one-time setup operation atomically:
-// 1. Check initialization status
-// 2. Create admin user
-// 3. Assign admin role
-// 4. Mark system as initialized
-// All operations occur in a single transaction for atomicity.
+// validates input, hashes the password, then defers to repo.InitializeSystem
+// for the transactional create-admin / assign-role / mark-initialized work.
 func (s *SetupService) Initialize(ctx context.Context, email, username, password string) error {
-	// Start transaction for atomicity
-	tx, err := s.repo.Pool.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel: pgx.Serializable, // Highest isolation to prevent concurrent setup
-	})
-	if err != nil {
-		return apperrors.Internalf("begin tx: %v", err).Op("SetupService.Initialize")
-	}
-	defer tx.Rollback(ctx)
-
-	// Check if already initialized (within transaction)
-	txQueries := s.repo.Q.WithTx(tx)
-	initialized, err := txQueries.GetSystemInitialized(ctx)
-	if err != nil {
-		return apperrors.Internalf("check initialized: %v", err).Op("SetupService.Initialize")
-	}
-	if initialized {
-		return apperrors.Conflictf("system already initialized").
-			Op("SetupService.Initialize")
-	}
-
 	// Validate input — collect every field problem before returning.
 	email = strings.TrimSpace(email)
 	username = strings.TrimSpace(username)
@@ -138,40 +113,7 @@ func (s *SetupService) Initialize(ctx context.Context, email, username, password
 		return apperrors.Internalf("failed to hash password: %v", err).Op("SetupService.Initialize")
 	}
 
-	// Create admin user within transaction
-	user, err := txQueries.CreateUser(ctx, dbgen.CreateUserParams{
-		Email:        &email,
-		Username:     username,
-		PasswordHash: &passwordHash,
-		IsActive:     true,
-	})
-	if err != nil {
-		// Direct SQLC call (in-tx) doesn't go through repo, so route the
-		// pg error through FromPg here so the wire response stays consistent.
-		return apperrors.FromPg(err, "create admin user %q", email)
-	}
-
-	// Assign admin role within transaction
-	role, err := txQueries.GetRoleByName(ctx, "admin")
-	if err != nil {
-		return apperrors.FromPg(err, "admin role not found")
-	}
-	if err := txQueries.AssignRole(ctx, dbgen.AssignRoleParams{
-		UserID: user.ID,
-		RoleID: role.ID,
-	}); err != nil {
-		return apperrors.FromPg(err, "assign admin role to user %s", user.ID)
-	}
-
-	// Mark system as initialized (conditional update prevents double-init)
-	if err := txQueries.SetSystemInitialized(ctx); err != nil {
-		return apperrors.FromPg(err, "mark system initialized")
-	}
-
-	// Commit transaction
-	if err := tx.Commit(ctx); err != nil {
-		return apperrors.Internalf("commit setup tx: %v", err).Op("SetupService.Initialize")
-	}
-
-	return nil
+	// Repo runs the transactional bootstrap. Conflict / NotFound are already
+	// typed by the repo; pass through unchanged.
+	return s.repo.InitializeSystem(ctx, email, username, passwordHash)
 }

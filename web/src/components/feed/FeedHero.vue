@@ -26,9 +26,9 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
-import type { ModelHeroItem } from '@/client/types.gen'
+import type { HeroItem } from '@/client/types.gen'
 
-const props = defineProps<{ hero: ModelHeroItem; fullBleed?: boolean }>()
+const props = defineProps<{ hero: HeroItem; fullBleed?: boolean }>()
 const router = useRouter()
 
 const navigateToDetail = () => {

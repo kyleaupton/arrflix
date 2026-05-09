@@ -3,10 +3,10 @@ import { useQuery, useMutation } from '@tanstack/vue-query'
 import { Plus, FileText } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
-  getV1NameTemplatesOptions,
-  deleteV1NameTemplatesByIdMutation,
+  nameTemplatesListOptions,
+  nameTemplatesDeleteMutation,
 } from '@/client/@tanstack/vue-query.gen'
-import { type HandlersNameTemplateSwagger } from '@/client/types.gen'
+import { type NameTemplate } from '@/client/types.gen'
 import DataTable from '@/components/tables/DataTable.vue'
 import {
   nameTemplateColumns,
@@ -21,10 +21,10 @@ import NameTemplateDialog from '@/components/modals/NameTemplateDialog.vue'
 const modal = useModal()
 
 // Data queries
-const { data: templates, isLoading, refetch } = useQuery(getV1NameTemplatesOptions())
+const { data: templates, isLoading, refetch } = useQuery(nameTemplatesListOptions())
 
 // Mutations
-const deleteTemplateMutation = useMutation(deleteV1NameTemplatesByIdMutation())
+const deleteTemplateMutation = useMutation(nameTemplatesDeleteMutation())
 
 // Handlers
 const handleAddTemplate = () => {
@@ -38,7 +38,7 @@ const handleAddTemplate = () => {
   })
 }
 
-const handleEditTemplate = (template: HandlersNameTemplateSwagger) => {
+const handleEditTemplate = (template: NameTemplate) => {
   modal.open(NameTemplateDialog, {
     props: {
       template,
@@ -49,7 +49,7 @@ const handleEditTemplate = (template: HandlersNameTemplateSwagger) => {
   })
 }
 
-const handleDeleteTemplate = async (template: HandlersNameTemplateSwagger) => {
+const handleDeleteTemplate = async (template: NameTemplate) => {
   if (!template.id) return
   const confirmed = await modal.confirm({
     title: 'Delete Template',

@@ -7,14 +7,14 @@
 </template>
 
 <script setup lang="ts">
-import { type ModelCastMember } from '@/client/types.gen'
+import { type CastMember } from '@/client/types.gen'
 import Rail from './Rail.vue'
 import CastCard from '@/components/cast/CastCard.vue'
 
 withDefaults(
   defineProps<{
     title?: string
-    cast: Array<ModelCastMember>
+    cast: Array<CastMember>
   }>(),
   {
     title: 'Cast',

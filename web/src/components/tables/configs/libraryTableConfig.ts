@@ -1,8 +1,8 @@
 import { type TableColumn, type TableAction } from '../types'
-import { type HandlersLibrarySwagger } from '@/client/types.gen'
+import { type Library } from '@/client/types.gen'
 import { PrimeIcons } from '@/icons'
 
-export const libraryColumns: TableColumn<HandlersLibrarySwagger>[] = [
+export const libraryColumns: TableColumn<Library>[] = [
   {
     key: 'name',
     label: 'Name',
@@ -56,10 +56,10 @@ export const libraryColumns: TableColumn<HandlersLibrarySwagger>[] = [
 ]
 
 export const createLibraryActions = (
-  onScan: (library: HandlersLibrarySwagger) => void,
-  onEdit: (library: HandlersLibrarySwagger) => void,
-  onDelete: (library: HandlersLibrarySwagger) => void,
-): TableAction<HandlersLibrarySwagger>[] => [
+  onScan: (library: Library) => void,
+  onEdit: (library: Library) => void,
+  onDelete: (library: Library) => void,
+): TableAction<Library>[] => [
   {
     key: 'scan',
     label: 'Scan',

@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -19,10 +19,10 @@ func NewInvitesService(r *repo.Repository) *InvitesService {
 }
 
 // Create adds a new email to the invite list.
-func (s *InvitesService) Create(ctx context.Context, email string, invitedBy pgtype.UUID) (dbgen.UserInvite, error) {
+func (s *InvitesService) Create(ctx context.Context, email string, invitedBy uuid.UUID) (model.Invite, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
-		return dbgen.UserInvite{}, apperrors.Validation("invalid invite",
+		return model.Invite{}, apperrors.Validation("invalid invite",
 			apperrors.Field("body.email", "required"),
 		).Op("InvitesService.Create")
 	}
@@ -31,12 +31,12 @@ func (s *InvitesService) Create(ctx context.Context, email string, invitedBy pgt
 }
 
 // List returns all invites.
-func (s *InvitesService) List(ctx context.Context) ([]dbgen.UserInvite, error) {
+func (s *InvitesService) List(ctx context.Context) ([]model.Invite, error) {
 	return s.repo.ListInvites(ctx)
 }
 
 // Delete removes an invite.
-func (s *InvitesService) Delete(ctx context.Context, id pgtype.UUID) error {
+func (s *InvitesService) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.DeleteInvite(ctx, id)
 }
 

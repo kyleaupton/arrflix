@@ -122,9 +122,9 @@ export function useModal() {
       props: {
         ...options?.props,
       },
-      onClose: (result?: { data?: T }) => {
+      onClose: (result?: { data?: unknown }) => {
         currentDialogInstance.value = null
-        options?.onClose?.(result)
+        options?.onClose?.(result as { data?: T } | undefined)
       },
     })
     const dialogInstance: DialogInstance = {

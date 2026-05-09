@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	"github.com/kyleaupton/arrflix/internal/repo"
-	"github.com/labstack/echo/v4"
 )
 
 type DevDownloaderTest struct {
@@ -20,20 +22,38 @@ func NewDevDownloaderTest(manager *downloader.Manager, repo *repo.Repository) *D
 	}
 }
 
-func (h *DevDownloaderTest) RegisterDev(e *echo.Echo) {
-	dev := e.Group("/dev")
-	dev.GET("/downloader-test", h.ServeUI)
+// RegisterDev registers the dev-only downloader-test routes on the chi
+// router. These are outside the typed OpenAPI surface — an HTML UI plus
+// opaque debug endpoints whose request/response shapes intentionally
+// mirror raw downloader-client wire shapes (arbitrary interface{}).
+//
+// Auth is bypassed for the entire /dev/* tree via the publicPathPrefixes
+// allowlist in middlewares/chi.go. Only registered when cfg.Env == "dev".
+func (h *DevDownloaderTest) RegisterDev(r chi.Router) {
+	r.Get("/dev/downloader-test", h.ServeUI)
+	r.Get("/dev/api/downloaders", h.ListDownloaders)
+	r.Post("/dev/api/downloaders/{id}/add", h.AddMagnet)
+	r.Get("/dev/api/downloaders/{id}/items", h.ListItems)
+	r.Get("/dev/api/downloaders/{id}/items/{hash}", h.GetItem)
+	r.Get("/dev/api/downloaders/{id}/items/{hash}/files", h.GetItemFiles)
+}
 
-	api := dev.Group("/api")
-	api.GET("/downloaders", h.ListDownloaders)
-	api.POST("/downloaders/:id/add", h.AddMagnet)
-	api.GET("/downloaders/:id/items", h.ListItems)
-	api.GET("/downloaders/:id/items/:hash", h.GetItem)
-	api.GET("/downloaders/:id/items/:hash/files", h.GetItemFiles)
+// writeJSON writes v as JSON with the given status. Errors during encoding
+// are silently dropped — the response has already started; there's nothing
+// useful to do with a write error here.
+func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeJSONError writes a {"error": msg} JSON body with the given status.
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
 }
 
 // ServeUI serves the HTML testing interface
-func (h *DevDownloaderTest) ServeUI(c echo.Context) error {
+func (h *DevDownloaderTest) ServeUI(w http.ResponseWriter, r *http.Request) {
 	html := `<!DOCTYPE html>
 <html>
 <head>
@@ -195,54 +215,54 @@ func (h *DevDownloaderTest) ServeUI(c echo.Context) error {
 <body>
 	<div class="container">
 		<h1>Downloader Test</h1>
-		
+
 		<div id="error" class="error" style="display: none;"></div>
-		
+
 		<div class="form-group">
 			<label for="downloader">Downloader:</label>
 			<select id="downloader">
 				<option value="">Loading...</option>
 			</select>
 		</div>
-		
+
 		<div class="clients-list">
 			<strong>Active Clients:</strong>
 			<div id="clients-status">Loading...</div>
 		</div>
-		
+
 		<div class="form-group">
 			<label for="magnet">Magnet URL or Torrent File URL:</label>
 			<input type="text" id="magnet" placeholder="magnet:?xt=urn:btih:... or https://example.com/file.torrent">
 		</div>
-		
+
 		<button onclick="addMagnet()">Add Download (Magnet or Torrent URL)</button>
 		<button class="refresh-btn" onclick="refreshItems()">Refresh</button>
 	</div>
-	
+
 	<div class="container">
 		<h2>Active Downloads</h2>
 		<div id="items" class="items-list">
 			<div>Select a downloader to view items</div>
 		</div>
 	</div>
-	
+
 	<script>
 		let downloaderId = '';
 		let refreshInterval = null;
-		
+
 		// Load downloaders on page load
 		fetch('/dev/api/downloaders')
 			.then(r => r.json())
 			.then(data => {
 				const select = document.getElementById('downloader');
 				select.innerHTML = '<option value="">Select a downloader...</option>';
-				
+
 				// Update clients status
 				const clientsDiv = document.getElementById('clients-status');
 				const activeClients = data.filter(dl => dl.initialized);
 				const inactiveClients = data.filter(dl => dl.enabled && !dl.initialized);
 				const disabledClients = data.filter(dl => !dl.enabled);
-				
+
 				if (activeClients.length === 0 && inactiveClients.length === 0 && disabledClients.length === 0) {
 					clientsDiv.innerHTML = '<div style="color: #666;">No downloaders configured</div>';
 				} else {
@@ -279,7 +299,7 @@ func (h *DevDownloaderTest) ServeUI(c echo.Context) error {
 					}
 					clientsDiv.innerHTML = html;
 				}
-				
+
 				// Populate dropdown with status indicators
 				data.forEach(dl => {
 					const option = document.createElement('option');
@@ -295,7 +315,7 @@ func (h *DevDownloaderTest) ServeUI(c echo.Context) error {
 					option.textContent = dl.name + ' (' + dl.type + ')' + statusText;
 					select.appendChild(option);
 				});
-				
+
 				select.onchange = function() {
 					downloaderId = this.value;
 					if (downloaderId) {
@@ -308,7 +328,7 @@ func (h *DevDownloaderTest) ServeUI(c echo.Context) error {
 				};
 			})
 			.catch(err => showError('Failed to load downloaders: ' + err));
-		
+
 		function showError(msg) {
 			const errorDiv = document.getElementById('error');
 			errorDiv.textContent = msg;
@@ -317,7 +337,7 @@ func (h *DevDownloaderTest) ServeUI(c echo.Context) error {
 				errorDiv.style.display = 'none';
 			}, 5000);
 		}
-		
+
 		function addMagnet() {
 			const magnet = document.getElementById('magnet').value.trim();
 			if (!magnet) {
@@ -328,11 +348,11 @@ func (h *DevDownloaderTest) ServeUI(c echo.Context) error {
 				showError('Please select a downloader');
 				return;
 			}
-			
+
 			const btn = event.target;
 			btn.disabled = true;
 			btn.textContent = 'Adding...';
-			
+
 			fetch('/dev/api/downloaders/' + downloaderId + '/add', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -353,10 +373,10 @@ func (h *DevDownloaderTest) ServeUI(c echo.Context) error {
 				btn.textContent = 'Add Download';
 			});
 		}
-		
+
 		function refreshItems() {
 			if (!downloaderId) return;
-			
+
 			fetch('/dev/api/downloaders/' + downloaderId + '/items')
 				.then(r => r.json())
 				.then(data => {
@@ -369,7 +389,7 @@ func (h *DevDownloaderTest) ServeUI(c echo.Context) error {
 						itemsDiv.innerHTML = '<div>No active downloads</div>';
 						return;
 					}
-					
+
 					itemsDiv.innerHTML = data.map(item => {
 						const progress = Math.round((item.progress || 0) * 100);
 						const status = item.status || 'unknown';
@@ -395,19 +415,19 @@ func (h *DevDownloaderTest) ServeUI(c echo.Context) error {
 					document.getElementById('items').innerHTML = '<div class="error">Failed to load items: ' + err + '</div>';
 				});
 		}
-		
+
 		function startAutoRefresh() {
 			stopAutoRefresh();
 			refreshInterval = setInterval(refreshItems, 5000);
 		}
-		
+
 		function stopAutoRefresh() {
 			if (refreshInterval) {
 				clearInterval(refreshInterval);
 				refreshInterval = null;
 			}
 		}
-		
+
 		function escapeHtml(text) {
 			const div = document.createElement('div');
 			div.textContent = text;
@@ -416,15 +436,18 @@ func (h *DevDownloaderTest) ServeUI(c echo.Context) error {
 	</script>
 </body>
 </html>`
-	return c.HTML(http.StatusOK, html)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(html))
 }
 
 // ListDownloaders lists all downloaders with their initialization status
-func (h *DevDownloaderTest) ListDownloaders(c echo.Context) error {
-	ctx := c.Request().Context()
+func (h *DevDownloaderTest) ListDownloaders(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	downloaders, err := h.repo.ListDownloaders(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	// Get list of initialized client IDs
@@ -449,7 +472,7 @@ func (h *DevDownloaderTest) ListDownloaders(c echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, result)
+	writeJSON(w, http.StatusOK, result)
 }
 
 // AddMagnetRequest is the request body for adding a magnet link or torrent URL
@@ -458,25 +481,29 @@ type AddMagnetRequest struct {
 }
 
 // AddMagnet adds a magnet link to a downloader
-func (h *DevDownloaderTest) AddMagnet(c echo.Context) error {
-	downloaderID := c.Param("id")
+func (h *DevDownloaderTest) AddMagnet(w http.ResponseWriter, r *http.Request) {
+	downloaderID := chi.URLParam(r, "id")
 	if downloaderID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "downloader ID required"})
+		writeJSONError(w, http.StatusBadRequest, "downloader ID required")
+		return
 	}
 
 	var req AddMagnetRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
 	}
 
 	if req.Magnet == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "magnet URL or torrent file URL required"})
+		writeJSONError(w, http.StatusBadRequest, "magnet URL or torrent file URL required")
+		return
 	}
 
-	ctx := c.Request().Context()
+	ctx := r.Context()
 	client, err := h.manager.GetClientByID(ctx, downloaderID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
 	}
 
 	addReq := downloader.AddRequest{
@@ -485,76 +512,87 @@ func (h *DevDownloaderTest) AddMagnet(c echo.Context) error {
 
 	result, err := client.Add(ctx, addReq)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return c.JSON(http.StatusOK, result)
+	writeJSON(w, http.StatusOK, result)
 }
 
 // ListItems lists all items (torrents) for a downloader
-func (h *DevDownloaderTest) ListItems(c echo.Context) error {
-	downloaderID := c.Param("id")
+func (h *DevDownloaderTest) ListItems(w http.ResponseWriter, r *http.Request) {
+	downloaderID := chi.URLParam(r, "id")
 	if downloaderID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "downloader ID required"})
+		writeJSONError(w, http.StatusBadRequest, "downloader ID required")
+		return
 	}
 
-	ctx := c.Request().Context()
+	ctx := r.Context()
 	client, err := h.manager.GetClientByID(ctx, downloaderID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
 	}
 
 	items, err := client.List(ctx)
 	if err != nil {
-		if err == downloader.ErrUnsupported {
-			return c.JSON(http.StatusNotImplemented, map[string]string{"error": "List operation not supported by this downloader"})
+		if errors.Is(err, downloader.ErrUnsupported) {
+			writeJSONError(w, http.StatusNotImplemented, "List operation not supported by this downloader")
+			return
 		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
-	return c.JSON(http.StatusOK, items)
+	writeJSON(w, http.StatusOK, items)
 }
 
 // GetItem gets a specific item by hash
-func (h *DevDownloaderTest) GetItem(c echo.Context) error {
-	downloaderID := c.Param("id")
-	hash := c.Param("hash")
+func (h *DevDownloaderTest) GetItem(w http.ResponseWriter, r *http.Request) {
+	downloaderID := chi.URLParam(r, "id")
+	hash := chi.URLParam(r, "hash")
 	if downloaderID == "" || hash == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "downloader ID and hash required"})
+		writeJSONError(w, http.StatusBadRequest, "downloader ID and hash required")
+		return
 	}
 
-	ctx := c.Request().Context()
+	ctx := r.Context()
 	client, err := h.manager.GetClientByID(ctx, downloaderID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
 	}
 
 	item, err := client.Get(ctx, hash)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
 	}
 
-	return c.JSON(http.StatusOK, item)
+	writeJSON(w, http.StatusOK, item)
 }
 
 // GetItemFiles lists files for an item
-func (h *DevDownloaderTest) GetItemFiles(c echo.Context) error {
-	downloaderID := c.Param("id")
-	hash := c.Param("hash")
+func (h *DevDownloaderTest) GetItemFiles(w http.ResponseWriter, r *http.Request) {
+	downloaderID := chi.URLParam(r, "id")
+	hash := chi.URLParam(r, "hash")
 	if downloaderID == "" || hash == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "downloader ID and hash required"})
+		writeJSONError(w, http.StatusBadRequest, "downloader ID and hash required")
+		return
 	}
 
-	ctx := c.Request().Context()
+	ctx := r.Context()
 	client, err := h.manager.GetClientByID(ctx, downloaderID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
 	}
 
 	files, err := client.ListFiles(ctx, hash)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
 	}
 
-	return c.JSON(http.StatusOK, files)
+	writeJSON(w, http.StatusOK, files)
 }

@@ -162,13 +162,16 @@ async function runGenApiScript(): Promise<string> {
   const outputs: string[] = [];
 
   try {
-    // Run swag init in backend directory
-    const swagOut = await runCommand(
-      "swag",
-      ["init", "-g", "internal/http/http.go", "-o", "internal/http/docs", "--requiredByDefault"],
+    // Run cmd/genspec in backend directory. This replaces the prior
+    // swag init step as part of the humachi migration. During phase 1
+    // the spec is essentially empty (no humachi handlers registered);
+    // it grows as handlers migrate in phases 2-3.
+    const specOut = await runCommand(
+      "go",
+      ["run", "./cmd/genspec"],
       backendPath
     );
-    outputs.push(`Backend (swag):\n${swagOut}`);
+    outputs.push(`Backend (genspec):\n${specOut}`);
 
     // Run npm run openapi-ts in web directory
     const npmOut = await runCommand(

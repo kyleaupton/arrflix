@@ -1,161 +1,201 @@
+// media.go is the humachi-shaped media handler. The route shape is the
+// pre-migration one: paginated /library, /search via TMDB, and
+// {movie,series,person}/{tmdbId} detail endpoints. There are no slug or UUID
+// addressed routes today — TMDB ids (int64) are the only addressable form.
+//
+// All endpoints are protected by the global ChiJWT middleware; reads of the
+// authenticated principal aren't required by any handler here, so we don't
+// touch the claims context.
 package handlers
 
 import (
+	"context"
 	"net/http"
-	"strconv"
 
-	_ "github.com/jackc/pgx/v5/pgtype"
-	_ "github.com/kyleaupton/arrflix/internal/db/sqlc"
-	_ "github.com/kyleaupton/arrflix/internal/model"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/service"
-	"github.com/labstack/echo/v4"
 )
+
+// ----- Handler -----
 
 type Media struct{ svc *service.Services }
 
 func NewMedia(s *service.Services) *Media { return &Media{svc: s} }
 
-func (h *Media) RegisterProtected(v1 *echo.Group) {
-	v1.GET("/library", h.List)
-	v1.GET("/search", h.Search)
-	v1.GET("/movie/:id", h.GetMovie)
-	v1.GET("/series/:id", h.GetSeries)
-	v1.GET("/person/:id", h.GetPerson)
+// ----- List (library) -----
+
+// MediaListInput carries pagination + filtering for GET /library.
+type MediaListInput struct {
+	Page     int    `query:"page" minimum:"1" doc:"1-based page index"`
+	PageSize int    `query:"pageSize" minimum:"1" maximum:"100" doc:"Items per page (1-100)"`
+	Type     string `query:"type" enum:",movie,series" doc:"Filter by media type"`
+	Search   string `query:"search" doc:"Substring match on title"`
+	SortBy   string `query:"sortBy" enum:",title,year,createdAt" doc:"Sort field"`
+	SortDir  string `query:"sortDir" enum:",asc,desc" doc:"Sort direction"`
 }
 
-// LibraryQueryParams for query parameter binding
-type LibraryQueryParams struct {
-	Page     int    `query:"page"`
-	PageSize int    `query:"pageSize"`
-	Type     string `query:"type"`
-	Search   string `query:"search"`
-	SortBy   string `query:"sortBy"`
-	SortDir  string `query:"sortDir"`
+// MediaListOutput wraps the paginated library page. The Page generic was
+// aliased to PaginatedLibraryResponse upstream for stable schema naming.
+type MediaListOutput struct {
+	Body model.PaginatedLibraryResponse
 }
 
-// List media items with pagination
-// @Summary List media items
-// @Tags    media
-// @Produce json
-// @Param   page query int false "Page number" default(1)
-// @Param   pageSize query int false "Items per page" default(20)
-// @Param   type query string false "Filter by type (movie/series)"
-// @Param   search query string false "Search by title"
-// @Param   sortBy query string false "Sort field (title/year/createdAt)" default(createdAt)
-// @Param   sortDir query string false "Sort direction (asc/desc)" default(desc)
-// @Success 200 {object} model.PaginatedLibraryResponse
-// @Router  /v1/library [get]
-func (h *Media) List(c echo.Context) error {
-	var params LibraryQueryParams
-	if err := c.Bind(&params); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid params"})
-	}
-
-	ctx := c.Request().Context()
-	result, err := h.svc.Media.ListLibraryItemsPaginated(ctx, service.LibraryQueryParams{
-		Page:     params.Page,
-		PageSize: params.PageSize,
-		Type:     params.Type,
-		Search:   params.Search,
-		SortBy:   params.SortBy,
-		SortDir:  params.SortDir,
+// List returns a paginated, optionally filtered slice of media items in the
+// library. Defaults / clamps are applied in the service layer.
+func (h *Media) List(ctx context.Context, input *MediaListInput) (*MediaListOutput, error) {
+	res, err := h.svc.Media.ListLibraryItemsPaginated(ctx, service.LibraryQueryParams{
+		Page:     input.Page,
+		PageSize: input.PageSize,
+		Type:     input.Type,
+		Search:   input.Search,
+		SortBy:   input.SortBy,
+		SortDir:  input.SortDir,
 	})
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, result)
+	return &MediaListOutput{Body: res}, nil
 }
 
-// GetMovie
-// @Summary Get movie (by TMDB id)
-// @Tags    media
-// @Produce json
-// @Param   id path int true "Movie ID"
-// @Success 200 {object} model.MovieDetail
-// @Router  /v1/movie/{id} [get]
-func (h *Media) GetMovie(c echo.Context) error {
-	ctx := c.Request().Context()
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	item, err := h.svc.Media.GetMovieDetail(ctx, id)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get movie"})
-	}
-	return c.JSON(http.StatusOK, item)
+// ----- Search -----
+
+// MediaSearchInput carries the TMDB multi-search query.
+type MediaSearchInput struct {
+	Q     string `query:"q" required:"true" minLength:"1" doc:"Search query"`
+	Limit int    `query:"limit" minimum:"1" maximum:"100" doc:"Max results (default 20)"`
+	Page  int    `query:"page" minimum:"1" doc:"1-based page index"`
 }
 
-// GetSeries
-// @Summary Get series (by TMDB id)
-// @Tags    media
-// @Produce json
-// @Param   id path int true "Series ID"
-// @Success 200 {object} model.SeriesDetail
-// @Router  /v1/series/{id} [get]
-func (h *Media) GetSeries(c echo.Context) error {
-	ctx := c.Request().Context()
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	item, err := h.svc.Media.GetSeriesDetail(ctx, id)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get series"})
-	}
-	return c.JSON(http.StatusOK, item)
+// MediaSearchOutput wraps the TMDB search response shape.
+type MediaSearchOutput struct {
+	Body model.SearchResponse
 }
 
-// GetPerson
-// @Summary Get person (by TMDB id)
-// @Tags    media
-// @Produce json
-// @Param   id path int true "Person ID"
-// @Success 200 {object} model.PersonDetail
-// @Router  /v1/person/{id} [get]
-func (h *Media) GetPerson(c echo.Context) error {
-	ctx := c.Request().Context()
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+// Search runs a TMDB multi-search and enriches the results with library
+// status. Upstream failures surface as 502 BadGateway via the service.
+func (h *Media) Search(ctx context.Context, input *MediaSearchInput) (*MediaSearchOutput, error) {
+	res, err := h.svc.Media.Search(ctx, input.Q, input.Limit, input.Page)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return nil, err
 	}
-	item, err := h.svc.Media.GetPersonDetail(ctx, id)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get person"})
-	}
-	return c.JSON(http.StatusOK, item)
+	return &MediaSearchOutput{Body: res}, nil
 }
 
-// SearchQueryParams for search query parameter binding
-type SearchQueryParams struct {
-	Q     string `query:"q"`
-	Limit int    `query:"limit"`
-	Page  int    `query:"page"`
+// ----- Get movie -----
+
+// MediaGetMovieInput carries the TMDB movie id.
+type MediaGetMovieInput struct {
+	ID int64 `path:"id" minimum:"1" doc:"TMDB movie id"`
 }
 
-// Search TMDB for movies, series, and people
-// @Summary Search TMDB for movies, series, and people
-// @Tags    media
-// @Produce json
-// @Param   q query string true "Search query"
-// @Param   limit query int false "Max results (default 20)"
-// @Param   page query int false "Page number (default 1)"
-// @Success 200 {object} model.SearchResponse
-// @Router  /v1/search [get]
-func (h *Media) Search(c echo.Context) error {
-	var params SearchQueryParams
-	if err := c.Bind(&params); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid params"})
-	}
+// MediaGetMovieOutput wraps the movie-detail shape.
+type MediaGetMovieOutput struct {
+	Body model.MovieDetail
+}
 
-	if params.Q == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "query parameter 'q' is required"})
-	}
-
-	ctx := c.Request().Context()
-	result, err := h.svc.Media.Search(ctx, params.Q, params.Limit, params.Page)
+// GetMovie returns the full movie detail (TMDB-enriched, with local files
+// and active download jobs spliced in by the service).
+func (h *Media) GetMovie(ctx context.Context, input *MediaGetMovieInput) (*MediaGetMovieOutput, error) {
+	res, err := h.svc.Media.GetMovieDetail(ctx, input.ID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "search failed"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, result)
+	return &MediaGetMovieOutput{Body: res}, nil
+}
+
+// ----- Get series -----
+
+// MediaGetSeriesInput carries the TMDB series id.
+type MediaGetSeriesInput struct {
+	ID int64 `path:"id" minimum:"1" doc:"TMDB series id"`
+}
+
+// MediaGetSeriesOutput wraps the series-detail shape.
+type MediaGetSeriesOutput struct {
+	Body model.SeriesDetail
+}
+
+// GetSeries returns the full series detail.
+func (h *Media) GetSeries(ctx context.Context, input *MediaGetSeriesInput) (*MediaGetSeriesOutput, error) {
+	res, err := h.svc.Media.GetSeriesDetail(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &MediaGetSeriesOutput{Body: res}, nil
+}
+
+// ----- Get person -----
+
+// MediaGetPersonInput carries the TMDB person id.
+type MediaGetPersonInput struct {
+	ID int64 `path:"id" minimum:"1" doc:"TMDB person id"`
+}
+
+// MediaGetPersonOutput wraps the person-detail shape.
+type MediaGetPersonOutput struct {
+	Body model.PersonDetail
+}
+
+// GetPerson returns the full person detail.
+func (h *Media) GetPerson(ctx context.Context, input *MediaGetPersonInput) (*MediaGetPersonOutput, error) {
+	res, err := h.svc.Media.GetPersonDetail(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &MediaGetPersonOutput{Body: res}, nil
+}
+
+// ----- Register -----
+
+// RegisterHumachi wires the media operations onto the humachi API. All
+// routes are protected (no public-path entries).
+func (h *Media) RegisterHumachi(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "library-list",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/library",
+		Summary:     "List library items",
+		Tags:        []string{"media"},
+	}, h.List)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "media-search",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/search",
+		Summary:     "Search TMDB",
+		Description: "Multi-search across movies, series, and people via TMDB.",
+		Tags:        []string{"media"},
+		Errors:      errsUpstream,
+	}, h.Search)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "media-get-movie",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/movie/{id}",
+		Summary:     "Get movie",
+		Description: "Returns the full movie detail (TMDB + local files).",
+		Tags:        []string{"media"},
+		Errors:      errs(errsRead, errsUpstream),
+	}, h.GetMovie)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "media-get-series",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/series/{id}",
+		Summary:     "Get series",
+		Description: "Returns the full series detail (TMDB + local files).",
+		Tags:        []string{"media"},
+		Errors:      errs(errsRead, errsUpstream),
+	}, h.GetSeries)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "media-get-person",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/person/{id}",
+		Summary:     "Get person",
+		Description: "Returns the full person detail.",
+		Tags:        []string{"media"},
+		Errors:      errs(errsRead, errsUpstream),
+	}, h.GetPerson)
 }

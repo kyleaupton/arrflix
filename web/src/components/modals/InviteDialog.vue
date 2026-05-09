@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, inject } from 'vue'
 import { useMutation } from '@tanstack/vue-query'
-import { postV1InvitesMutation } from '@/client/@tanstack/vue-query.gen'
+import { invitesCreateMutation } from '@/client/@tanstack/vue-query.gen'
 import BaseDialog from './BaseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
-const createInviteMutation = useMutation(postV1InvitesMutation())
+const createInviteMutation = useMutation(invitesCreateMutation())
 
 const email = ref('')
 const error = ref<string | null>(null)

@@ -15,13 +15,13 @@
 </template>
 
 <script setup lang="ts">
-import type { ModelFeedRow, ModelHydratedTitle } from '@/client/types.gen'
+import type { FeedRow, HydratedTitle } from '@/client/types.gen'
 import Rail from '@/components/rails/Rail.vue'
 import Poster from '@/components/poster/Poster.vue'
 
-defineProps<{ row: ModelFeedRow }>()
+defineProps<{ row: FeedRow }>()
 
-const getItemPath = (item: ModelHydratedTitle) => {
+const getItemPath = (item: HydratedTitle) => {
   return item.mediaType === 'movie' ? `/movie/${item.tmdbId}` : `/series/${item.tmdbId}`
 }
 </script>

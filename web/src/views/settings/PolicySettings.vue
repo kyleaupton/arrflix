@@ -3,11 +3,11 @@ import { ref } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { Plus, Shield } from 'lucide-vue-next'
 import {
-  getV1PoliciesFullOptions,
-  getV1PoliciesFieldsOptions,
-  getV1LibrariesOptions,
-  getV1NameTemplatesOptions,
-  getV1DownloadersOptions,
+  policiesListOptions,
+  policiesGetFieldsOptions,
+  librariesListOptions,
+  nameTemplatesListOptions,
+  downloadersListOptions,
 } from '@/client/@tanstack/vue-query.gen'
 import PolicyCard from '@/components/settings/PolicyCard.vue'
 import { Button } from '@/components/ui/button'
@@ -27,11 +27,11 @@ const {
   data: policies,
   isLoading: policiesLoading,
   refetch,
-} = useQuery(getV1PoliciesFullOptions())
-const { data: fields, isLoading: fieldsLoading } = useQuery(getV1PoliciesFieldsOptions())
-const { data: libraries } = useQuery(getV1LibrariesOptions())
-const { data: nameTemplates } = useQuery(getV1NameTemplatesOptions())
-const { data: downloaders } = useQuery(getV1DownloadersOptions())
+} = useQuery(policiesListOptions())
+const { data: fields, isLoading: fieldsLoading } = useQuery(policiesGetFieldsOptions())
+const { data: libraries } = useQuery(librariesListOptions())
+const { data: nameTemplates } = useQuery(nameTemplatesListOptions())
+const { data: downloaders } = useQuery(downloadersListOptions())
 
 // New policy cards
 const newPolicies = ref<null[]>([])

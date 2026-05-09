@@ -50,18 +50,31 @@ func (r *Repository) GetApiCache(ctx context.Context, key string) (CacheEntry, b
 	}, true, nil
 }
 
-func (r *Repository) UpsertApiCache(ctx context.Context, key string, category *string, response []byte, status int, contentType *string, headers []byte, ttl time.Duration) error {
-	expires := time.Now().Add(ttl)
+// UpsertApiCacheParams is the domain-shaped input for UpsertApiCache. Mirrors
+// the writeable subset of CacheEntry; TTL is applied to time.Now() at insert
+// time to compute the absolute expiry stored in the row.
+type UpsertApiCacheParams struct {
+	Key         string
+	Category    *string
+	Response    []byte
+	Status      int
+	ContentType *string
+	Headers     []byte
+	TTL         time.Duration
+}
+
+func (r *Repository) UpsertApiCache(ctx context.Context, params UpsertApiCacheParams) error {
+	expires := time.Now().Add(params.TTL)
 
 	return apperrors.FromPg(r.Q.UpsertApiCache(ctx, dbgen.UpsertApiCacheParams{
-		Key:         key,
-		Category:    category,
-		Response:    response,
-		Status:      int32(status),
-		ContentType: contentType,
-		Headers:     headers,
+		Key:         params.Key,
+		Category:    params.Category,
+		Response:    params.Response,
+		Status:      int32(params.Status),
+		ContentType: params.ContentType,
+		Headers:     params.Headers,
 		ExpiresAt:   expires,
-	}), "upsert api cache %q", key)
+	}), "upsert api cache %q", params.Key)
 }
 
 func (r *Repository) DeleteExpiredApiCache(ctx context.Context) error {

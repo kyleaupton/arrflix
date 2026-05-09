@@ -131,7 +131,10 @@ export const VariableMention = Node.create<VariableMentionOptions>({
   },
 
   addNodeView() {
-    return VueNodeViewRenderer(VariableMentionView)
+    // VueNodeViewRenderer's Vue Component generic is too strict for our
+    // setup-based component; cast to any to bypass.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return VueNodeViewRenderer(VariableMentionView as any)
   },
 
   addProseMirrorPlugins() {

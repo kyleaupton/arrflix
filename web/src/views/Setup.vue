@@ -27,7 +27,7 @@ import {
   StepperSeparator,
 } from '@/components/ui/stepper'
 import { client } from '@/client/client.gen'
-import { getV1Bootstrap } from '@/client/sdk.gen'
+import { bootstrapGet } from '@/client/sdk.gen'
 import { useAppStore } from '@/stores/app'
 
 const props = defineProps<{
@@ -67,7 +67,7 @@ const steps = [
 
 async function refreshBootstrap() {
   try {
-    const res = await getV1Bootstrap<true>({ throwOnError: true })
+    const res = await bootstrapGet<true>({ throwOnError: true })
     appStore.setFromBootstrap({
       initialized: res.data.initialized,
       config: res.data.config,

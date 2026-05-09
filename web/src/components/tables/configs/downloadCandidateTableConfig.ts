@@ -1,5 +1,5 @@
 import { type TableColumn, type TableAction } from '../types'
-import { type ModelDownloadCandidate } from '@/client/types.gen'
+import { type DownloadCandidate } from '@/client/types.gen'
 import { PrimeIcons } from '@/icons'
 
 // Helper function to format file size
@@ -38,14 +38,14 @@ const formatAge = (ageHours: number): string => {
   }
 }
 
-export const downloadCandidateColumns: TableColumn<ModelDownloadCandidate>[] = [
+export const downloadCandidateColumns: TableColumn<DownloadCandidate>[] = [
   {
     key: 'title',
     label: 'Title',
     sortable: true,
     filterable: true,
-    render: (_value: string, row: ModelDownloadCandidate) => {
-      const categoryBadges = formatBadges(row.categories, 'muted')
+    render: (_value: string, row: DownloadCandidate) => {
+      const categoryBadges = formatBadges(row.categories ?? [], 'muted')
       const flagBadges = formatBadges(
         (row.indexerFlags ?? []).map((f) => f.replace(/_/g, ' ')),
         'green',
@@ -116,8 +116,8 @@ export const downloadCandidateColumns: TableColumn<ModelDownloadCandidate>[] = [
 ]
 
 export const createDownloadCandidateActions = (
-  onEnqueue: (candidate: ModelDownloadCandidate) => void,
-): TableAction<ModelDownloadCandidate>[] => [
+  onEnqueue: (candidate: DownloadCandidate) => void,
+): TableAction<DownloadCandidate>[] => [
   {
     key: 'enqueue',
     label: 'Enqueue Download',

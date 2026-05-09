@@ -1,339 +1,309 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/http/middlewares"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/service"
-	"github.com/labstack/echo/v4"
 )
+
+// ----- Handler -----
 
 type Users struct{ svc *service.Services }
 
 func NewUsers(s *service.Services) *Users { return &Users{svc: s} }
 
-func (h *Users) RegisterProtected(v1 *echo.Group) {
-	// Admin endpoints
-	v1.GET("/users", h.List)
-	v1.GET("/users/:id", h.Get)
-	v1.PUT("/users/:id", h.Update)
-	v1.DELETE("/users/:id", h.Delete)
-	v1.PUT("/users/:id/password", h.UpdatePassword)
-	v1.PUT("/users/:id/role", h.AssignRole)
+// ----- Shared body shapes -----
 
-	// Profile endpoints (current user)
-	v1.GET("/auth/profile", h.GetProfile)
-	v1.PUT("/auth/profile", h.UpdateProfile)
-	v1.PUT("/auth/profile/password", h.UpdateProfilePassword)
-
-	// Utility
-	v1.GET("/roles", h.ListRoles)
+type userUpdateBody struct {
+	Email    string `json:"email" required:"true" format:"email" doc:"User email"`
+	Username string `json:"username" required:"true" minLength:"1" doc:"Display username"`
+	IsActive bool   `json:"isActive" doc:"Whether the account is active"`
 }
 
-// Swagger models
-type userSwagger struct {
-	ID          string   `json:"id"`
-	Email       string   `json:"email"`
-	Username string   `json:"username"`
-	IsActive    bool     `json:"is_active"`
-	Roles       []string `json:"roles"`
-	CreatedAt   string   `json:"created_at"`
-	UpdatedAt   string   `json:"updated_at"`
+type userPasswordBody struct {
+	Password string `json:"password" required:"true" minLength:"8" doc:"New password (min 8 chars)"`
 }
 
-type UserUpdateRequest struct {
-	Email       string `json:"email"`
-	Username string `json:"username"`
-	IsActive    bool   `json:"is_active"`
+// userIDFromCtx pulls the JWT subject from the request context and parses
+// it as a UUID. Used by the profile endpoints which all key off the caller.
+func userIDFromCtx(ctx context.Context, op string) (uuid.UUID, error) {
+	claims, ok := middlewares.ClaimsFromContext(ctx)
+	if !ok {
+		return uuid.Nil, apperrors.Unauthenticatedf("missing credentials").Op(op)
+	}
+	userIDStr, ok := claims["sub"].(string)
+	if !ok {
+		return uuid.Nil, apperrors.Unauthenticatedf("invalid token subject").Op(op)
+	}
+	id, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return uuid.Nil, apperrors.Unauthenticatedf("invalid token").Op(op)
+	}
+	return id, nil
 }
 
-type UserPasswordUpdateRequest struct {
-	Password string `json:"password"`
+// ----- List -----
+
+type UsersListInput struct{}
+
+type UsersListOutput struct {
+	Body []model.User
 }
 
-type UserRoleUpdateRequest struct {
-	Role string `json:"role"`
-}
-
-// List users
-// @Summary List users
-// @Tags    users
-// @Produce json
-// @Success 200 {array} handlers.userSwagger
-// @Router  /v1/users [get]
-func (h *Users) List(c echo.Context) error {
-	ctx := c.Request().Context()
+func (h *Users) List(ctx context.Context, _ *UsersListInput) (*UsersListOutput, error) {
 	users, err := h.svc.Users.List(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list users"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, users)
+	return &UsersListOutput{Body: users}, nil
 }
 
-// Get user
-// @Summary Get user
-// @Tags    users
-// @Produce json
-// @Param   id path string true "User ID"
-// @Success 200 {object} handlers.userSwagger
-// @Router  /v1/users/{id} [get]
-func (h *Users) Get(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
+// ----- Get -----
 
-	ctx := c.Request().Context()
-	user, err := h.svc.Users.Get(ctx, id)
+type UsersGetInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"User ID"`
+}
+
+type UsersGetOutput struct {
+	Body model.User
+}
+
+func (h *Users) Get(ctx context.Context, input *UsersGetInput) (*UsersGetOutput, error) {
+	user, err := h.svc.Users.Get(ctx, input.ID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+		return nil, err
 	}
-
-	return c.JSON(http.StatusOK, user)
+	return &UsersGetOutput{Body: user}, nil
 }
 
-// Update user
-// @Summary Update user
-// @Tags    users
-// @Accept  json
-// @Produce json
-// @Param   id path string true "User ID"
-// @Param   payload body handlers.UserUpdateRequest true "Update user"
-// @Success 200 {object} handlers.userSwagger
-// @Failure 400 {object} map[string]string
-// @Router  /v1/users/{id} [put]
-func (h *Users) Update(c echo.Context) error {
-	var req UserUpdateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
+// ----- Update -----
 
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
+type UsersUpdateInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"User ID"`
+	Body userUpdateBody
+}
 
-	ctx := c.Request().Context()
-	user, err := h.svc.Users.Update(ctx, id, req.Email, req.Username, req.IsActive)
+type UsersUpdateOutput struct {
+	Body model.User
+}
+
+func (h *Users) Update(ctx context.Context, input *UsersUpdateInput) (*UsersUpdateOutput, error) {
+	user, err := h.svc.Users.Update(ctx, input.ID, input.Body.Email, input.Body.Username, input.Body.IsActive)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, err
 	}
-
-	return c.JSON(http.StatusOK, user)
+	return &UsersUpdateOutput{Body: user}, nil
 }
 
-// Delete user
-// @Summary Delete user
-// @Tags    users
-// @Param   id path string true "User ID"
-// @Success 204 {string} string ""
-// @Router  /v1/users/{id} [delete]
-func (h *Users) Delete(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
+// ----- Delete -----
 
-	ctx := c.Request().Context()
-	if err := h.svc.Users.Delete(ctx, id); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-
-	return c.NoContent(http.StatusNoContent)
+type UsersDeleteInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"User ID"`
 }
 
-// UpdatePassword changes a user's password
-// @Summary Update user password
-// @Tags    users
-// @Accept  json
-// @Param   id path string true "User ID"
-// @Param   payload body handlers.UserPasswordUpdateRequest true "Update password"
-// @Success 204 {string} string ""
-// @Router  /v1/users/{id}/password [put]
-func (h *Users) UpdatePassword(c echo.Context) error {
-	var req UserPasswordUpdateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
+type UsersDeleteOutput struct{}
 
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
+func (h *Users) Delete(ctx context.Context, input *UsersDeleteInput) (*UsersDeleteOutput, error) {
+	if err := h.svc.Users.Delete(ctx, input.ID); err != nil {
+		return nil, err
 	}
-
-	ctx := c.Request().Context()
-	if err := h.svc.Users.UpdatePassword(ctx, id, req.Password); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-
-	return c.NoContent(http.StatusNoContent)
+	return &UsersDeleteOutput{}, nil
 }
 
-// AssignRole assigns a role to a user
-// @Summary Assign role to user
-// @Tags    users
-// @Accept  json
-// @Param   id path string true "User ID"
-// @Param   payload body handlers.UserRoleUpdateRequest true "Assign role"
-// @Success 204 {string} string ""
-// @Router  /v1/users/{id}/role [put]
-func (h *Users) AssignRole(c echo.Context) error {
-	var req UserRoleUpdateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
+// ----- UpdatePassword -----
 
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-
-	ctx := c.Request().Context()
-	if err := h.svc.Users.AssignRole(ctx, id, req.Role); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-
-	return c.NoContent(http.StatusNoContent)
+type UsersUpdatePasswordInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"User ID"`
+	Body userPasswordBody
 }
 
-// GetProfile returns current user's profile
-// @Summary Get current user profile
-// @Tags    auth
-// @Produce json
-// @Success 200 {object} handlers.userSwagger
-// @Router  /v1/auth/profile [get]
-func (h *Users) GetProfile(c echo.Context) error {
-	claims := c.Get("claims")
-	if claims == nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-	}
+type UsersUpdatePasswordOutput struct{}
 
-	claimsMap, ok := claims.(jwt.MapClaims)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid claims"})
+func (h *Users) UpdatePassword(ctx context.Context, input *UsersUpdatePasswordInput) (*UsersUpdatePasswordOutput, error) {
+	if err := h.svc.Users.UpdatePassword(ctx, input.ID, input.Body.Password); err != nil {
+		return nil, err
 	}
+	return &UsersUpdatePasswordOutput{}, nil
+}
 
-	userIDStr, ok := claimsMap["sub"].(string)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token subject"})
+// ----- AssignRole -----
+
+type UsersAssignRoleBody struct {
+	Role string `json:"role" required:"true" minLength:"1" doc:"Role name"`
+}
+
+type UsersAssignRoleInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"User ID"`
+	Body UsersAssignRoleBody
+}
+
+type UsersAssignRoleOutput struct{}
+
+func (h *Users) AssignRole(ctx context.Context, input *UsersAssignRoleInput) (*UsersAssignRoleOutput, error) {
+	if err := h.svc.Users.AssignRole(ctx, input.ID, input.Body.Role); err != nil {
+		return nil, err
 	}
+	return &UsersAssignRoleOutput{}, nil
+}
 
-	var userID pgtype.UUID
-	if err := userID.Scan(userIDStr); err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+// ----- GetProfile -----
+
+type UsersGetProfileInput struct{}
+
+type UsersGetProfileOutput struct {
+	Body model.User
+}
+
+func (h *Users) GetProfile(ctx context.Context, _ *UsersGetProfileInput) (*UsersGetProfileOutput, error) {
+	userID, err := userIDFromCtx(ctx, "UsersHandler.GetProfile")
+	if err != nil {
+		return nil, err
 	}
-
-	ctx := c.Request().Context()
 	user, err := h.svc.Users.Get(ctx, userID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
+		return nil, err
 	}
-
-	return c.JSON(http.StatusOK, user)
+	return &UsersGetProfileOutput{Body: user}, nil
 }
 
-// UpdateProfile updates current user's profile
-// @Summary Update current user profile
-// @Tags    auth
-// @Accept  json
-// @Produce json
-// @Param   payload body handlers.UserUpdateRequest true "Update profile"
-// @Success 200 {object} handlers.userSwagger
-// @Router  /v1/auth/profile [put]
-func (h *Users) UpdateProfile(c echo.Context) error {
-	claims := c.Get("claims")
-	if claims == nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+// ----- UpdateProfile -----
+
+type UsersUpdateProfileInput struct {
+	Body userUpdateBody
+}
+
+type UsersUpdateProfileOutput struct {
+	Body model.User
+}
+
+func (h *Users) UpdateProfile(ctx context.Context, input *UsersUpdateProfileInput) (*UsersUpdateProfileOutput, error) {
+	userID, err := userIDFromCtx(ctx, "UsersHandler.UpdateProfile")
+	if err != nil {
+		return nil, err
 	}
 
-	claimsMap, ok := claims.(jwt.MapClaims)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid claims"})
-	}
-
-	userIDStr, ok := claimsMap["sub"].(string)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token subject"})
-	}
-
-	var userID pgtype.UUID
-	if err := userID.Scan(userIDStr); err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
-	}
-
-	var req UserUpdateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-
-	// Users cannot change their own active status via profile
-	ctx := c.Request().Context()
+	// Users cannot change their own active status via profile.
 	currentUser, err := h.svc.Users.Get(ctx, userID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
+		return nil, err
 	}
 
-	user, err := h.svc.Users.Update(ctx, userID, req.Email, req.Username, currentUser.IsActive)
+	user, err := h.svc.Users.Update(ctx, userID, input.Body.Email, input.Body.Username, currentUser.IsActive)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, err
 	}
-
-	return c.JSON(http.StatusOK, user)
+	return &UsersUpdateProfileOutput{Body: user}, nil
 }
 
-// UpdateProfilePassword changes current user's password
-// @Summary Update current user password
-// @Tags    auth
-// @Accept  json
-// @Param   payload body handlers.UserPasswordUpdateRequest true "Update password"
-// @Success 204 {string} string ""
-// @Router  /v1/auth/profile/password [put]
-func (h *Users) UpdateProfilePassword(c echo.Context) error {
-	claims := c.Get("claims")
-	if claims == nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-	}
+// ----- UpdateProfilePassword -----
 
-	claimsMap, ok := claims.(jwt.MapClaims)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid claims"})
-	}
-
-	userIDStr, ok := claimsMap["sub"].(string)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token subject"})
-	}
-
-	var userID pgtype.UUID
-	if err := userID.Scan(userIDStr); err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
-	}
-
-	var req UserPasswordUpdateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-
-	ctx := c.Request().Context()
-	if err := h.svc.Users.UpdatePassword(ctx, userID, req.Password); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-
-	return c.NoContent(http.StatusNoContent)
+type UsersUpdateProfilePasswordInput struct {
+	Body userPasswordBody
 }
 
-// ListRoles returns available roles
-// @Summary List roles
-// @Tags    users
-// @Produce json
-// @Success 200 {array} dbgen.Role
-// @Router  /v1/roles [get]
-func (h *Users) ListRoles(c echo.Context) error {
-	ctx := c.Request().Context()
-	roles, err := h.svc.Users.ListRoles(ctx)
+type UsersUpdateProfilePasswordOutput struct{}
+
+func (h *Users) UpdateProfilePassword(ctx context.Context, input *UsersUpdateProfilePasswordInput) (*UsersUpdateProfilePasswordOutput, error) {
+	userID, err := userIDFromCtx(ctx, "UsersHandler.UpdateProfilePassword")
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list roles"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, roles)
+	if err := h.svc.Users.UpdatePassword(ctx, userID, input.Body.Password); err != nil {
+		return nil, err
+	}
+	return &UsersUpdateProfilePasswordOutput{}, nil
+}
+
+// ----- Register -----
+
+func (h *Users) RegisterHumachi(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "users-list",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/users",
+		Summary:     "List users",
+		Tags:        []string{"users"},
+	}, h.List)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "users-get",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/users/{id}",
+		Summary:     "Get user",
+		Tags:        []string{"users"},
+		Errors:      errsRead,
+	}, h.Get)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "users-update",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/users/{id}",
+		Summary:     "Update user",
+		Tags:        []string{"users"},
+		Errors:      errsUpsert,
+	}, h.Update)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "users-delete",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/users/{id}",
+		Summary:       "Delete user",
+		Tags:          []string{"users"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsDelete,
+	}, h.Delete)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "users-update-password",
+		Method:        http.MethodPut,
+		Path:          "/api/v1/users/{id}/password",
+		Summary:       "Update user password",
+		Tags:          []string{"users"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsUpsert,
+	}, h.UpdatePassword)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "users-assign-role",
+		Method:        http.MethodPut,
+		Path:          "/api/v1/users/{id}/role",
+		Summary:       "Assign role to user",
+		Tags:          []string{"users"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsUpsert,
+	}, h.AssignRole)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "users-get-profile",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/auth/profile",
+		Summary:     "Get current user profile",
+		Tags:        []string{"auth"},
+		Errors:      errsRead,
+	}, h.GetProfile)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "users-update-profile",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/auth/profile",
+		Summary:     "Update current user profile",
+		Tags:        []string{"auth"},
+		Errors:      errsUpsert,
+	}, h.UpdateProfile)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "users-update-profile-password",
+		Method:        http.MethodPut,
+		Path:          "/api/v1/auth/profile/password",
+		Summary:       "Update current user password",
+		Tags:          []string{"auth"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsWrite,
+	}, h.UpdateProfilePassword)
 }

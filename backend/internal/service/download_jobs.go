@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/jobs/state"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -20,46 +20,46 @@ func NewDownloadJobsService(r *repo.Repository) *DownloadJobsService {
 	return &DownloadJobsService{repo: r, sm: state.NewDownloadJobMachine()}
 }
 
-func (s *DownloadJobsService) Create(ctx context.Context, arg dbgen.CreateDownloadJobParams) (dbgen.DownloadJob, error) {
-	return s.repo.CreateDownloadJob(ctx, arg)
+func (s *DownloadJobsService) Create(ctx context.Context, params repo.CreateDownloadJobParams) (model.DownloadJob, error) {
+	return s.repo.CreateDownloadJob(ctx, params)
 }
 
-func (s *DownloadJobsService) Get(ctx context.Context, id pgtype.UUID) (dbgen.DownloadJob, error) {
+func (s *DownloadJobsService) Get(ctx context.Context, id uuid.UUID) (model.DownloadJob, error) {
 	return s.repo.GetDownloadJob(ctx, id)
 }
 
 // GetWithImportSummary returns a download job with computed import status summary.
-func (s *DownloadJobsService) GetWithImportSummary(ctx context.Context, id pgtype.UUID) (dbgen.GetDownloadJobWithImportSummaryRow, error) {
+func (s *DownloadJobsService) GetWithImportSummary(ctx context.Context, id uuid.UUID) (model.DownloadJobWithSummary, error) {
 	return s.repo.GetDownloadJobWithImportSummary(ctx, id)
 }
 
 // GetTimeline returns the combined event log for a download job (download events + import events).
-func (s *DownloadJobsService) GetTimeline(ctx context.Context, id pgtype.UUID) ([]dbgen.GetDownloadJobTimelineRow, error) {
+func (s *DownloadJobsService) GetTimeline(ctx context.Context, id uuid.UUID) ([]model.DownloadJobTimelineEvent, error) {
 	return s.repo.GetDownloadJobTimeline(ctx, id)
 }
 
-func (s *DownloadJobsService) List(ctx context.Context) ([]dbgen.DownloadJob, error) {
+func (s *DownloadJobsService) List(ctx context.Context) ([]model.DownloadJob, error) {
 	return s.repo.ListDownloadJobs(ctx)
 }
 
 // ListWithImportSummary returns all download jobs with computed import status summary.
-func (s *DownloadJobsService) ListWithImportSummary(ctx context.Context) ([]dbgen.ListDownloadJobsWithImportSummaryRow, error) {
+func (s *DownloadJobsService) ListWithImportSummary(ctx context.Context) ([]model.DownloadJobWithSummary, error) {
 	return s.repo.ListDownloadJobsWithImportSummary(ctx)
 }
 
-func (s *DownloadJobsService) ListByMovie(ctx context.Context, tmdbMovieID int64) ([]dbgen.DownloadJob, error) {
+func (s *DownloadJobsService) ListByMovie(ctx context.Context, tmdbMovieID int64) ([]model.DownloadJob, error) {
 	return s.repo.ListDownloadJobsByTmdbMovieID(ctx, tmdbMovieID)
 }
 
-func (s *DownloadJobsService) ListBySeries(ctx context.Context, tmdbSeriesID int64) ([]dbgen.ListDownloadJobsByTmdbSeriesIDRow, error) {
+func (s *DownloadJobsService) ListBySeries(ctx context.Context, tmdbSeriesID int64) ([]model.DownloadJobBySeriesEntry, error) {
 	return s.repo.ListDownloadJobsByTmdbSeriesID(ctx, tmdbSeriesID)
 }
 
 // Cancel cancels a download job and all its pending import tasks.
-func (s *DownloadJobsService) Cancel(ctx context.Context, id pgtype.UUID) (dbgen.DownloadJob, error) {
+func (s *DownloadJobsService) Cancel(ctx context.Context, id uuid.UUID) (model.DownloadJob, error) {
 	job, err := s.repo.CancelDownloadJob(ctx, id)
 	if err != nil {
-		return dbgen.DownloadJob{}, err
+		return model.DownloadJob{}, err
 	}
 
 	// Also cancel all pending import tasks for this job
@@ -72,31 +72,31 @@ func (s *DownloadJobsService) Cancel(ctx context.Context, id pgtype.UUID) (dbgen
 }
 
 // ListImportTasks returns all import tasks for a download job.
-func (s *DownloadJobsService) ListImportTasks(ctx context.Context, jobID pgtype.UUID) ([]dbgen.ImportTask, error) {
+func (s *DownloadJobsService) ListImportTasks(ctx context.Context, jobID uuid.UUID) ([]model.ImportTask, error) {
 	return s.repo.ListImportTasksByDownloadJob(ctx, jobID)
 }
 
 // RetryDownload creates a new download job from a failed one, linking via previous_job_id.
-func (s *DownloadJobsService) RetryDownload(ctx context.Context, id pgtype.UUID) (dbgen.GetDownloadJobWithImportSummaryRow, error) {
+func (s *DownloadJobsService) RetryDownload(ctx context.Context, id uuid.UUID) (model.DownloadJobWithSummary, error) {
 	// Fetch existing job to validate state
 	job, err := s.repo.GetDownloadJob(ctx, id)
 	if err != nil {
-		return dbgen.GetDownloadJobWithImportSummaryRow{}, err
+		return model.DownloadJobWithSummary{}, err
 	}
 
 	if !s.sm.CanRetryStr(job.Status) {
-		return dbgen.GetDownloadJobWithImportSummaryRow{}, apperrors.Conflictf("download job %s cannot be retried from status %q", id, job.Status).
+		return model.DownloadJobWithSummary{}, apperrors.Conflictf("download job %s cannot be retried from status %q", id, job.Status).
 			Op("DownloadJobsService.RetryDownload")
 	}
 
 	newJob, err := s.repo.RetryDownloadJob(ctx, id)
 	if err != nil {
-		return dbgen.GetDownloadJobWithImportSummaryRow{}, err
+		return model.DownloadJobWithSummary{}, err
 	}
 
 	// Log retry_requested event on the new job
 	msg := fmt.Sprintf("retry of job %s", id.String())
-	_, _ = s.repo.CreateDownloadJobEvent(ctx, dbgen.CreateDownloadJobEventParams{
+	_, _ = s.repo.CreateDownloadJobEvent(ctx, repo.CreateDownloadJobEventParams{
 		DownloadJobID: newJob.ID,
 		EventType:     "retry_requested",
 		OldStatus:     nil,
@@ -109,30 +109,30 @@ func (s *DownloadJobsService) RetryDownload(ctx context.Context, id pgtype.UUID)
 }
 
 // GetHistory returns the retry chain for a download job.
-func (s *DownloadJobsService) GetHistory(ctx context.Context, id pgtype.UUID) ([]dbgen.GetDownloadJobHistoryRow, error) {
+func (s *DownloadJobsService) GetHistory(ctx context.Context, id uuid.UUID) ([]model.DownloadJobHistoryEntry, error) {
 	return s.repo.GetDownloadJobHistory(ctx, id)
 }
 
 // ReimportResult contains the result of a reimport operation.
 type ReimportResult struct {
-	CreatedTasks []dbgen.ImportTask `json:"created_tasks"`
+	CreatedTasks []model.ImportTask `json:"created_tasks"`
 	SkippedCount int                `json:"skipped_count"`
 }
 
 // ReimportFailed creates new import tasks for failed (or all terminal) tasks of a download job.
 // If all is false, only failed tasks are reimported. If all is true, all terminal tasks (completed, failed, cancelled) are reimported.
-func (s *DownloadJobsService) ReimportFailed(ctx context.Context, jobID pgtype.UUID, all bool) (ReimportResult, error) {
+func (s *DownloadJobsService) ReimportFailed(ctx context.Context, jobID uuid.UUID, all bool) (ReimportResult, error) {
 	tasks, err := s.repo.ListImportTasksByDownloadJob(ctx, jobID)
 	if err != nil {
 		return ReimportResult{}, err
 	}
 
 	// Filter to root tasks only (no previous_task_id) and terminal states
-	var toReimport []dbgen.ImportTask
+	var toReimport []model.ImportTask
 	skippedCount := 0
 	for _, task := range tasks {
 		// Only reimport root tasks
-		if task.PreviousTaskID.Valid {
+		if task.PreviousTaskID != uuid.Nil {
 			continue
 		}
 
@@ -152,9 +152,9 @@ func (s *DownloadJobsService) ReimportFailed(ctx context.Context, jobID pgtype.U
 		}
 	}
 
-	var createdTasks []dbgen.ImportTask
+	var createdTasks []model.ImportTask
 	for _, task := range toReimport {
-		newTask, err := s.repo.CreateImportTask(ctx, dbgen.CreateImportTaskParams{
+		newTask, err := s.repo.CreateImportTask(ctx, repo.CreateImportTaskParams{
 			DownloadJobID:  task.DownloadJobID,
 			SourcePath:     task.SourcePath,
 			PreviousTaskID: task.ID,
@@ -170,13 +170,10 @@ func (s *DownloadJobsService) ReimportFailed(ctx context.Context, jobID pgtype.U
 
 		// Log the reimport event
 		msg := fmt.Sprintf("reimport of task %s", task.ID.String())
-		_, _ = s.repo.CreateImportTaskEvent(ctx, dbgen.CreateImportTaskEventParams{
+		_, _ = s.repo.CreateImportTaskEvent(ctx, repo.CreateImportTaskEventParams{
 			ImportTaskID: newTask.ID,
 			EventType:    "reimport_requested",
-			OldStatus:    nil,
-			NewStatus:    nil,
 			Message:      &msg,
-			Metadata:     nil,
 		})
 
 		createdTasks = append(createdTasks, newTask)

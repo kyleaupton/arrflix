@@ -2,8 +2,8 @@
 import { ref, inject, computed, watch } from 'vue'
 import { useMutation } from '@tanstack/vue-query'
 import { Save, Check } from 'lucide-vue-next'
-import { type ModelIndexerOutput, type ModelIndexerInput } from '@/client/types.gen'
-import { postV1IndexerMutation } from '@/client/@tanstack/vue-query.gen'
+import { type IndexerOutput, type IndexerInput } from '@/client/types.gen'
+import { indexersSaveMutation } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
 import ConfigurationStep from './steps/ConfigurationStep.vue'
 import BaseDialog from './BaseDialog.vue'
@@ -11,7 +11,7 @@ import { client } from '@/client/client.gen'
 import { useModal } from '@/composables/useModal'
 
 interface Props {
-  indexer: ModelIndexerOutput
+  indexer: IndexerOutput
 }
 
 const props = defineProps<Props>()
@@ -20,12 +20,12 @@ const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => v
 const modal = useModal()
 
 // Form state
-const saveData = ref<ModelIndexerInput | undefined>(undefined)
+const saveData = ref<IndexerInput | undefined>(undefined)
 const indexerError = ref<string | null>(null)
 const isTestingConfig = ref(false)
 
 const updateIndexerMutation = useMutation({
-  ...postV1IndexerMutation(),
+  ...indexersSaveMutation(),
   onSuccess: () => {
     indexerError.value = null
     dialogRef.value.close({ indexerUpdated: true })
@@ -87,7 +87,7 @@ const handleSave = () => {
   }
 
   // Include the ID to indicate this is an update operation
-  const updatePayload: ModelIndexerInput = {
+  const updatePayload: IndexerInput = {
     ...saveData.value,
     id: props.indexer.id,
   }

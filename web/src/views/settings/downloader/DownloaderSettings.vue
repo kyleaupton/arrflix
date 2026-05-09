@@ -3,11 +3,11 @@ import { ref } from 'vue'
 import { useQuery, useMutation } from '@tanstack/vue-query'
 import { Plus, HardDrive } from 'lucide-vue-next'
 import {
-  getV1DownloadersOptions,
-  deleteV1DownloadersByIdMutation,
-  postV1DownloadersByIdTestMutation,
+  downloadersListOptions,
+  downloadersDeleteMutation,
+  downloadersTestMutation,
 } from '@/client/@tanstack/vue-query.gen'
-import { type DbgenDownloader } from '@/client/types.gen'
+import { type Downloader, type TestResult } from '@/client/types.gen'
 import DataTable from '@/components/tables/DataTable.vue'
 import {
   downloaderColumns,
@@ -20,12 +20,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import DownloaderUpsertDialog from './DownloaderUpsertDialog.vue'
 
 // Data queries
-const { data: downloaders, isLoading, refetch } = useQuery(getV1DownloadersOptions())
+const { data: downloaders, isLoading, refetch } = useQuery(downloadersListOptions())
 const modal = useModal()
 
 // Mutations
-const deleteDownloaderMutation = useMutation(deleteV1DownloadersByIdMutation())
-const testDownloaderMutation = useMutation(postV1DownloadersByIdTestMutation())
+const deleteDownloaderMutation = useMutation(downloadersDeleteMutation())
+const testDownloaderMutation = useMutation(downloadersTestMutation())
 
 // Error state for table-level errors
 const downloaderError = ref<string | null>(null)
@@ -47,7 +47,7 @@ const handleAddDownloader = () => {
   })
 }
 
-const handleEditDownloader = (downloader: DbgenDownloader) => {
+const handleEditDownloader = (downloader: Downloader) => {
   modal.open(DownloaderUpsertDialog, {
     props: {
       class: 'max-w-[90vw] sm:max-w-lg lg:max-w-2xl',
@@ -62,7 +62,7 @@ const handleEditDownloader = (downloader: DbgenDownloader) => {
   })
 }
 
-const handleDeleteDownloader = async (downloader: DbgenDownloader) => {
+const handleDeleteDownloader = async (downloader: Downloader) => {
   if (!downloader.id) return
   const confirmed = await modal.confirm({
     title: 'Delete Downloader',
@@ -79,11 +79,11 @@ const handleDeleteDownloader = async (downloader: DbgenDownloader) => {
   }
 }
 
-const handleTestDownloader = async (downloader: DbgenDownloader) => {
+const handleTestDownloader = async (downloader: Downloader) => {
   if (!downloader.id) return
   testingId.value = downloader.id
   try {
-    const result = await testDownloaderMutation.mutateAsync({ path: { id: downloader.id } })
+    const result = (await testDownloaderMutation.mutateAsync({ path: { id: downloader.id } })) as TestResult
     if (result.success) {
       downloaderError.value = null
       await modal.alert({

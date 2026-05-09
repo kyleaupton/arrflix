@@ -42,10 +42,10 @@
 import { computed } from 'vue'
 import { Film, Tv, User, CheckCircle2 } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
-import type { ModelSearchResult } from '@/client/types.gen'
+import type { SearchResult } from '@/client/types.gen'
 
 const props = defineProps<{
-  result: ModelSearchResult
+  result: SearchResult
 }>()
 
 defineEmits<{

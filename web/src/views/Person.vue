@@ -83,7 +83,7 @@ import { useRoute } from 'vue-router'
 
 import { useQuery } from '@tanstack/vue-query'
 import { User, ExternalLink } from 'lucide-vue-next'
-import { getV1PersonByIdOptions } from '@/client/@tanstack/vue-query.gen'
+import { mediaGetPersonOptions } from '@/client/@tanstack/vue-query.gen'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -101,7 +101,7 @@ const id = computed(() => {
 })
 
 const { isLoading, isError, data } = useQuery(
-  computed(() => getV1PersonByIdOptions({ path: { id: id.value } })),
+  computed(() => mediaGetPersonOptions({ path: { id: id.value } })),
 )
 
 const profileImageUrl = computed(() => {

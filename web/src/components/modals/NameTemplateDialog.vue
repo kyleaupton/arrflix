@@ -3,10 +3,10 @@ import { ref, inject, watch, computed } from 'vue'
 import { useMutation } from '@tanstack/vue-query'
 import { toast } from 'vue-sonner'
 import {
-  postV1NameTemplatesMutation,
-  putV1NameTemplatesByIdMutation,
+  nameTemplatesCreateMutation,
+  nameTemplatesUpdateMutation,
 } from '@/client/@tanstack/vue-query.gen'
-import { type HandlersNameTemplateSwagger } from '@/client/types.gen'
+import { type NameTemplate } from '@/client/types.gen'
 import BaseDialog from './BaseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,23 +23,23 @@ import { TemplateTokenEditor } from '@/components/ui/template-editor'
 import { presets, type TemplatePreset } from './templatePresets'
 
 interface Props {
-  template?: HandlersNameTemplateSwagger | null
+  template?: NameTemplate | null
 }
 
 const props = defineProps<Props>()
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
 
-const createTemplateMutation = useMutation(postV1NameTemplatesMutation())
-const updateTemplateMutation = useMutation(putV1NameTemplatesByIdMutation())
+const createTemplateMutation = useMutation(nameTemplatesCreateMutation())
+const updateTemplateMutation = useMutation(nameTemplatesUpdateMutation())
 
 const templateForm = ref({
   name: '',
   type: 'movie' as 'movie' | 'series',
   template: '',
-  series_show_template: '',
-  series_season_template: '',
-  movie_dir_template: '',
+  seriesShowTemplate: '',
+  seriesSeasonTemplate: '',
+  movieDirTemplate: '',
   default: false,
 })
 
@@ -57,23 +57,23 @@ function applyPreset(preset: TemplatePreset) {
   selectedPresetId.value = preset.id
   if (templateForm.value.type === 'movie') {
     templateForm.value.template = preset.movie.template
-    templateForm.value.movie_dir_template = preset.movie.movieDirTemplate
-    templateForm.value.series_show_template = ''
-    templateForm.value.series_season_template = ''
+    templateForm.value.movieDirTemplate = preset.movie.movieDirTemplate
+    templateForm.value.seriesShowTemplate = ''
+    templateForm.value.seriesSeasonTemplate = ''
   } else {
     templateForm.value.template = preset.series.template
-    templateForm.value.series_show_template = preset.series.seriesShowTemplate
-    templateForm.value.series_season_template = preset.series.seriesSeasonTemplate
-    templateForm.value.movie_dir_template = ''
+    templateForm.value.seriesShowTemplate = preset.series.seriesShowTemplate
+    templateForm.value.seriesSeasonTemplate = preset.series.seriesSeasonTemplate
+    templateForm.value.movieDirTemplate = ''
   }
 }
 
 function clearPreset() {
   selectedPresetId.value = null
   templateForm.value.template = ''
-  templateForm.value.movie_dir_template = ''
-  templateForm.value.series_show_template = ''
-  templateForm.value.series_season_template = ''
+  templateForm.value.movieDirTemplate = ''
+  templateForm.value.seriesShowTemplate = ''
+  templateForm.value.seriesSeasonTemplate = ''
 }
 
 // Initialize form when template changes
@@ -85,9 +85,9 @@ watch(
         name: template.name || '',
         type: (template.type as 'movie' | 'series') || 'movie',
         template: template.template || '',
-        series_show_template: template.series_show_template || '',
-        series_season_template: template.series_season_template || '',
-        movie_dir_template: template.movie_dir_template || '',
+        seriesShowTemplate: template.seriesShowTemplate || '',
+        seriesSeasonTemplate: template.seriesSeasonTemplate || '',
+        movieDirTemplate: template.movieDirTemplate || '',
         default: template.default || false,
       }
       selectedPresetId.value = null
@@ -96,9 +96,9 @@ watch(
         name: '',
         type: 'movie',
         template: '',
-        series_show_template: '',
-        series_season_template: '',
-        movie_dir_template: '',
+        seriesShowTemplate: '',
+        seriesSeasonTemplate: '',
+        movieDirTemplate: '',
         default: false,
       }
       selectedPresetId.value = null
@@ -126,7 +126,7 @@ const handleSave = async () => {
     templateError.value = 'Name and template are required'
     return
   }
-  if (templateForm.value.type === 'movie' && !templateForm.value.movie_dir_template) {
+  if (templateForm.value.type === 'movie' && !templateForm.value.movieDirTemplate) {
     templateError.value = 'Movie directory template is required'
     return
   }
@@ -136,12 +136,12 @@ const handleSave = async () => {
       name: templateForm.value.name,
       type: templateForm.value.type,
       template: templateForm.value.template,
-      series_show_template:
-        templateForm.value.type === 'series' ? templateForm.value.series_show_template : '',
-      series_season_template:
-        templateForm.value.type === 'series' ? templateForm.value.series_season_template : '',
-      movie_dir_template:
-        templateForm.value.type === 'movie' ? templateForm.value.movie_dir_template : '',
+      seriesShowTemplate:
+        templateForm.value.type === 'series' ? templateForm.value.seriesShowTemplate : '',
+      seriesSeasonTemplate:
+        templateForm.value.type === 'series' ? templateForm.value.seriesSeasonTemplate : '',
+      movieDirTemplate:
+        templateForm.value.type === 'movie' ? templateForm.value.movieDirTemplate : '',
       default: templateForm.value.default,
     }
 
@@ -240,7 +240,7 @@ const isLoading = computed(
         <div class="flex flex-col gap-2">
           <Label for="template-show">Show Directory Template</Label>
           <TemplateTokenEditor
-            v-model="templateForm.series_show_template"
+            v-model="templateForm.seriesShowTemplate"
             :media-type="templateForm.type"
             placeholder="Type { to insert a variable"
             class="min-h-[60px]"
@@ -250,7 +250,7 @@ const isLoading = computed(
         <div class="flex flex-col gap-2">
           <Label for="template-season">Season Directory Template</Label>
           <TemplateTokenEditor
-            v-model="templateForm.series_season_template"
+            v-model="templateForm.seriesSeasonTemplate"
             :media-type="templateForm.type"
             placeholder="Type { to insert a variable"
             class="min-h-[60px]"
@@ -262,7 +262,7 @@ const isLoading = computed(
         <div class="flex flex-col gap-2">
           <Label for="template-movie-dir">Movie Directory Template</Label>
           <TemplateTokenEditor
-            v-model="templateForm.movie_dir_template"
+            v-model="templateForm.movieDirTemplate"
             :media-type="templateForm.type"
             placeholder="Type { to insert a variable"
             class="min-h-[60px]"

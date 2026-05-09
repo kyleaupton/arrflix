@@ -43,13 +43,13 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ModelWatchProviders, ModelWatchProvider } from '@/client/types.gen'
+import type { WatchProviders, WatchProvider } from '@/client/types.gen'
 import Rail from '@/components/rails/Rail.vue'
 
-type DedupedProvider = ModelWatchProvider & { tier: string }
+type DedupedProvider = WatchProvider & { tier: string }
 
 const props = defineProps<{
-  providers?: ModelWatchProviders
+  providers?: WatchProviders
 }>()
 
 // Priority: Stream > Rent > Buy. Each provider shown once with best tier.
@@ -58,7 +58,7 @@ const dedupedProviders = computed<DedupedProvider[]>(() => {
 
   const map = new Map<number, DedupedProvider>()
 
-  const tiers: { list: ModelWatchProvider[] | undefined; label: string; rank: number }[] = [
+  const tiers: { list: WatchProvider[] | null | undefined; label: string; rank: number }[] = [
     { list: props.providers.flatrate, label: 'Stream', rank: 0 },
     { list: props.providers.rent, label: 'Rent', rank: 1 },
     { list: props.providers.buy, label: 'Buy', rank: 2 },

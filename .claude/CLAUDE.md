@@ -8,10 +8,10 @@ Arrflix is a self-hosted media management platform that unifies the best parts o
 
 **Tech Stack:**
 
-- **Backend**: Go (Echo framework, PostgreSQL with pgx/v5, SQLC for type-safe queries)
+- **Backend**: Go (chi router + huma/humachi for the typed API surface, PostgreSQL with pgx/v5, SQLC for type-safe queries)
 - **Frontend**: Vue 3 + TypeScript (Vite, Vue Router, Pinia, TanStack Query)
 - **Database**: PostgreSQL
-- **API**: RESTful with auto-generated OpenAPI/Swagger docs
+- **API**: RESTful with OpenAPI 3.1 spec generated from huma operation declarations; typed errors emitted as RFC 9457 problem-details
 - **Deployment**: Docker with s6-overlay process manager
 
 ## Development Setup
@@ -68,9 +68,9 @@ go test ./...
 # Use MCP tool: arrflix_sqlc_generate
 sqlc generate
 
-# API Documentation: Regenerate Swagger docs after handler changes
-# Use MCP tool: arrflix_gen_api (runs both swag init AND openapi-ts)
-swag init -g internal/http/http.go -o internal/http/docs --requiredByDefault
+# OpenAPI: Regenerate the spec after humachi handler changes
+# Use MCP tool: arrflix_gen_api (runs both genspec AND openapi-ts)
+go run ./cmd/genspec   # writes internal/http/docs/openapi.{json,yaml}
 ```
 
 **Database Migrations**: Migrations run automatically on API startup via `db.ApplyMigrations()`. Add new migrations as sequentially numbered files in `backend/internal/db/migrations/`.
@@ -114,7 +114,7 @@ npm run format
 npm run openapi-ts
 ```
 
-**API Client**: The frontend uses auto-generated TypeScript client with TanStack Query integration. Located in `web/src/client/`, generated from `backend/internal/http/docs/swagger.json`.
+**API Client**: The frontend uses auto-generated TypeScript client with TanStack Query integration. Located in `web/src/client/`, generated from `backend/internal/http/docs/openapi.json`.
 
 ### Full API Spec & Client Regeneration
 
@@ -122,12 +122,11 @@ When you modify backend API handlers, use the MCP tool `arrflix_gen_api` to rege
 
 Manual equivalent:
 ```bash
-# From project root
-./scripts/gen-api-spec-and-client.sh
+# 1. Regenerate the OpenAPI spec from humachi operation declarations
+cd backend && go run ./cmd/genspec
 
-# This runs:
-# 1. swag init to generate OpenAPI spec from Go annotations
-# 2. npm run openapi-ts to generate TypeScript client
+# 2. Regenerate the TypeScript client from the spec
+cd ../web && npm run openapi-ts
 ```
 
 ## Architecture Notes

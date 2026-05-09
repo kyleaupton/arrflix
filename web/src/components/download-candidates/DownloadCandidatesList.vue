@@ -27,10 +27,10 @@
 import { computed } from 'vue'
 import { Search } from 'lucide-vue-next'
 import {
-  getV1MovieByIdCandidatesOptions,
-  getV1SeriesByIdCandidatesOptions,
+  downloadCandidatesListMovieOptions,
+  downloadCandidatesListSeriesOptions,
 } from '@/client/@tanstack/vue-query.gen'
-import { type ModelDownloadCandidate } from '@/client/types.gen'
+import { type DownloadCandidate } from '@/client/types.gen'
 import DataTable from '@/components/tables/DataTable.vue'
 import {
   downloadCandidateColumns,
@@ -38,7 +38,7 @@ import {
 } from '@/components/tables/configs/downloadCandidateTableConfig'
 
 const emit = defineEmits<{
-  (e: 'enqueue', candidate: ModelDownloadCandidate): void
+  (e: 'enqueue', candidate: DownloadCandidate): void
 }>()
 
 const props = defineProps<{
@@ -51,11 +51,11 @@ const props = defineProps<{
 // Query options for fetching download candidates
 const queryOptions = computed(() => {
   if (props.movieId) {
-    return getV1MovieByIdCandidatesOptions({
+    return downloadCandidatesListMovieOptions({
       path: { id: props.movieId },
     })
   } else if (props.seriesId) {
-    return getV1SeriesByIdCandidatesOptions({
+    return downloadCandidatesListSeriesOptions({
       path: { id: props.seriesId },
       query: {
         season: props.season,
@@ -67,7 +67,7 @@ const queryOptions = computed(() => {
 })
 
 // Handle enqueue action
-const handleEnqueue = (candidate: ModelDownloadCandidate) => {
+const handleEnqueue = (candidate: DownloadCandidate) => {
   console.log('enqueue', candidate)
   emit('enqueue', candidate)
 }

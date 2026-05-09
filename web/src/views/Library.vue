@@ -88,8 +88,8 @@ import { ref, computed } from 'vue'
 import { useInfiniteQuery } from '@tanstack/vue-query'
 import { useDebounceFn, useInfiniteScroll } from '@vueuse/core'
 import { Search, Film } from 'lucide-vue-next'
-import { getV1Library } from '@/client/sdk.gen'
-import type { ModelLibraryItem } from '@/client/types.gen'
+import { libraryList } from '@/client/sdk.gen'
+import type { LibraryItem } from '@/client/types.gen'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -101,7 +101,7 @@ import { useGridColumns } from '@/composables/useGridColumns'
 const { pageSize } = useGridColumns(3)
 
 // State
-const typeFilter = ref('')
+const typeFilter = ref<'' | 'movie' | 'series'>('')
 const searchQuery = ref('')
 const searchInput = ref('')
 
@@ -131,7 +131,7 @@ const {
 } = useInfiniteQuery({
   queryKey: computed(() => ['library', { type: typeFilter.value, search: searchQuery.value, pageSize: pageSize.value }]),
   queryFn: async ({ pageParam = 1 }) => {
-    const { data } = await getV1Library({
+    const { data } = await libraryList({
       query: {
         page: pageParam,
         pageSize: pageSize.value,
@@ -149,7 +149,7 @@ const {
 })
 
 // Flatten pages into single array
-const items = computed(() => data.value?.pages.flatMap(p => p.data) ?? [])
+const items = computed(() => data.value?.pages.flatMap((p) => p.data ?? []) ?? [])
 
 // Infinite scroll - use window as scroll container
 useInfiniteScroll(
@@ -163,7 +163,7 @@ useInfiniteScroll(
 )
 
 // Navigation
-const getItemRoute = (item: ModelLibraryItem) => {
+const getItemRoute = (item: LibraryItem) => {
   return { path: `/${item.type}/${item.tmdbId}` }
 }
 </script>

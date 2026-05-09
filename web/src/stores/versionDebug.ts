@@ -1,10 +1,10 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import type { ServiceVersionInfo } from '@/client/types.gen'
+import type { VersionInfo } from '@/client/types.gen'
 
 export type VersionDebugState = 'off' | 'loading' | 'error' | 'up_to_date' | 'update_available' | 'dev' | 'unknown'
 
-const presets: Record<Exclude<VersionDebugState, 'off' | 'loading' | 'error'>, ServiceVersionInfo> = {
+const presets: Record<Exclude<VersionDebugState, 'off' | 'loading' | 'error'>, VersionInfo> = {
   up_to_date: {
     version: 'v1.2.0',
     commit: 'abc1234',

@@ -1,17 +1,17 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import type { DbgenListDownloadJobsWithImportSummaryRow, DbgenImportTask } from '@/client/types.gen'
+import type { DownloadJobWithSummary, ImportTask } from '@/client/types.gen'
 import {
-  getV1DownloadJobs,
-  deleteV1DownloadJobsById,
-  postV1DownloadJobsByIdReimport,
-  postV1DownloadJobsByIdRetry,
-  getV1DownloadJobsByIdImportTasks,
+  downloadJobsList,
+  downloadJobsCancel,
+  downloadJobsReimport,
+  downloadJobsRetry,
+  downloadJobsListImportTasks,
 } from '@/client/sdk.gen'
 import { useEventsStore } from '@/stores/events'
 import { createMockJobs, simulateProgress } from './downloadJobs.mock'
 
-export type DownloadJob = DbgenListDownloadJobsWithImportSummaryRow
+export type DownloadJob = DownloadJobWithSummary
 
 export type DownloadFilter = 'all' | 'active' | 'attention' | 'completed'
 
@@ -31,26 +31,26 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
   // Drawer state
   const selectedJobId = ref<string | null>(null)
   const isDetailDrawerOpen = ref(false)
-  const drawerImportTasks = ref<DbgenImportTask[]>([])
+  const drawerImportTasks = ref<ImportTask[]>([])
   const isLoadingImportTasks = ref(false)
 
   // Stable sort by created_at (newest first) — never jumps during progress updates
   const jobsSorted = computed(() => {
     return Object.values(jobsById.value).sort((a, b) => {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     })
   })
 
   const activeJobs = computed(() =>
-    jobsSorted.value.filter((j) => ACTIVE_STATUSES.includes(j.import_status)),
+    jobsSorted.value.filter((j) => ACTIVE_STATUSES.includes(j.importStatus)),
   )
 
   const needsAttentionJobs = computed(() =>
-    jobsSorted.value.filter((j) => ATTENTION_STATUSES.includes(j.import_status)),
+    jobsSorted.value.filter((j) => ATTENTION_STATUSES.includes(j.importStatus)),
   )
 
   const completedJobs = computed(() =>
-    jobsSorted.value.filter((j) => COMPLETED_STATUSES.includes(j.import_status)),
+    jobsSorted.value.filter((j) => COMPLETED_STATUSES.includes(j.importStatus)),
   )
 
   const filteredJobs = computed(() => {
@@ -98,7 +98,7 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
     if (mockMode.value) return
     isLoading.value = true
     try {
-      const res = await getV1DownloadJobs({ throwOnError: true })
+      const res = await downloadJobsList({ throwOnError: true })
       replaceAll(res.data as unknown as DownloadJob[])
     } finally {
       isLoading.value = false
@@ -132,7 +132,7 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
   }
 
   async function cancelJob(id: string) {
-    const res = await deleteV1DownloadJobsById({
+    const res = await downloadJobsCancel({
       throwOnError: true,
       path: { id },
     })
@@ -146,7 +146,7 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
 
   function isJobActive(job: DownloadJob): boolean {
     const activeStatuses = ['download_pending']
-    return activeStatuses.includes(job.import_status)
+    return activeStatuses.includes(job.importStatus)
   }
 
   // Drawer methods
@@ -165,7 +165,7 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
   async function loadImportTasks(jobId: string) {
     isLoadingImportTasks.value = true
     try {
-      const res = await getV1DownloadJobsByIdImportTasks({
+      const res = await downloadJobsListImportTasks({
         throwOnError: true,
         path: { id: jobId },
       })
@@ -178,7 +178,7 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
   }
 
   async function reimportFailed(jobId: string, all: boolean = false) {
-    const res = await postV1DownloadJobsByIdReimport({
+    const res = await downloadJobsReimport({
       throwOnError: true,
       path: { id: jobId },
       query: { all },
@@ -193,7 +193,7 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
   }
 
   async function retryDownload(jobId: string) {
-    await postV1DownloadJobsByIdRetry({
+    await downloadJobsRetry({
       throwOnError: true,
       path: { id: jobId },
     })

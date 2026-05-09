@@ -7,14 +7,14 @@
 </template>
 
 <script setup lang="ts">
-import { type ModelVideo } from '@/client/types.gen'
+import { type Video } from '@/client/types.gen'
 import Rail from './Rail.vue'
 import VideoCard from '@/components/videos/VideoCard.vue'
 
 withDefaults(
   defineProps<{
     title?: string
-    videos: Array<ModelVideo>
+    videos: Array<Video>
   }>(),
   {
     title: 'Videos',

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	"github.com/kyleaupton/arrflix/internal/downloader"
@@ -108,7 +109,7 @@ func (w *Worker) tick(ctx context.Context) {
 	}
 }
 
-func (w *Worker) processTask(ctx context.Context, task dbgen.ImportTask) error {
+func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 	w.log.Info().
 		Str("task_id", task.ID.String()).
 		Str("source_path", task.SourcePath).
@@ -175,7 +176,7 @@ func (w *Worker) processTask(ctx context.Context, task dbgen.ImportTask) error {
 	// Check for existing destination
 	if _, err := os.Stat(fullDest); err == nil {
 		// Handle reimport: if this is a reimport, remove old file first
-		if task.PreviousTaskID.Valid {
+		if task.PreviousTaskID != uuid.Nil {
 			w.log.Info().
 				Str("task_id", task.ID.String()).
 				Str("dest", fullDest).
@@ -201,13 +202,18 @@ func (w *Worker) processTask(ctx context.Context, task dbgen.ImportTask) error {
 		Str("dest", fullDest).
 		Msg("file imported successfully")
 
-	// Create media file record
-	var episodeID *pgtype.UUID
-	if task.EpisodeID.Valid {
-		episodeID = &task.EpisodeID
+	// Create media file record. CreateMediaFile is still on the dbgen-typed
+	// repo surface (MediaFile is a future migration wave); convert at the
+	// boundary.
+	libIDPg := pgtype.UUID{Bytes: task.LibraryID, Valid: true}
+	mediaItemIDPg := pgtype.UUID{Bytes: task.MediaItemID, Valid: true}
+	var episodeIDPg *pgtype.UUID
+	if task.EpisodeID != uuid.Nil {
+		ep := pgtype.UUID{Bytes: task.EpisodeID, Valid: true}
+		episodeIDPg = &ep
 	}
 
-	mediaFile, err := w.repo.CreateMediaFile(ctx, task.LibraryID, task.MediaItemID, episodeID, destPath)
+	mediaFile, err := w.repo.CreateMediaFile(ctx, libIDPg, mediaItemIDPg, episodeIDPg, destPath)
 	if err != nil {
 		// File was created but record failed - log but don't fail the task
 		w.log.Error().Err(err).
@@ -222,10 +228,12 @@ func (w *Worker) processTask(ctx context.Context, task dbgen.ImportTask) error {
 		_, _ = w.repo.UpsertMediaFileState(ctx, mediaFile.ID, true, &fileSize)
 	}
 
-	// Record import in media_file_import table
+	// Record import in media_file_import table. Still on the dbgen-typed
+	// repo surface (MediaFile is a future migration wave).
+	taskIDPg := pgtype.UUID{Bytes: task.ID, Valid: true}
 	_, _ = w.repo.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
 		MediaFileID:  mediaFile.ID,
-		ImportTaskID: task.ID,
+		ImportTaskID: taskIDPg,
 		Method:       method,
 		SourcePath:   &task.SourcePath,
 		DestPath:     destPath,
@@ -233,8 +241,19 @@ func (w *Worker) processTask(ctx context.Context, task dbgen.ImportTask) error {
 		ErrorMessage: nil,
 	})
 
+	// Convert mediaFile.ID (pgtype.UUID) to uuid.UUID for the now-domain repo call.
+	mediaFileUUID := uuid.Nil
+	if mediaFile.ID.Valid {
+		mediaFileUUID = uuid.UUID(mediaFile.ID.Bytes)
+	}
+
 	// Mark task completed
-	_, err = w.repo.SetImportTaskCompleted(ctx, task.ID, destPath, method, mediaFile.ID)
+	_, err = w.repo.SetImportTaskCompleted(ctx, repo.SetImportTaskCompletedParams{
+		ID:           task.ID,
+		DestPath:     destPath,
+		ImportMethod: method,
+		MediaFileID:  mediaFileUUID,
+	})
 	if err != nil {
 		return fmt.Errorf("set task completed: %w", err)
 	}
@@ -250,7 +269,7 @@ func (w *Worker) processTask(ctx context.Context, task dbgen.ImportTask) error {
 	return nil
 }
 
-func (w *Worker) computeDestPath(task dbgen.ImportTask, details dbgen.GetImportTaskWithDetailsRow, mi *model.MediaInfoFields) (string, error) {
+func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTaskWithDetails, mi *model.MediaInfoFields) (string, error) {
 	srcExt := filepath.Ext(task.SourcePath)
 
 	// Build evaluation context for template rendering
@@ -339,7 +358,7 @@ func (w *Worker) computeDestPath(task dbgen.ImportTask, details dbgen.GetImportT
 	return rel, nil
 }
 
-func (w *Worker) handleError(ctx context.Context, task dbgen.ImportTask, err error) {
+func (w *Worker) handleError(ctx context.Context, task model.ImportTask, err error) {
 	msg := err.Error()
 	kind := apperrors.KindOf(err)
 
@@ -385,17 +404,22 @@ func (w *Worker) handleError(ctx context.Context, task dbgen.ImportTask, err err
 		"backoff":     backoff.String(),
 	})
 
-	_, _ = w.repo.ScheduleImportTaskRetry(ctx, task.ID, msg, kind, nextRun)
+	_, _ = w.repo.ScheduleImportTaskRetry(ctx, repo.ScheduleImportTaskRetryParams{
+		ID:        task.ID,
+		LastError: msg,
+		Kind:      kind,
+		NextRunAt: nextRun,
+	})
 	w.publishTaskUpdated(ctx, task)
 }
 
-func (w *Worker) logEvent(ctx context.Context, taskID pgtype.UUID, eventType, message string, metadata map[string]any) {
+func (w *Worker) logEvent(ctx context.Context, taskID uuid.UUID, eventType, message string, metadata map[string]any) {
 	var metaBytes []byte
 	if metadata != nil {
 		metaBytes, _ = json.Marshal(metadata)
 	}
 
-	_, err := w.repo.CreateImportTaskEvent(ctx, dbgen.CreateImportTaskEventParams{
+	_, err := w.repo.CreateImportTaskEvent(ctx, repo.CreateImportTaskEventParams{
 		ImportTaskID: taskID,
 		EventType:    eventType,
 		OldStatus:    nil,
@@ -408,7 +432,7 @@ func (w *Worker) logEvent(ctx context.Context, taskID pgtype.UUID, eventType, me
 	}
 }
 
-func (w *Worker) publishTaskUpdated(ctx context.Context, task dbgen.ImportTask) {
+func (w *Worker) publishTaskUpdated(ctx context.Context, task model.ImportTask) {
 	if w.broker == nil {
 		return
 	}
@@ -419,12 +443,12 @@ func (w *Worker) publishTaskUpdated(ctx context.Context, task dbgen.ImportTask) 
 		Data: nil,
 	})
 	// Also notify about parent download job since import_status may have changed
-	if task.DownloadJobID.Valid {
+	if task.DownloadJobID != uuid.Nil {
 		w.publishDownloadJobUpdated(ctx, task.DownloadJobID)
 	}
 }
 
-func (w *Worker) publishDownloadJobUpdated(ctx context.Context, jobID pgtype.UUID) {
+func (w *Worker) publishDownloadJobUpdated(ctx context.Context, jobID uuid.UUID) {
 	if w.broker == nil {
 		return
 	}
@@ -447,9 +471,9 @@ func (w *Worker) publishDownloadJobUpdated(ctx context.Context, jobID pgtype.UUI
 
 // deriveSourcePath attempts to re-derive the source path from the download job.
 // This enables self-healing when path mappings change or volume mounts are fixed.
-func (w *Worker) deriveSourcePath(ctx context.Context, task dbgen.ImportTask) (string, error) {
+func (w *Worker) deriveSourcePath(ctx context.Context, task model.ImportTask) (string, error) {
 	// No download job - use stored path (manual import case)
-	if !task.DownloadJobID.Valid {
+	if task.DownloadJobID == uuid.Nil {
 		return task.SourcePath, nil
 	}
 
@@ -494,11 +518,14 @@ func (w *Worker) deriveSourcePath(ctx context.Context, task dbgen.ImportTask) (s
 		rawPath = mainFile.Path
 	} else {
 		// Series - match to episode
-		if !task.EpisodeID.Valid {
+		if task.EpisodeID == uuid.Nil {
 			return task.SourcePath, nil
 		}
 
-		episode, err := w.repo.GetEpisode(ctx, task.EpisodeID)
+		// MediaEpisode/MediaSeason repo surface still uses pgtype.UUID
+		// (future migration wave).
+		episodeIDPg := pgtype.UUID{Bytes: task.EpisodeID, Valid: true}
+		episode, err := w.repo.GetEpisode(ctx, episodeIDPg)
 		if err != nil {
 			w.log.Debug().Err(err).Msg("failed to get episode, using stored path")
 			return task.SourcePath, nil

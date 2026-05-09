@@ -1,10 +1,10 @@
 import { h } from 'vue'
 import { type TableColumn, type TableAction } from '../types'
-import { type HandlersNameTemplateSwagger } from '@/client/types.gen'
+import { type NameTemplate } from '@/client/types.gen'
 import { PrimeIcons } from '@/icons'
 import TemplateDisplay from '@/components/ui/template-editor/TemplateDisplay.vue'
 
-export const nameTemplateColumns: TableColumn<HandlersNameTemplateSwagger>[] = [
+export const nameTemplateColumns: TableColumn<NameTemplate>[] = [
   {
     key: 'name',
     label: 'Name',
@@ -27,13 +27,13 @@ export const nameTemplateColumns: TableColumn<HandlersNameTemplateSwagger>[] = [
     label: 'Template',
     sortable: true,
     filterable: true,
-    render: (value: string, row: HandlersNameTemplateSwagger) => {
+    render: (value: string, row: NameTemplate) => {
       if (row.type === 'series') {
         return h(TemplateDisplay, {
           template: value || '',
           seriesTemplates: [
-            row.series_show_template || '',
-            row.series_season_template || '',
+            row.seriesShowTemplate || '',
+            row.seriesSeasonTemplate || '',
             value || '',
           ],
           isSeries: true,
@@ -59,9 +59,9 @@ export const nameTemplateColumns: TableColumn<HandlersNameTemplateSwagger>[] = [
 ]
 
 export const createNameTemplateActions = (
-  onEdit: (template: HandlersNameTemplateSwagger) => void,
-  onDelete: (template: HandlersNameTemplateSwagger) => void,
-): TableAction<HandlersNameTemplateSwagger>[] => [
+  onEdit: (template: NameTemplate) => void,
+  onDelete: (template: NameTemplate) => void,
+): TableAction<NameTemplate>[] => [
   {
     key: 'edit',
     label: 'Edit',

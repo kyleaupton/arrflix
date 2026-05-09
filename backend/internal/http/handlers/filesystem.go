@@ -1,60 +1,68 @@
+// filesystem.go is the humachi-shaped filesystem handler. The single
+// GET /filesystem/browse endpoint is the FE's directory picker: given an
+// absolute path, lists the immediate child directories so the user can
+// drill in. The service performs the security checks (path validity,
+// permission, hides system dirs at root, hides dotfiles) and returns
+// typed errors that humaerr renders as RFC 9457 problem-details.
+//
+// No path-traversal protection lives here at the handler — the service
+// rejects non-directories and surfaces filesystem permission errors with
+// the proper kind. This matches the pre-migration Echo behavior; the FE
+// uses the endpoint to navigate a path the user types, and the OS-level
+// permission checks decide what they can see.
 package handlers
 
 import (
+	"context"
 	"net/http"
 
-	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/kyleaupton/arrflix/internal/service"
-	"github.com/labstack/echo/v4"
 )
+
+// ----- Handler -----
 
 type Filesystem struct{ svc *service.Services }
 
 func NewFilesystem(s *service.Services) *Filesystem { return &Filesystem{svc: s} }
 
-func (h *Filesystem) RegisterProtected(v1 *echo.Group) {
-	v1.GET("/filesystem/browse", h.Browse)
-}
+// ----- Browse response shape -----
 
-// filesystemDirectoryEntry represents a single directory entry.
+// filesystemDirectoryEntry is a single child directory.
 type filesystemDirectoryEntry struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
+	Name string `json:"name" doc:"Display name (basename) of the directory"`
+	Path string `json:"path" doc:"Absolute path of the directory"`
 }
 
-// filesystemBrowseResponse is the response for the browse endpoint.
+// filesystemBrowseResponse is the wire shape returned by GET /filesystem/browse.
+// `current_path` and `parent` use snake_case to match the pre-migration Echo
+// response exactly; the FE consumes those names today.
 type filesystemBrowseResponse struct {
-	CurrentPath string                     `json:"current_path"`
-	Parent      string                     `json:"parent"`
-	Directories []filesystemDirectoryEntry `json:"directories"`
+	CurrentPath string                     `json:"current_path" doc:"Resolved absolute path that was browsed"`
+	Parent      string                     `json:"parent" doc:"Parent directory path (empty when current_path is /)"`
+	Directories []filesystemDirectoryEntry `json:"directories" doc:"Child directories, sorted case-insensitive by name"`
 }
 
-// Browse filesystem directories
-// @Summary Browse filesystem directories
-// @Tags    filesystem
-// @Produce json
-// @Param   path query string false "Directory path to browse (defaults to /)"
-// @Success 200 {object} handlers.filesystemBrowseResponse
-// @Failure 400 {object} map[string]string
-// @Failure 403 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router  /v1/filesystem/browse [get]
-func (h *Filesystem) Browse(c echo.Context) error {
-	path := c.QueryParam("path")
-	ctx := c.Request().Context()
+// ----- Browse -----
 
-	result, err := h.svc.Filesystem.Browse(ctx, path)
+// FilesystemBrowseInput carries the optional `?path=` query. An empty value
+// resolves to the filesystem root "/".
+type FilesystemBrowseInput struct {
+	Path string `query:"path" doc:"Absolute directory path to browse. Empty defaults to /."`
+}
+
+// FilesystemBrowseOutput wraps filesystemBrowseResponse.
+type FilesystemBrowseOutput struct {
+	Body filesystemBrowseResponse
+}
+
+// Browse lists immediate child directories of `path`. Errors from the
+// service are typed: NotFound (404), Forbidden (403), Validation (422,
+// e.g. when the path is a file), or Internal (500).
+func (h *Filesystem) Browse(ctx context.Context, input *FilesystemBrowseInput) (*FilesystemBrowseOutput, error) {
+	result, err := h.svc.Filesystem.Browse(ctx, input.Path)
 	if err != nil {
-		switch {
-		case apperrors.IsNotFound(err):
-			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
-		case apperrors.IsForbidden(err):
-			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
-		case apperrors.IsValidation(err):
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		default:
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
+		return nil, err
 	}
 
 	dirs := make([]filesystemDirectoryEntry, len(result.Directories))
@@ -62,9 +70,24 @@ func (h *Filesystem) Browse(c echo.Context) error {
 		dirs[i] = filesystemDirectoryEntry{Name: d.Name, Path: d.Path}
 	}
 
-	return c.JSON(http.StatusOK, filesystemBrowseResponse{
+	return &FilesystemBrowseOutput{Body: filesystemBrowseResponse{
 		CurrentPath: result.CurrentPath,
 		Parent:      result.Parent,
 		Directories: dirs,
-	})
+	}}, nil
+}
+
+// ----- Register -----
+
+// RegisterHumachi wires the single filesystem operation onto the humachi API.
+func (h *Filesystem) RegisterHumachi(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "filesystem-browse",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/filesystem/browse",
+		Summary:     "Browse filesystem directories",
+		Description: "Lists the immediate child directories of an absolute path. Used by the FE library-picker. Hides dotfiles and (at the root only) system directories.",
+		Tags:        []string{"filesystem"},
+		Errors:      errs(errsRead, errsForbidden, []int{http.StatusUnprocessableEntity}),
+	}, h.Browse)
 }

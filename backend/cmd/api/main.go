@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	nethttp "net/http"
 	"os/signal"
 	"syscall"
 	"time"
@@ -64,11 +65,13 @@ func main() {
 		// Don't fatal - allow server to start even if downloaders fail
 	}
 
-	// HTTP
-	e := http.NewServer(cfg, logg, pool, services, repo, downloaderManager, broker)
+	// HTTP. NewServer wires chi (top-level) + humachi + Echo (catch-all);
+	// the chi router is what we bind to the listener.
+	srv := http.NewServer(cfg, logg, pool, services, repo, downloaderManager, broker)
+	httpServer := &nethttp.Server{Addr: ":" + cfg.Port, Handler: srv.Router}
 	go func() {
 		logg.Info().Str("port", cfg.Port).Msg("http listen")
-		if err := e.Start(":" + cfg.Port); err != nil {
+		if err := httpServer.ListenAndServe(); err != nil && err != nethttp.ErrServerClosed {
 			log.Println("server stopped:", err)
 		}
 	}()
@@ -92,6 +95,6 @@ func main() {
 	shCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_ = e.Shutdown(shCtx)
+	_ = httpServer.Shutdown(shCtx)
 	logg.Info().Msg("bye")
 }

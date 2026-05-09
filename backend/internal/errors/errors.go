@@ -203,6 +203,21 @@ func Validation(detail string, fields ...FieldError) *Error {
 	}
 }
 
+// Problem constructs an *Error with an explicit kind, detail, and (optionally)
+// field-level errors. It's the general-purpose constructor used by the huma
+// error adapter to synthesize typed errors from framework-emitted binding /
+// schema-validation failures, where the kind comes from a status-to-kind
+// mapping rather than a callsite. Service code should prefer the kind-specific
+// helpers (NotFoundf, Conflictf, Validation, ...) over Problem.
+func Problem(kind Kind, detail string, fields []FieldError) *Error {
+	return &Error{
+		kind:   kind,
+		msg:    detail,
+		fields: fields,
+		stack:  captureStack(1),
+	}
+}
+
 // Wrap annotates an existing error with additional context, preserving the
 // kind from the wrapped chain. Returns nil if err is nil. Returns error
 // (not *Error) so nil-in / nil-out works correctly through the interface.

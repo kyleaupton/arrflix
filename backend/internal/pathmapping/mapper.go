@@ -4,7 +4,7 @@ package pathmapping
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/google/uuid"
 )
 
 // Mapper translates paths from the downloader's filesystem view to Arrflix's view.
@@ -18,6 +18,6 @@ func New() *Mapper {
 // Apply translates a path from downloader's view to Arrflix's view.
 // Currently a no-op stub - returns path unchanged.
 // TODO: Implement remote_path_mapping table lookup using downloaderID.
-func (m *Mapper) Apply(ctx context.Context, downloaderID pgtype.UUID, path string) string {
+func (m *Mapper) Apply(ctx context.Context, downloaderID uuid.UUID, path string) string {
 	return path
 }

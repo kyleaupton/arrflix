@@ -15,7 +15,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { AlertCircle, FileIcon, Film, Tv, RefreshCw, XCircle } from 'lucide-vue-next'
-import type { DbgenImportTask } from '@/client/types.gen'
+import type { ImportTask } from '@/client/types.gen'
 import { statusConfig } from './statusConfig'
 import { formatBytes, formatSpeed, formatEta } from '@/lib/format'
 
@@ -42,51 +42,51 @@ const isOpen = computed(() => jobs.isDetailDrawerOpen)
 
 const statusLabel = computed(() => {
   if (!job.value) return 'Unknown'
-  return statusConfig[job.value.import_status]?.label ?? 'Unknown'
+  return statusConfig[job.value.importStatus]?.label ?? 'Unknown'
 })
 
 const statusClass = computed(() => {
   if (!job.value) return statusConfig['unknown']!.class
-  return statusConfig[job.value.import_status]?.class ?? statusConfig['unknown']!.class
+  return statusConfig[job.value.importStatus]?.class ?? statusConfig['unknown']!.class
 })
 
 const canCancel = computed(() => {
-  return job.value?.import_status === 'download_pending'
+  return job.value?.importStatus === 'download_pending'
 })
 
 const canRetry = computed(() => {
-  return job.value?.import_status === 'download_failed'
+  return job.value?.importStatus === 'download_failed'
 })
 
 const canReimport = computed(() => {
   if (!job.value) return false
-  return ['partial_failure', 'import_failed', 'fully_imported'].includes(job.value.import_status)
+  return ['partial_failure', 'import_failed', 'fully_imported'].includes(job.value.importStatus)
 })
 
 const hasFailedImports = computed(() => {
-  return (job.value?.failed_imports ?? 0) > 0
+  return (job.value?.failedImports ?? 0) > 0
 })
 
 const posterUrl = computed(() => {
-  if (!job.value?.media_poster_path) return ''
-  return `https://image.tmdb.org/t/p/w185${job.value.media_poster_path}`
+  if (!job.value?.mediaPosterPath) return ''
+  return `https://image.tmdb.org/t/p/w185${job.value.mediaPosterPath}`
 })
 
 const drawerTitle = computed(() => {
   if (!job.value) return 'Download Details'
-  return job.value.media_title || job.value.candidate_title
+  return job.value.mediaTitle || job.value.candidateTitle
 })
 
 const drawerSubtitle = computed(() => {
   if (!job.value) return ''
   const parts: string[] = []
-  if (job.value.media_year) parts.push(String(job.value.media_year))
-  if (job.value.media_certification) parts.push(job.value.media_certification)
-  if (job.value.media_type === 'series' && job.value.season_number) {
-    const ep = job.value.episode_number
-      ? `E${String(job.value.episode_number).padStart(2, '0')}`
+  if (job.value.mediaYear) parts.push(String(job.value.mediaYear))
+  if (job.value.mediaCertification) parts.push(job.value.mediaCertification)
+  if (job.value.mediaType === 'series' && job.value.seasonNumber) {
+    const ep = job.value.episodeNumber
+      ? `E${String(job.value.episodeNumber).padStart(2, '0')}`
       : ''
-    parts.push(`S${String(job.value.season_number).padStart(2, '0')}${ep}`)
+    parts.push(`S${String(job.value.seasonNumber).padStart(2, '0')}${ep}`)
   }
   return parts.join(' \u00B7 ')
 })
@@ -131,8 +131,8 @@ function handleReimportAll() {
   }
 }
 
-function getTaskFilename(task: DbgenImportTask): string {
-  const path = task.source_path || ''
+function getTaskFilename(task: ImportTask): string {
+  const path = task.sourcePath || ''
   return path.split('/').pop() || path
 }
 
@@ -156,7 +156,7 @@ function getTaskStatusConfig(status: string) {
             />
             <div v-else class="w-full h-full flex items-center justify-center">
               <component
-                :is="job?.media_type === 'series' ? Tv : Film"
+                :is="job?.mediaType === 'series' ? Tv : Film"
                 class="size-6 text-muted-foreground"
               />
             </div>
@@ -179,15 +179,15 @@ function getTaskStatusConfig(status: string) {
       <ScrollArea class="flex-1 min-h-0 px-6">
         <div class="space-y-6 py-4">
           <!-- Release name -->
-          <div v-if="job?.candidate_title" class="space-y-2">
+          <div v-if="job?.candidateTitle" class="space-y-2">
             <h4 class="text-sm font-medium">Release</h4>
             <p class="text-xs text-muted-foreground break-all font-mono bg-muted p-2 rounded">
-              {{ job.candidate_title }}
+              {{ job.candidateTitle }}
             </p>
           </div>
 
           <!-- Progress Section (during download) -->
-          <div v-if="job?.import_status === 'download_pending'" class="space-y-2">
+          <div v-if="job?.importStatus === 'download_pending'" class="space-y-2">
             <h4 class="text-sm font-medium">Download Progress</h4>
             <div class="flex items-center gap-2">
               <Progress :model-value="Math.round((job?.progress ?? 0) * 100)" class="flex-1" />
@@ -196,40 +196,40 @@ function getTaskStatusConfig(status: string) {
               </span>
             </div>
             <div class="flex items-center gap-3 text-xs text-muted-foreground">
-              <span v-if="formatSpeed(job?.download_speed)">{{ formatSpeed(job?.download_speed) }}</span>
-              <span v-if="formatEta(job?.eta_seconds)">ETA: {{ formatEta(job?.eta_seconds) }}</span>
-              <span v-if="formatBytes(job?.total_size)">{{ formatBytes(job?.total_size) }}</span>
+              <span v-if="formatSpeed(job?.downloadSpeed)">{{ formatSpeed(job?.downloadSpeed) }}</span>
+              <span v-if="formatEta(job?.etaSeconds)">ETA: {{ formatEta(job?.etaSeconds) }}</span>
+              <span v-if="formatBytes(job?.totalSize)">{{ formatBytes(job?.totalSize) }}</span>
             </div>
-            <p v-if="job?.downloader_status" class="text-xs text-muted-foreground">
-              Downloader status: {{ job.downloader_status }}
+            <p v-if="job?.downloaderStatus" class="text-xs text-muted-foreground">
+              Downloader status: {{ job.downloaderStatus }}
             </p>
           </div>
 
           <!-- Import Progress (after download) -->
-          <div v-else-if="job && job.total_import_tasks > 0" class="space-y-2">
+          <div v-else-if="job && job.totalImportTasks > 0" class="space-y-2">
             <h4 class="text-sm font-medium">Import Progress</h4>
             <div class="flex items-center gap-2">
               <Progress
-                :model-value="Math.round((job.completed_imports / job.total_import_tasks) * 100)"
+                :model-value="Math.round((job.completedImports / job.totalImportTasks) * 100)"
                 class="flex-1"
               />
               <span class="text-sm text-muted-foreground">
-                {{ job.completed_imports }}/{{ job.total_import_tasks }} files
+                {{ job.completedImports }}/{{ job.totalImportTasks }} files
               </span>
             </div>
           </div>
 
           <!-- Source Path -->
-          <div v-if="job?.content_path" class="space-y-2">
+          <div v-if="job?.contentPath" class="space-y-2">
             <h4 class="text-sm font-medium">Source Path</h4>
             <p class="text-xs text-muted-foreground break-all font-mono bg-muted p-2 rounded">
-              {{ job.content_path }}
+              {{ job.contentPath }}
             </p>
           </div>
 
           <!-- Error Section -->
           <div
-            v-if="job?.last_error"
+            v-if="job?.lastError"
             class="space-y-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg"
           >
             <div class="flex items-center gap-2 text-destructive">
@@ -237,7 +237,7 @@ function getTaskStatusConfig(status: string) {
               <h4 class="text-sm font-medium">Error</h4>
             </div>
             <p class="text-xs text-destructive break-all">
-              {{ job.last_error }}
+              {{ job.lastError }}
             </p>
           </div>
 
@@ -285,20 +285,20 @@ function getTaskStatusConfig(status: string) {
 
                 <!-- Destination path for completed -->
                 <p
-                  v-if="task.dest_path"
+                  v-if="task.destPath"
                   class="text-xs text-muted-foreground break-all font-mono bg-muted p-1.5 rounded"
                 >
-                  {{ task.dest_path }}
+                  {{ task.destPath }}
                 </p>
 
                 <!-- Error for failed tasks -->
                 <div
-                  v-if="task.status === 'failed' && task.last_error"
+                  v-if="task.status === 'failed' && task.lastError"
                   class="flex items-start gap-2"
                 >
                   <XCircle class="size-3 text-destructive shrink-0 mt-0.5" />
                   <p class="text-xs text-destructive break-all">
-                    {{ task.last_error }}
+                    {{ task.lastError }}
                   </p>
                 </div>
               </div>

@@ -214,8 +214,8 @@ import { computed, ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { Download, Check } from 'lucide-vue-next'
-import { getV1SeriesByIdOptions } from '@/client/@tanstack/vue-query.gen'
-import type { ModelSeasonDetail } from '@/client/types.gen'
+import { mediaGetSeriesOptions } from '@/client/@tanstack/vue-query.gen'
+import type { SeasonDetail } from '@/client/types.gen'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
@@ -258,7 +258,7 @@ const id = computed(() => {
 })
 
 const { isLoading, isError, data } = useQuery(
-  computed(() => getV1SeriesByIdOptions({ path: { id: id.value } })),
+  computed(() => mediaGetSeriesOptions({ path: { id: id.value } })),
 )
 
 const firstAirYear = computed(() =>
@@ -332,8 +332,8 @@ const activeJobsForSeries = computed(() => {
   if (!data.value?.tmdbId) return []
   return Object.values(downloadJobs.jobsById).filter(
     (job) =>
-      job.media_type === 'series' &&
-      job.tmdb_id === data.value?.tmdbId &&
+      job.mediaType === 'series' &&
+      job.tmdbId === data.value?.tmdbId &&
       isJobActive(job),
   )
 })
@@ -345,33 +345,33 @@ function isJobActive(job: DownloadJob): boolean {
   if (activeDownloadStates.includes(job.status)) return true
   // Active import states (download completed but still importing)
   const activeImportStates = ['awaiting_import', 'importing']
-  if (activeImportStates.includes(job.import_status)) return true
+  if (activeImportStates.includes(job.importStatus)) return true
   return false
 }
 
 // Get season pack job (if any) for a season - season packs have no episode_id
 function getSeasonPackJob(seasonNumber: number): DownloadJob | undefined {
   return activeJobsForSeries.value.find(
-    (job) => job.season_number === seasonNumber && !job.episode_id,
+    (job) => job.seasonNumber === seasonNumber && !job.episodeId,
   )
 }
 
 // Get episode job (if any) for a specific episode
 function getEpisodeJob(seasonNumber: number, episodeNumber: number): DownloadJob | undefined {
   return activeJobsForSeries.value.find(
-    (job) => job.season_number === seasonNumber && job.episode_number === episodeNumber,
+    (job) => job.seasonNumber === seasonNumber && job.episodeNumber === episodeNumber,
   )
 }
 
 // Check if season has any individual episode downloads active
-function hasActiveEpisodeDownloads(season: ModelSeasonDetail): boolean {
+function hasActiveEpisodeDownloads(season: SeasonDetail): boolean {
   return (
     season.episodes?.some((ep) => getEpisodeJob(season.seasonNumber, ep.episodeNumber)) ?? false
   )
 }
 
 // Get count of active episode downloads for a season
-function getActiveEpisodeCount(season: ModelSeasonDetail): number {
+function getActiveEpisodeCount(season: SeasonDetail): number {
   return (
     season.episodes?.filter((ep) => getEpisodeJob(season.seasonNumber, ep.episodeNumber)).length ??
     0
@@ -385,12 +385,12 @@ function isPartOfSeasonPack(seasonNumber: number): boolean {
 
 type SeasonStatus = 'available' | 'partial' | 'downloading' | 'importing' | null
 
-function getSeasonStatus(season: ModelSeasonDetail): SeasonStatus {
+function getSeasonStatus(season: SeasonDetail): SeasonStatus {
   // Check for season pack download first
   const packJob = getSeasonPackJob(season.seasonNumber)
   if (packJob) {
     if (['created', 'enqueued', 'downloading'].includes(packJob.status)) return 'downloading'
-    if (['awaiting_import', 'importing'].includes(packJob.import_status)) return 'importing'
+    if (['awaiting_import', 'importing'].includes(packJob.importStatus)) return 'importing'
   }
 
   // Check for individual episode downloads
@@ -411,10 +411,10 @@ function getSeasonProgressState(seasonNumber: number): CircularProgressState {
 
   // Downloading phase
   if (['created', 'enqueued', 'downloading'].includes(job.status)) {
-    return job.progress > 0 ? 'progress' : 'indeterminate'
+    return (job.progress ?? 0) > 0 ? 'progress' : 'indeterminate'
   }
   // Import phase
-  if (['awaiting_import', 'importing'].includes(job.import_status)) {
+  if (['awaiting_import', 'importing'].includes(job.importStatus)) {
     return 'indeterminate'
   }
   return 'indeterminate'
@@ -424,7 +424,7 @@ function getSeasonProgressState(seasonNumber: number): CircularProgressState {
 function getSeasonProgressValue(seasonNumber: number): number {
   const job = getSeasonPackJob(seasonNumber)
   if (!job) return 0
-  return Math.round(job.progress * 100)
+  return Math.round((job.progress ?? 0) * 100)
 }
 
 // Get progress state for individual episode
@@ -437,10 +437,10 @@ function getEpisodeProgressState(
 
   // Downloading phase
   if (['created', 'enqueued', 'downloading'].includes(job.status)) {
-    return job.progress > 0 ? 'progress' : 'indeterminate'
+    return (job.progress ?? 0) > 0 ? 'progress' : 'indeterminate'
   }
   // Import phase
-  if (['awaiting_import', 'importing'].includes(job.import_status)) {
+  if (['awaiting_import', 'importing'].includes(job.importStatus)) {
     return 'indeterminate'
   }
   return 'indeterminate'
@@ -450,7 +450,7 @@ function getEpisodeProgressState(
 function getEpisodeProgressValue(seasonNumber: number, episodeNumber: number): number {
   const job = getEpisodeJob(seasonNumber, episodeNumber)
   if (!job) return 0
-  return Math.round(job.progress * 100)
+  return Math.round((job.progress ?? 0) * 100)
 }
 
 const isDownloading = computed(() => {

@@ -10,8 +10,8 @@ import {
   Settings,
   TableOfContents,
 } from 'lucide-vue-next'
-import { type ModelIndexerDefinition, type ModelIndexerInput } from '@/client/types.gen'
-import { postV1IndexerMutation } from '@/client/@tanstack/vue-query.gen'
+import { type IndexerOutput, type IndexerInput } from '@/client/types.gen'
+import { indexersSaveMutation } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
 import {
   Stepper,
@@ -34,12 +34,12 @@ const modal = useModal()
 
 // Form state
 const currentStep = ref(0)
-const selectedIndexerType = ref<ModelIndexerDefinition | null>(null)
-const saveData = ref<ModelIndexerInput | undefined>(undefined)
+const selectedIndexerType = ref<IndexerOutput | null>(null)
+const saveData = ref<IndexerInput | undefined>(undefined)
 const isTestingConfig = ref(false)
 
 const createIndexerMutation = useMutation({
-  ...postV1IndexerMutation(),
+  ...indexersSaveMutation(),
   onSuccess: () => {
     dialogRef.value.close({ indexerAdded: true })
   },
@@ -99,7 +99,7 @@ const prevStep = () => {
   }
 }
 
-const selectIndexerType = (indexer: ModelIndexerDefinition | null) => {
+const selectIndexerType = (indexer: IndexerOutput | null) => {
   selectedIndexerType.value = indexer
 }
 

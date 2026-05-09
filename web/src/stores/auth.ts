@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { client } from '@/client/client.gen'
-import { postV1AuthLogin, postV1AuthPlexExchange } from '@/client/sdk.gen'
+import { authLogin, authPlexExchange } from '@/client/sdk.gen'
 
 type Nullable<T> = T | null
 
@@ -95,7 +95,7 @@ export const useAuthStore = defineStore('auth', () => {
     isLoading.value = true
     errorMessage.value = null
     try {
-      const res = await postV1AuthLogin<true>({
+      const res = await authLogin<true>({
         throwOnError: true,
         body: { login, password },
       })
@@ -131,7 +131,7 @@ export const useAuthStore = defineStore('auth', () => {
     const pinId = params.get('pinId')
     if (pinId) {
       try {
-        const res = await postV1AuthPlexExchange<true>({
+        const res = await authPlexExchange<true>({
           throwOnError: true,
           body: { pin_id: Number(pinId) },
         })

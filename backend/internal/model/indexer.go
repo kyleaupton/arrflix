@@ -200,8 +200,8 @@ type IndexerTestResult struct {
 
 // IndexerBatchTestResult represents test results for batch testing
 type IndexerBatchTestResult struct {
-	IndexerID   int64  `json:"indexer_id" swagger:"description:Indexer ID"`
-	IndexerName string `json:"indexer_name" swagger:"description:Indexer name"`
+	IndexerID   int64  `json:"indexerId" swagger:"description:Indexer ID"`
+	IndexerName string `json:"indexerName" swagger:"description:Indexer name"`
 	Success     bool   `json:"success" swagger:"description:Whether the test passed"`
 	Message     string `json:"message,omitempty" swagger:"description:Success message"`
 	Error       string `json:"error,omitempty" swagger:"description:Error message if test failed"`

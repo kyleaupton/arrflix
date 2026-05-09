@@ -1,8 +1,8 @@
 import { type TableColumn, type TableAction } from '../types'
-import { type DbgenDownloader } from '@/client/types.gen'
+import { type Downloader } from '@/client/types.gen'
 import { PrimeIcons } from '@/icons'
 
-export const downloaderColumns: TableColumn<DbgenDownloader>[] = [
+export const downloaderColumns: TableColumn<Downloader>[] = [
   {
     key: 'name',
     label: 'Name',
@@ -45,7 +45,7 @@ export const downloaderColumns: TableColumn<DbgenDownloader>[] = [
     sortable: true,
     width: '120px',
     align: 'center',
-    render: (value: boolean, row: DbgenDownloader & { initialized?: boolean }) => {
+    render: (value: boolean, row: Downloader & { initialized?: boolean }) => {
       const initialized = row.initialized ?? false
       if (!value) {
         return '<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">Disabled</span>'
@@ -71,10 +71,10 @@ export const downloaderColumns: TableColumn<DbgenDownloader>[] = [
 ]
 
 export const createDownloaderActions = (
-  onTest: (downloader: DbgenDownloader) => void,
-  onEdit: (downloader: DbgenDownloader) => void,
-  onDelete: (downloader: DbgenDownloader) => void,
-): TableAction<DbgenDownloader>[] => [
+  onTest: (downloader: Downloader) => void,
+  onEdit: (downloader: Downloader) => void,
+  onDelete: (downloader: Downloader) => void,
+): TableAction<Downloader>[] => [
   {
     key: 'test',
     label: 'Test',

@@ -14,7 +14,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ModelMovieRail } from '@/client/types.gen'
+import type { MovieRail } from '@/client/types.gen'
 import Rail from '@/components/rails/Rail.vue'
 import Poster from '@/components/poster/Poster.vue'
 
@@ -24,7 +24,7 @@ defineProps<{
     title: string
     subtitle?: string
     type: string
-    movies: ModelMovieRail[]
+    movies: MovieRail[]
     series: any[]
   }
 }>()

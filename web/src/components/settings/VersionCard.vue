@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
-import { getV1Version } from '@/client/sdk.gen'
-import type { ServiceVersionInfo } from '@/client/types.gen'
+import { versionGet } from '@/client/sdk.gen'
+import type { VersionInfo } from '@/client/types.gen'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -16,7 +16,7 @@ const devMode = import.meta.env.DEV
 const isLoading = ref(true)
 const isRefreshing = ref(false)
 const error = ref<string | null>(null)
-const data = ref<ServiceVersionInfo | null>(null)
+const data = ref<VersionInfo | null>(null)
 
 async function load(refreshing = false) {
   if (debug.isActive) return
@@ -27,8 +27,8 @@ async function load(refreshing = false) {
   }
   error.value = null
   try {
-    const res = await getV1Version<true>({ throwOnError: true })
-    data.value = res.data as ServiceVersionInfo
+    const res = await versionGet<true>({ throwOnError: true })
+    data.value = res.data as VersionInfo
   } catch {
     error.value = 'Failed to load version information'
   } finally {

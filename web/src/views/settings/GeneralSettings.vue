@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { getV1Settings, patchV1Settings } from '@/client/sdk.gen'
+import { settingsList, settingsPatch } from '@/client/sdk.gen'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,7 +25,7 @@ async function loadSettings() {
   isLoading.value = true
   error.value = null
   try {
-    const res = await getV1Settings<true>({ throwOnError: true })
+    const res = await settingsList<true>({ throwOnError: true })
     settings.value = res.data as SettingsMap
     siteTitleInput.value = String(settings.value['site.title'] ?? '')
   } catch {
@@ -38,7 +38,7 @@ async function loadSettings() {
 async function saveSetting(key: string, value: unknown) {
   isSaving.value = true
   try {
-    await patchV1Settings<true>({ throwOnError: true, body: { key, value } })
+    await settingsPatch<true>({ throwOnError: true, body: { key, value } })
     // Optimistically update local state
     settings.value = { ...settings.value, [key]: value }
   } finally {
@@ -84,7 +84,7 @@ async function saveTmdbKey() {
   tmdbSaving.value = true
   tmdbError.value = null
   try {
-    await patchV1Settings<true>({
+    await settingsPatch<true>({
       throwOnError: true,
       body: { key: 'tmdb.api_key', value: tmdbKeyInput.value },
     })

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/google/uuid"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -51,10 +51,10 @@ func (m *Manager) Initialize(ctx context.Context) error {
 		rec := ConfigRecord{
 			ID:       instanceID,
 			Type:     Type(dl.Type),
-			URL:      dl.Url,
+			URL:      dl.URL,
 			Username: dl.Username,
 			Password: dl.Password,
-			Config:   dl.ConfigJson,
+			Config:   []byte(dl.ConfigJSON),
 		}
 
 		// Build client
@@ -120,12 +120,12 @@ func (m *Manager) GetClient(ctx context.Context, instanceID InstanceID) (Client,
 
 // GetClientByID gets a client by UUID string
 func (m *Manager) GetClientByID(ctx context.Context, id string) (Client, error) {
-	var uuid pgtype.UUID
-	if err := uuid.Scan(id); err != nil {
+	parsed, err := uuid.Parse(id)
+	if err != nil {
 		return nil, fmt.Errorf("invalid UUID: %w", err)
 	}
 
-	return m.GetClient(ctx, InstanceID(uuid.String()))
+	return m.GetClient(ctx, InstanceID(parsed.String()))
 }
 
 // GetDefaultClient gets the default client for a protocol
@@ -153,12 +153,12 @@ func (m *Manager) ListClients(ctx context.Context) []Client {
 
 // BuildTestClient builds a fresh client instance for testing (not cached)
 func (m *Manager) BuildTestClient(ctx context.Context, id string) (Client, error) {
-	var uuid pgtype.UUID
-	if err := uuid.Scan(id); err != nil {
+	parsed, err := uuid.Parse(id)
+	if err != nil {
 		return nil, fmt.Errorf("invalid UUID: %w", err)
 	}
 
-	dl, err := m.repo.GetDownloader(ctx, uuid)
+	dl, err := m.repo.GetDownloader(ctx, parsed)
 	if err != nil {
 		return nil, fmt.Errorf("get downloader: %w", err)
 	}
@@ -167,10 +167,10 @@ func (m *Manager) BuildTestClient(ctx context.Context, id string) (Client, error
 	rec := ConfigRecord{
 		ID:       instanceID,
 		Type:     Type(dl.Type),
-		URL:      dl.Url,
+		URL:      dl.URL,
 		Username: dl.Username,
 		Password: dl.Password,
-		Config:   dl.ConfigJson,
+		Config:   []byte(dl.ConfigJSON),
 	}
 
 	return m.registry.Build(rec)
@@ -189,12 +189,12 @@ func (m *Manager) InitializeDownloader(ctx context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var uuid pgtype.UUID
-	if err := uuid.Scan(id); err != nil {
+	parsed, err := uuid.Parse(id)
+	if err != nil {
 		return fmt.Errorf("invalid UUID: %w", err)
 	}
 
-	dl, err := m.repo.GetDownloader(ctx, uuid)
+	dl, err := m.repo.GetDownloader(ctx, parsed)
 	if err != nil {
 		return fmt.Errorf("get downloader: %w", err)
 	}
@@ -217,10 +217,10 @@ func (m *Manager) InitializeDownloader(ctx context.Context, id string) error {
 	rec := ConfigRecord{
 		ID:       instanceID,
 		Type:     Type(dl.Type),
-		URL:      dl.Url,
+		URL:      dl.URL,
 		Username: dl.Username,
 		Password: dl.Password,
-		Config:   dl.ConfigJson,
+		Config:   []byte(dl.ConfigJSON),
 	}
 
 	// Build client
@@ -255,12 +255,12 @@ func (m *Manager) RemoveClient(ctx context.Context, id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var uuid pgtype.UUID
-	if err := uuid.Scan(id); err != nil {
+	parsed, err := uuid.Parse(id)
+	if err != nil {
 		return
 	}
 
-	instanceID := InstanceID(uuid.String())
+	instanceID := InstanceID(parsed.String())
 	delete(m.clients, instanceID)
 
 	m.logger.Info().

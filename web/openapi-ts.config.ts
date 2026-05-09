@@ -3,7 +3,7 @@ import url from 'node:url'
 import { defineConfig } from '@hey-api/openapi-ts'
 
 const dirname = path.dirname(url.fileURLToPath(import.meta.url))
-const input = path.join(dirname, '..', 'backend/internal/http/docs/swagger.json')
+const input = path.join(dirname, '..', 'backend/internal/http/docs/openapi.json')
 
 export default defineConfig({
   input,

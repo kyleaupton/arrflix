@@ -8,12 +8,19 @@ type Pagination struct {
 	TotalPages int   `json:"totalPages"`
 }
 
-// PaginatedLibraryResponse is the envelope for paginated library items
-// Note: Using concrete type instead of generics for Swagger compatibility
-type PaginatedLibraryResponse struct {
-	Data       []LibraryItem `json:"data"`
-	Pagination Pagination    `json:"pagination"`
+// Page is the generic envelope for paginated list responses. The wire shape
+// matches the prior PaginatedLibraryResponse: a `data` array plus a
+// `pagination` block, so existing clients continue to work unchanged.
+type Page[T any] struct {
+	Data       []T        `json:"data"`
+	Pagination Pagination `json:"pagination"`
 }
+
+// PaginatedLibraryResponse is the concrete instantiation used by the library
+// listing endpoint. Kept as a named alias so swag picks up a stable schema
+// name (Go generics produce mangled names like Page-model_LibraryItem in the
+// OpenAPI spec, which would change every client type name on regeneration).
+type PaginatedLibraryResponse = Page[LibraryItem]
 
 // LibraryItem is the enriched media item returned by the library endpoint
 type LibraryItem struct {

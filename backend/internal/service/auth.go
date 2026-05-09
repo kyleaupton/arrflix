@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/model"
 	pw "github.com/kyleaupton/arrflix/internal/password"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -25,7 +25,7 @@ func NewAuthService(r *repo.Repository, cfg *cfg, settings *SettingsService, inv
 }
 
 // IssueToken generates a JWT for the given user.
-func (s *AuthService) IssueToken(userID pgtype.UUID, email *string, username string) (string, error) {
+func (s *AuthService) IssueToken(userID uuid.UUID, email *string, username string) (string, error) {
 	claims := jwt.MapClaims{
 		"sub":   userID.String(),
 		"email": email,
@@ -70,7 +70,7 @@ func (s *AuthService) Login(ctx context.Context, login, password string) (string
 // based on the Plex identity, respecting the signup strategy for new users.
 func (s *AuthService) LoginWithPlex(ctx context.Context, plexSubject, email, username, plexToken string, raw json.RawMessage) (string, error) {
 	// Check if this Plex identity already exists (returning user)
-	identity, err := s.repo.GetIdentityByProviderSubject(ctx, dbgen.AuthProviderPlex, plexSubject)
+	identity, err := s.repo.GetIdentityByProviderSubject(ctx, model.AuthProviderPlex, plexSubject)
 	if err == nil {
 		// Returning user — get their account
 		user, err := s.repo.GetUserByID(ctx, identity.UserID)
@@ -131,18 +131,15 @@ func (s *AuthService) LoginWithPlex(ctx context.Context, plexSubject, email, use
 	return s.IssueToken(user.ID, user.Email, user.Username)
 }
 
-func (s *AuthService) upsertIdentity(ctx context.Context, userID pgtype.UUID, plexSubject, username, plexToken string, raw json.RawMessage) {
-	_ = func() error {
-		_, err := s.repo.UpsertIdentity(ctx, dbgen.UpsertIdentityParams{
-			UserID:      userID,
-			Provider:    dbgen.AuthProviderPlex,
-			Subject:     plexSubject,
-			Username:    &username,
-			AccessToken: &plexToken,
-			Column8:     raw,
-		})
-		return err
-	}()
+func (s *AuthService) upsertIdentity(ctx context.Context, userID uuid.UUID, plexSubject, username, plexToken string, raw json.RawMessage) {
+	_, _ = s.repo.UpsertIdentity(ctx, repo.UpsertIdentityParams{
+		UserID:      userID,
+		Provider:    model.AuthProviderPlex,
+		Subject:     plexSubject,
+		Username:    &username,
+		AccessToken: &plexToken,
+		Raw:         raw,
+	})
 }
 
 func deref(s *string) string {
@@ -151,4 +148,3 @@ func deref(s *string) string {
 	}
 	return *s
 }
-

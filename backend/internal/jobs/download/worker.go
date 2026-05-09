@@ -10,13 +10,14 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/importer"
 	"github.com/kyleaupton/arrflix/internal/jobs/state"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
@@ -97,7 +98,7 @@ func (w *Worker) tick(ctx context.Context) {
 	}
 }
 
-func (w *Worker) processJob(ctx context.Context, job dbgen.DownloadJob) error {
+func (w *Worker) processJob(ctx context.Context, job model.DownloadJob) error {
 	// Skip terminal states
 	if w.sm.IsTerminalStr(job.Status) {
 		return nil
@@ -118,7 +119,7 @@ func (w *Worker) processJob(ctx context.Context, job dbgen.DownloadJob) error {
 	}
 }
 
-func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, job dbgen.DownloadJob) error {
+func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, job model.DownloadJob) error {
 	addReq := downloader.AddRequest{}
 	switch job.Protocol {
 	case "torrent":
@@ -161,7 +162,7 @@ func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, 
 	return nil
 }
 
-func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job dbgen.DownloadJob) error {
+func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job model.DownloadJob) error {
 	if job.DownloaderExternalID == nil || *job.DownloaderExternalID == "" {
 		return apperrors.Internalf("job missing downloader_external_id").NotRetryable()
 	}
@@ -185,7 +186,7 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 	}
 
 	// Update snapshot
-	updated, err := w.repo.SetDownloadJobDownloadSnapshot(ctx, dbgen.SetDownloadJobDownloadSnapshotParams{
+	updated, err := w.repo.SetDownloadJobDownloadSnapshot(ctx, repo.SetDownloadJobDownloadSnapshotParams{
 		ID:               job.ID,
 		Status:           newStatus,
 		DownloaderStatus: ptr(string(item.Status)),
@@ -225,14 +226,14 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 	return nil
 }
 
-func (w *Worker) spawnImportTasks(ctx context.Context, client downloader.Client, job dbgen.DownloadJob, item downloader.Item) error {
+func (w *Worker) spawnImportTasks(ctx context.Context, client downloader.Client, job model.DownloadJob, item downloader.Item) error {
 	if job.MediaType == "movie" {
 		return w.spawnMovieImportTask(ctx, client, job, item)
 	}
 	return w.spawnSeriesImportTasks(ctx, client, job, item)
 }
 
-func (w *Worker) spawnMovieImportTask(ctx context.Context, client downloader.Client, job dbgen.DownloadJob, item downloader.Item) error {
+func (w *Worker) spawnMovieImportTask(ctx context.Context, client downloader.Client, job model.DownloadJob, item downloader.Item) error {
 	externalID := *job.DownloaderExternalID
 
 	files, err := client.ListFiles(ctx, externalID)
@@ -262,14 +263,13 @@ func (w *Worker) spawnMovieImportTask(ctx context.Context, client downloader.Cli
 		return apperrors.Internalf("unable to determine source path for import").NotRetryable()
 	}
 
-	// Create import task
-	task, err := w.repo.CreateImportTask(ctx, dbgen.CreateImportTaskParams{
+	task, err := w.repo.CreateImportTask(ctx, repo.CreateImportTaskParams{
 		DownloadJobID:  job.ID,
 		SourcePath:     sourcePath,
-		PreviousTaskID: pgtype.UUID{Valid: false},
+		PreviousTaskID: uuid.Nil,
 		MediaType:      "movie",
 		MediaItemID:    job.MediaItemID,
-		EpisodeID:      pgtype.UUID{Valid: false},
+		EpisodeID:      uuid.Nil,
 		LibraryID:      job.LibraryID,
 		NameTemplateID: job.NameTemplateID,
 	})
@@ -286,7 +286,7 @@ func (w *Worker) spawnMovieImportTask(ctx context.Context, client downloader.Cli
 	return nil
 }
 
-func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.Client, job dbgen.DownloadJob, item downloader.Item) error {
+func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.Client, job model.DownloadJob, item downloader.Item) error {
 	externalID := *job.DownloaderExternalID
 
 	files, err := client.ListFiles(ctx, externalID)
@@ -301,8 +301,9 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 	var targetEpisode *int
 
 	// First check SeasonID (always set for series downloads after schema update)
-	if job.SeasonID.Valid {
-		season, err := w.repo.GetSeason(ctx, job.SeasonID)
+	if job.SeasonID != uuid.Nil {
+		// MediaSeason repo surface still uses pgtype.UUID (future migration wave).
+		season, err := w.repo.GetSeason(ctx, pgtype.UUID{Bytes: job.SeasonID, Valid: true})
 		if err == nil {
 			sNum := int(season.SeasonNumber)
 			targetSeason = &sNum
@@ -310,8 +311,9 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 	}
 
 	// Then check EpisodeID for single-episode downloads
-	if job.EpisodeID.Valid {
-		episode, err := w.repo.GetEpisode(ctx, job.EpisodeID)
+	if job.EpisodeID != uuid.Nil {
+		// MediaEpisode repo surface still uses pgtype.UUID (future migration wave).
+		episode, err := w.repo.GetEpisode(ctx, pgtype.UUID{Bytes: job.EpisodeID, Valid: true})
 		if err == nil {
 			eNum := int(episode.EpisodeNumber)
 			targetEpisode = &eNum
@@ -338,8 +340,10 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 			sourcePath = filepath.Join(item.SavePath, f.Path)
 		}
 
-		// Resolve episode ID for this file
-		episodeID, err := w.resolveEpisodeID(ctx, job.MediaItemID, targetSeason, epNum)
+		// Resolve episode ID for this file. resolveEpisodeID still speaks
+		// pgtype.UUID because MediaEpisode/MediaSeason aren't migrated.
+		mediaItemIDPg := pgtype.UUID{Bytes: job.MediaItemID, Valid: true}
+		episodeID, err := w.resolveEpisodeID(ctx, mediaItemIDPg, targetSeason, epNum)
 		if err != nil {
 			w.log.Warn().Err(err).
 				Int("episode", epNum).
@@ -347,13 +351,20 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 			continue
 		}
 
-		task, err := w.repo.CreateImportTask(ctx, dbgen.CreateImportTaskParams{
+		// Convert episodeID (pgtype.UUID) → domain uuid.UUID, mapping
+		// invalid (NULL) to uuid.Nil.
+		episodeUUID := uuid.Nil
+		if episodeID.Valid {
+			episodeUUID = uuid.UUID(episodeID.Bytes)
+		}
+
+		task, err := w.repo.CreateImportTask(ctx, repo.CreateImportTaskParams{
 			DownloadJobID:  job.ID,
 			SourcePath:     sourcePath,
-			PreviousTaskID: pgtype.UUID{Valid: false},
+			PreviousTaskID: uuid.Nil,
 			MediaType:      "series",
 			MediaItemID:    job.MediaItemID,
-			EpisodeID:      episodeID,
+			EpisodeID:      episodeUUID,
 			LibraryID:      job.LibraryID,
 			NameTemplateID: job.NameTemplateID,
 		})
@@ -402,7 +413,7 @@ func (w *Worker) resolveEpisodeID(ctx context.Context, mediaItemID pgtype.UUID, 
 	return episode.ID, nil
 }
 
-func (w *Worker) handleError(ctx context.Context, job dbgen.DownloadJob, err error) {
+func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err error) {
 	msg := err.Error()
 	kind := apperrors.KindOf(err)
 
@@ -441,16 +452,21 @@ func (w *Worker) handleError(ctx context.Context, job dbgen.DownloadJob, err err
 		"backoff":     backoff.String(),
 	})
 
-	_, _ = w.repo.ScheduleDownloadJobRetry(ctx, job.ID, msg, kind, nextRun)
+	_, _ = w.repo.ScheduleDownloadJobRetry(ctx, repo.ScheduleDownloadJobRetryParams{
+		ID:        job.ID,
+		LastError: msg,
+		Kind:      kind,
+		NextRunAt: nextRun,
+	})
 }
 
-func (w *Worker) logEvent(ctx context.Context, jobID pgtype.UUID, eventType, message string, metadata map[string]any) {
+func (w *Worker) logEvent(ctx context.Context, jobID uuid.UUID, eventType, message string, metadata map[string]any) {
 	var metaBytes []byte
 	if metadata != nil {
 		metaBytes, _ = json.Marshal(metadata)
 	}
 
-	_, err := w.repo.CreateDownloadJobEvent(ctx, dbgen.CreateDownloadJobEventParams{
+	_, err := w.repo.CreateDownloadJobEvent(ctx, repo.CreateDownloadJobEventParams{
 		DownloadJobID: jobID,
 		EventType:     eventType,
 		OldStatus:     nil,
@@ -463,7 +479,7 @@ func (w *Worker) logEvent(ctx context.Context, jobID pgtype.UUID, eventType, mes
 	}
 }
 
-func (w *Worker) publishJobUpdated(ctx context.Context, jobID pgtype.UUID) {
+func (w *Worker) publishJobUpdated(ctx context.Context, jobID uuid.UUID) {
 	if w.broker == nil {
 		return
 	}

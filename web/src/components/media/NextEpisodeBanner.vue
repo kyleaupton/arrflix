@@ -17,10 +17,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { CalendarDays } from 'lucide-vue-next'
-import type { ModelNextEpisode } from '@/client/types.gen'
+import type { NextEpisode } from '@/client/types.gen'
 
 const props = defineProps<{
-  episode: ModelNextEpisode
+  episode: NextEpisode
 }>()
 
 const formattedDate = computed(() => {

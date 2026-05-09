@@ -41,23 +41,23 @@ func (s *SettingsService) GetAll(ctx context.Context) (map[string]any, error) {
 		switch it.Type {
 		case string(SettingText):
 			var v string
-			_ = json.Unmarshal(it.ValueJson, &v)
+			_ = json.Unmarshal(it.ValueJSON, &v)
 			out[it.Key] = v
 		case string(SettingBool):
 			var v bool
-			_ = json.Unmarshal(it.ValueJson, &v)
+			_ = json.Unmarshal(it.ValueJSON, &v)
 			out[it.Key] = v
 		case string(SettingInt):
 			var v int64
-			_ = json.Unmarshal(it.ValueJson, &v)
+			_ = json.Unmarshal(it.ValueJSON, &v)
 			out[it.Key] = v
 		case string(SettingJSON):
 			var v any
-			_ = json.Unmarshal(it.ValueJson, &v)
+			_ = json.Unmarshal(it.ValueJSON, &v)
 			out[it.Key] = v
 		default:
 			var v any
-			_ = json.Unmarshal(it.ValueJson, &v)
+			_ = json.Unmarshal(it.ValueJSON, &v)
 			out[it.Key] = v
 		}
 	}
@@ -104,19 +104,19 @@ func (s *SettingsService) GetRaw(ctx context.Context, key string) (any, error) {
 			switch it.Type {
 			case string(SettingText):
 				var v string
-				_ = json.Unmarshal(it.ValueJson, &v)
+				_ = json.Unmarshal(it.ValueJSON, &v)
 				return v, nil
 			case string(SettingBool):
 				var v bool
-				_ = json.Unmarshal(it.ValueJson, &v)
+				_ = json.Unmarshal(it.ValueJSON, &v)
 				return v, nil
 			case string(SettingInt):
 				var v int64
-				_ = json.Unmarshal(it.ValueJson, &v)
+				_ = json.Unmarshal(it.ValueJSON, &v)
 				return v, nil
 			default:
 				var v any
-				_ = json.Unmarshal(it.ValueJson, &v)
+				_ = json.Unmarshal(it.ValueJSON, &v)
 				return v, nil
 			}
 		}

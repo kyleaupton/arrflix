@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { type JackettIndexerConfig } from '@/client/types.gen'
+import { type IndexerOutput } from '@/client/types.gen'
 
 interface Props {
-  selectedIndexer: JackettIndexerConfig | null
+  selectedIndexer: IndexerOutput | null
   formData: {
     name: string
     description: string

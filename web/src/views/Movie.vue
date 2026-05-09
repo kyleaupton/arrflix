@@ -93,7 +93,7 @@ import { useRoute } from 'vue-router'
 
 import { useQuery } from '@tanstack/vue-query'
 import { Download, File } from 'lucide-vue-next'
-import { getV1MovieByIdOptions } from '@/client/@tanstack/vue-query.gen'
+import { mediaGetMovieOptions } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import MediaHero from '@/components/media/MediaHero.vue'
@@ -110,7 +110,7 @@ import { useModal } from '@/composables/useModal'
 import { buildMetadataSubtitle } from '@/lib/utils'
 import { useDownloadJobsStore } from '@/stores/downloadJobs'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
-import type { ModelFileInfo } from '@/client/types.gen'
+import type { FileInfo } from '@/client/types.gen'
 
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
@@ -142,7 +142,7 @@ const trailerUrl = computed(() => {
 })
 
 const { isLoading, isError, data } = useQuery(
-  computed(() => getV1MovieByIdOptions({ path: { id: id.value } })),
+  computed(() => mediaGetMovieOptions({ path: { id: id.value } })),
 )
 
 const officialTrailer = computed(() => {
@@ -190,7 +190,7 @@ const movieChips = computed(() => {
 const filesWithProgress = computed(() => {
   if (!data.value?.files) return []
 
-  return data.value.files.map((file): ModelFileInfo => {
+  return data.value.files.map((file): FileInfo => {
     // If file has downloadJobId, get latest progress from store
     if (file.downloadJobId) {
       const job = downloadJobs.getJobById(file.downloadJobId)

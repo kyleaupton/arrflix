@@ -35,7 +35,7 @@
             </div>
             <div>
               <span class="font-semibold">Categories:</span>
-              <span class="ml-2">{{ candidate.categories.join(', ') || 'None' }}</span>
+              <span class="ml-2">{{ candidate.categories?.join(', ') || 'None' }}</span>
             </div>
           </div>
         </CardContent>
@@ -173,7 +173,7 @@
                       </code>
                     </div>
 
-                    <div v-if="policy.matched && policy.actionsApplied.length > 0" class="mt-3">
+                    <div v-if="policy.matched && (policy.actionsApplied?.length ?? 0) > 0" class="mt-3">
                       <div class="text-sm font-medium mb-2">Actions Applied:</div>
                       <ul class="list-disc list-inside space-y-1 text-sm text-foreground">
                         <li v-for="action in policy.actionsApplied" :key="action.order">
@@ -191,7 +191,7 @@
               </CardContent>
             </Card>
 
-            <div v-if="trace.policies.length === 0" class="text-center py-8 text-muted-foreground">
+            <div v-if="(trace.policies?.length ?? 0) === 0" class="text-center py-8 text-muted-foreground">
               No policies evaluated
             </div>
           </div>
@@ -306,10 +306,10 @@ import {
   XCircle,
 } from 'lucide-vue-next'
 import {
-  postV1MovieByIdCandidatePreviewMutation,
-  postV1SeriesByIdCandidatePreviewMutation,
+  downloadCandidatesPreviewMovieMutation,
+  downloadCandidatesPreviewSeriesMutation,
 } from '@/client/@tanstack/vue-query.gen'
-import { type ModelDownloadCandidate, type ModelEvaluationTrace } from '@/client/types.gen'
+import { type DownloadCandidate, type EvaluationTrace } from '@/client/types.gen'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
@@ -323,35 +323,35 @@ const props = defineProps<{
   seriesId?: number
   season?: number
   episode?: number
-  candidate: ModelDownloadCandidate
+  candidate: DownloadCandidate
 }>()
 
 // Local state for trace
-const trace = ref<ModelEvaluationTrace | undefined>(undefined)
+const trace = ref<EvaluationTrace | undefined>(undefined)
 const error = ref<string | undefined>(undefined)
 
 // Preview movie mutation
 const moviePreviewMutation = useMutation({
-  ...postV1MovieByIdCandidatePreviewMutation(),
+  ...downloadCandidatesPreviewMovieMutation(),
   onSuccess: (data) => {
     trace.value = data
     error.value = undefined
   },
   onError: (err) => {
-    error.value = err?.message || 'Failed to load preview'
+    error.value = err?.detail || err?.title || 'Failed to load preview'
     trace.value = undefined
   },
 })
 
 // Preview series mutation
 const seriesPreviewMutation = useMutation({
-  ...postV1SeriesByIdCandidatePreviewMutation(),
+  ...downloadCandidatesPreviewSeriesMutation(),
   onSuccess: (data) => {
     trace.value = data
     error.value = undefined
   },
   onError: (err) => {
-    error.value = err?.message || 'Failed to load preview'
+    error.value = err?.detail || err?.title || 'Failed to load preview'
     trace.value = undefined
   },
 })

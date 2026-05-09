@@ -108,8 +108,8 @@ import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { Search, Film, Tv, User, CheckCircle2 } from 'lucide-vue-next'
-import { getV1Search } from '@/client/sdk.gen'
-import type { ModelSearchResult } from '@/client/types.gen'
+import { mediaSearch } from '@/client/sdk.gen'
+import type { SearchResult } from '@/client/types.gen'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -127,7 +127,7 @@ watch(searchQuery, () => {
 const { data, isLoading, isError, error } = useQuery({
   queryKey: computed(() => ['search-page', searchQuery.value]),
   queryFn: async () => {
-    const { data } = await getV1Search({
+    const { data } = await mediaSearch({
       query: {
         q: searchQuery.value,
         limit: 50,
@@ -146,7 +146,7 @@ const filteredResults = computed(() => {
   return results.value.filter(r => r.mediaType === typeFilter.value)
 })
 
-const getItemRoute = (result: ModelSearchResult) => {
+const getItemRoute = (result: SearchResult) => {
   switch (result.mediaType) {
     case 'movie':
       return `/movie/${result.id}`
@@ -159,12 +159,12 @@ const getItemRoute = (result: ModelSearchResult) => {
   }
 }
 
-const getPosterUrl = (result: ModelSearchResult) => {
+const getPosterUrl = (result: SearchResult) => {
   if (!result.posterPath) return ''
   return `https://image.tmdb.org/t/p/w342${result.posterPath}`
 }
 
-const getMediaTypeLabel = (result: ModelSearchResult) => {
+const getMediaTypeLabel = (result: SearchResult) => {
   switch (result.mediaType) {
     case 'movie':
       return 'Movie'
@@ -177,7 +177,7 @@ const getMediaTypeLabel = (result: ModelSearchResult) => {
   }
 }
 
-const getPlaceholderIcon = (result: ModelSearchResult) => {
+const getPlaceholderIcon = (result: SearchResult) => {
   switch (result.mediaType) {
     case 'movie':
       return Film

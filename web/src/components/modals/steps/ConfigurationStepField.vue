@@ -16,12 +16,10 @@ import { Eye, EyeOff } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import {
-  type ModelIndexerDefinition,
-  type ModelIndexerOutput,
-  type ModelIndexerField,
-  type ModelFieldOutput,
+  type IndexerOutput,
+  type FieldOutput,
 } from '@/client/types.gen'
-import { postV1IndexerActionByNameMutation } from '@/client/@tanstack/vue-query.gen'
+import { indexersActionMutation } from '@/client/@tanstack/vue-query.gen'
 import { cn } from '@/lib/utils'
 
 const model = computed({
@@ -36,13 +34,13 @@ const emit = defineEmits<{
 }>()
 
 const props = defineProps<{
-  selectedIndexer: ModelIndexerDefinition | ModelIndexerOutput
-  field: ModelIndexerField | ModelFieldOutput
+  selectedIndexer: IndexerOutput
+  field: FieldOutput
 }>()
 
 const options = computed(() => {
   if (props.field.selectOptions) {
-    return props.field.selectOptions.map((option) => ({
+    return props.field.selectOptions.map((option: { name: string; value: number; hint: string }) => ({
       label: option.name,
       value: option.value,
       hint: option.hint,
@@ -72,8 +70,10 @@ const hasHelpText = computed(() => {
   )
 })
 
-const helpTextWarning = computed(() => {
-  return 'helpTextWarning' in props.field ? props.field.helpTextWarning : undefined
+const helpTextWarning = computed<string | undefined>(() => {
+  if (!('helpTextWarning' in props.field)) return undefined
+  const value = (props.field as Record<string, unknown>).helpTextWarning
+  return typeof value === 'string' ? value : undefined
 })
 
 const fieldUnit = computed(() => {
@@ -93,7 +93,7 @@ const isAsyncAction = computed(() => {
 const selectOptionLabel = computed(() => (isAsyncAction.value ? 'name' : 'label'))
 
 const actionMutation = useMutation({
-  ...postV1IndexerActionByNameMutation(),
+  ...indexersActionMutation(),
   onSuccess: (data) => {
     console.log('Action performed successfully', data)
   },
@@ -106,7 +106,6 @@ const performAction = () => {
   if (props.field.selectOptionsProviderAction) {
     actionMutation.mutate({
       path: { name: props.field.selectOptionsProviderAction },
-      // @ts-expect-error todo: fix the type here
       body: props.selectedIndexer,
     })
   }

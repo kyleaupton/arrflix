@@ -2,10 +2,10 @@
 import { ref, inject, watch, computed } from 'vue'
 import { useMutation } from '@tanstack/vue-query'
 import {
-  postV1LibrariesMutation,
-  putV1LibrariesByIdMutation,
+  librariesCreateMutation,
+  librariesUpdateMutation,
 } from '@/client/@tanstack/vue-query.gen'
-import { type HandlersLibrarySwagger } from '@/client/types.gen'
+import { type Library } from '@/client/types.gen'
 import BaseDialog from './BaseDialog.vue'
 import DirectoryBrowserDialog from './DirectoryBrowserDialog.vue'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,7 @@ import { FolderOpen } from 'lucide-vue-next'
 import { useModal } from '@/composables/useModal'
 
 interface Props {
-  library?: HandlersLibrarySwagger | null
+  library?: Library | null
 }
 
 const props = defineProps<Props>()
@@ -31,13 +31,13 @@ const props = defineProps<Props>()
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
 const modal = useModal()
 
-const createLibraryMutation = useMutation(postV1LibrariesMutation())
-const updateLibraryMutation = useMutation(putV1LibrariesByIdMutation())
+const createLibraryMutation = useMutation(librariesCreateMutation())
+const updateLibraryMutation = useMutation(librariesUpdateMutation())
 
 const libraryForm = ref({
   name: '',
   type: 'movie' as 'movie' | 'series',
-  root_path: '',
+  rootPath: '',
   enabled: true,
   default: false,
 })
@@ -57,12 +57,12 @@ watch(
       libraryForm.value = {
         name: library.name || '',
         type: (library.type as 'movie' | 'series') || 'movie',
-        root_path: library.root_path || '',
+        rootPath: library.rootPath || '',
         enabled: library.enabled ?? true,
         default: library.default || false,
       }
     } else {
-      libraryForm.value = { name: '', type: 'movie', root_path: '', enabled: true, default: false }
+      libraryForm.value = { name: '', type: 'movie', rootPath: '', enabled: true, default: false }
     }
     libraryError.value = null
   },
@@ -72,19 +72,19 @@ watch(
 const handleBrowse = () => {
   modal.open(DirectoryBrowserDialog, {
     props: {
-      initialPath: libraryForm.value.root_path || '/',
+      initialPath: libraryForm.value.rootPath || '/',
     },
     onClose: (result) => {
       const selectedPath = (result?.data as { selectedPath?: string })?.selectedPath
       if (selectedPath) {
-        libraryForm.value.root_path = selectedPath
+        libraryForm.value.rootPath = selectedPath
       }
     },
   })
 }
 
 const handleSave = async () => {
-  if (!libraryForm.value.name || !libraryForm.value.root_path) {
+  if (!libraryForm.value.name || !libraryForm.value.rootPath) {
     libraryError.value = 'Name and root path are required'
     return
   }
@@ -96,7 +96,7 @@ const handleSave = async () => {
         body: {
           name: libraryForm.value.name,
           type: libraryForm.value.type,
-          root_path: libraryForm.value.root_path,
+          rootPath: libraryForm.value.rootPath,
           enabled: libraryForm.value.enabled,
           default: libraryForm.value.default,
         },
@@ -106,7 +106,7 @@ const handleSave = async () => {
         body: {
           name: libraryForm.value.name,
           type: libraryForm.value.type,
-          root_path: libraryForm.value.root_path,
+          rootPath: libraryForm.value.rootPath,
           enabled: libraryForm.value.enabled,
           default: libraryForm.value.default,
         },
@@ -159,7 +159,7 @@ const isLoading = computed(
         <div class="flex gap-2">
           <Input
             id="library-root-path"
-            v-model="libraryForm.root_path"
+            v-model="libraryForm.rootPath"
             placeholder="/mnt/media/Movies"
           />
           <Button variant="outline" size="icon" class="shrink-0" @click="handleBrowse">

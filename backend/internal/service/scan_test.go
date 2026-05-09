@@ -13,10 +13,12 @@ import (
 	"testing"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/guessit"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/rs/zerolog"
 )
 
@@ -26,6 +28,10 @@ import (
 
 func testUUID(n byte) pgtype.UUID {
 	return pgtype.UUID{Bytes: [16]byte{n}, Valid: true}
+}
+
+func testLibraryUUID(n byte) uuid.UUID {
+	return uuid.UUID([16]byte{n})
 }
 
 func newTestScanner(r scanRepo, t scanTmdb) *ScannerService {
@@ -70,7 +76,7 @@ func makeSearchMulti(t *testing.T, entries []map[string]any) tmdb.SearchMulti {
 // ---------------------------------------------------------------------------
 
 type fakeRepo struct {
-	getLibraryFn                   func(ctx context.Context, id pgtype.UUID) (dbgen.Library, error)
+	getLibraryFn                   func(ctx context.Context, id uuid.UUID) (model.Library, error)
 	getMediaFileByLibraryAndPathFn func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error)
 	getMediaItemByTmdbIDAndTypeFn  func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error)
 	createMediaItemFn              func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error)
@@ -92,11 +98,11 @@ type fakeRepo struct {
 	upsertUnmatchedCalls int
 }
 
-func (f *fakeRepo) GetLibrary(ctx context.Context, id pgtype.UUID) (dbgen.Library, error) {
+func (f *fakeRepo) GetLibrary(ctx context.Context, id uuid.UUID) (model.Library, error) {
 	if f.getLibraryFn != nil {
 		return f.getLibraryFn(ctx, id)
 	}
-	return dbgen.Library{}, nil
+	return model.Library{}, nil
 }
 
 func (f *fakeRepo) GetMediaFileByLibraryAndPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
@@ -415,8 +421,8 @@ func TestStartScan_ConcurrencyGuard(t *testing.T) {
 	block := make(chan struct{})
 
 	fr := &fakeRepo{
-		getLibraryFn: func(ctx context.Context, id pgtype.UUID) (dbgen.Library, error) {
-			return dbgen.Library{ID: id, RootPath: dir, Type: "movie", Name: "test"}, nil
+		getLibraryFn: func(ctx context.Context, id uuid.UUID) (model.Library, error) {
+			return model.Library{ID: id, RootPath: dir, Type: "movie", Name: "test"}, nil
 		},
 		getMediaFileByLibraryAndPathFn: func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
 			<-block
@@ -430,7 +436,7 @@ func TestStartScan_ConcurrencyGuard(t *testing.T) {
 
 	s := newTestScanner(fr, &fakeTmdb{})
 
-	libID := testUUID(1)
+	libID := testLibraryUUID(1)
 	_, err := s.StartScan(context.Background(), libID)
 	if err != nil {
 		t.Fatalf("first scan should succeed: %v", err)
@@ -468,7 +474,7 @@ func TestExecuteScan_SkipsExistingFiles(t *testing.T) {
 	}
 
 	s := newTestScanner(fr, &fakeTmdb{})
-	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+	library := model.Library{ID: testLibraryUUID(1), RootPath: dir, Type: "movie", Name: "test"}
 
 	stats, err := s.executeScan(context.Background(), library, "scan-1")
 	if err != nil {
@@ -496,7 +502,7 @@ func TestExecuteScan_ContextCancelled(t *testing.T) {
 	cancel() // cancel immediately
 
 	s := newTestScanner(&fakeRepo{}, &fakeTmdb{})
-	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+	library := model.Library{ID: testLibraryUUID(1), RootPath: dir, Type: "movie", Name: "test"}
 
 	_, err := s.executeScan(ctx, library, "scan-1")
 	if err == nil {
@@ -551,7 +557,7 @@ func TestExecuteScan_MovieHappyPath(t *testing.T) {
 	}
 
 	s := newTestScanner(fr, ft)
-	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+	library := model.Library{ID: testLibraryUUID(1), RootPath: dir, Type: "movie", Name: "test"}
 
 	stats, err := s.executeScan(context.Background(), library, "scan-1")
 	if err != nil {
@@ -629,7 +635,7 @@ func TestExecuteScan_SeriesHappyPath(t *testing.T) {
 	}
 
 	s := newTestScanner(fr, ft)
-	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "series", Name: "test"}
+	library := model.Library{ID: testLibraryUUID(1), RootPath: dir, Type: "series", Name: "test"}
 
 	stats, err := s.executeScan(context.Background(), library, "scan-1")
 	if err != nil {
@@ -692,7 +698,7 @@ func TestExecuteScan_ExistingSeriesNewEpisode(t *testing.T) {
 	}
 
 	s := newTestScanner(fr, ft)
-	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "series", Name: "test"}
+	library := model.Library{ID: testLibraryUUID(1), RootPath: dir, Type: "series", Name: "test"}
 
 	stats, err := s.executeScan(context.Background(), library, "scan-1")
 	if err != nil {
@@ -744,7 +750,7 @@ func TestExecuteScan_EmptyReleaseDate(t *testing.T) {
 	}
 
 	s := newTestScanner(fr, ft)
-	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+	library := model.Library{ID: testLibraryUUID(1), RootPath: dir, Type: "movie", Name: "test"}
 
 	stats, err := s.executeScan(context.Background(), library, "scan-1")
 	if err != nil {
@@ -841,7 +847,7 @@ func TestExecuteScan_GuessitMovieHappyPath(t *testing.T) {
 
 	gc := guessit.NewClient(srv.URL)
 	s := newTestScannerWithGuessit(fr, ft, gc)
-	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+	library := model.Library{ID: testLibraryUUID(1), RootPath: dir, Type: "movie", Name: "test"}
 
 	stats, err := s.executeScan(context.Background(), library, "scan-1")
 	if err != nil {
@@ -925,7 +931,7 @@ func TestExecuteScan_GuessitSeriesDedup(t *testing.T) {
 
 	gc := guessit.NewClient(srv.URL)
 	s := newTestScannerWithGuessit(fr, ft, gc)
-	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "series", Name: "test"}
+	library := model.Library{ID: testLibraryUUID(1), RootPath: dir, Type: "series", Name: "test"}
 
 	stats, err := s.executeScan(context.Background(), library, "scan-1")
 	if err != nil {
@@ -976,7 +982,7 @@ func TestExecuteScan_GuessitAmbiguous(t *testing.T) {
 
 	gc := guessit.NewClient(srv.URL)
 	s := newTestScannerWithGuessit(fr, ft, gc)
-	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+	library := model.Library{ID: testLibraryUUID(1), RootPath: dir, Type: "movie", Name: "test"}
 
 	stats, err := s.executeScan(context.Background(), library, "scan-1")
 	if err != nil {
@@ -1007,7 +1013,7 @@ func TestExecuteScan_GuessitDown(t *testing.T) {
 
 	gc := guessit.NewClient("http://127.0.0.1:0")
 	s := newTestScannerWithGuessit(fr, &fakeTmdb{}, gc)
-	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+	library := model.Library{ID: testLibraryUUID(1), RootPath: dir, Type: "movie", Name: "test"}
 
 	stats, err := s.executeScan(context.Background(), library, "scan-1")
 	if err != nil {
@@ -1087,7 +1093,7 @@ func TestExecuteScan_Mixed(t *testing.T) {
 
 	gc := guessit.NewClient(srv.URL)
 	s := newTestScannerWithGuessit(fr, ft, gc)
-	library := dbgen.Library{ID: testUUID(1), RootPath: dir, Type: "movie", Name: "test"}
+	library := model.Library{ID: testLibraryUUID(1), RootPath: dir, Type: "movie", Name: "test"}
 
 	stats, err := s.executeScan(context.Background(), library, "scan-1")
 	if err != nil {

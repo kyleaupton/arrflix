@@ -48,11 +48,11 @@
 import { ArrowRight } from 'lucide-vue-next'
 import { Skeleton } from '@/components/ui/skeleton'
 import SearchResultItem from './SearchResultItem.vue'
-import type { ModelSearchResult } from '@/client/types.gen'
+import type { SearchResult } from '@/client/types.gen'
 
 defineProps<{
   query: string
-  results: ModelSearchResult[]
+  results: SearchResult[]
   totalResults: number
   isLoading: boolean
 }>()

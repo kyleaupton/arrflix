@@ -58,7 +58,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { getV1HomeOptions } from '@/client/@tanstack/vue-query.gen'
+import { feedGetOptions } from '@/client/@tanstack/vue-query.gen'
 import { Skeleton } from '@/components/ui/skeleton'
 import FeedHero from '@/components/feed/FeedHero.vue'
 import FeedRow from '@/components/feed/FeedRow.vue'
@@ -66,5 +66,5 @@ import FeedRow from '@/components/feed/FeedRow.vue'
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
 
-const { isLoading, isError, data } = useQuery(getV1HomeOptions())
+const { isLoading, isError, data } = useQuery(feedGetOptions())
 </script>

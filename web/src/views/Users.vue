@@ -3,10 +3,10 @@ import { ref } from 'vue'
 import { useQuery, useMutation } from '@tanstack/vue-query'
 import { Plus, X, Users as UsersIcon } from 'lucide-vue-next'
 import {
-  getV1UsersOptions,
-  deleteV1UsersByIdMutation,
-  getV1InvitesOptions,
-  deleteV1InvitesByIdMutation,
+  usersListOptions,
+  usersDeleteMutation,
+  invitesListOptions,
+  invitesDeleteMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import type { User } from '@/components/tables/configs/userTableConfig'
 import DataTable from '@/components/tables/DataTable.vue'
@@ -22,13 +22,13 @@ import UserDialog from '@/components/modals/UserDialog.vue'
 import InviteDialog from '@/components/modals/InviteDialog.vue'
 
 // Data queries
-const { data: users, isLoading, refetch } = useQuery(getV1UsersOptions())
-const { data: invites, isLoading: invitesLoading, refetch: refetchInvites } = useQuery(getV1InvitesOptions())
+const { data: users, isLoading, refetch } = useQuery(usersListOptions())
+const { data: invites, isLoading: invitesLoading, refetch: refetchInvites } = useQuery(invitesListOptions())
 const modal = useModal()
 
 // Mutations
-const deleteUserMutation = useMutation(deleteV1UsersByIdMutation())
-const deleteInviteMutation = useMutation(deleteV1InvitesByIdMutation())
+const deleteUserMutation = useMutation(usersDeleteMutation())
+const deleteInviteMutation = useMutation(invitesDeleteMutation())
 
 // State
 const userError = ref<string | null>(null)
@@ -123,7 +123,7 @@ function formatDate(dateStr: string) {
             <div class="flex items-center gap-3">
               <span class="text-sm font-medium">{{ invite.email }}</span>
               <span
-                v-if="invite.claimed_at"
+                v-if="invite.claimedAt"
                 class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
               >
                 Claimed
@@ -136,9 +136,9 @@ function formatDate(dateStr: string) {
               </span>
             </div>
             <div class="flex items-center gap-3">
-              <span class="text-xs text-muted-foreground">{{ formatDate(invite.created_at) }}</span>
+              <span class="text-xs text-muted-foreground">{{ formatDate(invite.createdAt) }}</span>
               <Button
-                v-if="!invite.claimed_at"
+                v-if="!invite.claimedAt"
                 variant="ghost"
                 size="icon"
                 class="size-8"

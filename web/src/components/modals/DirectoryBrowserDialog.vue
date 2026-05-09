@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, inject, computed, watch } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
-import { getV1FilesystemBrowseOptions } from '@/client/@tanstack/vue-query.gen'
+import { filesystemBrowseOptions } from '@/client/@tanstack/vue-query.gen'
 import BaseDialog from './BaseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,7 +31,7 @@ const manualPath = ref(currentPath.value)
 
 const { data, isLoading, isError, error } = useQuery(
   computed(() =>
-    getV1FilesystemBrowseOptions({
+    filesystemBrowseOptions({
       query: { path: currentPath.value },
     }),
   ),

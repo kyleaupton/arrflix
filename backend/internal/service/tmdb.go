@@ -462,7 +462,15 @@ func getOrFetchFromCache[T any](ctx context.Context, r *repo.Repository, l *logg
 		}
 
 		// Note: pass nil for headers so the DB receives NULL (valid for jsonb)
-		if err := r.UpsertApiCache(ctx, cacheKey, &category, jsonRes, 200, &contentType, nil, ttl); err != nil {
+		if err := r.UpsertApiCache(ctx, repo.UpsertApiCacheParams{
+			Key:         cacheKey,
+			Category:    &category,
+			Response:    jsonRes,
+			Status:      200,
+			ContentType: &contentType,
+			Headers:     nil,
+			TTL:         ttl,
+		}); err != nil {
 			l.Error().Err(err).Str("cache_key", cacheKey).Msg("Failed upserting api cache")
 		}
 

@@ -19,13 +19,25 @@ import (
 	"github.com/kyleaupton/arrflix/internal/guessit"
 	"github.com/kyleaupton/arrflix/internal/identity"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
 
+// libraryIDPg adapts a domain uuid.UUID into the pgtype.UUID shape that
+// scanRepo's still-pgtype-shaped methods expect. Library has been migrated
+// to model/uuid types; the rest of the entities scan touches haven't yet,
+// so we bridge at the call site rather than in the repo.
+//
+// TODO(model-migration): remove once MediaFile/MediaItem/etc. follow the
+// Library pattern and the scanRepo interface speaks uuid.UUID throughout.
+func libraryIDPg(id uuid.UUID) pgtype.UUID {
+	return pgtype.UUID{Bytes: id, Valid: true}
+}
+
 // scanRepo is the subset of repo.Repository used by the scanner.
 type scanRepo interface {
-	GetLibrary(ctx context.Context, id pgtype.UUID) (dbgen.Library, error)
+	GetLibrary(ctx context.Context, id uuid.UUID) (model.Library, error)
 	GetMediaFileByLibraryAndPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error)
 	GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error)
 	CreateMediaItem(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error)
@@ -117,7 +129,7 @@ func (k tmdbSearchKey) String() string {
 
 // StartScan kicks off an async library scan. It returns the scan ID immediately.
 // If a scan is already running for the given library, it returns a Conflict error.
-func (s *ScannerService) StartScan(ctx context.Context, libraryID pgtype.UUID) (string, error) {
+func (s *ScannerService) StartScan(ctx context.Context, libraryID uuid.UUID) (string, error) {
 	libKey := libraryID.String()
 
 	// Concurrency guard: only one scan per library at a time.
@@ -222,15 +234,16 @@ func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID
 // Pipeline: executeScan
 // ---------------------------------------------------------------------------
 
-func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library, scanID string) (scanStats, error) {
+func (s *ScannerService) executeScan(ctx context.Context, library model.Library, scanID string) (scanStats, error) {
 	stats := scanStats{}
 	start := time.Now()
 	libKey := library.ID.String()
+	libIDPg := libraryIDPg(library.ID)
 
 	s.logger.Info().Str("library_name", library.Name).Str("library_path", library.RootPath).Msg("Starting Scan")
 
 	// Phase 1: Walk & Collect
-	knownPaths, err := s.loadKnownPaths(ctx, library.ID)
+	knownPaths, err := s.loadKnownPaths(ctx, libIDPg)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("Failed to bulk-load known paths, falling back to per-file checks")
 		knownPaths = nil // will fall back to per-file DB lookups
@@ -275,7 +288,7 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 			}
 		} else {
 			// Fallback: per-file DB check
-			_, dbErr := s.repo.GetMediaFileByLibraryAndPath(ctx, library.ID, relPath)
+			_, dbErr := s.repo.GetMediaFileByLibraryAndPath(ctx, libIDPg, relPath)
 			if dbErr == nil {
 				stats.FilesSkipped++
 				return nil
@@ -347,7 +360,7 @@ func (s *ScannerService) executeScan(ctx context.Context, library dbgen.Library,
 			// Create unmatched entries
 			for _, uf := range unmatched {
 				suggestionsJSON, _ := json.Marshal(uf.Suggestions)
-				if _, upsertErr := s.repo.UpsertUnmatchedFile(ctx, library.ID, uf.RelPath, uf.FileSize, suggestionsJSON); upsertErr != nil {
+				if _, upsertErr := s.repo.UpsertUnmatchedFile(ctx, libIDPg, uf.RelPath, uf.FileSize, suggestionsJSON); upsertErr != nil {
 					s.logger.Warn().Err(upsertErr).Str("path", uf.RelPath).Msg("Failed to upsert unmatched file")
 				}
 				stats.UnmatchedCount++
@@ -417,7 +430,7 @@ func (s *ScannerService) loadKnownPaths(ctx context.Context, libraryID pgtype.UU
 }
 
 // resolveTmdbID extracts a TMDB ID from an identity, converting from TVDB/IMDB if needed.
-func (s *ScannerService) resolveTmdbID(ctx context.Context, library dbgen.Library, ident identity.Identity) (int64, error) {
+func (s *ScannerService) resolveTmdbID(ctx context.Context, library model.Library, ident identity.Identity) (int64, error) {
 	if ident.TmdbID != nil {
 		return *ident.TmdbID, nil
 	}
@@ -459,7 +472,7 @@ func (s *ScannerService) resolveTmdbID(ctx context.Context, library dbgen.Librar
 
 // ensureMediaItem looks up or creates a media item for the given TMDB ID.
 // Returns the media item ID and whether a new item was created.
-func (s *ScannerService) ensureMediaItem(ctx context.Context, library dbgen.Library, tmdbID int64) (pgtype.UUID, bool, error) {
+func (s *ScannerService) ensureMediaItem(ctx context.Context, library model.Library, tmdbID int64) (pgtype.UUID, bool, error) {
 	existing, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, library.Type)
 	if err == nil {
 		return existing.ID, false, nil
@@ -529,7 +542,7 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library dbgen.Libr
 
 // processIdentifiedFile creates all DB records for a single identified file.
 // Returns (mediaItemCreated, episodeLookupFailed, error).
-func (s *ScannerService) processIdentifiedFile(ctx context.Context, library dbgen.Library, f identifiedFile) (bool, bool, error) {
+func (s *ScannerService) processIdentifiedFile(ctx context.Context, library model.Library, f identifiedFile) (bool, bool, error) {
 	mediaItemID, created, err := s.ensureMediaItem(ctx, library, f.TmdbID)
 	if err != nil {
 		return false, false, err
@@ -540,7 +553,7 @@ func (s *ScannerService) processIdentifiedFile(ctx context.Context, library dbge
 		return created, true, nil // skip file, continue
 	}
 
-	mf, err := s.repo.CreateMediaFile(ctx, library.ID, mediaItemID, episodeID, f.RelPath)
+	mf, err := s.repo.CreateMediaFile(ctx, libraryIDPg(library.ID), mediaItemID, episodeID, f.RelPath)
 	if err != nil {
 		return created, false, err
 	}
@@ -564,7 +577,7 @@ func (s *ScannerService) processIdentifiedFile(ctx context.Context, library dbge
 // processWithGuessit handles files that couldn't be identified by embedded IDs.
 // It batch-parses filenames via guessit, groups by title, searches TMDB, and
 // either auto-matches or creates unmatched entries with suggestions.
-func (s *ScannerService) processWithGuessit(ctx context.Context, library dbgen.Library, files []collectedFile) ([]identifiedFile, []unmatchedFileEntry, error) {
+func (s *ScannerService) processWithGuessit(ctx context.Context, library model.Library, files []collectedFile) ([]identifiedFile, []unmatchedFileEntry, error) {
 	if s.guessit == nil || !s.guessit.Healthy(ctx) {
 		return nil, nil, apperrors.BadGatewayf("guessit sidecar unavailable").
 			Op("ScannerService.processWithGuessit")

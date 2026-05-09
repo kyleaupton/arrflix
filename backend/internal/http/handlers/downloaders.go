@@ -6,12 +6,15 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 	"github.com/kyleaupton/arrflix/internal/downloader"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/service"
-	"github.com/labstack/echo/v4"
 )
+
+// ----- Handler -----
 
 type Downloaders struct {
 	svc               *service.Services
@@ -25,348 +28,342 @@ func NewDownloaders(s *service.Services, manager *downloader.Manager) *Downloade
 	}
 }
 
-func (h *Downloaders) RegisterProtected(v1 *echo.Group) {
-	v1.GET("/downloaders", h.List)
-	v1.POST("/downloaders", h.Create)
-	v1.GET("/downloaders/default/:protocol", h.GetDefault)
-	v1.GET("/downloaders/:id", h.Get)
-	v1.PUT("/downloaders/:id", h.Update)
-	v1.DELETE("/downloaders/:id", h.Delete)
-	v1.POST("/downloaders/:id/test", h.Test)
-	v1.POST("/downloaders/test", h.TestConfig)
+// ----- Shared body shape -----
+
+type downloaderWriteBody struct {
+	Name       string                 `json:"name" required:"true" minLength:"1" doc:"Display name"`
+	Type       string                 `json:"type" required:"true" minLength:"1" doc:"Downloader implementation type (e.g. qbittorrent, sabnzbd)"`
+	Protocol   string                 `json:"protocol" required:"true" enum:"torrent,usenet" doc:"Transport protocol"`
+	URL        string                 `json:"url" required:"true" minLength:"1" doc:"Base URL of the downloader"`
+	Username   *string                `json:"username,omitempty" doc:"Optional username"`
+	Password   *string                `json:"password,omitempty" doc:"Optional password; on Update, empty string preserves existing"`
+	ConfigJSON map[string]interface{} `json:"configJson,omitempty" doc:"Implementation-specific config blob"`
+	Enabled    bool                   `json:"enabled" doc:"Whether the downloader is active"`
+	Default    bool                   `json:"default" doc:"Whether this is the default for its protocol"`
 }
 
-// DownloaderCreateRequest payload
-type DownloaderCreateRequest struct {
-	Name       string                 `json:"name"`
-	Type       string                 `json:"type"`
-	Protocol   string                 `json:"protocol"`
-	URL        string                 `json:"url"`
-	Username   *string                `json:"username"`
-	Password   *string                `json:"password"`
-	ConfigJSON map[string]interface{} `json:"config_json"`
-	Enabled    bool                   `json:"enabled"`
-	Default    bool                   `json:"default"`
+// ----- List -----
+
+type DownloadersListInput struct{}
+
+type DownloadersListOutput struct {
+	Body []model.DownloaderWithStatus
 }
 
-// DownloaderUpdateRequest payload
-type DownloaderUpdateRequest struct {
-	Name       string                 `json:"name"`
-	Type       string                 `json:"type"`
-	Protocol   string                 `json:"protocol"`
-	URL        string                 `json:"url"`
-	Username   *string                `json:"username"`
-	Password   *string                `json:"password"`
-	ConfigJSON map[string]interface{} `json:"config_json"`
-	Enabled    bool                   `json:"enabled"`
-	Default    bool                   `json:"default"`
-}
-
-// DownloaderTestRequest payload for testing downloader configuration
-type DownloaderTestRequest struct {
-	Type       string                 `json:"type"`
-	URL        string                 `json:"url"`
-	Username   *string                `json:"username"`
-	Password   *string                `json:"password"`
-	ConfigJSON map[string]interface{} `json:"config_json"`
-}
-
-// downloaderToMap converts a dbgen.Downloader to a map with decoded config_json
-func downloaderToMap(dl dbgen.Downloader) map[string]interface{} {
-	// Decode config_json from []byte to map[string]interface{}
-	var configJSON map[string]interface{}
-	if len(dl.ConfigJson) > 0 {
-		if err := json.Unmarshal(dl.ConfigJson, &configJSON); err != nil {
-			// If unmarshal fails, use empty map
-			configJSON = make(map[string]interface{})
-		}
-	} else {
-		configJSON = make(map[string]interface{})
-	}
-
-	return map[string]interface{}{
-		"id":          dl.ID,
-		"name":        dl.Name,
-		"type":        dl.Type,
-		"protocol":    dl.Protocol,
-		"url":         dl.Url,
-		"username":    dl.Username,
-		"password":    dl.Password,
-		"config_json": configJSON,
-		"enabled":     dl.Enabled,
-		"default":     dl.Default,
-		"created_at":  dl.CreatedAt,
-		"updated_at":  dl.UpdatedAt,
-	}
-}
-
-// List downloaders
-// @Summary List downloaders
-// @Tags    downloaders
-// @Produce json
-// @Success 200 {array} dbgen.Downloader
-// @Router  /v1/downloaders [get]
-func (h *Downloaders) List(c echo.Context) error {
-	ctx := c.Request().Context()
+func (h *Downloaders) List(ctx context.Context, _ *DownloadersListInput) (*DownloadersListOutput, error) {
 	downloaders, err := h.svc.Downloaders.List(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list downloaders"})
+		return nil, err
 	}
 
-	// Get list of initialized client IDs
 	initializedClients := h.downloaderManager.ListClients(ctx)
 	initializedIDs := make(map[string]bool)
 	for _, client := range initializedClients {
 		initializedIDs[string(client.InstanceID())] = true
 	}
 
-	// Add initialized status to each downloader
-	result := make([]map[string]interface{}, 0, len(downloaders))
+	result := make([]model.DownloaderWithStatus, 0, len(downloaders))
 	for _, dl := range downloaders {
-		dlID := dl.ID.String()
-		isInitialized := initializedIDs[dlID] && dl.Enabled
-
-		downloaderMap := downloaderToMap(dl)
-		downloaderMap["initialized"] = isInitialized
-		result = append(result, downloaderMap)
+		isInitialized := initializedIDs[dl.ID.String()] && dl.Enabled
+		result = append(result, model.DownloaderWithStatus{
+			Downloader:  dl,
+			Initialized: isInitialized,
+		})
 	}
 
-	return c.JSON(http.StatusOK, result)
+	return &DownloadersListOutput{Body: result}, nil
 }
 
-// Create downloader
-// @Summary Create downloader
-// @Tags    downloaders
-// @Accept  json
-// @Produce json
-// @Param   payload body handlers.DownloaderCreateRequest true "Create downloader"
-// @Success 201 {object} dbgen.Downloader
-// @Failure 400 {object} map[string]string
-// @Router  /v1/downloaders [post]
-func (h *Downloaders) Create(c echo.Context) error {
-	var req DownloaderCreateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	ctx := c.Request().Context()
-	downloader, err := h.svc.Downloaders.Create(ctx, req.Name, req.Type, req.Protocol, req.URL, req.Username, req.Password, req.ConfigJSON, req.Enabled, req.Default)
+// ----- Get -----
+
+type DownloadersGetInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Downloader ID"`
+}
+
+type DownloadersGetOutput struct {
+	Body model.Downloader
+}
+
+func (h *Downloaders) Get(ctx context.Context, input *DownloadersGetInput) (*DownloadersGetOutput, error) {
+	dl, err := h.svc.Downloaders.Get(ctx, input.ID)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, err
 	}
-
-	// Initialize the downloader if enabled
-	if downloader.Enabled {
-		if err := h.downloaderManager.InitializeDownloader(ctx, downloader.ID.String()); err != nil {
-			// Log error but don't fail the request - the downloader is saved, just not initialized
-			// This allows the user to retry initialization later
-		}
-	}
-
-	return c.JSON(http.StatusCreated, downloaderToMap(downloader))
+	return &DownloadersGetOutput{Body: dl}, nil
 }
 
-// Get downloader
-// @Summary Get downloader
-// @Tags    downloaders
-// @Produce json
-// @Success 200 {object} dbgen.Downloader
-// @Router  /v1/downloaders/{id} [get]
-func (h *Downloaders) Get(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	downloader, err := h.svc.Downloaders.Get(ctx, id)
+// ----- GetDefault -----
+
+type DownloadersGetDefaultInput struct {
+	Protocol string `path:"protocol" enum:"torrent,usenet" doc:"Protocol"`
+}
+
+type DownloadersGetDefaultOutput struct {
+	Body model.Downloader
+}
+
+func (h *Downloaders) GetDefault(ctx context.Context, input *DownloadersGetDefaultInput) (*DownloadersGetDefaultOutput, error) {
+	dl, err := h.svc.Downloaders.GetDefault(ctx, input.Protocol)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, downloaderToMap(downloader))
+	return &DownloadersGetDefaultOutput{Body: dl}, nil
 }
 
-// Update downloader
-// @Summary Update downloader
-// @Tags    downloaders
-// @Accept  json
-// @Produce json
-// @Param   id path string true "Downloader ID"
-// @Param   payload body handlers.DownloaderUpdateRequest true "Update downloader"
-// @Success 200 {object} dbgen.Downloader
-// @Failure 400 {object} map[string]string
-// @Router  /v1/downloaders/{id} [put]
-func (h *Downloaders) Update(c echo.Context) error {
-	var req DownloaderUpdateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
+// ----- Create -----
 
-	// Normalize password: if nil or empty string, set to nil to preserve existing password
+type DownloadersCreateInput struct {
+	Body downloaderWriteBody
+}
+
+type DownloadersCreateOutput struct {
+	Body model.Downloader
+}
+
+func (h *Downloaders) Create(ctx context.Context, input *DownloadersCreateInput) (*DownloadersCreateOutput, error) {
+	dl, err := h.svc.Downloaders.Create(
+		ctx,
+		input.Body.Name,
+		input.Body.Type,
+		input.Body.Protocol,
+		input.Body.URL,
+		input.Body.Username,
+		input.Body.Password,
+		input.Body.ConfigJSON,
+		input.Body.Enabled,
+		input.Body.Default,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if dl.Enabled {
+		// Best-effort initialization; persistence already succeeded so the
+		// caller can retry if this fails.
+		_ = h.downloaderManager.InitializeDownloader(ctx, dl.ID.String())
+	}
+
+	return &DownloadersCreateOutput{Body: dl}, nil
+}
+
+// ----- Update -----
+
+type DownloadersUpdateInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"Downloader ID"`
+	Body downloaderWriteBody
+}
+
+type DownloadersUpdateOutput struct {
+	Body model.Downloader
+}
+
+func (h *Downloaders) Update(ctx context.Context, input *DownloadersUpdateInput) (*DownloadersUpdateOutput, error) {
+	// Empty-string password is a no-op signal: keep existing.
 	var password *string
-	if req.Password != nil && *req.Password != "" {
-		password = req.Password
+	if input.Body.Password != nil && *input.Body.Password != "" {
+		password = input.Body.Password
 	}
 
-	downloader, err := h.svc.Downloaders.Update(ctx, id, req.Name, req.Type, req.Protocol, req.URL, req.Username, password, req.ConfigJSON, req.Enabled, req.Default)
+	dl, err := h.svc.Downloaders.Update(
+		ctx,
+		input.ID,
+		input.Body.Name,
+		input.Body.Type,
+		input.Body.Protocol,
+		input.Body.URL,
+		input.Body.Username,
+		password,
+		input.Body.ConfigJSON,
+		input.Body.Enabled,
+		input.Body.Default,
+	)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, err
 	}
 
-	// Re-initialize the downloader (will remove if disabled, or update if enabled)
-	if err := h.downloaderManager.InitializeDownloader(ctx, downloader.ID.String()); err != nil {
-		// Log error but don't fail the request - the downloader is saved, just not initialized
-		// This allows the user to retry initialization later
-	}
+	_ = h.downloaderManager.InitializeDownloader(ctx, dl.ID.String())
 
-	return c.JSON(http.StatusOK, downloaderToMap(downloader))
+	return &DownloadersUpdateOutput{Body: dl}, nil
 }
 
-// Delete downloader
-// @Summary Delete downloader
-// @Tags    downloaders
-// @Param   id path string true "Downloader ID"
-// @Success 204 {string} string ""
-// @Router  /v1/downloaders/{id} [delete]
-func (h *Downloaders) Delete(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
+// ----- Delete -----
 
-	// Remove from active clients before deleting from DB
-	h.downloaderManager.RemoveClient(ctx, id.String())
-
-	if err := h.svc.Downloaders.Delete(ctx, id); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete"})
-	}
-	return c.NoContent(http.StatusNoContent)
+type DownloadersDeleteInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Downloader ID"`
 }
 
-// GetDefault downloader by protocol
-// @Summary Get default downloader by protocol
-// @Tags    downloaders
-// @Produce json
-// @Success 200 {object} dbgen.Downloader
-// @Router  /v1/downloaders/default/{protocol} [get]
-func (h *Downloaders) GetDefault(c echo.Context) error {
-	protocol := c.Param("protocol")
-	if protocol != "torrent" && protocol != "usenet" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "protocol must be 'torrent' or 'usenet'"})
+type DownloadersDeleteOutput struct{}
+
+func (h *Downloaders) Delete(ctx context.Context, input *DownloadersDeleteInput) (*DownloadersDeleteOutput, error) {
+	h.downloaderManager.RemoveClient(ctx, input.ID.String())
+	if err := h.svc.Downloaders.Delete(ctx, input.ID); err != nil {
+		return nil, err
 	}
-	ctx := c.Request().Context()
-	downloader, err := h.svc.Downloaders.GetDefault(ctx, protocol)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
-	}
-	return c.JSON(http.StatusOK, downloaderToMap(downloader))
+	return &DownloadersDeleteOutput{}, nil
 }
 
-// Test downloader connection
-// @Summary Test downloader connection
-// @Tags    downloaders
-// @Param   id path string true "Downloader ID"
-// @Success 200 {object} downloader.TestResult
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Router  /v1/downloaders/{id}/test [post]
-func (h *Downloaders) Test(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	downloader, err := h.svc.Downloaders.Get(ctx, id)
+// ----- Test -----
+
+type DownloadersTestInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Downloader ID"`
+}
+
+type DownloadersTestOutput struct {
+	Body downloader.TestResult
+}
+
+func (h *Downloaders) Test(ctx context.Context, input *DownloadersTestInput) (*DownloadersTestOutput, error) {
+	dl, err := h.svc.Downloaders.Get(ctx, input.ID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+		return nil, err
 	}
 
-	// Create a context with timeout for testing (10 seconds)
 	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Build a fresh client instance for testing (not cached)
-	client, err := h.downloaderManager.BuildTestClient(ctx, downloader.ID.String())
+	client, err := h.downloaderManager.BuildTestClient(ctx, dl.ID.String())
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to build test client: " + err.Error()})
+		return nil, apperrors.Internalf("failed to build test client: %v", err).Op("DownloadersHandler.Test")
 	}
 
-	// Call the client's Test method
 	result, err := client.Test(testCtx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return nil, apperrors.BadGatewayf("%v", err).Op("DownloadersHandler.Test")
 	}
 
-	return c.JSON(http.StatusOK, result)
+	return &DownloadersTestOutput{Body: result}, nil
 }
 
-// TestConfig tests downloader connection using form configuration (not from database)
-// @Summary Test downloader connection with form configuration
-// @Tags    downloaders
-// @Accept  json
-// @Produce json
-// @Param   payload body handlers.DownloaderTestRequest true "Test downloader configuration"
-// @Success 200 {object} downloader.TestResult
-// @Failure 400 {object} map[string]string
-// @Router  /v1/downloaders/test [post]
-func (h *Downloaders) TestConfig(c echo.Context) error {
-	var req DownloaderTestRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
+// ----- TestConfig -----
 
-	// Validate required fields
-	if req.Type == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "type is required"})
-	}
-	if req.URL == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "url is required"})
-	}
+type DownloadersTestConfigBody struct {
+	Type       string                 `json:"type" required:"true" minLength:"1" doc:"Downloader implementation type"`
+	URL        string                 `json:"url" required:"true" minLength:"1" doc:"Base URL"`
+	Username   *string                `json:"username,omitempty" doc:"Optional username"`
+	Password   *string                `json:"password,omitempty" doc:"Optional password"`
+	ConfigJSON map[string]interface{} `json:"configJson,omitempty" doc:"Implementation-specific config blob"`
+}
 
-	ctx := c.Request().Context()
+type DownloadersTestConfigInput struct {
+	Body DownloadersTestConfigBody
+}
 
-	// Convert config_json to []byte
+type DownloadersTestConfigOutput struct {
+	Body downloader.TestResult
+}
+
+func (h *Downloaders) TestConfig(ctx context.Context, input *DownloadersTestConfigInput) (*DownloadersTestConfigOutput, error) {
 	var configJSON []byte
-	if req.ConfigJSON != nil {
+	if input.Body.ConfigJSON != nil {
 		var err error
-		configJSON, err = json.Marshal(req.ConfigJSON)
+		configJSON, err = json.Marshal(input.Body.ConfigJSON)
 		if err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid config_json: " + err.Error()})
+			return nil, apperrors.Validation("invalid configJson",
+				apperrors.Field("body.configJson", err.Error()),
+			).Op("DownloadersHandler.TestConfig")
 		}
 	}
 
-	// Create a temporary InstanceID for testing
 	instanceID := downloader.InstanceID("test-" + time.Now().Format("20060102150405"))
 
-	// Convert request to ConfigRecord
 	rec := downloader.ConfigRecord{
 		ID:       instanceID,
-		Type:     downloader.Type(req.Type),
-		URL:      req.URL,
-		Username: req.Username,
-		Password: req.Password,
+		Type:     downloader.Type(input.Body.Type),
+		URL:      input.Body.URL,
+		Username: input.Body.Username,
+		Password: input.Body.Password,
 		Config:   configJSON,
 	}
 
-	// Create a context with timeout for testing (10 seconds)
 	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Build client from config
 	client, err := h.downloaderManager.BuildClientFromConfig(ctx, rec)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to build test client: " + err.Error()})
+		return nil, apperrors.Internalf("failed to build test client: %v", err).Op("DownloadersHandler.TestConfig")
 	}
 
-	// Call the client's Test method
 	result, err := client.Test(testCtx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return nil, apperrors.BadGatewayf("%v", err).Op("DownloadersHandler.TestConfig")
 	}
 
-	return c.JSON(http.StatusOK, result)
+	return &DownloadersTestConfigOutput{Body: result}, nil
+}
+
+// ----- Register -----
+
+func (h *Downloaders) RegisterHumachi(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "downloaders-list",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/downloaders",
+		Summary:     "List downloaders",
+		Tags:        []string{"downloaders"},
+	}, h.List)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "downloaders-create",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/downloaders",
+		Summary:       "Create downloader",
+		Tags:          []string{"downloaders"},
+		DefaultStatus: http.StatusCreated,
+		Errors:        errsWrite,
+	}, h.Create)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "downloaders-get-default",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/downloaders/default/{protocol}",
+		Summary:     "Get default downloader by protocol",
+		Tags:        []string{"downloaders"},
+		Errors:      errsRead,
+	}, h.GetDefault)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "downloaders-get",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/downloaders/{id}",
+		Summary:     "Get downloader",
+		Tags:        []string{"downloaders"},
+		Errors:      errsRead,
+	}, h.Get)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "downloaders-update",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/downloaders/{id}",
+		Summary:     "Update downloader",
+		Tags:        []string{"downloaders"},
+		Errors:      errsUpsert,
+	}, h.Update)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "downloaders-delete",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/downloaders/{id}",
+		Summary:       "Delete downloader",
+		Tags:          []string{"downloaders"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsDelete,
+	}, h.Delete)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "downloaders-test",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/downloaders/{id}/test",
+		Summary:     "Test downloader connection",
+		Tags:        []string{"downloaders"},
+		Errors:      errs(errsRead, errsUpstream),
+	}, h.Test)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "downloaders-test-config",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/downloaders/test",
+		Summary:     "Test downloader connection from form configuration",
+		Tags:        []string{"downloaders"},
+		Errors:      errs(errsWrite, errsUpstream),
+	}, h.TestConfig)
 }

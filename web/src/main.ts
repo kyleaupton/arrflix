@@ -7,7 +7,7 @@ import router from '@/router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { client } from '@/client/client.gen'
-import { getV1Bootstrap } from '@/client/sdk.gen'
+import { bootstrapGet } from '@/client/sdk.gen'
 import '@/main.css'
 
 const app = createApp(App)
@@ -41,7 +41,7 @@ auth.rehydrateToken()
 // Single bootstrap request populates auth + app state
 const appStore = useAppStore()
 try {
-  const res = await getV1Bootstrap<true>({ throwOnError: true })
+  const res = await bootstrapGet<true>({ throwOnError: true })
   appStore.setFromBootstrap({
     initialized: res.data.initialized,
     config: res.data.config,

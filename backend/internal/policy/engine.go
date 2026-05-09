@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
@@ -42,7 +40,7 @@ func (e *Engine) Evaluate(ctx context.Context, evalCtx model.EvaluationContext) 
 	}
 
 	// Filter to only enabled policies
-	var enabledPolicies []dbgen.Policy
+	var enabledPolicies []model.Policy
 	for _, p := range policies {
 		if p.Enabled {
 			enabledPolicies = append(enabledPolicies, p)
@@ -60,13 +58,13 @@ func (e *Engine) Evaluate(ctx context.Context, evalCtx model.EvaluationContext) 
 			StoppedProcessing: false,
 		}
 
-		rule, err := e.repo.GetRuleForPolicy(ctx, policy.ID)
-		if err != nil {
-			// Policy without a rule doesn't match
+		// Policy without a rule doesn't match.
+		if policy.Rule == nil {
 			policyEval.RuleEvaluated = nil
 			trace.Policies = append(trace.Policies, policyEval)
 			continue
 		}
+		rule := *policy.Rule
 
 		// Resolve values for the rule operands
 		leftVal, _ := e.getValue(rule.LeftOperand, evalCtx)
@@ -84,7 +82,7 @@ func (e *Engine) Evaluate(ctx context.Context, evalCtx model.EvaluationContext) 
 		// Evaluate rule
 		matches, err := e.evaluateRule(ctx, rule, evalCtx)
 		if err != nil {
-			return trace, fmt.Errorf("evaluate rule for policy %s: %w", policy.ID.String(), err)
+			return trace, fmt.Errorf("evaluate rule for policy %s: %w", policy.ID, err)
 		}
 
 		if !matches {
@@ -95,14 +93,10 @@ func (e *Engine) Evaluate(ctx context.Context, evalCtx model.EvaluationContext) 
 		// Policy matched!
 		policyEval.Matched = true
 
-		// Get actions for this policy
-		actions, err := e.repo.ListActionsForPolicy(ctx, policy.ID)
-		if err != nil {
-			return trace, fmt.Errorf("list actions for policy %s: %w", policy.ID.String(), err)
-		}
-
-		// Apply actions in order and track them
-		for _, action := range actions {
+		// Apply actions in order and track them. The composed Policy already
+		// carries the ordered Actions slice (loaded by repo.ListPolicies), so
+		// no additional fetch is needed here.
+		for _, action := range policy.Actions {
 			actionInfo := model.ActionInfo{
 				Type:  action.Type,
 				Value: action.Value,
@@ -111,7 +105,7 @@ func (e *Engine) Evaluate(ctx context.Context, evalCtx model.EvaluationContext) 
 			policyEval.ActionsApplied = append(policyEval.ActionsApplied, actionInfo)
 
 			if err := e.applyAction(&trace.FinalPlan, action); err != nil {
-				return trace, fmt.Errorf("apply action %s: %w", action.ID.String(), err)
+				return trace, fmt.Errorf("apply action %s: %w", action.ID, err)
 			}
 
 			// Stop processing if stop_processing action
@@ -175,7 +169,7 @@ func (e *Engine) Evaluate(ctx context.Context, evalCtx model.EvaluationContext) 
 }
 
 // evaluateRule evaluates a rule against the evaluation context
-func (e *Engine) evaluateRule(ctx context.Context, rule dbgen.Rule, evalCtx model.EvaluationContext) (bool, error) {
+func (e *Engine) evaluateRule(ctx context.Context, rule model.Rule, evalCtx model.EvaluationContext) (bool, error) {
 	operator := model.Operator(rule.Operator)
 
 	// Handle logical operators (and, or, not) which reference other rules
@@ -205,7 +199,7 @@ func (e *Engine) evaluateRule(ctx context.Context, rule dbgen.Rule, evalCtx mode
 }
 
 // evaluateLogicalAnd evaluates an AND rule (left and right are rule UUIDs)
-func (e *Engine) evaluateLogicalAnd(ctx context.Context, rule dbgen.Rule, evalCtx model.EvaluationContext) (bool, error) {
+func (e *Engine) evaluateLogicalAnd(ctx context.Context, rule model.Rule, evalCtx model.EvaluationContext) (bool, error) {
 	leftRule, err := e.getRuleByID(ctx, rule.LeftOperand)
 	if err != nil {
 		return false, err
@@ -228,7 +222,7 @@ func (e *Engine) evaluateLogicalAnd(ctx context.Context, rule dbgen.Rule, evalCt
 }
 
 // evaluateLogicalOr evaluates an OR rule (left and right are rule UUIDs)
-func (e *Engine) evaluateLogicalOr(ctx context.Context, rule dbgen.Rule, evalCtx model.EvaluationContext) (bool, error) {
+func (e *Engine) evaluateLogicalOr(ctx context.Context, rule model.Rule, evalCtx model.EvaluationContext) (bool, error) {
 	leftRule, err := e.getRuleByID(ctx, rule.LeftOperand)
 	if err != nil {
 		return false, err
@@ -251,7 +245,7 @@ func (e *Engine) evaluateLogicalOr(ctx context.Context, rule dbgen.Rule, evalCtx
 }
 
 // evaluateLogicalNot evaluates a NOT rule (right is a rule UUID)
-func (e *Engine) evaluateLogicalNot(ctx context.Context, rule dbgen.Rule, evalCtx model.EvaluationContext) (bool, error) {
+func (e *Engine) evaluateLogicalNot(ctx context.Context, rule model.Rule, evalCtx model.EvaluationContext) (bool, error) {
 	rightRule, err := e.getRuleByID(ctx, rule.RightOperand)
 	if err != nil {
 		return false, err
@@ -265,33 +259,15 @@ func (e *Engine) evaluateLogicalNot(ctx context.Context, rule dbgen.Rule, evalCt
 	return !result, nil
 }
 
-// getRuleByID gets a rule by UUID string
-func (e *Engine) getRuleByID(ctx context.Context, ruleIDStr string) (dbgen.Rule, error) {
+// getRuleByID gets a rule by UUID string. Logical-operator rules reference
+// child rules by their UUID stored as a string in LeftOperand/RightOperand;
+// the engine resolves those references lazily here at evaluation time.
+func (e *Engine) getRuleByID(ctx context.Context, ruleIDStr string) (model.Rule, error) {
 	ruleID, err := uuid.Parse(ruleIDStr)
 	if err != nil {
-		return dbgen.Rule{}, fmt.Errorf("invalid rule UUID: %w", err)
+		return model.Rule{}, fmt.Errorf("invalid rule UUID: %w", err)
 	}
-
-	// We need to get the rule, but we only have policy_id in our queries
-	// For now, we'll need to get all rules and find the one we need
-	// This is inefficient but works for now - can be optimized later
-	policies, err := e.repo.ListPolicies(ctx)
-	if err != nil {
-		return dbgen.Rule{}, err
-	}
-
-	for _, policy := range policies {
-		rule, err := e.repo.GetRuleForPolicy(ctx, policy.ID)
-		if err != nil {
-			continue
-		}
-		ruleUUID := pgtype.UUID{Bytes: ruleID, Valid: true}
-		if rule.ID == ruleUUID {
-			return rule, nil
-		}
-	}
-
-	return dbgen.Rule{}, fmt.Errorf("rule not found: %s", ruleIDStr)
+	return e.repo.GetRuleByID(ctx, ruleID)
 }
 
 // getValue gets a value from the evaluation context or returns the literal value
@@ -450,7 +426,7 @@ func (e *Engine) in(left, right interface{}) (bool, error) {
 }
 
 // applyAction applies an action to the plan
-func (e *Engine) applyAction(plan *model.Plan, action dbgen.Action) error {
+func (e *Engine) applyAction(plan *model.Plan, action model.Action) error {
 	actionType := model.ActionType(action.Type)
 
 	switch actionType {

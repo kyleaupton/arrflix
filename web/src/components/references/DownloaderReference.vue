@@ -23,7 +23,7 @@ import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { Loader2, AlertTriangle } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
-import { getV1DownloadersByIdOptions } from '@/client/@tanstack/vue-query.gen'
+import { downloadersGetOptions } from '@/client/@tanstack/vue-query.gen'
 
 const props = defineProps<{
   downloaderId: string
@@ -35,7 +35,7 @@ const {
   error,
 } = useQuery(
   computed(() =>
-    getV1DownloadersByIdOptions({
+    downloadersGetOptions({
       path: { id: props.downloaderId },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any),

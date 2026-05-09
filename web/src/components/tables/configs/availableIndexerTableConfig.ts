@@ -1,8 +1,8 @@
 import { type TableColumn, type TableAction } from '../types'
-import { type ModelIndexerDefinition } from '@/client/types.gen'
+import { type IndexerOutput } from '@/client/types.gen'
 import { PrimeIcons } from '@/icons'
 
-export const availableIndexerColumns: TableColumn<ModelIndexerDefinition>[] = [
+export const availableIndexerColumns: TableColumn<IndexerOutput>[] = [
   {
     key: 'name',
     label: 'Name',
@@ -27,8 +27,8 @@ export const availableIndexerColumns: TableColumn<ModelIndexerDefinition>[] = [
 ]
 
 export const createAvailableIndexerActions = (
-  onSelect: (indexer: ModelIndexerDefinition) => void,
-): TableAction<ModelIndexerDefinition>[] => [
+  onSelect: (indexer: IndexerOutput) => void,
+): TableAction<IndexerOutput>[] => [
   {
     key: 'select',
     label: 'Select',

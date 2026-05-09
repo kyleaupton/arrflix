@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/indexer"
 	"github.com/kyleaupton/arrflix/internal/logger"
@@ -187,7 +187,7 @@ func (s *DownloadCandidatesService) PreviewCandidate(ctx context.Context, movieI
 }
 
 // EnqueueCandidate creates a durable download job for a candidate (movies-only).
-func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieID int64, indexerID int64, guid string) (model.EvaluationTrace, dbgen.DownloadJob, error) {
+func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieID int64, indexerID int64, guid string) (model.EvaluationTrace, model.DownloadJob, error) {
 	// Lookup candidate from cache
 	cacheKey := s.cacheKey(indexerID, guid)
 	s.cacheMu.RLock()
@@ -195,7 +195,7 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 	s.cacheMu.RUnlock()
 
 	if !exists {
-		return model.EvaluationTrace{}, dbgen.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueCandidate")
+		return model.EvaluationTrace{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueCandidate")
 	}
 
 	// Check if expired
@@ -203,7 +203,7 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 		s.cacheMu.Lock()
 		delete(s.cache, cacheKey)
 		s.cacheMu.Unlock()
-		return model.EvaluationTrace{}, dbgen.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueCandidate")
+		return model.EvaluationTrace{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueCandidate")
 	}
 
 	candidate := searchResultToCandidate(cached.result)
@@ -214,23 +214,25 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 	trace, err := s.policyEngine.Evaluate(ctx, evalCtx)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("Failed to evaluate policy")
-		return model.EvaluationTrace{}, dbgen.DownloadJob{}, apperrors.Internalf("policy evaluation failed: %v", err).
+		return model.EvaluationTrace{}, model.DownloadJob{}, apperrors.Internalf("policy evaluation failed: %v", err).
 			Op("DownloadCandidatesService.EnqueueCandidate")
 	}
 
-	var downloaderID, libraryID, nameTemplateID pgtype.UUID
-	if err := downloaderID.Scan(trace.FinalPlan.DownloaderID); err != nil {
-		return trace, dbgen.DownloadJob{}, apperrors.Internalf("policy returned invalid downloader id %q: %v", trace.FinalPlan.DownloaderID, err).
+	downloaderID, err := uuid.Parse(trace.FinalPlan.DownloaderID)
+	if err != nil {
+		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid downloader id %q: %v", trace.FinalPlan.DownloaderID, err).
 			Op("DownloadCandidatesService.EnqueueCandidate").
 			NotRetryable()
 	}
-	if err := libraryID.Scan(trace.FinalPlan.LibraryID); err != nil {
-		return trace, dbgen.DownloadJob{}, apperrors.Internalf("policy returned invalid library id %q: %v", trace.FinalPlan.LibraryID, err).
+	libraryID, err := uuid.Parse(trace.FinalPlan.LibraryID)
+	if err != nil {
+		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid library id %q: %v", trace.FinalPlan.LibraryID, err).
 			Op("DownloadCandidatesService.EnqueueCandidate").
 			NotRetryable()
 	}
-	if err := nameTemplateID.Scan(trace.FinalPlan.NameTemplateID); err != nil {
-		return trace, dbgen.DownloadJob{}, apperrors.Internalf("policy returned invalid name template id %q: %v", trace.FinalPlan.NameTemplateID, err).
+	nameTemplateID, err := uuid.Parse(trace.FinalPlan.NameTemplateID)
+	if err != nil {
+		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid name template id %q: %v", trace.FinalPlan.NameTemplateID, err).
 			Op("DownloadCandidatesService.EnqueueCandidate").
 			NotRetryable()
 	}
@@ -241,7 +243,7 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 		if apperrors.IsNotFound(err) {
 			movie, err := s.media.GetMovie(ctx, movieID)
 			if err != nil {
-				return trace, dbgen.DownloadJob{}, err
+				return trace, model.DownloadJob{}, err
 			}
 			var yearInt *int32
 			if len(movie.ReleaseDate) >= 4 {
@@ -253,18 +255,18 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 			tmdb := movieID
 			mi, err = s.repo.CreateMediaItem(ctx, "movie", movie.Title, yearInt, &tmdb)
 			if err != nil {
-				return trace, dbgen.DownloadJob{}, err
+				return trace, model.DownloadJob{}, err
 			}
 		} else {
-			return trace, dbgen.DownloadJob{}, err
+			return trace, model.DownloadJob{}, err
 		}
 	}
 
-	job, err := s.repo.CreateDownloadJob(ctx, dbgen.CreateDownloadJobParams{
+	job, err := s.repo.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
 		Protocol:       candidate.Protocol,
 		MediaType:      "movie",
-		MediaItemID:    mi.ID,
-		EpisodeID:      pgtype.UUID{},
+		MediaItemID:    uuid.UUID(mi.ID.Bytes),
+		EpisodeID:      uuid.Nil,
 		IndexerID:      indexerID,
 		Guid:           guid,
 		CandidateTitle: candidate.Title,
@@ -274,14 +276,14 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 		NameTemplateID: nameTemplateID,
 	})
 	if err != nil {
-		return trace, dbgen.DownloadJob{}, err
+		return trace, model.DownloadJob{}, err
 	}
 
 	return trace, job, nil
 }
 
 // EnqueueSeriesCandidate creates a durable download job for a series candidate.
-func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, seriesID int64, indexerID int64, guid string, seasonNumber *int, episodeNumber *int) (model.EvaluationTrace, dbgen.DownloadJob, error) {
+func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, seriesID int64, indexerID int64, guid string, seasonNumber *int, episodeNumber *int) (model.EvaluationTrace, model.DownloadJob, error) {
 	// Lookup candidate from cache
 	cacheKey := s.cacheKey(indexerID, guid)
 	s.cacheMu.RLock()
@@ -289,7 +291,7 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 	s.cacheMu.RUnlock()
 
 	if !exists {
-		return model.EvaluationTrace{}, dbgen.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueSeriesCandidate")
+		return model.EvaluationTrace{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueSeriesCandidate")
 	}
 
 	// Check if expired
@@ -297,7 +299,7 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 		s.cacheMu.Lock()
 		delete(s.cache, cacheKey)
 		s.cacheMu.Unlock()
-		return model.EvaluationTrace{}, dbgen.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueSeriesCandidate")
+		return model.EvaluationTrace{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueSeriesCandidate")
 	}
 
 	candidate := searchResultToCandidate(cached.result)
@@ -308,23 +310,25 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 	trace, err := s.policyEngine.Evaluate(ctx, evalCtx)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("Failed to evaluate policy")
-		return model.EvaluationTrace{}, dbgen.DownloadJob{}, apperrors.Internalf("policy evaluation failed: %v", err).
+		return model.EvaluationTrace{}, model.DownloadJob{}, apperrors.Internalf("policy evaluation failed: %v", err).
 			Op("DownloadCandidatesService.EnqueueSeriesCandidate")
 	}
 
-	var downloaderID, libraryID, nameTemplateID pgtype.UUID
-	if err := downloaderID.Scan(trace.FinalPlan.DownloaderID); err != nil {
-		return trace, dbgen.DownloadJob{}, apperrors.Internalf("policy returned invalid downloader id %q: %v", trace.FinalPlan.DownloaderID, err).
+	downloaderID, err := uuid.Parse(trace.FinalPlan.DownloaderID)
+	if err != nil {
+		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid downloader id %q: %v", trace.FinalPlan.DownloaderID, err).
 			Op("DownloadCandidatesService.EnqueueSeriesCandidate").
 			NotRetryable()
 	}
-	if err := libraryID.Scan(trace.FinalPlan.LibraryID); err != nil {
-		return trace, dbgen.DownloadJob{}, apperrors.Internalf("policy returned invalid library id %q: %v", trace.FinalPlan.LibraryID, err).
+	libraryID, err := uuid.Parse(trace.FinalPlan.LibraryID)
+	if err != nil {
+		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid library id %q: %v", trace.FinalPlan.LibraryID, err).
 			Op("DownloadCandidatesService.EnqueueSeriesCandidate").
 			NotRetryable()
 	}
-	if err := nameTemplateID.Scan(trace.FinalPlan.NameTemplateID); err != nil {
-		return trace, dbgen.DownloadJob{}, apperrors.Internalf("policy returned invalid name template id %q: %v", trace.FinalPlan.NameTemplateID, err).
+	nameTemplateID, err := uuid.Parse(trace.FinalPlan.NameTemplateID)
+	if err != nil {
+		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid name template id %q: %v", trace.FinalPlan.NameTemplateID, err).
 			Op("DownloadCandidatesService.EnqueueSeriesCandidate").
 			NotRetryable()
 	}
@@ -335,7 +339,7 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 		if apperrors.IsNotFound(err) {
 			series, err := s.media.GetSeries(ctx, seriesID)
 			if err != nil {
-				return trace, dbgen.DownloadJob{}, err
+				return trace, model.DownloadJob{}, err
 			}
 			var yearInt *int32
 			if len(series.FirstAirDate) >= 4 {
@@ -347,21 +351,21 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 			tmdb := seriesID
 			mi, err = s.repo.CreateMediaItem(ctx, "series", series.Title, yearInt, &tmdb)
 			if err != nil {
-				return trace, dbgen.DownloadJob{}, err
+				return trace, model.DownloadJob{}, err
 			}
 		} else {
-			return trace, dbgen.DownloadJob{}, err
+			return trace, model.DownloadJob{}, err
 		}
 	}
 
-	var seasonID, episodeID pgtype.UUID
+	var seasonID, episodeID uuid.UUID
 	if seasonNumber != nil {
 		// Ensure season exists
 		season, err := s.repo.UpsertSeason(ctx, mi.ID, int32(*seasonNumber), pgtype.Date{Valid: false})
 		if err != nil {
-			return trace, dbgen.DownloadJob{}, err
+			return trace, model.DownloadJob{}, err
 		}
-		seasonID = season.ID
+		seasonID = uuid.UUID(season.ID.Bytes)
 
 		if episodeNumber != nil {
 			// Ensure episode exists
@@ -371,18 +375,18 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 				title = tmdbEpisode.Name
 			}
 
-			episode, err := s.repo.UpsertEpisode(ctx, seasonID, int32(*episodeNumber), &title, pgtype.Date{Valid: false}, nil, nil)
+			episode, err := s.repo.UpsertEpisode(ctx, season.ID, int32(*episodeNumber), &title, pgtype.Date{Valid: false}, nil, nil)
 			if err != nil {
-				return trace, dbgen.DownloadJob{}, err
+				return trace, model.DownloadJob{}, err
 			}
-			episodeID = episode.ID
+			episodeID = uuid.UUID(episode.ID.Bytes)
 		}
 	}
 
-	job, err := s.repo.CreateDownloadJob(ctx, dbgen.CreateDownloadJobParams{
+	job, err := s.repo.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
 		Protocol:       candidate.Protocol,
 		MediaType:      "series",
-		MediaItemID:    mi.ID,
+		MediaItemID:    uuid.UUID(mi.ID.Bytes),
 		SeasonID:       seasonID,
 		EpisodeID:      episodeID,
 		IndexerID:      indexerID,
@@ -394,7 +398,7 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 		NameTemplateID: nameTemplateID,
 	})
 	if err != nil {
-		return trace, dbgen.DownloadJob{}, err
+		return trace, model.DownloadJob{}, err
 	}
 
 	return trace, job, nil

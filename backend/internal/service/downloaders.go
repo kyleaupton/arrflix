@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"net/url"
 
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -19,15 +19,15 @@ func NewDownloadersService(r *repo.Repository) *DownloadersService {
 	return &DownloadersService{repo: r}
 }
 
-func (s *DownloadersService) List(ctx context.Context) ([]dbgen.Downloader, error) {
+func (s *DownloadersService) List(ctx context.Context) ([]model.Downloader, error) {
 	return s.repo.ListDownloaders(ctx)
 }
 
-func (s *DownloadersService) Get(ctx context.Context, id pgtype.UUID) (dbgen.Downloader, error) {
+func (s *DownloadersService) Get(ctx context.Context, id uuid.UUID) (model.Downloader, error) {
 	return s.repo.GetDownloader(ctx, id)
 }
 
-func (s *DownloadersService) GetDefault(ctx context.Context, protocol string) (dbgen.Downloader, error) {
+func (s *DownloadersService) GetDefault(ctx context.Context, protocol string) (model.Downloader, error) {
 	return s.repo.GetDefaultDownloader(ctx, protocol)
 }
 
@@ -55,9 +55,24 @@ func validateDownloaderInput(name, downloaderType, protocol, downloaderURL strin
 	return nil
 }
 
-func (s *DownloadersService) Create(ctx context.Context, name, downloaderType, protocol, downloaderURL string, username, password *string, configJSON map[string]interface{}, enabled, isDefault bool) (dbgen.Downloader, error) {
+// marshalConfig serializes the loose config map to a json.RawMessage. Returns
+// a typed Validation error if marshaling fails.
+func marshalConfig(configJSON map[string]interface{}, op string) (json.RawMessage, error) {
+	if configJSON == nil {
+		return nil, nil
+	}
+	b, err := json.Marshal(configJSON)
+	if err != nil {
+		return nil, apperrors.Validation("invalid downloader",
+			apperrors.Field("body.config_json", "must be valid JSON"),
+		).Op(op)
+	}
+	return json.RawMessage(b), nil
+}
+
+func (s *DownloadersService) Create(ctx context.Context, name, downloaderType, protocol, downloaderURL string, username, password *string, configJSON map[string]interface{}, enabled, isDefault bool) (model.Downloader, error) {
 	if err := validateDownloaderInput(name, downloaderType, protocol, downloaderURL); err != nil {
-		return dbgen.Downloader{}, err.Op("DownloadersService.Create")
+		return model.Downloader{}, err.Op("DownloadersService.Create")
 	}
 
 	// If setting as default, unset other defaults of same protocol
@@ -67,29 +82,44 @@ func (s *DownloadersService) Create(ctx context.Context, name, downloaderType, p
 			for _, d := range existingDefaults {
 				if d.Protocol == protocol && d.Default {
 					// Unset this default
-					_, _ = s.repo.UpdateDownloader(ctx, d.ID, d.Name, d.Type, d.Protocol, d.Url, d.Username, d.Password, d.ConfigJson, d.Enabled, false)
+					_, _ = s.repo.UpdateDownloader(ctx, repo.UpdateDownloaderParams{
+						ID:             d.ID,
+						Name:           d.Name,
+						DownloaderType: d.Type,
+						Protocol:       d.Protocol,
+						URL:            d.URL,
+						Username:       d.Username,
+						Password:       d.Password,
+						ConfigJSON:     d.ConfigJSON,
+						Enabled:        d.Enabled,
+						IsDefault:      false,
+					})
 				}
 			}
 		}
 	}
 
-	var configJSONBytes []byte
-	if configJSON != nil {
-		var err error
-		configJSONBytes, err = json.Marshal(configJSON)
-		if err != nil {
-			return dbgen.Downloader{}, apperrors.Validation("invalid downloader",
-				apperrors.Field("body.config_json", "must be valid JSON"),
-			).Op("DownloadersService.Create")
-		}
+	cfg, err := marshalConfig(configJSON, "DownloadersService.Create")
+	if err != nil {
+		return model.Downloader{}, err
 	}
 
-	return s.repo.CreateDownloader(ctx, name, downloaderType, protocol, downloaderURL, username, password, configJSONBytes, enabled, isDefault)
+	return s.repo.CreateDownloader(ctx, repo.CreateDownloaderParams{
+		Name:           name,
+		DownloaderType: downloaderType,
+		Protocol:       protocol,
+		URL:            downloaderURL,
+		Username:       username,
+		Password:       password,
+		ConfigJSON:     cfg,
+		Enabled:        enabled,
+		IsDefault:      isDefault,
+	})
 }
 
-func (s *DownloadersService) Update(ctx context.Context, id pgtype.UUID, name, downloaderType, protocol, downloaderURL string, username, password *string, configJSON map[string]interface{}, enabled, isDefault bool) (dbgen.Downloader, error) {
+func (s *DownloadersService) Update(ctx context.Context, id uuid.UUID, name, downloaderType, protocol, downloaderURL string, username, password *string, configJSON map[string]interface{}, enabled, isDefault bool) (model.Downloader, error) {
 	if err := validateDownloaderInput(name, downloaderType, protocol, downloaderURL); err != nil {
-		return dbgen.Downloader{}, err.Op("DownloadersService.Update")
+		return model.Downloader{}, err.Op("DownloadersService.Update")
 	}
 
 	// If setting as default, unset other defaults of same protocol
@@ -99,36 +129,52 @@ func (s *DownloadersService) Update(ctx context.Context, id pgtype.UUID, name, d
 			for _, d := range existingDefaults {
 				if d.Protocol == protocol && d.Default && d.ID != id {
 					// Unset this default
-					_, _ = s.repo.UpdateDownloader(ctx, d.ID, d.Name, d.Type, d.Protocol, d.Url, d.Username, d.Password, d.ConfigJson, d.Enabled, false)
+					_, _ = s.repo.UpdateDownloader(ctx, repo.UpdateDownloaderParams{
+						ID:             d.ID,
+						Name:           d.Name,
+						DownloaderType: d.Type,
+						Protocol:       d.Protocol,
+						URL:            d.URL,
+						Username:       d.Username,
+						Password:       d.Password,
+						ConfigJSON:     d.ConfigJSON,
+						Enabled:        d.Enabled,
+						IsDefault:      false,
+					})
 				}
 			}
 		}
 	}
 
-	var configJSONBytes []byte
-	if configJSON != nil {
-		var err error
-		configJSONBytes, err = json.Marshal(configJSON)
-		if err != nil {
-			return dbgen.Downloader{}, apperrors.Validation("invalid downloader",
-				apperrors.Field("body.config_json", "must be valid JSON"),
-			).Op("DownloadersService.Update")
-		}
+	cfg, err := marshalConfig(configJSON, "DownloadersService.Update")
+	if err != nil {
+		return model.Downloader{}, err
 	}
 
 	// If password is nil, fetch existing downloader to preserve its password
-	var passwordToUse *string = password
+	passwordToUse := password
 	if password == nil {
 		existing, err := s.repo.GetDownloader(ctx, id)
 		if err != nil {
-			return dbgen.Downloader{}, err
+			return model.Downloader{}, err
 		}
 		passwordToUse = existing.Password
 	}
 
-	return s.repo.UpdateDownloader(ctx, id, name, downloaderType, protocol, downloaderURL, username, passwordToUse, configJSONBytes, enabled, isDefault)
+	return s.repo.UpdateDownloader(ctx, repo.UpdateDownloaderParams{
+		ID:             id,
+		Name:           name,
+		DownloaderType: downloaderType,
+		Protocol:       protocol,
+		URL:            downloaderURL,
+		Username:       username,
+		Password:       passwordToUse,
+		ConfigJSON:     cfg,
+		Enabled:        enabled,
+		IsDefault:      isDefault,
+	})
 }
 
-func (s *DownloadersService) Delete(ctx context.Context, id pgtype.UUID) error {
+func (s *DownloadersService) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.DeleteDownloader(ctx, id)
 }

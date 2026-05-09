@@ -1,266 +1,348 @@
+// indexers.go is the humachi-shaped indexers handler. Every operation talks
+// to Prowlarr via the IndexerService — list, get, create/update (POST), delete,
+// toggle, action, test (saved/unsaved/all). Service errors are typed
+// (BadGateway for upstream Prowlarr failures); humaerr renders them.
+//
+// Note: the wire body / response shapes use the third-party
+// `prowlarr.IndexerInput` / `prowlarr.IndexerOutput` types directly, matching
+// the pre-migration Echo behavior. Huma generates schemas for these via
+// reflection, so the OpenAPI spec captures whatever JSON tags those types
+// expose.
 package handlers
 
 import (
 	"context"
 	"net/http"
-	"strconv"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/service"
-	"github.com/labstack/echo/v4"
 	"golift.io/starr/prowlarr"
 )
+
+// ----- Handler -----
 
 type Indexers struct{ svc *service.Services }
 
 func NewIndexers(s *service.Services) *Indexers { return &Indexers{svc: s} }
 
-func (h *Indexers) RegisterProtected(v1 *echo.Group) {
-	v1.GET("/indexers/configured", h.ListConfigured)
-	v1.GET("/indexers/schema", h.GetSchema)
-	v1.GET("/indexer/:id", h.GetIndexer)
-	v1.POST("/indexer", h.SaveConfig)
-	v1.DELETE("/indexer/:id", h.Delete)
-	v1.PUT("/indexer/:id/toggle", h.Toggle)
-	v1.POST("/indexer/action/:name", h.Action)
-	v1.POST("/indexer/:id/test", h.TestSaved)
-	v1.POST("/indexer/test", h.TestUnsaved)
-	v1.POST("/indexers/testall", h.TestAll)
+// ----- ListConfigured -----
+
+// IndexersListConfiguredInput is empty.
+type IndexersListConfiguredInput struct{}
+
+// IndexersListConfiguredOutput wraps the flat list of configured indexers
+// (as Prowlarr returns them).
+type IndexersListConfiguredOutput struct {
+	Body []*prowlarr.IndexerOutput
 }
 
-// ListConfigured returns only configured indexers
-// @Summary List configured indexers
-// @Tags    indexers
-// @Produce json
-// @Success 200 {array} model.IndexerOutput
-// @Router  /v1/indexers/configured [get]
-func (h *Indexers) ListConfigured(c echo.Context) error {
-	ctx := c.Request().Context()
-	indexers, err := h.svc.Indexer.ListConfiguredIndexers(ctx)
+// ListConfigured returns every indexer currently configured in Prowlarr.
+func (h *Indexers) ListConfigured(ctx context.Context, _ *IndexersListConfiguredInput) (*IndexersListConfiguredOutput, error) {
+	out, err := h.svc.Indexer.ListConfiguredIndexers(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list configured indexers"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, indexers)
+	return &IndexersListConfiguredOutput{Body: out}, nil
 }
 
-// ListUnconfigured returns the schema of the indexers
-// @Summary Get schema of indexers
-// @Tags    indexers
-// @Produce json
-// @Success 200 {array} model.IndexerSchema
-// @Router  /v1/indexers/schema [get]
-func (h *Indexers) GetSchema(c echo.Context) error {
-	ctx := c.Request().Context()
-	schema, err := h.svc.Indexer.GetSchema(ctx)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list unconfigured indexers"})
-	}
-	return c.JSON(http.StatusOK, schema)
+// ----- GetSchema -----
+
+// IndexersGetSchemaInput is empty.
+type IndexersGetSchemaInput struct{}
+
+// IndexersGetSchemaOutput wraps Prowlarr's indexer-schema response. The
+// underlying shape is opaque (an array of objects with arbitrary fields);
+// the wire is `[]any` so the spec emits a generic array schema.
+type IndexersGetSchemaOutput struct {
+	Body []any
 }
 
-// Get returns a specific indexer by ID
-// @Summary Get indexer by ID
-// @Tags    indexers
-// @Produce json
-// @Param   id path string true "Indexer ID"
-// @Success 200 {object} model.IndexerOutput
-// @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router  /v1/indexers/{id} [get]
-func (h *Indexers) GetIndexer(c echo.Context) error {
-	indexerID := c.Param("id")
-	if indexerID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "indexer ID required"})
-	}
-
-	indexerIDInt, err := strconv.ParseInt(indexerID, 10, 64)
+// GetSchema returns the indexer-definition schema (the catalog of indexer
+// types Prowlarr knows how to set up).
+func (h *Indexers) GetSchema(ctx context.Context, _ *IndexersGetSchemaInput) (*IndexersGetSchemaOutput, error) {
+	out, err := h.svc.Indexer.GetSchema(ctx)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid indexer ID"})
+		return nil, err
 	}
-
-	ctx := c.Request().Context()
-	indexer, err := h.svc.Indexer.GetIndexer(ctx, indexerIDInt)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get indexer"})
-	}
-
-	return c.JSON(http.StatusOK, indexer)
+	return &IndexersGetSchemaOutput{Body: out}, nil
 }
 
-// SaveConfig saves the configuration for a specific indexer
-// @Summary Save indexer configuration
-// @Tags    indexers
-// @Accept  json
-// @Produce json
-// @Param   payload body model.IndexerInput true "Save indexer"
-// @Success 200 {object} model.IndexerOutput
-// @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router  /v1/indexer [post]
-func (h *Indexers) SaveConfig(c echo.Context) error {
-	ctx := c.Request().Context()
-	var config *prowlarr.IndexerInput
-	if err := c.Bind(&config); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
+// ----- Get -----
 
-	res, err := h.svc.Indexer.SaveIndexerConfig(ctx, config)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save indexer config"})
-	}
-
-	return c.JSON(http.StatusOK, res)
+// IndexersGetInput holds the path id.
+type IndexersGetInput struct {
+	ID int64 `path:"id" doc:"Indexer ID (Prowlarr-assigned)"`
 }
 
-// Delete removes an indexer by ID
-// @Summary Delete indexer
-// @Tags    indexers
-// @Param   id path string true "Indexer ID"
-// @Success 204 {string} string ""
-// @Failure 400 {object} map[string]string
-// @Router  /v1/indexer/{id} [delete]
-func (h *Indexers) Delete(c echo.Context) error {
-	indexerID := c.Param("id")
-	if indexerID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "indexer ID required"})
-	}
-
-	indexerIDInt, err := strconv.ParseInt(indexerID, 10, 64)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid indexer ID"})
-	}
-
-	ctx := c.Request().Context()
-	if err := h.svc.Indexer.DeleteIndexer(ctx, indexerIDInt); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete indexer"})
-	}
-
-	return c.NoContent(http.StatusNoContent)
+// IndexersGetOutput wraps a single indexer.
+type IndexersGetOutput struct {
+	Body *prowlarr.IndexerOutput
 }
 
-// Toggle toggles the enable state of an indexer
-// @Summary Toggle indexer enable state
-// @Tags    indexers
-// @Param   id path string true "Indexer ID"
-// @Success 200 {object} model.IndexerOutput
-// @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router  /v1/indexer/{id}/toggle [put]
-func (h *Indexers) Toggle(c echo.Context) error {
-	indexerID := c.Param("id")
-	if indexerID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "indexer ID required"})
-	}
-
-	indexerIDInt, err := strconv.ParseInt(indexerID, 10, 64)
+// Get fetches a single indexer by Prowlarr id.
+func (h *Indexers) Get(ctx context.Context, input *IndexersGetInput) (*IndexersGetOutput, error) {
+	out, err := h.svc.Indexer.GetIndexer(ctx, input.ID)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid indexer ID"})
+		return nil, err
 	}
-
-	ctx := c.Request().Context()
-	result, err := h.svc.Indexer.ToggleIndexer(ctx, indexerIDInt)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to toggle indexer"})
-	}
-
-	return c.JSON(http.StatusOK, result)
+	return &IndexersGetOutput{Body: out}, nil
 }
 
-// Action performs an action on an indexer
-// @Summary Perform an action on an indexer
-// @Tags    indexers
-// @Param   name path string true "Action name"
-// @Param   payload body model.IndexerDefinition true "Action input"
-// @Success 200 {object} any
-// @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router  /v1/indexer/action/{name} [post]
-func (h *Indexers) Action(c echo.Context) error {
-	actionName := c.Param("name")
-	if actionName == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "action name required"})
-	}
+// ----- Save -----
 
-	var input interface{}
-	if err := c.Bind(&input); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-
-	ctx := c.Request().Context()
-	action, err := h.svc.Indexer.Action(ctx, actionName, input)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to perform action"})
-	}
-
-	return c.JSON(http.StatusOK, action)
+// IndexersSaveInput carries an IndexerInput. ID == 0 inserts a new indexer;
+// non-zero updates the existing one.
+type IndexersSaveInput struct {
+	Body prowlarr.IndexerInput
 }
 
-// TestSaved tests a saved indexer configuration
-// @Summary Test saved indexer
-// @Tags    indexers
-// @Param   id path int64 true "Indexer ID"
-// @Success 200 {object} model.IndexerTestResult
-// @Failure 404 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router  /v1/indexer/{id}/test [post]
-func (h *Indexers) TestSaved(c echo.Context) error {
-	idStr := c.Param("id")
-	indexerID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid indexer ID"})
-	}
+// IndexersSaveOutput is the saved indexer envelope.
+type IndexersSaveOutput struct {
+	Body *prowlarr.IndexerOutput
+}
 
-	ctx, cancel := context.WithTimeout(c.Request().Context(), 15*time.Second)
+// Save creates or updates an indexer. The service decides which based on
+// whether ID is set.
+func (h *Indexers) Save(ctx context.Context, input *IndexersSaveInput) (*IndexersSaveOutput, error) {
+	out, err := h.svc.Indexer.SaveIndexerConfig(ctx, &input.Body)
+	if err != nil {
+		return nil, err
+	}
+	return &IndexersSaveOutput{Body: out}, nil
+}
+
+// ----- Delete -----
+
+// IndexersDeleteInput holds the path id.
+type IndexersDeleteInput struct {
+	ID int64 `path:"id" doc:"Indexer ID"`
+}
+
+// IndexersDeleteOutput is empty (DefaultStatus 204).
+type IndexersDeleteOutput struct{}
+
+// Delete removes an indexer by id.
+func (h *Indexers) Delete(ctx context.Context, input *IndexersDeleteInput) (*IndexersDeleteOutput, error) {
+	if err := h.svc.Indexer.DeleteIndexer(ctx, input.ID); err != nil {
+		return nil, err
+	}
+	return &IndexersDeleteOutput{}, nil
+}
+
+// ----- Toggle -----
+
+// IndexersToggleInput holds the path id.
+type IndexersToggleInput struct {
+	ID int64 `path:"id" doc:"Indexer ID"`
+}
+
+// IndexersToggleOutput is the indexer post-toggle.
+type IndexersToggleOutput struct {
+	Body *prowlarr.IndexerOutput
+}
+
+// Toggle flips an indexer's `enable` flag and returns the result.
+func (h *Indexers) Toggle(ctx context.Context, input *IndexersToggleInput) (*IndexersToggleOutput, error) {
+	out, err := h.svc.Indexer.ToggleIndexer(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &IndexersToggleOutput{Body: out}, nil
+}
+
+// ----- Action -----
+
+// IndexersActionInput is the action-name path param + a free-form body.
+// Pre-migration the body was bound as `interface{}`; we keep that here so
+// the FE can pass arbitrary action payloads through to Prowlarr unmodified.
+type IndexersActionInput struct {
+	Name string `path:"name" doc:"Prowlarr action name"`
+	Body any
+}
+
+// IndexersActionOutput wraps Prowlarr's opaque action response.
+type IndexersActionOutput struct {
+	Body any
+}
+
+// Action proxies an arbitrary Prowlarr indexer action call.
+func (h *Indexers) Action(ctx context.Context, input *IndexersActionInput) (*IndexersActionOutput, error) {
+	out, err := h.svc.Indexer.Action(ctx, input.Name, input.Body)
+	if err != nil {
+		return nil, err
+	}
+	return &IndexersActionOutput{Body: out}, nil
+}
+
+// ----- TestSaved -----
+
+// IndexersTestSavedInput holds the path id.
+type IndexersTestSavedInput struct {
+	ID int64 `path:"id" doc:"Saved indexer ID"`
+}
+
+// IndexersTestSavedOutput wraps the test result.
+type IndexersTestSavedOutput struct {
+	Body *model.IndexerTestResult
+}
+
+// TestSaved tests a saved indexer config. The service applies a 15-second
+// timeout context around the Prowlarr call.
+func (h *Indexers) TestSaved(ctx context.Context, input *IndexersTestSavedInput) (*IndexersTestSavedOutput, error) {
+	tctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-
-	result, err := h.svc.Indexer.TestIndexerByID(ctx, indexerID)
+	out, err := h.svc.Indexer.TestIndexerByID(tctx, input.ID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return nil, err
 	}
-
-	return c.JSON(http.StatusOK, result)
+	return &IndexersTestSavedOutput{Body: out}, nil
 }
 
-// TestUnsaved tests an unsaved indexer configuration
-// @Summary Test unsaved indexer configuration
-// @Tags    indexers
-// @Accept  json
-// @Param   config body model.IndexerInput true "Indexer config"
-// @Success 200 {object} model.IndexerTestResult
-// @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router  /v1/indexer/test [post]
-func (h *Indexers) TestUnsaved(c echo.Context) error {
-	var config prowlarr.IndexerInput
-	if err := c.Bind(&config); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-	}
+// ----- TestUnsaved -----
 
-	ctx, cancel := context.WithTimeout(c.Request().Context(), 15*time.Second)
-	defer cancel()
-
-	result, err := h.svc.Indexer.TestIndexer(ctx, &config)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-
-	return c.JSON(http.StatusOK, result)
+// IndexersTestUnsavedInput carries an unsaved IndexerInput.
+type IndexersTestUnsavedInput struct {
+	Body prowlarr.IndexerInput
 }
 
-// TestAll tests all configured indexers
-// @Summary Test all indexers
-// @Tags    indexers
-// @Success 200 {array} model.IndexerBatchTestResult
-// @Failure 500 {object} map[string]string
-// @Router  /v1/indexers/testall [post]
-func (h *Indexers) TestAll(c echo.Context) error {
-	ctx, cancel := context.WithTimeout(c.Request().Context(), 45*time.Second)
+// IndexersTestUnsavedOutput wraps the test result.
+type IndexersTestUnsavedOutput struct {
+	Body *model.IndexerTestResult
+}
+
+// TestUnsaved tests an unsaved indexer config. Used by the FE config-form
+// to validate a config before save.
+func (h *Indexers) TestUnsaved(ctx context.Context, input *IndexersTestUnsavedInput) (*IndexersTestUnsavedOutput, error) {
+	tctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-
-	results, err := h.svc.Indexer.TestAllIndexers(ctx)
+	out, err := h.svc.Indexer.TestIndexer(tctx, &input.Body)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return nil, err
 	}
+	return &IndexersTestUnsavedOutput{Body: out}, nil
+}
 
-	return c.JSON(http.StatusOK, results)
+// ----- TestAll -----
+
+// IndexersTestAllInput is empty.
+type IndexersTestAllInput struct{}
+
+// IndexersTestAllOutput wraps the batch test results.
+type IndexersTestAllOutput struct {
+	Body []*model.IndexerBatchTestResult
+}
+
+// TestAll tests every configured indexer. The service applies a 45-second
+// timeout context around the Prowlarr testall call.
+func (h *Indexers) TestAll(ctx context.Context, _ *IndexersTestAllInput) (*IndexersTestAllOutput, error) {
+	tctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	out, err := h.svc.Indexer.TestAllIndexers(tctx)
+	if err != nil {
+		return nil, err
+	}
+	return &IndexersTestAllOutput{Body: out}, nil
+}
+
+// ----- Register -----
+
+// RegisterHumachi wires every indexers operation onto the humachi API. All
+// operations that touch Prowlarr enumerate 502 (errsUpstream) so the FE can
+// render an "indexer service unreachable" affordance per-call.
+func (h *Indexers) RegisterHumachi(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "indexers-list-configured",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/indexers/configured",
+		Summary:     "List configured indexers",
+		Tags:        []string{"indexers"},
+		Errors:      errsUpstream,
+	}, h.ListConfigured)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "indexers-get-schema",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/indexers/schema",
+		Summary:     "Get indexer schema",
+		Description: "Returns the catalog of indexer definitions Prowlarr knows how to configure.",
+		Tags:        []string{"indexers"},
+		Errors:      errsUpstream,
+	}, h.GetSchema)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "indexers-get",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/indexer/{id}",
+		Summary:     "Get indexer by ID",
+		Tags:        []string{"indexers"},
+		Errors:      errs(errsRead, errsUpstream),
+	}, h.Get)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "indexers-save",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/indexer",
+		Summary:     "Create or update indexer",
+		Description: "Saves an indexer configuration. ID == 0 in the body inserts a new indexer; non-zero updates the existing one.",
+		Tags:        []string{"indexers"},
+		Errors:      errs(errsWrite, errsUpstream),
+	}, h.Save)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "indexers-delete",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/indexer/{id}",
+		Summary:       "Delete indexer",
+		Tags:          []string{"indexers"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errs(errsDelete, errsUpstream),
+	}, h.Delete)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "indexers-toggle",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/indexer/{id}/toggle",
+		Summary:     "Toggle indexer enable state",
+		Tags:        []string{"indexers"},
+		Errors:      errs(errsRead, errsUpstream),
+	}, h.Toggle)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "indexers-action",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/indexer/action/{name}",
+		Summary:     "Perform an indexer action",
+		Description: "Proxies an arbitrary Prowlarr indexer-action call. Body and response shapes are opaque.",
+		Tags:        []string{"indexers"},
+		Errors:      errs(errsWrite, errsUpstream),
+	}, h.Action)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "indexers-test-saved",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/indexer/{id}/test",
+		Summary:     "Test saved indexer",
+		Tags:        []string{"indexers"},
+		Errors:      errs(errsRead, errsUpstream),
+	}, h.TestSaved)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "indexers-test-unsaved",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/indexer/test",
+		Summary:     "Test unsaved indexer configuration",
+		Tags:        []string{"indexers"},
+		Errors:      errs(errsWrite, errsUpstream),
+	}, h.TestUnsaved)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "indexers-test-all",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/indexers/testall",
+		Summary:     "Test all configured indexers",
+		Tags:        []string{"indexers"},
+		Errors:      errsUpstream,
+	}, h.TestAll)
 }

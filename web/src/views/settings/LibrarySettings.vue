@@ -4,11 +4,11 @@ import { useQuery, useMutation } from '@tanstack/vue-query'
 import { Loader2, Plus, FolderOpen } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
-  getV1LibrariesOptions,
-  deleteV1LibrariesByIdMutation,
-  postV1LibrariesByIdScanMutation,
+  librariesListOptions,
+  librariesDeleteMutation,
+  librariesScanMutation,
 } from '@/client/@tanstack/vue-query.gen'
-import { type HandlersLibrarySwagger } from '@/client/types.gen'
+import { type Library } from '@/client/types.gen'
 import DataTable from '@/components/tables/DataTable.vue'
 import {
   libraryColumns,
@@ -23,13 +23,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import LibraryDialog from '@/components/modals/LibraryDialog.vue'
 
 // Data queries
-const { data: libraries, isLoading, refetch } = useQuery(getV1LibrariesOptions())
+const { data: libraries, isLoading, refetch } = useQuery(librariesListOptions())
 const modal = useModal()
 const events = useEventsStore()
 
 // Mutations
-const deleteLibraryMutation = useMutation(deleteV1LibrariesByIdMutation())
-const scanLibraryMutation = useMutation(postV1LibrariesByIdScanMutation())
+const deleteLibraryMutation = useMutation(librariesDeleteMutation())
+const scanLibraryMutation = useMutation(librariesScanMutation())
 
 // State
 const libraryError = ref<string | null>(null)
@@ -102,7 +102,7 @@ const handleAddLibrary = () => {
   })
 }
 
-const handleEditLibrary = (library: HandlersLibrarySwagger) => {
+const handleEditLibrary = (library: Library) => {
   modal.open(LibraryDialog, {
     props: {
       library,
@@ -113,7 +113,7 @@ const handleEditLibrary = (library: HandlersLibrarySwagger) => {
   })
 }
 
-const handleDeleteLibrary = async (library: HandlersLibrarySwagger) => {
+const handleDeleteLibrary = async (library: Library) => {
   if (!library.id) return
   const confirmed = await modal.confirm({
     title: 'Delete Library',
@@ -129,7 +129,7 @@ const handleDeleteLibrary = async (library: HandlersLibrarySwagger) => {
   }
 }
 
-const handleScanLibrary = async (library: HandlersLibrarySwagger) => {
+const handleScanLibrary = async (library: Library) => {
   if (!library.id) return
   try {
     await scanLibraryMutation.mutateAsync({ path: { id: library.id } })

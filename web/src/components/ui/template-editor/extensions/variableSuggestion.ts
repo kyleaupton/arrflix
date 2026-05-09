@@ -49,13 +49,13 @@ export function variableSuggestion(
           popup = tippy(document.body, {
             getReferenceClientRect: () => rect,
             appendTo: () => document.body,
-            content: component.element,
+            content: component.element as Element,
             showOnCreate: true,
             interactive: true,
             trigger: 'manual',
             placement: 'bottom-start',
             maxWidth: 'none',
-          })
+          }) as unknown as TippyInstance[]
         },
 
         onUpdate(props: ExtendedSuggestionProps) {
@@ -82,8 +82,8 @@ export function variableSuggestion(
             return true
           }
 
-          // @ts-expect-error - onKeyDown is defined in the component
-          return component.ref?.onKeyDown?.(props)
+          const ref = component.ref as { onKeyDown?: (p: unknown) => boolean } | null
+          return ref?.onKeyDown?.(props) ?? false
         },
 
         onExit() {

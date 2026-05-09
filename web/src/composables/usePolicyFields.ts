@@ -1,10 +1,10 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
-import { getV1PoliciesFieldsOptions } from '@/client/@tanstack/vue-query.gen'
-import type { ModelFieldDefinition } from '@/client/types.gen'
+import { policiesGetFieldsOptions } from '@/client/@tanstack/vue-query.gen'
+import type { FieldDefinition } from '@/client/types.gen'
 
 export function usePolicyFields() {
-  const { data: fields, isLoading, error } = useQuery(getV1PoliciesFieldsOptions())
+  const { data: fields, isLoading, error } = useQuery(policiesGetFieldsOptions())
 
   // Group fields by category (candidate vs quality)
   const candidateFields = computed(() => {
@@ -16,12 +16,12 @@ export function usePolicyFields() {
   })
 
   // Get field definition by path
-  const getFieldByPath = (path: string): ModelFieldDefinition | undefined => {
+  const getFieldByPath = (path: string): FieldDefinition | undefined => {
     return fields.value?.find((f) => f.path === path)
   }
 
   // Get valid operators for a field
-  const getValidOperators = (field: ModelFieldDefinition | undefined) => {
+  const getValidOperators = (field: FieldDefinition | undefined) => {
     if (!field) return []
     return field.operators || []
   }

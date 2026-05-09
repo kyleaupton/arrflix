@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import { Search } from 'lucide-vue-next'
-import { type ModelIndexerDefinition } from '@/client/types.gen'
+import { type IndexerOutput } from '@/client/types.gen'
 import DataTable from '@/components/tables/DataTable.vue'
 import { availableIndexerColumns } from '@/components/tables/configs/availableIndexerTableConfig'
-import { getV1IndexersSchemaOptions } from '@/client/@tanstack/vue-query.gen'
+import { indexersGetSchemaOptions } from '@/client/@tanstack/vue-query.gen'
 
 defineProps<{
-  selectedIndexer: ModelIndexerDefinition | null
+  selectedIndexer: IndexerOutput | null
 }>()
 
 const emit = defineEmits<{
-  'indexer-selected': [indexer: ModelIndexerDefinition | null]
+  'indexer-selected': [indexer: IndexerOutput | null]
 }>()
 
-const queryOptions = getV1IndexersSchemaOptions()
+const queryOptions = indexersGetSchemaOptions()
 </script>
 
 <template>

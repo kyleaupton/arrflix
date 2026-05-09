@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -21,33 +21,46 @@ func NewLibrariesService(r *repo.Repository, l *logger.Logger) *LibrariesService
 	return &LibrariesService{repo: r, log: l}
 }
 
-func (s *LibrariesService) List(ctx context.Context) ([]dbgen.Library, error) {
+func (s *LibrariesService) List(ctx context.Context) ([]model.Library, error) {
 	return s.repo.ListLibraries(ctx)
 }
 
-func (s *LibrariesService) Get(ctx context.Context, id pgtype.UUID) (dbgen.Library, error) {
+func (s *LibrariesService) Get(ctx context.Context, id uuid.UUID) (model.Library, error) {
 	return s.repo.GetLibrary(ctx, id)
 }
 
-func (s *LibrariesService) GetDefault(ctx context.Context, typ string) (dbgen.Library, error) {
+func (s *LibrariesService) GetDefault(ctx context.Context, typ string) (model.Library, error) {
 	return s.repo.GetDefaultLibrary(ctx, typ)
 }
 
-func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath string, enabled bool, isDefault bool) (dbgen.Library, error) {
+func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath string, enabled bool, isDefault bool) (model.Library, error) {
 	if err := s.validateLibraryInput(name, typ, rootPath); err != nil {
-		return dbgen.Library{}, err.Op("LibrariesService.Create")
+		return model.Library{}, err.Op("LibrariesService.Create")
 	}
-	return s.repo.CreateLibrary(ctx, name, typ, rootPath, enabled, isDefault)
+	return s.repo.CreateLibrary(ctx, repo.CreateLibraryParams{
+		Name:      name,
+		Type:      typ,
+		RootPath:  rootPath,
+		Enabled:   enabled,
+		IsDefault: isDefault,
+	})
 }
 
-func (s *LibrariesService) Update(ctx context.Context, id pgtype.UUID, name, typ, rootPath string, enabled bool, isDefault bool) (dbgen.Library, error) {
+func (s *LibrariesService) Update(ctx context.Context, id uuid.UUID, name, typ, rootPath string, enabled bool, isDefault bool) (model.Library, error) {
 	if err := s.validateLibraryInput(name, typ, rootPath); err != nil {
-		return dbgen.Library{}, err.Op("LibrariesService.Update")
+		return model.Library{}, err.Op("LibrariesService.Update")
 	}
-	return s.repo.UpdateLibrary(ctx, id, name, typ, rootPath, enabled, isDefault)
+	return s.repo.UpdateLibrary(ctx, repo.UpdateLibraryParams{
+		ID:        id,
+		Name:      name,
+		Type:      typ,
+		RootPath:  rootPath,
+		Enabled:   enabled,
+		IsDefault: isDefault,
+	})
 }
 
-func (s *LibrariesService) Delete(ctx context.Context, id pgtype.UUID) error {
+func (s *LibrariesService) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.DeleteLibrary(ctx, id)
 }
 

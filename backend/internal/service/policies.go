@@ -3,8 +3,7 @@ package service
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -24,54 +23,48 @@ func NewPoliciesService(r *repo.Repository, logg *logger.Logger) *PoliciesServic
 	}
 }
 
-func (s *PoliciesService) List(ctx context.Context) ([]dbgen.Policy, error) {
+func (s *PoliciesService) List(ctx context.Context) ([]model.Policy, error) {
 	return s.repo.ListPolicies(ctx)
 }
 
-// ListFull returns all policies with their rules and actions assembled.
-func (s *PoliciesService) ListFull(ctx context.Context) ([]dbgen.Policy, []dbgen.Rule, []dbgen.Action, error) {
-	policies, err := s.repo.ListPolicies(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	rules, err := s.repo.ListAllRules(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	actions, err := s.repo.ListAllActions(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return policies, rules, actions, nil
-}
-
-func (s *PoliciesService) Get(ctx context.Context, id pgtype.UUID) (dbgen.Policy, error) {
+func (s *PoliciesService) Get(ctx context.Context, id uuid.UUID) (model.Policy, error) {
 	return s.repo.GetPolicy(ctx, id)
 }
 
-func (s *PoliciesService) Create(ctx context.Context, name string, description *string, enabled bool, priority int32) (dbgen.Policy, error) {
+func (s *PoliciesService) Create(ctx context.Context, name string, description *string, enabled bool, priority int32) (model.Policy, error) {
 	if name == "" {
-		return dbgen.Policy{}, apperrors.Validation("invalid policy",
+		return model.Policy{}, apperrors.Validation("invalid policy",
 			apperrors.Field("body.name", "required"),
 		).Op("PoliciesService.Create")
 	}
-	return s.repo.CreatePolicy(ctx, name, description, enabled, priority)
+	return s.repo.CreatePolicy(ctx, repo.CreatePolicyParams{
+		Name:        name,
+		Description: description,
+		Enabled:     enabled,
+		Priority:    priority,
+	})
 }
 
-func (s *PoliciesService) Update(ctx context.Context, id pgtype.UUID, name string, description *string, enabled bool, priority int32) (dbgen.Policy, error) {
+func (s *PoliciesService) Update(ctx context.Context, id uuid.UUID, name string, description *string, enabled bool, priority int32) (model.Policy, error) {
 	if name == "" {
-		return dbgen.Policy{}, apperrors.Validation("invalid policy",
+		return model.Policy{}, apperrors.Validation("invalid policy",
 			apperrors.Field("body.name", "required"),
 		).Op("PoliciesService.Update")
 	}
-	return s.repo.UpdatePolicy(ctx, id, name, description, enabled, priority)
+	return s.repo.UpdatePolicy(ctx, repo.UpdatePolicyParams{
+		ID:          id,
+		Name:        name,
+		Description: description,
+		Enabled:     enabled,
+		Priority:    priority,
+	})
 }
 
-func (s *PoliciesService) Delete(ctx context.Context, id pgtype.UUID) error {
+func (s *PoliciesService) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.DeletePolicy(ctx, id)
 }
 
-func (s *PoliciesService) GetRule(ctx context.Context, policyID pgtype.UUID) (dbgen.Rule, error) {
+func (s *PoliciesService) GetRule(ctx context.Context, policyID uuid.UUID) (model.Rule, error) {
 	return s.repo.GetRuleForPolicy(ctx, policyID)
 }
 
@@ -81,35 +74,45 @@ var validRuleOperators = map[string]bool{
 	"contains": true, "in": true, "not in": true, "and": true, "or": true, "not": true,
 }
 
-func (s *PoliciesService) CreateRule(ctx context.Context, policyID pgtype.UUID, leftOperand, operator, rightOperand string) (dbgen.Rule, error) {
+func (s *PoliciesService) CreateRule(ctx context.Context, policyID uuid.UUID, leftOperand, operator, rightOperand string) (model.Rule, error) {
 	if !validRuleOperators[operator] {
-		return dbgen.Rule{}, apperrors.Validation("invalid rule",
+		return model.Rule{}, apperrors.Validation("invalid rule",
 			apperrors.Field("body.operator", "must be one of: ==, !=, >, >=, <, <=, contains, in, not in, and, or, not"),
 		).Op("PoliciesService.CreateRule")
 	}
 
-	return s.repo.CreateRule(ctx, policyID, leftOperand, operator, rightOperand)
+	return s.repo.CreateRule(ctx, repo.CreateRuleParams{
+		PolicyID:     policyID,
+		LeftOperand:  leftOperand,
+		Operator:     operator,
+		RightOperand: rightOperand,
+	})
 }
 
-func (s *PoliciesService) UpdateRule(ctx context.Context, id pgtype.UUID, leftOperand, operator, rightOperand string) (dbgen.Rule, error) {
+func (s *PoliciesService) UpdateRule(ctx context.Context, id uuid.UUID, leftOperand, operator, rightOperand string) (model.Rule, error) {
 	if !validRuleOperators[operator] {
-		return dbgen.Rule{}, apperrors.Validation("invalid rule",
+		return model.Rule{}, apperrors.Validation("invalid rule",
 			apperrors.Field("body.operator", "must be one of: ==, !=, >, >=, <, <=, contains, in, not in, and, or, not"),
 		).Op("PoliciesService.UpdateRule")
 	}
 
-	return s.repo.UpdateRule(ctx, id, leftOperand, operator, rightOperand)
+	return s.repo.UpdateRule(ctx, repo.UpdateRuleParams{
+		ID:           id,
+		LeftOperand:  leftOperand,
+		Operator:     operator,
+		RightOperand: rightOperand,
+	})
 }
 
-func (s *PoliciesService) DeleteRule(ctx context.Context, id pgtype.UUID) error {
+func (s *PoliciesService) DeleteRule(ctx context.Context, id uuid.UUID) error {
 	return s.repo.DeleteRule(ctx, id)
 }
 
-func (s *PoliciesService) ListActions(ctx context.Context, policyID pgtype.UUID) ([]dbgen.Action, error) {
+func (s *PoliciesService) ListActions(ctx context.Context, policyID uuid.UUID) ([]model.Action, error) {
 	return s.repo.ListActionsForPolicy(ctx, policyID)
 }
 
-func (s *PoliciesService) GetAction(ctx context.Context, id pgtype.UUID) (dbgen.Action, error) {
+func (s *PoliciesService) GetAction(ctx context.Context, id uuid.UUID) (model.Action, error) {
 	return s.repo.GetAction(ctx, id)
 }
 
@@ -136,23 +139,33 @@ func validateActionInput(actionType, value string) *apperrors.Error {
 	return nil
 }
 
-func (s *PoliciesService) CreateAction(ctx context.Context, policyID pgtype.UUID, actionType, value string, order int32) (dbgen.Action, error) {
+func (s *PoliciesService) CreateAction(ctx context.Context, policyID uuid.UUID, actionType, value string, order int32) (model.Action, error) {
 	if err := validateActionInput(actionType, value); err != nil {
-		return dbgen.Action{}, err.Op("PoliciesService.CreateAction")
+		return model.Action{}, err.Op("PoliciesService.CreateAction")
 	}
 
-	return s.repo.CreateAction(ctx, policyID, actionType, value, order)
+	return s.repo.CreateAction(ctx, repo.CreateActionParams{
+		PolicyID: policyID,
+		Type:     actionType,
+		Value:    value,
+		Order:    order,
+	})
 }
 
-func (s *PoliciesService) UpdateAction(ctx context.Context, id pgtype.UUID, actionType, value string, order int32) (dbgen.Action, error) {
+func (s *PoliciesService) UpdateAction(ctx context.Context, id uuid.UUID, actionType, value string, order int32) (model.Action, error) {
 	if err := validateActionInput(actionType, value); err != nil {
-		return dbgen.Action{}, err.Op("PoliciesService.UpdateAction")
+		return model.Action{}, err.Op("PoliciesService.UpdateAction")
 	}
 
-	return s.repo.UpdateAction(ctx, id, actionType, value, order)
+	return s.repo.UpdateAction(ctx, repo.UpdateActionParams{
+		ID:    id,
+		Type:  actionType,
+		Value: value,
+		Order: order,
+	})
 }
 
-func (s *PoliciesService) DeleteAction(ctx context.Context, id pgtype.UUID) error {
+func (s *PoliciesService) DeleteAction(ctx context.Context, id uuid.UUID) error {
 	return s.repo.DeleteAction(ctx, id)
 }
 

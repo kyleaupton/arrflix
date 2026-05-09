@@ -2,29 +2,27 @@
 import { ref, computed, watch } from 'vue'
 import { useMutation } from '@tanstack/vue-query'
 import {
-  postV1PoliciesMutation,
-  putV1PoliciesByIdMutation,
-  deleteV1PoliciesByIdMutation,
-  postV1PoliciesByIdRuleMutation,
-  putV1PoliciesByIdRuleMutation,
-  deleteV1PoliciesByIdRuleMutation,
-  postV1PoliciesByIdActionsMutation,
-  deleteV1PoliciesByIdActionsByActionIdMutation,
+  policiesCreateMutation,
+  policiesUpdateMutation,
+  policiesDeleteMutation,
+  policiesCreateRuleMutation,
+  policiesUpdateRuleMutation,
+  policiesDeleteRuleMutation,
+  policiesCreateActionMutation,
+  policiesDeleteActionMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import type {
-  HandlersFullPolicy,
-  ModelFieldDefinition,
-  DbgenDownloader,
-  HandlersLibrarySwagger,
-  HandlersNameTemplateSwagger,
-  DbgenRule,
-  DbgenAction,
+  Policy,
+  FieldDefinition,
+  Downloader,
+  Library,
+  NameTemplate,
 } from '@/client/types.gen'
 import { usePolicyFields } from '@/composables/usePolicyFields'
 import { buildPolicySummary } from '@/composables/usePolicySummary'
 import { useModal } from '@/composables/useModal'
 import policyOptions from '@/config/policyOptions.json'
-import { getV1IndexersConfiguredOptions } from '@/client/@tanstack/vue-query.gen'
+import { indexersListConfiguredOptions } from '@/client/@tanstack/vue-query.gen'
 import { useQuery } from '@tanstack/vue-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,11 +39,11 @@ import {
 import { ChevronDown, ChevronUp, Plus, Trash2, X } from 'lucide-vue-next'
 
 interface Props {
-  policy: HandlersFullPolicy | null
-  fields: ModelFieldDefinition[]
-  libraries: HandlersLibrarySwagger[]
-  nameTemplates: HandlersNameTemplateSwagger[]
-  downloaders: DbgenDownloader[]
+  policy: Policy | null
+  fields: FieldDefinition[]
+  libraries: Library[]
+  nameTemplates: NameTemplate[]
+  downloaders: Downloader[]
   isNew?: boolean
 }
 
@@ -61,17 +59,17 @@ const emit = defineEmits<{
 
 const modal = useModal()
 const { getFieldByPath, getValidOperators } = usePolicyFields()
-const { data: indexers } = useQuery(getV1IndexersConfiguredOptions())
+const { data: indexers } = useQuery(indexersListConfiguredOptions())
 
 // Mutations
-const createPolicyMutation = useMutation(postV1PoliciesMutation())
-const updatePolicyMutation = useMutation(putV1PoliciesByIdMutation())
-const deletePolicyMutation = useMutation(deleteV1PoliciesByIdMutation())
-const createRuleMutation = useMutation(postV1PoliciesByIdRuleMutation())
-const updateRuleMutation = useMutation(putV1PoliciesByIdRuleMutation())
-const deleteRuleMutation = useMutation(deleteV1PoliciesByIdRuleMutation())
-const createActionMutation = useMutation(postV1PoliciesByIdActionsMutation())
-const deleteActionMutation = useMutation(deleteV1PoliciesByIdActionsByActionIdMutation())
+const createPolicyMutation = useMutation(policiesCreateMutation())
+const updatePolicyMutation = useMutation(policiesUpdateMutation())
+const deletePolicyMutation = useMutation(policiesDeleteMutation())
+const createRuleMutation = useMutation(policiesCreateRuleMutation())
+const updateRuleMutation = useMutation(policiesUpdateRuleMutation())
+const deleteRuleMutation = useMutation(policiesDeleteRuleMutation())
+const createActionMutation = useMutation(policiesCreateActionMutation())
+const deleteActionMutation = useMutation(policiesDeleteActionMutation())
 
 // State
 const isExpanded = ref(props.isNew)
@@ -119,11 +117,11 @@ function initForm() {
       enabled: props.policy.enabled ?? true,
       priority: props.policy.priority || 0,
     }
-    if (props.policy.rule) {
+    if (props.policy.rule && props.policy.rule.id) {
       ruleForm.value = {
-        left_operand: props.policy.rule.left_operand || '',
+        left_operand: props.policy.rule.leftOperand || '',
         operator: props.policy.rule.operator || '',
-        right_operand: props.policy.rule.right_operand || '',
+        right_operand: props.policy.rule.rightOperand || '',
         exists: true,
         originalId: props.policy.rule.id,
       }
@@ -329,18 +327,18 @@ const handleSave = async () => {
         await updateRuleMutation.mutateAsync({
           path: { id: policyId },
           body: {
-            left_operand: ruleForm.value.left_operand,
+            leftOperand: ruleForm.value.left_operand,
             operator: ruleForm.value.operator,
-            right_operand: ruleForm.value.right_operand,
+            rightOperand: ruleForm.value.right_operand,
           },
         })
       } else {
         await createRuleMutation.mutateAsync({
           path: { id: policyId },
           body: {
-            left_operand: ruleForm.value.left_operand,
+            leftOperand: ruleForm.value.left_operand,
             operator: ruleForm.value.operator,
-            right_operand: ruleForm.value.right_operand,
+            rightOperand: ruleForm.value.right_operand,
           },
         })
       }

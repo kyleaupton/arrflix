@@ -46,10 +46,10 @@ import { useMutation } from '@tanstack/vue-query'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
-  postV1MovieByIdCandidateDownloadMutation,
-  postV1SeriesByIdCandidateDownloadMutation,
+  downloadCandidatesDownloadMovieMutation,
+  downloadCandidatesDownloadSeriesMutation,
 } from '@/client/@tanstack/vue-query.gen'
-import { type ModelDownloadCandidate } from '@/client/types.gen'
+import { type DownloadCandidate } from '@/client/types.gen'
 import DownloadCandidateList from './DownloadCandidatesList.vue'
 import DownloadCandidatePreview from './DownloadCandidatePreview.vue'
 
@@ -64,9 +64,9 @@ const emit = defineEmits<{
   (e: 'download-enqueued'): void
 }>()
 
-const selectedCandidate = ref<ModelDownloadCandidate | null>(null)
+const selectedCandidate = ref<DownloadCandidate | null>(null)
 
-const handlePreview = (candidate: ModelDownloadCandidate) => {
+const handlePreview = (candidate: DownloadCandidate) => {
   selectedCandidate.value = candidate
 }
 
@@ -76,25 +76,25 @@ const handleCancel = () => {
 
 // Enqueue movie mutation
 const enqueueMovieMutation = useMutation({
-  ...postV1MovieByIdCandidateDownloadMutation(),
+  ...downloadCandidatesDownloadMovieMutation(),
   onSuccess: () => {
     toast.success('Download enqueued successfully')
     emit('download-enqueued')
   },
   onError: (error) => {
-    toast.error(error?.message || 'Failed to enqueue download candidate')
+    toast.error(error?.detail || error?.title || 'Failed to enqueue download candidate')
   },
 })
 
 // Enqueue series mutation
 const enqueueSeriesMutation = useMutation({
-  ...postV1SeriesByIdCandidateDownloadMutation(),
+  ...downloadCandidatesDownloadSeriesMutation(),
   onSuccess: () => {
     toast.success('Download enqueued successfully')
     emit('download-enqueued')
   },
   onError: (error) => {
-    toast.error(error?.message || 'Failed to enqueue download candidate')
+    toast.error(error?.detail || error?.title || 'Failed to enqueue download candidate')
   },
 })
 

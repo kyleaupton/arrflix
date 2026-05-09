@@ -1,181 +1,211 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/service"
-	"github.com/labstack/echo/v4"
 )
+
+// ----- Handler -----
 
 type NameTemplates struct{ svc *service.Services }
 
 func NewNameTemplates(s *service.Services) *NameTemplates { return &NameTemplates{svc: s} }
 
-func (h *NameTemplates) RegisterProtected(v1 *echo.Group) {
-	v1.GET("/name-templates", h.List)
-	v1.POST("/name-templates", h.Create)
-	v1.GET("/name-templates/:id", h.Get)
-	v1.PUT("/name-templates/:id", h.Update)
-	v1.DELETE("/name-templates/:id", h.Delete)
-	v1.GET("/name-templates/default/:type", h.GetDefault)
+// ----- Shared body shape -----
+
+type nameTemplateWriteBody struct {
+	Name                 string  `json:"name" required:"true" minLength:"1" doc:"Display name"`
+	Type                 string  `json:"type" required:"true" enum:"movie,series" doc:"Template type"`
+	Template             string  `json:"template" required:"true" minLength:"1" doc:"File-name template"`
+	SeriesShowTemplate   *string `json:"seriesShowTemplate,omitempty" doc:"Optional series show-folder template"`
+	SeriesSeasonTemplate *string `json:"seriesSeasonTemplate,omitempty" doc:"Optional series season-folder template"`
+	MovieDirTemplate     *string `json:"movieDirTemplate,omitempty" doc:"Optional movie-folder template"`
+	Default              bool    `json:"default" doc:"Whether this is the default template for its type"`
 }
 
-// nameTemplateSwagger is a minimal type used only for Swagger schemas.
-// It mirrors fields of dbgen.NameTemplate without importing it here.
-type nameTemplateSwagger struct {
-	ID                   string  `json:"id"`
-	Name                 string  `json:"name"`
-	Type                 string  `json:"type"`
-	Template             string  `json:"template"`
-	SeriesShowTemplate   *string `json:"series_show_template"`
-	SeriesSeasonTemplate *string `json:"series_season_template"`
-	MovieDirTemplate     *string `json:"movie_dir_template"`
-	Default              bool    `json:"default"`
-	CreatedAt            string  `json:"created_at"`
-	UpdatedAt            string  `json:"updated_at"`
+// ----- List -----
+
+type NameTemplatesListInput struct{}
+
+type NameTemplatesListOutput struct {
+	Body []model.NameTemplate
 }
 
-// NameTemplateCreateRequest payload
-type NameTemplateCreateRequest struct {
-	Name                 string  `json:"name"`
-	Type                 string  `json:"type"`
-	Template             string  `json:"template"`
-	SeriesShowTemplate   *string `json:"series_show_template"`
-	SeriesSeasonTemplate *string `json:"series_season_template"`
-	MovieDirTemplate     *string `json:"movie_dir_template"`
-	Default              bool    `json:"default"`
-}
-
-// NameTemplateUpdateRequest payload
-type NameTemplateUpdateRequest struct {
-	Name                 string  `json:"name"`
-	Type                 string  `json:"type"`
-	Template             string  `json:"template"`
-	SeriesShowTemplate   *string `json:"series_show_template"`
-	SeriesSeasonTemplate *string `json:"series_season_template"`
-	MovieDirTemplate     *string `json:"movie_dir_template"`
-	Default              bool    `json:"default"`
-}
-
-// List name templates
-// @Summary List name templates
-// @Tags    name-templates
-// @Produce json
-// @Success 200 {array} handlers.nameTemplateSwagger
-// @Router  /v1/name-templates [get]
-func (h *NameTemplates) List(c echo.Context) error {
-	ctx := c.Request().Context()
+func (h *NameTemplates) List(ctx context.Context, _ *NameTemplatesListInput) (*NameTemplatesListOutput, error) {
 	out, err := h.svc.NameTemplates.List(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, out)
+	return &NameTemplatesListOutput{Body: out}, nil
 }
 
-// Create name template
-// @Summary Create name template
-// @Tags    name-templates
-// @Accept  json
-// @Produce json
-// @Param   payload body handlers.NameTemplateCreateRequest true "Create name template"
-// @Success 201 {object} handlers.nameTemplateSwagger
-// @Failure 400 {object} map[string]string
-// @Router  /v1/name-templates [post]
-func (h *NameTemplates) Create(c echo.Context) error {
-	var req NameTemplateCreateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	ctx := c.Request().Context()
-	template, err := h.svc.NameTemplates.Create(ctx, req.Name, req.Type, req.Template, req.SeriesShowTemplate, req.SeriesSeasonTemplate, req.MovieDirTemplate, req.Default)
+// ----- Get -----
+
+type NameTemplatesGetInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Name template ID"`
+}
+
+type NameTemplatesGetOutput struct {
+	Body model.NameTemplate
+}
+
+func (h *NameTemplates) Get(ctx context.Context, input *NameTemplatesGetInput) (*NameTemplatesGetOutput, error) {
+	out, err := h.svc.NameTemplates.Get(ctx, input.ID)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, err
 	}
-	return c.JSON(http.StatusCreated, template)
+	return &NameTemplatesGetOutput{Body: out}, nil
 }
 
-// Get name template
-// @Summary Get name template
-// @Tags    name-templates
-// @Produce json
-// @Success 200 {object} handlers.nameTemplateSwagger
-// @Router  /v1/name-templates/{id} [get]
-func (h *NameTemplates) Get(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	template, err := h.svc.NameTemplates.Get(ctx, id)
+// ----- Create -----
+
+type NameTemplatesCreateInput struct {
+	Body nameTemplateWriteBody
+}
+
+type NameTemplatesCreateOutput struct {
+	Body model.NameTemplate
+}
+
+func (h *NameTemplates) Create(ctx context.Context, input *NameTemplatesCreateInput) (*NameTemplatesCreateOutput, error) {
+	out, err := h.svc.NameTemplates.Create(
+		ctx,
+		input.Body.Name,
+		input.Body.Type,
+		input.Body.Template,
+		input.Body.SeriesShowTemplate,
+		input.Body.SeriesSeasonTemplate,
+		input.Body.MovieDirTemplate,
+		input.Body.Default,
+	)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, template)
+	return &NameTemplatesCreateOutput{Body: out}, nil
 }
 
-// Update name template
-// @Summary Update name template
-// @Tags    name-templates
-// @Accept  json
-// @Produce json
-// @Param   id path string true "Name Template ID"
-// @Param   payload body handlers.NameTemplateUpdateRequest true "Update name template"
-// @Success 200 {object} handlers.nameTemplateSwagger
-// @Failure 400 {object} map[string]string
-// @Router  /v1/name-templates/{id} [put]
-func (h *NameTemplates) Update(c echo.Context) error {
-	var req NameTemplateUpdateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	template, err := h.svc.NameTemplates.Update(ctx, id, req.Name, req.Type, req.Template, req.SeriesShowTemplate, req.SeriesSeasonTemplate, req.MovieDirTemplate, req.Default)
+// ----- Update -----
+
+type NameTemplatesUpdateInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"Name template ID"`
+	Body nameTemplateWriteBody
+}
+
+type NameTemplatesUpdateOutput struct {
+	Body model.NameTemplate
+}
+
+func (h *NameTemplates) Update(ctx context.Context, input *NameTemplatesUpdateInput) (*NameTemplatesUpdateOutput, error) {
+	out, err := h.svc.NameTemplates.Update(
+		ctx,
+		input.ID,
+		input.Body.Name,
+		input.Body.Type,
+		input.Body.Template,
+		input.Body.SeriesShowTemplate,
+		input.Body.SeriesSeasonTemplate,
+		input.Body.MovieDirTemplate,
+		input.Body.Default,
+	)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, template)
+	return &NameTemplatesUpdateOutput{Body: out}, nil
 }
 
-// Delete name template
-// @Summary Delete name template
-// @Tags    name-templates
-// @Param   id path string true "Name Template ID"
-// @Success 204 {string} string ""
-// @Router  /v1/name-templates/{id} [delete]
-func (h *NameTemplates) Delete(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
-	ctx := c.Request().Context()
-	if err := h.svc.NameTemplates.Delete(ctx, id); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete"})
-	}
-	return c.NoContent(http.StatusNoContent)
+// ----- Delete -----
+
+type NameTemplatesDeleteInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Name template ID"`
 }
 
-// Get default name template
-// @Summary Get default name template by type
-// @Tags    name-templates
-// @Produce json
-// @Param   type path string true "Template type (movie or series)"
-// @Success 200 {object} handlers.nameTemplateSwagger
-// @Failure 404 {object} map[string]string
-// @Router  /v1/name-templates/default/{type} [get]
-func (h *NameTemplates) GetDefault(c echo.Context) error {
-	typ := c.Param("type")
-	if typ != "movie" && typ != "series" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "type must be 'movie' or 'series'"})
+type NameTemplatesDeleteOutput struct{}
+
+func (h *NameTemplates) Delete(ctx context.Context, input *NameTemplatesDeleteInput) (*NameTemplatesDeleteOutput, error) {
+	if err := h.svc.NameTemplates.Delete(ctx, input.ID); err != nil {
+		return nil, err
 	}
-	ctx := c.Request().Context()
-	template, err := h.svc.NameTemplates.GetDefault(ctx, typ)
+	return &NameTemplatesDeleteOutput{}, nil
+}
+
+// ----- GetDefault -----
+
+type NameTemplatesGetDefaultInput struct {
+	Type string `path:"type" enum:"movie,series" doc:"Template type"`
+}
+
+type NameTemplatesGetDefaultOutput struct {
+	Body model.NameTemplate
+}
+
+func (h *NameTemplates) GetDefault(ctx context.Context, input *NameTemplatesGetDefaultInput) (*NameTemplatesGetDefaultOutput, error) {
+	out, err := h.svc.NameTemplates.GetDefault(ctx, input.Type)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, template)
+	return &NameTemplatesGetDefaultOutput{Body: out}, nil
+}
+
+// ----- Register -----
+
+func (h *NameTemplates) RegisterHumachi(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "name-templates-list",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/name-templates",
+		Summary:     "List name templates",
+		Tags:        []string{"name-templates"},
+	}, h.List)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "name-templates-get",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/name-templates/{id}",
+		Summary:     "Get name template",
+		Tags:        []string{"name-templates"},
+		Errors:      errsRead,
+	}, h.Get)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "name-templates-create",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/name-templates",
+		Summary:       "Create name template",
+		Tags:          []string{"name-templates"},
+		DefaultStatus: http.StatusCreated,
+		Errors:        errsWrite,
+	}, h.Create)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "name-templates-update",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/name-templates/{id}",
+		Summary:     "Update name template",
+		Tags:        []string{"name-templates"},
+		Errors:      errsUpsert,
+	}, h.Update)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "name-templates-delete",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/name-templates/{id}",
+		Summary:       "Delete name template",
+		Tags:          []string{"name-templates"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsDelete,
+	}, h.Delete)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "name-templates-get-default",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/name-templates/default/{type}",
+		Summary:     "Get default name template by type",
+		Tags:        []string{"name-templates"},
+		Errors:      errsRead,
+	}, h.GetDefault)
 }

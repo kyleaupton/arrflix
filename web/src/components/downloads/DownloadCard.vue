@@ -19,46 +19,46 @@ const emit = defineEmits<{
   (e: 'reimport', job: DownloadJob, all: boolean): void
 }>()
 
-const status = computed(() => getStatusConfig(props.job.import_status))
+const status = computed(() => getStatusConfig(props.job.importStatus))
 const progressPercent = computed(() => Math.round((props.job.progress ?? 0) * 100))
-const isActive = computed(() => props.job.import_status === 'download_pending')
+const isActive = computed(() => props.job.importStatus === 'download_pending')
 const isImporting = computed(() =>
-  ['awaiting_import', 'importing'].includes(props.job.import_status),
+  ['awaiting_import', 'importing'].includes(props.job.importStatus),
 )
 const isFailed = computed(() =>
-  ['download_failed', 'partial_failure', 'import_failed'].includes(props.job.import_status),
+  ['download_failed', 'partial_failure', 'import_failed'].includes(props.job.importStatus),
 )
 
 const importPercent = computed(() => {
-  if (!props.job.total_import_tasks) return 0
-  return Math.round((props.job.completed_imports / props.job.total_import_tasks) * 100)
+  if (!props.job.totalImportTasks) return 0
+  return Math.round((props.job.completedImports / props.job.totalImportTasks) * 100)
 })
 
 const posterUrl = computed(() => {
-  if (!props.job.media_poster_path) return ''
-  return `https://image.tmdb.org/t/p/w185${props.job.media_poster_path}`
+  if (!props.job.mediaPosterPath) return ''
+  return `https://image.tmdb.org/t/p/w185${props.job.mediaPosterPath}`
 })
 
 const subtitle = computed(() => {
   const parts: string[] = []
-  if (props.job.media_year) parts.push(String(props.job.media_year))
-  if (props.job.media_certification) parts.push(props.job.media_certification)
-  if (props.job.media_type === 'series' && props.job.season_number) {
-    const ep = props.job.episode_number
-      ? `E${String(props.job.episode_number).padStart(2, '0')}`
+  if (props.job.mediaYear) parts.push(String(props.job.mediaYear))
+  if (props.job.mediaCertification) parts.push(props.job.mediaCertification)
+  if (props.job.mediaType === 'series' && props.job.seasonNumber) {
+    const ep = props.job.episodeNumber
+      ? `E${String(props.job.episodeNumber).padStart(2, '0')}`
       : ''
-    parts.push(`S${String(props.job.season_number).padStart(2, '0')}${ep}`)
+    parts.push(`S${String(props.job.seasonNumber).padStart(2, '0')}${ep}`)
   }
   return parts.join(' \u00B7 ')
 })
 
 const statsLine = computed(() => {
   const parts: string[] = []
-  const speed = formatSpeed(props.job.download_speed)
+  const speed = formatSpeed(props.job.downloadSpeed)
   if (speed) parts.push(speed)
-  const eta = formatEta(props.job.eta_seconds)
+  const eta = formatEta(props.job.etaSeconds)
   if (eta) parts.push(eta)
-  const size = formatBytes(props.job.total_size)
+  const size = formatBytes(props.job.totalSize)
   if (size) parts.push(size)
   return parts.join('  \u00B7  ')
 })
@@ -74,12 +74,12 @@ const statsLine = computed(() => {
       <img
         v-if="posterUrl"
         :src="posterUrl"
-        :alt="job.media_title || job.candidate_title"
+        :alt="job.mediaTitle || job.candidateTitle"
         class="w-full h-full object-cover"
       />
       <div v-else class="w-full h-full flex items-center justify-center">
         <component
-          :is="job.media_type === 'series' ? Tv : Film"
+          :is="job.mediaType === 'series' ? Tv : Film"
           class="size-5 text-muted-foreground"
         />
       </div>
@@ -91,7 +91,7 @@ const statsLine = computed(() => {
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
           <p class="font-medium text-sm truncate">
-            {{ job.media_title || job.candidate_title }}
+            {{ job.mediaTitle || job.candidateTitle }}
           </p>
           <p v-if="subtitle" class="text-xs text-muted-foreground">
             {{ subtitle }}
@@ -116,32 +116,32 @@ const statsLine = computed(() => {
       </div>
 
       <!-- Import progress -->
-      <div v-else-if="isImporting && job.total_import_tasks > 0" class="space-y-1">
+      <div v-else-if="isImporting && job.totalImportTasks > 0" class="space-y-1">
         <div class="flex items-center gap-2">
           <Progress :model-value="importPercent" class="flex-1" />
           <span class="text-xs text-muted-foreground tabular-nums">
-            {{ job.completed_imports }}/{{ job.total_import_tasks }}
+            {{ job.completedImports }}/{{ job.totalImportTasks }}
           </span>
         </div>
       </div>
 
       <!-- Error info -->
       <p
-        v-if="isFailed && job.last_error"
+        v-if="isFailed && job.lastError"
         class="text-xs text-destructive line-clamp-1"
       >
-        {{ job.last_error }}
+        {{ job.lastError }}
       </p>
 
       <!-- Release name (muted, always visible) -->
       <p class="text-xs text-muted-foreground/60 truncate">
-        {{ job.candidate_title }}
+        {{ job.candidateTitle }}
       </p>
 
       <!-- Inline action buttons for failed states -->
       <div v-if="isFailed" class="flex items-center gap-2" @click.stop>
         <Button
-          v-if="job.import_status === 'download_failed'"
+          v-if="job.importStatus === 'download_failed'"
           variant="outline"
           size="sm"
           class="h-7 text-xs"
@@ -151,7 +151,7 @@ const statsLine = computed(() => {
           Retry
         </Button>
         <Button
-          v-if="['partial_failure', 'import_failed'].includes(job.import_status)"
+          v-if="['partial_failure', 'import_failed'].includes(job.importStatus)"
           variant="outline"
           size="sm"
           class="h-7 text-xs"

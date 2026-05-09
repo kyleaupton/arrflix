@@ -27,10 +27,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { User } from 'lucide-vue-next'
-import { type ModelCastMember } from '@/client/types.gen'
+import { type CastMember } from '@/client/types.gen'
 
 const props = defineProps<{
-  member: ModelCastMember
+  member: CastMember
 }>()
 
 const profileImageUrl = computed(() => {

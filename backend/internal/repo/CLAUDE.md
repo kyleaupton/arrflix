@@ -16,25 +16,101 @@ This package is the boundary between SQLC-generated database code and the rest o
 
 4. **The repo doesn't know about HTTP status codes.** Don't import `net/http` here. `FromPg` picks the kind; the kind picks the status; that mapping lives in the errors package.
 
-## Pattern
+5. **Repo methods return `model.*`, never `dbgen.*`.** `dbgen.*` is a persistence-shaped type and stays strictly inside this package and `internal/db/`. Each repo file owns the translation from `dbgen.Foo` to `model.Foo` (see [Domain types](#domain-types) below). Service signatures take and return `model.*`; pgtype-shaped parameters (`pgtype.UUID`) become idiomatic Go (`uuid.UUID`) at the repo boundary too.
+
+## Domain types
+
+The repo is the single point of translation between persistence shapes (`dbgen.*`, `pgtype.*`) and domain shapes (`model.*`, `uuid.UUID`, `time.Time`, `*string`). Services and workers see only domain shapes.
+
+Each entity gets a small translator helper, kept next to the methods that use it:
 
 ```go
-import (
-    apperrors "github.com/kyleaupton/arrflix/internal/errors"
-)
+// repo/libraries.go
 
-func (r *Repository) GetLibrary(ctx context.Context, id pgtype.UUID) (dbgen.Library, error) {
-    lib, err := r.Q.GetLibrary(ctx, id)
-    return lib, apperrors.FromPg(err, "library %s not found", id)
+func toModelLibrary(row dbgen.Library) model.Library {
+    return model.Library{
+        ID:        uuidFromPgtype(row.ID),
+        Name:      row.Name,
+        Type:      row.Type,
+        RootPath:  row.RootPath,
+        CreatedAt: row.CreatedAt.Time,
+        UpdatedAt: row.UpdatedAt.Time,
+    }
 }
 
-func (r *Repository) CreateLibrary(ctx context.Context, name, typ, rootPath string, ...) (dbgen.Library, error) {
-    lib, err := r.Q.CreateLibrary(ctx, dbgen.CreateLibraryParams{...})
-    return lib, apperrors.FromPg(err, "create library %q", name)
+func (r *Repository) GetLibrary(ctx context.Context, id uuid.UUID) (model.Library, error) {
+    row, err := r.Q.GetLibrary(ctx, pgtypeFromUUID(id))
+    if err != nil {
+        return model.Library{}, apperrors.FromPg(err, "library %s not found", id)
+    }
+    return toModelLibrary(row), nil
 }
 ```
 
-`FromPg` is nil-safe: if the SQLC call returns `nil`, `FromPg` returns `nil`. No `if err != nil` boilerplate.
+Conventions:
+
+- **Translator names**: `toModel<Entity>` for `dbgen → model`. For composite shapes (a row joined with derived data), use `toModel<Entity>WithSummary` etc., matching the model type name.
+- **Error path returns the zero value** of the model type, not a `dbgen` zero. Don't return `dbgen.Library{}` from a function whose signature is `(model.Library, error)` — that's a different type, and a refactoring footgun.
+- **Composite types compose at repo time.** `model.Policy` (rich type with `Condition` and `Actions`) is built by `GetPolicy` from the flat policy row plus the parsed Condition JSON plus the actions array. The composition lives in the repo.
+- **Reverse direction (writes)** doesn't need a translator — services pass scalar arguments to repo methods, and the repo builds the `dbgen.*Params` struct internally. Don't define `fromModelLibrary` unless something genuinely needs it.
+
+UUID conversion helpers (`uuidFromPgtype`, `pgtypeFromUUID`) live in this package — define once, reuse everywhere. Same for any other `pgtype ↔ Go` adapters.
+
+## Write method inputs
+
+Read methods return `model.*` types (covered above). Write methods (Create, Update, Upsert, etc.) take input the caller wants to persist — and that input shape often differs from the entity's stored shape (server-managed fields like `ID`, `CreatedAt`, `UpdatedAt` are excluded).
+
+The convention:
+
+- **Trivial writes — 1-2 scalars** (e.g. `DeleteLibrary(id uuid.UUID)`, `SetSystemInitialized(ctx)`): take the scalars directly. No struct.
+- **Multi-field writes** (3+ scalar fields, or any field that's a struct / slice / map): define a bespoke `<MethodName>Params` struct next to the repo method.
+
+```go
+// UpsertIdentityParams is the domain-shaped input for UpsertIdentity. Mirrors
+// the writeable subset of model.Identity (omits server-managed ID and CreatedAt).
+type UpsertIdentityParams struct {
+    UserID         uuid.UUID
+    Provider       model.AuthProvider
+    Subject        string
+    Username       *string
+    AccessToken    *string
+    RefreshToken   *string
+    TokenExpiresAt *time.Time
+    Raw            json.RawMessage
+}
+
+func (r *Repository) UpsertIdentity(ctx context.Context, params UpsertIdentityParams) (model.Identity, error)
+```
+
+Why a bespoke param struct rather than reusing `model.<Entity>`:
+
+- The model type represents what's *stored*. The param struct represents what a caller is *allowed to send*. They're often shaped similarly but they're different concepts — same distinction as the API layer's `LibrariesCreateInput` vs `model.Library`.
+- Reusing the model type for input means server-managed fields (`ID`, `CreatedAt`) get silently ignored. That's a footgun for future callers who don't know.
+- Bespoke param structs are explicit: every field in the struct is a field the repo accepts, full stop.
+
+**Service files will import `repo.<MethodName>Params`** to construct the call. That's expected — the param struct is part of the repo's public contract, just like a function's signature. It's not an encapsulation violation; it's the dependency direction working as designed.
+
+The struct lives in the same `repo/<entity>.go` file as the method that consumes it. Use a one-line doc comment pointing to the related model type so the relationship is obvious:
+
+```go
+// CreateLibraryParams is the domain-shaped input for CreateLibrary. Mirrors
+// the writeable subset of model.Library.
+```
+
+## Pattern
+
+For methods that **don't return a row** (deletes, updates that report only success/failure), `FromPg`-as-the-direct-return still works because there's no translation step:
+
+```go
+func (r *Repository) DeleteLibrary(ctx context.Context, id uuid.UUID) error {
+    return apperrors.FromPg(r.Q.DeleteLibrary(ctx, pgtypeFromUUID(id)),
+        "delete library %s", id)
+}
+```
+
+For methods that **return a row** (gets, lists, creates with `RETURNING *`, etc.), the translation step requires an explicit error check — see [Domain types](#domain-types) above for the canonical shape.
+
+`FromPg` itself is nil-safe: if the SQLC call returns `nil`, `FromPg` returns `nil`. The single-line return shape above is just a convenience for no-row methods.
 
 ## Format strings
 

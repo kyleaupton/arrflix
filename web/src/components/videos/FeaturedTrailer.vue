@@ -35,10 +35,10 @@
 import { computed, ref } from 'vue'
 import { Play } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
-import type { ModelVideo } from '@/client/types.gen'
+import type { Video } from '@/client/types.gen'
 
 const props = defineProps<{
-  video: ModelVideo
+  video: Video
 }>()
 
 const imageError = ref(false)

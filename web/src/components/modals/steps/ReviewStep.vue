@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { type ModelIndexerDefinition, type ModelIndexerInput } from '@/client/types.gen'
+import { type IndexerOutput, type IndexerInput } from '@/client/types.gen'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 const props = defineProps<{
-  selectedIndexer: ModelIndexerDefinition | null
-  saveData: ModelIndexerInput | undefined
+  selectedIndexer: IndexerOutput | null
+  saveData: IndexerInput | undefined
 }>()
 
 const hasValue = (value: unknown): boolean => {
@@ -26,7 +26,7 @@ const configuredFields = computed(() => {
       (field) => hasValue(field.value) && field.type !== 'info' && field.hidden !== 'hidden',
     )
     .map((field) => {
-      const fieldDefinition = props.selectedIndexer?.fields.find((def) => def.name === field.name)
+      const fieldDefinition = props.selectedIndexer?.fields?.find((def) => def.name === field.name)
       return {
         name: field.name,
         label: fieldDefinition?.label || field.name,

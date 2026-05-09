@@ -1,6 +1,8 @@
 package model
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 )
 
@@ -13,15 +15,27 @@ type Plan struct {
 // Note: CandidateContext has been replaced by EvaluationContext in context.go
 // which provides a unified context for both the policy engine and name templates.
 
+// Policy is the domain shape for a policy with its condition rule and ordered
+// action list nested. It mirrors the wire contract previously served by the
+// `handlers.FullPolicy` shim — a flat policy row plus a single optional rule
+// plus an ordered actions array. Composed at the repo boundary by combining
+// the persistence-layer `dbgen.Policy`, `dbgen.Rule`, and `dbgen.Action` rows.
 type Policy struct {
-	ID          uuid.UUID
-	Name        string
-	Description string
-	Enabled     bool
-	Priority    int
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	Enabled     bool      `json:"enabled"`
+	Priority    int32     `json:"priority"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 
-	Condition Rule
-	Actions   []Action
+	// Rule is the policy's condition rule; nil when the policy has no rule
+	// configured yet. Wire field is "rule" to match the FullPolicy contract.
+	Rule *Rule `json:"rule"`
+	// Actions is the ordered list of actions applied when the rule matches.
+	// Always serialized (empty array, never null) to match the FullPolicy
+	// contract.
+	Actions []Action `json:"actions"`
 }
 
 type Operator string
@@ -41,11 +55,19 @@ const (
 	OpNot      Operator = "not"
 )
 
+// Rule is the domain shape for a rule row. Mirrors the wire contract previously
+// served by raw `dbgen.Rule`; uses idiomatic Go types (uuid.UUID, time.Time).
+// Logical operators (and, or, not) reference child rules by UUID stored as
+// strings in LeftOperand / RightOperand — the engine resolves those references
+// at evaluation time.
 type Rule struct {
-	ID       uuid.UUID
-	Left     string
-	Operator Operator
-	Right    string
+	ID           uuid.UUID `json:"id"`
+	PolicyID     uuid.UUID `json:"policyId"`
+	LeftOperand  string    `json:"leftOperand"`
+	Operator     string    `json:"operator"`
+	RightOperand string    `json:"rightOperand"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 type ActionType string
@@ -57,10 +79,18 @@ const (
 	ActionStopProcessing  ActionType = "stop_processing"
 )
 
+// Action is the domain shape for an action row. Mirrors the wire contract
+// previously served by raw `dbgen.Action`. Type is stored as a plain string
+// (rather than typed `ActionType`) to preserve the FullPolicy wire format —
+// callers compare against the `Action*` constants when needed.
 type Action struct {
-	ID    uuid.UUID
-	Type  ActionType
-	Value string
+	ID        uuid.UUID `json:"id"`
+	PolicyID  uuid.UUID `json:"policyId"`
+	Type      string    `json:"type"`
+	Value     string    `json:"value"`
+	Order     int32     `json:"order"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // EvaluationTrace represents the detailed trace of policy evaluation

@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { DeleteV1DownloadersByIdData, DeleteV1DownloadersByIdResponses, DeleteV1DownloadJobsByIdData, DeleteV1DownloadJobsByIdErrors, DeleteV1DownloadJobsByIdResponses, DeleteV1IndexerByIdData, DeleteV1IndexerByIdErrors, DeleteV1IndexerByIdResponses, DeleteV1InvitesByIdData, DeleteV1InvitesByIdResponses, DeleteV1LibrariesByIdData, DeleteV1LibrariesByIdResponses, DeleteV1NameTemplatesByIdData, DeleteV1NameTemplatesByIdResponses, DeleteV1PoliciesByIdActionsByActionIdData, DeleteV1PoliciesByIdActionsByActionIdResponses, DeleteV1PoliciesByIdData, DeleteV1PoliciesByIdResponses, DeleteV1PoliciesByIdRuleData, DeleteV1PoliciesByIdRuleResponses, DeleteV1UsersByIdData, DeleteV1UsersByIdResponses, GetHealthData, GetHealthResponses, GetV1AuthProfileData, GetV1AuthProfileResponses, GetV1BootstrapData, GetV1BootstrapResponses, GetV1DownloadersByIdData, GetV1DownloadersByIdResponses, GetV1DownloadersData, GetV1DownloadersDefaultByProtocolData, GetV1DownloadersDefaultByProtocolResponses, GetV1DownloadersResponses, GetV1DownloadJobsByIdData, GetV1DownloadJobsByIdErrors, GetV1DownloadJobsByIdHistoryData, GetV1DownloadJobsByIdHistoryErrors, GetV1DownloadJobsByIdHistoryResponses, GetV1DownloadJobsByIdImportTasksData, GetV1DownloadJobsByIdImportTasksErrors, GetV1DownloadJobsByIdImportTasksResponses, GetV1DownloadJobsByIdResponses, GetV1DownloadJobsByIdTimelineData, GetV1DownloadJobsByIdTimelineErrors, GetV1DownloadJobsByIdTimelineResponses, GetV1DownloadJobsData, GetV1DownloadJobsResponses, GetV1FilesystemBrowseData, GetV1FilesystemBrowseErrors, GetV1FilesystemBrowseResponses, GetV1HomeData, GetV1HomeResponses, GetV1ImportTasksByIdData, GetV1ImportTasksByIdErrors, GetV1ImportTasksByIdHistoryData, GetV1ImportTasksByIdHistoryErrors, GetV1ImportTasksByIdHistoryResponses, GetV1ImportTasksByIdResponses, GetV1ImportTasksByIdTimelineData, GetV1ImportTasksByIdTimelineErrors, GetV1ImportTasksByIdTimelineResponses, GetV1ImportTasksCountsData, GetV1ImportTasksCountsResponses, GetV1ImportTasksData, GetV1ImportTasksResponses, GetV1IndexersByIdData, GetV1IndexersByIdErrors, GetV1IndexersByIdResponses, GetV1IndexersConfiguredData, GetV1IndexersConfiguredResponses, GetV1IndexersSchemaData, GetV1IndexersSchemaResponses, GetV1InvitesData, GetV1InvitesResponses, GetV1LibrariesByIdData, GetV1LibrariesByIdResponses, GetV1LibrariesData, GetV1LibrariesResponses, GetV1LibraryData, GetV1LibraryResponses, GetV1MovieByIdCandidatesData, GetV1MovieByIdCandidatesErrors, GetV1MovieByIdCandidatesResponses, GetV1MovieByIdData, GetV1MovieByIdDownloadJobsData, GetV1MovieByIdDownloadJobsErrors, GetV1MovieByIdDownloadJobsResponses, GetV1MovieByIdResponses, GetV1NameTemplatesByIdData, GetV1NameTemplatesByIdResponses, GetV1NameTemplatesData, GetV1NameTemplatesDefaultByTypeData, GetV1NameTemplatesDefaultByTypeErrors, GetV1NameTemplatesDefaultByTypeResponses, GetV1NameTemplatesResponses, GetV1PersonByIdData, GetV1PersonByIdResponses, GetV1PoliciesByIdActionsByActionIdData, GetV1PoliciesByIdActionsByActionIdResponses, GetV1PoliciesByIdActionsData, GetV1PoliciesByIdActionsResponses, GetV1PoliciesByIdData, GetV1PoliciesByIdResponses, GetV1PoliciesByIdRuleData, GetV1PoliciesByIdRuleResponses, GetV1PoliciesData, GetV1PoliciesFieldsData, GetV1PoliciesFieldsResponses, GetV1PoliciesFullData, GetV1PoliciesFullResponses, GetV1PoliciesResponses, GetV1RolesData, GetV1RolesResponses, GetV1SearchData, GetV1SearchResponses, GetV1SeriesByIdCandidatesData, GetV1SeriesByIdCandidatesErrors, GetV1SeriesByIdCandidatesResponses, GetV1SeriesByIdData, GetV1SeriesByIdDownloadJobsData, GetV1SeriesByIdDownloadJobsErrors, GetV1SeriesByIdDownloadJobsResponses, GetV1SeriesByIdResponses, GetV1SettingsData, GetV1SettingsResponses, GetV1SetupStatusData, GetV1SetupStatusResponses, GetV1UnmatchedFilesByIdData, GetV1UnmatchedFilesByIdErrors, GetV1UnmatchedFilesByIdResponses, GetV1UnmatchedFilesData, GetV1UnmatchedFilesResponses, GetV1UsersByIdData, GetV1UsersByIdResponses, GetV1UsersData, GetV1UsersResponses, GetV1VersionData, GetV1VersionResponses, PatchV1SettingsData, PatchV1SettingsErrors, PatchV1SettingsResponses, PostV1AuthLoginData, PostV1AuthLoginResponses, PostV1AuthPlexExchangeData, PostV1AuthPlexExchangeErrors, PostV1AuthPlexExchangeResponses, PostV1AuthSignupData, PostV1AuthSignupErrors, PostV1AuthSignupResponses, PostV1DownloadersByIdTestData, PostV1DownloadersByIdTestErrors, PostV1DownloadersByIdTestResponses, PostV1DownloadersData, PostV1DownloadersErrors, PostV1DownloadersResponses, PostV1DownloadersTestData, PostV1DownloadersTestErrors, PostV1DownloadersTestResponses, PostV1DownloadJobsByIdReimportData, PostV1DownloadJobsByIdReimportErrors, PostV1DownloadJobsByIdReimportResponses, PostV1DownloadJobsByIdRetryData, PostV1DownloadJobsByIdRetryErrors, PostV1DownloadJobsByIdRetryResponses, PostV1ImportTasksByIdCancelData, PostV1ImportTasksByIdCancelErrors, PostV1ImportTasksByIdCancelResponses, PostV1ImportTasksByIdReimportData, PostV1ImportTasksByIdReimportErrors, PostV1ImportTasksByIdReimportResponses, PostV1IndexerActionByNameData, PostV1IndexerActionByNameErrors, PostV1IndexerActionByNameResponses, PostV1IndexerByIdTestData, PostV1IndexerByIdTestErrors, PostV1IndexerByIdTestResponses, PostV1IndexerData, PostV1IndexerErrors, PostV1IndexerResponses, PostV1IndexersTestallData, PostV1IndexersTestallErrors, PostV1IndexersTestallResponses, PostV1IndexerTestData, PostV1IndexerTestErrors, PostV1IndexerTestResponses, PostV1InvitesData, PostV1InvitesErrors, PostV1InvitesResponses, PostV1LibrariesByIdScanData, PostV1LibrariesByIdScanErrors, PostV1LibrariesByIdScanResponses, PostV1LibrariesData, PostV1LibrariesErrors, PostV1LibrariesResponses, PostV1MovieByIdCandidateDownloadData, PostV1MovieByIdCandidateDownloadErrors, PostV1MovieByIdCandidateDownloadResponses, PostV1MovieByIdCandidatePreviewData, PostV1MovieByIdCandidatePreviewErrors, PostV1MovieByIdCandidatePreviewResponses, PostV1NameTemplatesData, PostV1NameTemplatesErrors, PostV1NameTemplatesResponses, PostV1PoliciesByIdActionsData, PostV1PoliciesByIdActionsErrors, PostV1PoliciesByIdActionsResponses, PostV1PoliciesByIdRuleData, PostV1PoliciesByIdRuleErrors, PostV1PoliciesByIdRuleResponses, PostV1PoliciesData, PostV1PoliciesErrors, PostV1PoliciesEvaluateData, PostV1PoliciesEvaluateErrors, PostV1PoliciesEvaluateResponses, PostV1PoliciesResponses, PostV1SeriesByIdCandidateDownloadData, PostV1SeriesByIdCandidateDownloadErrors, PostV1SeriesByIdCandidateDownloadResponses, PostV1SeriesByIdCandidatePreviewData, PostV1SeriesByIdCandidatePreviewErrors, PostV1SeriesByIdCandidatePreviewResponses, PostV1SetupInitializeData, PostV1SetupInitializeErrors, PostV1SetupInitializeResponses, PostV1SetupTmdbData, PostV1SetupTmdbErrors, PostV1SetupTmdbResponses, PostV1UnmatchedFilesByIdDismissData, PostV1UnmatchedFilesByIdDismissErrors, PostV1UnmatchedFilesByIdDismissResponses, PostV1UnmatchedFilesByIdMatchData, PostV1UnmatchedFilesByIdMatchErrors, PostV1UnmatchedFilesByIdMatchResponses, PostV1UnmatchedFilesByIdRefreshData, PostV1UnmatchedFilesByIdRefreshErrors, PostV1UnmatchedFilesByIdRefreshResponses, PutV1AuthProfileData, PutV1AuthProfilePasswordData, PutV1AuthProfilePasswordResponses, PutV1AuthProfileResponses, PutV1DownloadersByIdData, PutV1DownloadersByIdErrors, PutV1DownloadersByIdResponses, PutV1IndexerByIdToggleData, PutV1IndexerByIdToggleErrors, PutV1IndexerByIdToggleResponses, PutV1LibrariesByIdData, PutV1LibrariesByIdErrors, PutV1LibrariesByIdResponses, PutV1NameTemplatesByIdData, PutV1NameTemplatesByIdErrors, PutV1NameTemplatesByIdResponses, PutV1PoliciesByIdActionsByActionIdData, PutV1PoliciesByIdActionsByActionIdErrors, PutV1PoliciesByIdActionsByActionIdResponses, PutV1PoliciesByIdData, PutV1PoliciesByIdErrors, PutV1PoliciesByIdResponses, PutV1PoliciesByIdRuleData, PutV1PoliciesByIdRuleErrors, PutV1PoliciesByIdRuleResponses, PutV1UsersByIdData, PutV1UsersByIdErrors, PutV1UsersByIdPasswordData, PutV1UsersByIdPasswordResponses, PutV1UsersByIdResponses, PutV1UsersByIdRoleData, PutV1UsersByIdRoleResponses } from './types.gen';
+import type { AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthPlexExchangeData, AuthPlexExchangeErrors, AuthPlexExchangeResponses, AuthSignupData, AuthSignupErrors, AuthSignupResponses, BootstrapGetData, BootstrapGetErrors, BootstrapGetResponses, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieErrors, DownloadCandidatesDownloadMovieResponses, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesErrors, DownloadCandidatesDownloadSeriesResponses, DownloadCandidatesListMovieData, DownloadCandidatesListMovieErrors, DownloadCandidatesListMovieResponses, DownloadCandidatesListSeriesData, DownloadCandidatesListSeriesErrors, DownloadCandidatesListSeriesResponses, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieErrors, DownloadCandidatesPreviewMovieResponses, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesErrors, DownloadCandidatesPreviewSeriesResponses, DownloadersCreateData, DownloadersCreateErrors, DownloadersCreateResponses, DownloadersDeleteData, DownloadersDeleteErrors, DownloadersDeleteResponses, DownloadersGetData, DownloadersGetDefaultData, DownloadersGetDefaultErrors, DownloadersGetDefaultResponses, DownloadersGetErrors, DownloadersGetResponses, DownloadersListData, DownloadersListErrors, DownloadersListResponses, DownloadersTestConfigData, DownloadersTestConfigErrors, DownloadersTestConfigResponses, DownloadersTestData, DownloadersTestErrors, DownloadersTestResponses, DownloadersUpdateData, DownloadersUpdateErrors, DownloadersUpdateResponses, DownloadJobsCancelData, DownloadJobsCancelErrors, DownloadJobsCancelResponses, DownloadJobsGetData, DownloadJobsGetErrors, DownloadJobsGetResponses, DownloadJobsHistoryData, DownloadJobsHistoryErrors, DownloadJobsHistoryResponses, DownloadJobsListData, DownloadJobsListErrors, DownloadJobsListForMovieData, DownloadJobsListForMovieErrors, DownloadJobsListForMovieResponses, DownloadJobsListForSeriesData, DownloadJobsListForSeriesErrors, DownloadJobsListForSeriesResponses, DownloadJobsListImportTasksData, DownloadJobsListImportTasksErrors, DownloadJobsListImportTasksResponses, DownloadJobsListResponses, DownloadJobsReimportData, DownloadJobsReimportErrors, DownloadJobsReimportResponses, DownloadJobsRetryData, DownloadJobsRetryErrors, DownloadJobsRetryResponses, DownloadJobsTimelineData, DownloadJobsTimelineErrors, DownloadJobsTimelineResponses, EventsStreamData, EventsStreamErrors, EventsStreamResponses, FeedGetData, FeedGetErrors, FeedGetResponses, FilesystemBrowseData, FilesystemBrowseErrors, FilesystemBrowseResponses, HealthCheckData, HealthCheckErrors, HealthCheckResponses, ImportTasksCancelData, ImportTasksCancelErrors, ImportTasksCancelResponses, ImportTasksCountsData, ImportTasksCountsErrors, ImportTasksCountsResponses, ImportTasksGetData, ImportTasksGetErrors, ImportTasksGetResponses, ImportTasksHistoryData, ImportTasksHistoryErrors, ImportTasksHistoryResponses, ImportTasksListData, ImportTasksListErrors, ImportTasksListResponses, ImportTasksReimportData, ImportTasksReimportErrors, ImportTasksReimportResponses, ImportTasksTimelineData, ImportTasksTimelineErrors, ImportTasksTimelineResponses, IndexersActionData, IndexersActionErrors, IndexersActionResponses, IndexersDeleteData, IndexersDeleteErrors, IndexersDeleteResponses, IndexersGetData, IndexersGetErrors, IndexersGetResponses, IndexersGetSchemaData, IndexersGetSchemaErrors, IndexersGetSchemaResponses, IndexersListConfiguredData, IndexersListConfiguredErrors, IndexersListConfiguredResponses, IndexersSaveData, IndexersSaveErrors, IndexersSaveResponses, IndexersTestAllData, IndexersTestAllErrors, IndexersTestAllResponses, IndexersTestSavedData, IndexersTestSavedErrors, IndexersTestSavedResponses, IndexersTestUnsavedData, IndexersTestUnsavedErrors, IndexersTestUnsavedResponses, IndexersToggleData, IndexersToggleErrors, IndexersToggleResponses, InvitesCreateData, InvitesCreateErrors, InvitesCreateResponses, InvitesDeleteData, InvitesDeleteErrors, InvitesDeleteResponses, InvitesListData, InvitesListErrors, InvitesListResponses, LibrariesCreateData, LibrariesCreateErrors, LibrariesCreateResponses, LibrariesDeleteData, LibrariesDeleteErrors, LibrariesDeleteResponses, LibrariesGetData, LibrariesGetErrors, LibrariesGetResponses, LibrariesListData, LibrariesListErrors, LibrariesListResponses, LibrariesScanData, LibrariesScanErrors, LibrariesScanResponses, LibrariesUpdateData, LibrariesUpdateErrors, LibrariesUpdateResponses, LibraryListData, LibraryListErrors, LibraryListResponses, MediaGetMovieData, MediaGetMovieErrors, MediaGetMovieResponses, MediaGetPersonData, MediaGetPersonErrors, MediaGetPersonResponses, MediaGetSeriesData, MediaGetSeriesErrors, MediaGetSeriesResponses, MediaSearchData, MediaSearchErrors, MediaSearchResponses, NameTemplatesCreateData, NameTemplatesCreateErrors, NameTemplatesCreateResponses, NameTemplatesDeleteData, NameTemplatesDeleteErrors, NameTemplatesDeleteResponses, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesGetDefaultErrors, NameTemplatesGetDefaultResponses, NameTemplatesGetErrors, NameTemplatesGetResponses, NameTemplatesListData, NameTemplatesListErrors, NameTemplatesListResponses, NameTemplatesUpdateData, NameTemplatesUpdateErrors, NameTemplatesUpdateResponses, PoliciesCreateActionData, PoliciesCreateActionErrors, PoliciesCreateActionResponses, PoliciesCreateData, PoliciesCreateErrors, PoliciesCreateResponses, PoliciesCreateRuleData, PoliciesCreateRuleErrors, PoliciesCreateRuleResponses, PoliciesDeleteActionData, PoliciesDeleteActionErrors, PoliciesDeleteActionResponses, PoliciesDeleteData, PoliciesDeleteErrors, PoliciesDeleteResponses, PoliciesDeleteRuleData, PoliciesDeleteRuleErrors, PoliciesDeleteRuleResponses, PoliciesEvaluateData, PoliciesEvaluateErrors, PoliciesEvaluateResponses, PoliciesGetActionData, PoliciesGetActionErrors, PoliciesGetActionResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetFieldsData, PoliciesGetFieldsErrors, PoliciesGetFieldsResponses, PoliciesGetResponses, PoliciesGetRuleData, PoliciesGetRuleErrors, PoliciesGetRuleResponses, PoliciesListActionsData, PoliciesListActionsErrors, PoliciesListActionsResponses, PoliciesListData, PoliciesListErrors, PoliciesListResponses, PoliciesUpdateActionData, PoliciesUpdateActionErrors, PoliciesUpdateActionResponses, PoliciesUpdateData, PoliciesUpdateErrors, PoliciesUpdateResponses, PoliciesUpdateRuleData, PoliciesUpdateRuleErrors, PoliciesUpdateRuleResponses, RolesListData, RolesListErrors, RolesListResponses, SettingsListData, SettingsListErrors, SettingsListResponses, SettingsPatchData, SettingsPatchErrors, SettingsPatchResponses, SetupInitializeData, SetupInitializeErrors, SetupInitializeResponses, SetupStatusData, SetupStatusErrors, SetupStatusResponses, SetupTmdbData, SetupTmdbErrors, SetupTmdbResponses, UnmatchedFilesDismissData, UnmatchedFilesDismissErrors, UnmatchedFilesDismissResponses, UnmatchedFilesGetData, UnmatchedFilesGetErrors, UnmatchedFilesGetResponses, UnmatchedFilesListData, UnmatchedFilesListErrors, UnmatchedFilesListResponses, UnmatchedFilesMatchData, UnmatchedFilesMatchErrors, UnmatchedFilesMatchResponses, UnmatchedFilesRefreshData, UnmatchedFilesRefreshErrors, UnmatchedFilesRefreshResponses, UsersAssignRoleData, UsersAssignRoleErrors, UsersAssignRoleResponses, UsersDeleteData, UsersDeleteErrors, UsersDeleteResponses, UsersGetData, UsersGetErrors, UsersGetProfileData, UsersGetProfileErrors, UsersGetProfileResponses, UsersGetResponses, UsersListData, UsersListErrors, UsersListResponses, UsersUpdateData, UsersUpdateErrors, UsersUpdatePasswordData, UsersUpdatePasswordErrors, UsersUpdatePasswordResponses, UsersUpdateProfileData, UsersUpdateProfileErrors, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordErrors, UsersUpdateProfilePasswordResponses, UsersUpdateProfileResponses, UsersUpdateResponses, VersionGetData, VersionGetErrors, VersionGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -19,21 +19,12 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 };
 
 /**
- * Health check
- */
-export const getHealth = <ThrowOnError extends boolean = false>(options?: Options<GetHealthData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetHealthResponses, unknown, ThrowOnError>({
-        url: '/health',
-        ...options
-    });
-};
-
-/**
  * Login
+ * Validate username/email + password and issue a JWT.
  */
-export const postV1AuthLogin = <ThrowOnError extends boolean = false>(options: Options<PostV1AuthLoginData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1AuthLoginResponses, unknown, ThrowOnError>({
-        url: '/v1/auth/login',
+export const authLogin = <ThrowOnError extends boolean = false>(options: Options<AuthLoginData, ThrowOnError>) => {
+    return (options.client ?? client).post<AuthLoginResponses, AuthLoginErrors, ThrowOnError>({
+        url: '/api/v1/auth/login',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -43,11 +34,23 @@ export const postV1AuthLogin = <ThrowOnError extends boolean = false>(options: O
 };
 
 /**
- * Exchange Plex PIN for JWT
+ * Current user
+ * Returns the authenticated principal (from JWT claims).
  */
-export const postV1AuthPlexExchange = <ThrowOnError extends boolean = false>(options: Options<PostV1AuthPlexExchangeData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1AuthPlexExchangeResponses, PostV1AuthPlexExchangeErrors, ThrowOnError>({
-        url: '/v1/auth/plex/exchange',
+export const authMe = <ThrowOnError extends boolean = false>(options?: Options<AuthMeData, ThrowOnError>) => {
+    return (options?.client ?? client).get<AuthMeResponses, AuthMeErrors, ThrowOnError>({
+        url: '/api/v1/auth/me',
+        ...options
+    });
+};
+
+/**
+ * Exchange Plex PIN for JWT
+ * Polls the Plex API for the PIN's auth token and, if claimed, returns a JWT. Returns 401 when the PIN has not been claimed yet.
+ */
+export const authPlexExchange = <ThrowOnError extends boolean = false>(options: Options<AuthPlexExchangeData, ThrowOnError>) => {
+    return (options.client ?? client).post<AuthPlexExchangeResponses, AuthPlexExchangeErrors, ThrowOnError>({
+        url: '/api/v1/auth/plex/exchange',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -59,9 +62,9 @@ export const postV1AuthPlexExchange = <ThrowOnError extends boolean = false>(opt
 /**
  * Get current user profile
  */
-export const getV1AuthProfile = <ThrowOnError extends boolean = false>(options?: Options<GetV1AuthProfileData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1AuthProfileResponses, unknown, ThrowOnError>({
-        url: '/v1/auth/profile',
+export const usersGetProfile = <ThrowOnError extends boolean = false>(options?: Options<UsersGetProfileData, ThrowOnError>) => {
+    return (options?.client ?? client).get<UsersGetProfileResponses, UsersGetProfileErrors, ThrowOnError>({
+        url: '/api/v1/auth/profile',
         ...options
     });
 };
@@ -69,9 +72,9 @@ export const getV1AuthProfile = <ThrowOnError extends boolean = false>(options?:
 /**
  * Update current user profile
  */
-export const putV1AuthProfile = <ThrowOnError extends boolean = false>(options: Options<PutV1AuthProfileData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1AuthProfileResponses, unknown, ThrowOnError>({
-        url: '/v1/auth/profile',
+export const usersUpdateProfile = <ThrowOnError extends boolean = false>(options: Options<UsersUpdateProfileData, ThrowOnError>) => {
+    return (options.client ?? client).put<UsersUpdateProfileResponses, UsersUpdateProfileErrors, ThrowOnError>({
+        url: '/api/v1/auth/profile',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -83,9 +86,9 @@ export const putV1AuthProfile = <ThrowOnError extends boolean = false>(options: 
 /**
  * Update current user password
  */
-export const putV1AuthProfilePassword = <ThrowOnError extends boolean = false>(options: Options<PutV1AuthProfilePasswordData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1AuthProfilePasswordResponses, unknown, ThrowOnError>({
-        url: '/v1/auth/profile/password',
+export const usersUpdateProfilePassword = <ThrowOnError extends boolean = false>(options: Options<UsersUpdateProfilePasswordData, ThrowOnError>) => {
+    return (options.client ?? client).put<UsersUpdateProfilePasswordResponses, UsersUpdateProfilePasswordErrors, ThrowOnError>({
+        url: '/api/v1/auth/profile/password',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -96,10 +99,11 @@ export const putV1AuthProfilePassword = <ThrowOnError extends boolean = false>(o
 
 /**
  * Signup
+ * Create a new user. Honors the configured signup strategy (invite_only or open).
  */
-export const postV1AuthSignup = <ThrowOnError extends boolean = false>(options: Options<PostV1AuthSignupData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1AuthSignupResponses, PostV1AuthSignupErrors, ThrowOnError>({
-        url: '/v1/auth/signup',
+export const authSignup = <ThrowOnError extends boolean = false>(options: Options<AuthSignupData, ThrowOnError>) => {
+    return (options.client ?? client).post<AuthSignupResponses, AuthSignupErrors, ThrowOnError>({
+        url: '/api/v1/auth/signup',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -110,40 +114,43 @@ export const postV1AuthSignup = <ThrowOnError extends boolean = false>(options: 
 
 /**
  * Bootstrap application
+ * Returns init status, current user (if a valid Bearer token is supplied), public config, and per-step setup progress when not yet initialized.
  */
-export const getV1Bootstrap = <ThrowOnError extends boolean = false>(options?: Options<GetV1BootstrapData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1BootstrapResponses, unknown, ThrowOnError>({
-        url: '/v1/bootstrap',
+export const bootstrapGet = <ThrowOnError extends boolean = false>(options?: Options<BootstrapGetData, ThrowOnError>) => {
+    return (options?.client ?? client).get<BootstrapGetResponses, BootstrapGetErrors, ThrowOnError>({
+        url: '/api/v1/bootstrap',
         ...options
     });
 };
 
 /**
- * List download jobs with import status summary
+ * List download jobs
+ * List every download job with computed import-status summary.
  */
-export const getV1DownloadJobs = <ThrowOnError extends boolean = false>(options?: Options<GetV1DownloadJobsData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1DownloadJobsResponses, unknown, ThrowOnError>({
-        url: '/v1/download-jobs',
+export const downloadJobsList = <ThrowOnError extends boolean = false>(options?: Options<DownloadJobsListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<DownloadJobsListResponses, DownloadJobsListErrors, ThrowOnError>({
+        url: '/api/v1/download-jobs',
         ...options
     });
 };
 
 /**
  * Cancel download job
+ * Cancel the download and any pending import tasks linked to it. Returns the cancelled job (200), not 204.
  */
-export const deleteV1DownloadJobsById = <ThrowOnError extends boolean = false>(options: Options<DeleteV1DownloadJobsByIdData, ThrowOnError>) => {
-    return (options.client ?? client).delete<DeleteV1DownloadJobsByIdResponses, DeleteV1DownloadJobsByIdErrors, ThrowOnError>({
-        url: '/v1/download-jobs/{id}',
+export const downloadJobsCancel = <ThrowOnError extends boolean = false>(options: Options<DownloadJobsCancelData, ThrowOnError>) => {
+    return (options.client ?? client).delete<DownloadJobsCancelResponses, DownloadJobsCancelErrors, ThrowOnError>({
+        url: '/api/v1/download-jobs/{id}',
         ...options
     });
 };
 
 /**
- * Get download job with import status summary
+ * Get download job
  */
-export const getV1DownloadJobsById = <ThrowOnError extends boolean = false>(options: Options<GetV1DownloadJobsByIdData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1DownloadJobsByIdResponses, GetV1DownloadJobsByIdErrors, ThrowOnError>({
-        url: '/v1/download-jobs/{id}',
+export const downloadJobsGet = <ThrowOnError extends boolean = false>(options: Options<DownloadJobsGetData, ThrowOnError>) => {
+    return (options.client ?? client).get<DownloadJobsGetResponses, DownloadJobsGetErrors, ThrowOnError>({
+        url: '/api/v1/download-jobs/{id}',
         ...options
     });
 };
@@ -151,9 +158,9 @@ export const getV1DownloadJobsById = <ThrowOnError extends boolean = false>(opti
 /**
  * Get download job retry history
  */
-export const getV1DownloadJobsByIdHistory = <ThrowOnError extends boolean = false>(options: Options<GetV1DownloadJobsByIdHistoryData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1DownloadJobsByIdHistoryResponses, GetV1DownloadJobsByIdHistoryErrors, ThrowOnError>({
-        url: '/v1/download-jobs/{id}/history',
+export const downloadJobsHistory = <ThrowOnError extends boolean = false>(options: Options<DownloadJobsHistoryData, ThrowOnError>) => {
+    return (options.client ?? client).get<DownloadJobsHistoryResponses, DownloadJobsHistoryErrors, ThrowOnError>({
+        url: '/api/v1/download-jobs/{id}/history',
         ...options
     });
 };
@@ -161,39 +168,42 @@ export const getV1DownloadJobsByIdHistory = <ThrowOnError extends boolean = fals
 /**
  * List import tasks for download job
  */
-export const getV1DownloadJobsByIdImportTasks = <ThrowOnError extends boolean = false>(options: Options<GetV1DownloadJobsByIdImportTasksData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1DownloadJobsByIdImportTasksResponses, GetV1DownloadJobsByIdImportTasksErrors, ThrowOnError>({
-        url: '/v1/download-jobs/{id}/import-tasks',
+export const downloadJobsListImportTasks = <ThrowOnError extends boolean = false>(options: Options<DownloadJobsListImportTasksData, ThrowOnError>) => {
+    return (options.client ?? client).get<DownloadJobsListImportTasksResponses, DownloadJobsListImportTasksErrors, ThrowOnError>({
+        url: '/api/v1/download-jobs/{id}/import-tasks',
         ...options
     });
 };
 
 /**
  * Reimport failed import tasks
+ * Create new import tasks for failed (or all terminal) tasks of this download job.
  */
-export const postV1DownloadJobsByIdReimport = <ThrowOnError extends boolean = false>(options: Options<PostV1DownloadJobsByIdReimportData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1DownloadJobsByIdReimportResponses, PostV1DownloadJobsByIdReimportErrors, ThrowOnError>({
-        url: '/v1/download-jobs/{id}/reimport',
+export const downloadJobsReimport = <ThrowOnError extends boolean = false>(options: Options<DownloadJobsReimportData, ThrowOnError>) => {
+    return (options.client ?? client).post<DownloadJobsReimportResponses, DownloadJobsReimportErrors, ThrowOnError>({
+        url: '/api/v1/download-jobs/{id}/reimport',
         ...options
     });
 };
 
 /**
  * Retry failed download job
+ * Create a new download job linked to the failed one via previous_job_id. Returns 409 when the source status doesn't allow retrying.
  */
-export const postV1DownloadJobsByIdRetry = <ThrowOnError extends boolean = false>(options: Options<PostV1DownloadJobsByIdRetryData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1DownloadJobsByIdRetryResponses, PostV1DownloadJobsByIdRetryErrors, ThrowOnError>({
-        url: '/v1/download-jobs/{id}/retry',
+export const downloadJobsRetry = <ThrowOnError extends boolean = false>(options: Options<DownloadJobsRetryData, ThrowOnError>) => {
+    return (options.client ?? client).post<DownloadJobsRetryResponses, DownloadJobsRetryErrors, ThrowOnError>({
+        url: '/api/v1/download-jobs/{id}/retry',
         ...options
     });
 };
 
 /**
  * Get download job timeline
+ * Combined event log: download-job events plus all import-task events linked to this job.
  */
-export const getV1DownloadJobsByIdTimeline = <ThrowOnError extends boolean = false>(options: Options<GetV1DownloadJobsByIdTimelineData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1DownloadJobsByIdTimelineResponses, GetV1DownloadJobsByIdTimelineErrors, ThrowOnError>({
-        url: '/v1/download-jobs/{id}/timeline',
+export const downloadJobsTimeline = <ThrowOnError extends boolean = false>(options: Options<DownloadJobsTimelineData, ThrowOnError>) => {
+    return (options.client ?? client).get<DownloadJobsTimelineResponses, DownloadJobsTimelineErrors, ThrowOnError>({
+        url: '/api/v1/download-jobs/{id}/timeline',
         ...options
     });
 };
@@ -201,9 +211,9 @@ export const getV1DownloadJobsByIdTimeline = <ThrowOnError extends boolean = fal
 /**
  * List downloaders
  */
-export const getV1Downloaders = <ThrowOnError extends boolean = false>(options?: Options<GetV1DownloadersData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1DownloadersResponses, unknown, ThrowOnError>({
-        url: '/v1/downloaders',
+export const downloadersList = <ThrowOnError extends boolean = false>(options?: Options<DownloadersListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<DownloadersListResponses, DownloadersListErrors, ThrowOnError>({
+        url: '/api/v1/downloaders',
         ...options
     });
 };
@@ -211,9 +221,9 @@ export const getV1Downloaders = <ThrowOnError extends boolean = false>(options?:
 /**
  * Create downloader
  */
-export const postV1Downloaders = <ThrowOnError extends boolean = false>(options: Options<PostV1DownloadersData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1DownloadersResponses, PostV1DownloadersErrors, ThrowOnError>({
-        url: '/v1/downloaders',
+export const downloadersCreate = <ThrowOnError extends boolean = false>(options: Options<DownloadersCreateData, ThrowOnError>) => {
+    return (options.client ?? client).post<DownloadersCreateResponses, DownloadersCreateErrors, ThrowOnError>({
+        url: '/api/v1/downloaders',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -225,19 +235,19 @@ export const postV1Downloaders = <ThrowOnError extends boolean = false>(options:
 /**
  * Get default downloader by protocol
  */
-export const getV1DownloadersDefaultByProtocol = <ThrowOnError extends boolean = false>(options?: Options<GetV1DownloadersDefaultByProtocolData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1DownloadersDefaultByProtocolResponses, unknown, ThrowOnError>({
-        url: '/v1/downloaders/default/{protocol}',
+export const downloadersGetDefault = <ThrowOnError extends boolean = false>(options: Options<DownloadersGetDefaultData, ThrowOnError>) => {
+    return (options.client ?? client).get<DownloadersGetDefaultResponses, DownloadersGetDefaultErrors, ThrowOnError>({
+        url: '/api/v1/downloaders/default/{protocol}',
         ...options
     });
 };
 
 /**
- * Test downloader connection with form configuration
+ * Test downloader connection from form configuration
  */
-export const postV1DownloadersTest = <ThrowOnError extends boolean = false>(options: Options<PostV1DownloadersTestData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1DownloadersTestResponses, PostV1DownloadersTestErrors, ThrowOnError>({
-        url: '/v1/downloaders/test',
+export const downloadersTestConfig = <ThrowOnError extends boolean = false>(options: Options<DownloadersTestConfigData, ThrowOnError>) => {
+    return (options.client ?? client).post<DownloadersTestConfigResponses, DownloadersTestConfigErrors, ThrowOnError>({
+        url: '/api/v1/downloaders/test',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -249,9 +259,9 @@ export const postV1DownloadersTest = <ThrowOnError extends boolean = false>(opti
 /**
  * Delete downloader
  */
-export const deleteV1DownloadersById = <ThrowOnError extends boolean = false>(options: Options<DeleteV1DownloadersByIdData, ThrowOnError>) => {
-    return (options.client ?? client).delete<DeleteV1DownloadersByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/downloaders/{id}',
+export const downloadersDelete = <ThrowOnError extends boolean = false>(options: Options<DownloadersDeleteData, ThrowOnError>) => {
+    return (options.client ?? client).delete<DownloadersDeleteResponses, DownloadersDeleteErrors, ThrowOnError>({
+        url: '/api/v1/downloaders/{id}',
         ...options
     });
 };
@@ -259,9 +269,9 @@ export const deleteV1DownloadersById = <ThrowOnError extends boolean = false>(op
 /**
  * Get downloader
  */
-export const getV1DownloadersById = <ThrowOnError extends boolean = false>(options?: Options<GetV1DownloadersByIdData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1DownloadersByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/downloaders/{id}',
+export const downloadersGet = <ThrowOnError extends boolean = false>(options: Options<DownloadersGetData, ThrowOnError>) => {
+    return (options.client ?? client).get<DownloadersGetResponses, DownloadersGetErrors, ThrowOnError>({
+        url: '/api/v1/downloaders/{id}',
         ...options
     });
 };
@@ -269,9 +279,9 @@ export const getV1DownloadersById = <ThrowOnError extends boolean = false>(optio
 /**
  * Update downloader
  */
-export const putV1DownloadersById = <ThrowOnError extends boolean = false>(options: Options<PutV1DownloadersByIdData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1DownloadersByIdResponses, PutV1DownloadersByIdErrors, ThrowOnError>({
-        url: '/v1/downloaders/{id}',
+export const downloadersUpdate = <ThrowOnError extends boolean = false>(options: Options<DownloadersUpdateData, ThrowOnError>) => {
+    return (options.client ?? client).put<DownloadersUpdateResponses, DownloadersUpdateErrors, ThrowOnError>({
+        url: '/api/v1/downloaders/{id}',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -283,39 +293,53 @@ export const putV1DownloadersById = <ThrowOnError extends boolean = false>(optio
 /**
  * Test downloader connection
  */
-export const postV1DownloadersByIdTest = <ThrowOnError extends boolean = false>(options: Options<PostV1DownloadersByIdTestData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1DownloadersByIdTestResponses, PostV1DownloadersByIdTestErrors, ThrowOnError>({
-        url: '/v1/downloaders/{id}/test',
+export const downloadersTest = <ThrowOnError extends boolean = false>(options: Options<DownloadersTestData, ThrowOnError>) => {
+    return (options.client ?? client).post<DownloadersTestResponses, DownloadersTestErrors, ThrowOnError>({
+        url: '/api/v1/downloaders/{id}/test',
+        ...options
+    });
+};
+
+/**
+ * Subscribe to server-sent events
+ * Long-lived SSE stream of download / import / scan progress and other real-time events. Each event has an `event` name (one of the discriminated set below), an optional `id`, and a JSON `data` payload.
+ */
+export const eventsStream = <ThrowOnError extends boolean = false>(options?: Options<EventsStreamData, ThrowOnError>) => {
+    return (options?.client ?? client).sse.get<EventsStreamResponses, EventsStreamErrors, ThrowOnError>({
+        url: '/api/v1/events',
         ...options
     });
 };
 
 /**
  * Browse filesystem directories
+ * Lists the immediate child directories of an absolute path. Used by the FE library-picker. Hides dotfiles and (at the root only) system directories.
  */
-export const getV1FilesystemBrowse = <ThrowOnError extends boolean = false>(options?: Options<GetV1FilesystemBrowseData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1FilesystemBrowseResponses, GetV1FilesystemBrowseErrors, ThrowOnError>({
-        url: '/v1/filesystem/browse',
+export const filesystemBrowse = <ThrowOnError extends boolean = false>(options?: Options<FilesystemBrowseData, ThrowOnError>) => {
+    return (options?.client ?? client).get<FilesystemBrowseResponses, FilesystemBrowseErrors, ThrowOnError>({
+        url: '/api/v1/filesystem/browse',
         ...options
     });
 };
 
 /**
  * Get home feed
+ * Returns the curated home-screen feed (hero items + rows).
  */
-export const getV1Home = <ThrowOnError extends boolean = false>(options?: Options<GetV1HomeData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1HomeResponses, unknown, ThrowOnError>({
-        url: '/v1/home',
+export const feedGet = <ThrowOnError extends boolean = false>(options?: Options<FeedGetData, ThrowOnError>) => {
+    return (options?.client ?? client).get<FeedGetResponses, FeedGetErrors, ThrowOnError>({
+        url: '/api/v1/home',
         ...options
     });
 };
 
 /**
  * List import tasks
+ * Paginated import tasks, optionally filtered by status.
  */
-export const getV1ImportTasks = <ThrowOnError extends boolean = false>(options?: Options<GetV1ImportTasksData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1ImportTasksResponses, unknown, ThrowOnError>({
-        url: '/v1/import-tasks',
+export const importTasksList = <ThrowOnError extends boolean = false>(options?: Options<ImportTasksListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<ImportTasksListResponses, ImportTasksListErrors, ThrowOnError>({
+        url: '/api/v1/import-tasks',
         ...options
     });
 };
@@ -323,29 +347,30 @@ export const getV1ImportTasks = <ThrowOnError extends boolean = false>(options?:
 /**
  * Get import task counts by status
  */
-export const getV1ImportTasksCounts = <ThrowOnError extends boolean = false>(options?: Options<GetV1ImportTasksCountsData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1ImportTasksCountsResponses, unknown, ThrowOnError>({
-        url: '/v1/import-tasks/counts',
+export const importTasksCounts = <ThrowOnError extends boolean = false>(options?: Options<ImportTasksCountsData, ThrowOnError>) => {
+    return (options?.client ?? client).get<ImportTasksCountsResponses, ImportTasksCountsErrors, ThrowOnError>({
+        url: '/api/v1/import-tasks/counts',
         ...options
     });
 };
 
 /**
- * Get import task details
+ * Get import task with details
  */
-export const getV1ImportTasksById = <ThrowOnError extends boolean = false>(options: Options<GetV1ImportTasksByIdData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1ImportTasksByIdResponses, GetV1ImportTasksByIdErrors, ThrowOnError>({
-        url: '/v1/import-tasks/{id}',
+export const importTasksGet = <ThrowOnError extends boolean = false>(options: Options<ImportTasksGetData, ThrowOnError>) => {
+    return (options.client ?? client).get<ImportTasksGetResponses, ImportTasksGetErrors, ThrowOnError>({
+        url: '/api/v1/import-tasks/{id}',
         ...options
     });
 };
 
 /**
  * Cancel import task
+ * Cancel a pending import task. Returns 409 when the status doesn't allow cancelling.
  */
-export const postV1ImportTasksByIdCancel = <ThrowOnError extends boolean = false>(options: Options<PostV1ImportTasksByIdCancelData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1ImportTasksByIdCancelResponses, PostV1ImportTasksByIdCancelErrors, ThrowOnError>({
-        url: '/v1/import-tasks/{id}/cancel',
+export const importTasksCancel = <ThrowOnError extends boolean = false>(options: Options<ImportTasksCancelData, ThrowOnError>) => {
+    return (options.client ?? client).post<ImportTasksCancelResponses, ImportTasksCancelErrors, ThrowOnError>({
+        url: '/api/v1/import-tasks/{id}/cancel',
         ...options
     });
 };
@@ -353,19 +378,20 @@ export const postV1ImportTasksByIdCancel = <ThrowOnError extends boolean = false
 /**
  * Get import task reimport history
  */
-export const getV1ImportTasksByIdHistory = <ThrowOnError extends boolean = false>(options: Options<GetV1ImportTasksByIdHistoryData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1ImportTasksByIdHistoryResponses, GetV1ImportTasksByIdHistoryErrors, ThrowOnError>({
-        url: '/v1/import-tasks/{id}/history',
+export const importTasksHistory = <ThrowOnError extends boolean = false>(options: Options<ImportTasksHistoryData, ThrowOnError>) => {
+    return (options.client ?? client).get<ImportTasksHistoryResponses, ImportTasksHistoryErrors, ThrowOnError>({
+        url: '/api/v1/import-tasks/{id}/history',
         ...options
     });
 };
 
 /**
- * Reimport a file
+ * Reimport import task
+ * Create a new import task linked to this one via previous_task_id. Returns 409 when the source status doesn't allow reimport.
  */
-export const postV1ImportTasksByIdReimport = <ThrowOnError extends boolean = false>(options: Options<PostV1ImportTasksByIdReimportData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1ImportTasksByIdReimportResponses, PostV1ImportTasksByIdReimportErrors, ThrowOnError>({
-        url: '/v1/import-tasks/{id}/reimport',
+export const importTasksReimport = <ThrowOnError extends boolean = false>(options: Options<ImportTasksReimportData, ThrowOnError>) => {
+    return (options.client ?? client).post<ImportTasksReimportResponses, ImportTasksReimportErrors, ThrowOnError>({
+        url: '/api/v1/import-tasks/{id}/reimport',
         ...options
     });
 };
@@ -373,19 +399,20 @@ export const postV1ImportTasksByIdReimport = <ThrowOnError extends boolean = fal
 /**
  * Get import task timeline
  */
-export const getV1ImportTasksByIdTimeline = <ThrowOnError extends boolean = false>(options: Options<GetV1ImportTasksByIdTimelineData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1ImportTasksByIdTimelineResponses, GetV1ImportTasksByIdTimelineErrors, ThrowOnError>({
-        url: '/v1/import-tasks/{id}/timeline',
+export const importTasksTimeline = <ThrowOnError extends boolean = false>(options: Options<ImportTasksTimelineData, ThrowOnError>) => {
+    return (options.client ?? client).get<ImportTasksTimelineResponses, ImportTasksTimelineErrors, ThrowOnError>({
+        url: '/api/v1/import-tasks/{id}/timeline',
         ...options
     });
 };
 
 /**
- * Save indexer configuration
+ * Create or update indexer
+ * Saves an indexer configuration. ID == 0 in the body inserts a new indexer; non-zero updates the existing one.
  */
-export const postV1Indexer = <ThrowOnError extends boolean = false>(options: Options<PostV1IndexerData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1IndexerResponses, PostV1IndexerErrors, ThrowOnError>({
-        url: '/v1/indexer',
+export const indexersSave = <ThrowOnError extends boolean = false>(options: Options<IndexersSaveData, ThrowOnError>) => {
+    return (options.client ?? client).post<IndexersSaveResponses, IndexersSaveErrors, ThrowOnError>({
+        url: '/api/v1/indexer',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -395,21 +422,26 @@ export const postV1Indexer = <ThrowOnError extends boolean = false>(options: Opt
 };
 
 /**
- * Perform an action on an indexer
+ * Perform an indexer action
+ * Proxies an arbitrary Prowlarr indexer-action call. Body and response shapes are opaque.
  */
-export const postV1IndexerActionByName = <ThrowOnError extends boolean = false>(options: Options<PostV1IndexerActionByNameData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1IndexerActionByNameResponses, PostV1IndexerActionByNameErrors, ThrowOnError>({
-        url: '/v1/indexer/action/{name}',
-        ...options
+export const indexersAction = <ThrowOnError extends boolean = false>(options: Options<IndexersActionData, ThrowOnError>) => {
+    return (options.client ?? client).post<IndexersActionResponses, IndexersActionErrors, ThrowOnError>({
+        url: '/api/v1/indexer/action/{name}',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
     });
 };
 
 /**
  * Test unsaved indexer configuration
  */
-export const postV1IndexerTest = <ThrowOnError extends boolean = false>(options: Options<PostV1IndexerTestData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1IndexerTestResponses, PostV1IndexerTestErrors, ThrowOnError>({
-        url: '/v1/indexer/test',
+export const indexersTestUnsaved = <ThrowOnError extends boolean = false>(options: Options<IndexersTestUnsavedData, ThrowOnError>) => {
+    return (options.client ?? client).post<IndexersTestUnsavedResponses, IndexersTestUnsavedErrors, ThrowOnError>({
+        url: '/api/v1/indexer/test',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -421,59 +453,9 @@ export const postV1IndexerTest = <ThrowOnError extends boolean = false>(options:
 /**
  * Delete indexer
  */
-export const deleteV1IndexerById = <ThrowOnError extends boolean = false>(options: Options<DeleteV1IndexerByIdData, ThrowOnError>) => {
-    return (options.client ?? client).delete<DeleteV1IndexerByIdResponses, DeleteV1IndexerByIdErrors, ThrowOnError>({
-        url: '/v1/indexer/{id}',
-        ...options
-    });
-};
-
-/**
- * Test saved indexer
- */
-export const postV1IndexerByIdTest = <ThrowOnError extends boolean = false>(options: Options<PostV1IndexerByIdTestData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1IndexerByIdTestResponses, PostV1IndexerByIdTestErrors, ThrowOnError>({
-        url: '/v1/indexer/{id}/test',
-        ...options
-    });
-};
-
-/**
- * Toggle indexer enable state
- */
-export const putV1IndexerByIdToggle = <ThrowOnError extends boolean = false>(options: Options<PutV1IndexerByIdToggleData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1IndexerByIdToggleResponses, PutV1IndexerByIdToggleErrors, ThrowOnError>({
-        url: '/v1/indexer/{id}/toggle',
-        ...options
-    });
-};
-
-/**
- * List configured indexers
- */
-export const getV1IndexersConfigured = <ThrowOnError extends boolean = false>(options?: Options<GetV1IndexersConfiguredData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1IndexersConfiguredResponses, unknown, ThrowOnError>({
-        url: '/v1/indexers/configured',
-        ...options
-    });
-};
-
-/**
- * Get schema of indexers
- */
-export const getV1IndexersSchema = <ThrowOnError extends boolean = false>(options?: Options<GetV1IndexersSchemaData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1IndexersSchemaResponses, unknown, ThrowOnError>({
-        url: '/v1/indexers/schema',
-        ...options
-    });
-};
-
-/**
- * Test all indexers
- */
-export const postV1IndexersTestall = <ThrowOnError extends boolean = false>(options?: Options<PostV1IndexersTestallData, ThrowOnError>) => {
-    return (options?.client ?? client).post<PostV1IndexersTestallResponses, PostV1IndexersTestallErrors, ThrowOnError>({
-        url: '/v1/indexers/testall',
+export const indexersDelete = <ThrowOnError extends boolean = false>(options: Options<IndexersDeleteData, ThrowOnError>) => {
+    return (options.client ?? client).delete<IndexersDeleteResponses, IndexersDeleteErrors, ThrowOnError>({
+        url: '/api/v1/indexer/{id}',
         ...options
     });
 };
@@ -481,9 +463,60 @@ export const postV1IndexersTestall = <ThrowOnError extends boolean = false>(opti
 /**
  * Get indexer by ID
  */
-export const getV1IndexersById = <ThrowOnError extends boolean = false>(options: Options<GetV1IndexersByIdData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1IndexersByIdResponses, GetV1IndexersByIdErrors, ThrowOnError>({
-        url: '/v1/indexers/{id}',
+export const indexersGet = <ThrowOnError extends boolean = false>(options: Options<IndexersGetData, ThrowOnError>) => {
+    return (options.client ?? client).get<IndexersGetResponses, IndexersGetErrors, ThrowOnError>({
+        url: '/api/v1/indexer/{id}',
+        ...options
+    });
+};
+
+/**
+ * Test saved indexer
+ */
+export const indexersTestSaved = <ThrowOnError extends boolean = false>(options: Options<IndexersTestSavedData, ThrowOnError>) => {
+    return (options.client ?? client).post<IndexersTestSavedResponses, IndexersTestSavedErrors, ThrowOnError>({
+        url: '/api/v1/indexer/{id}/test',
+        ...options
+    });
+};
+
+/**
+ * Toggle indexer enable state
+ */
+export const indexersToggle = <ThrowOnError extends boolean = false>(options: Options<IndexersToggleData, ThrowOnError>) => {
+    return (options.client ?? client).put<IndexersToggleResponses, IndexersToggleErrors, ThrowOnError>({
+        url: '/api/v1/indexer/{id}/toggle',
+        ...options
+    });
+};
+
+/**
+ * List configured indexers
+ */
+export const indexersListConfigured = <ThrowOnError extends boolean = false>(options?: Options<IndexersListConfiguredData, ThrowOnError>) => {
+    return (options?.client ?? client).get<IndexersListConfiguredResponses, IndexersListConfiguredErrors, ThrowOnError>({
+        url: '/api/v1/indexers/configured',
+        ...options
+    });
+};
+
+/**
+ * Get indexer schema
+ * Returns the catalog of indexer definitions Prowlarr knows how to configure.
+ */
+export const indexersGetSchema = <ThrowOnError extends boolean = false>(options?: Options<IndexersGetSchemaData, ThrowOnError>) => {
+    return (options?.client ?? client).get<IndexersGetSchemaResponses, IndexersGetSchemaErrors, ThrowOnError>({
+        url: '/api/v1/indexers/schema',
+        ...options
+    });
+};
+
+/**
+ * Test all configured indexers
+ */
+export const indexersTestAll = <ThrowOnError extends boolean = false>(options?: Options<IndexersTestAllData, ThrowOnError>) => {
+    return (options?.client ?? client).post<IndexersTestAllResponses, IndexersTestAllErrors, ThrowOnError>({
+        url: '/api/v1/indexers/testall',
         ...options
     });
 };
@@ -491,9 +524,9 @@ export const getV1IndexersById = <ThrowOnError extends boolean = false>(options:
 /**
  * List invites
  */
-export const getV1Invites = <ThrowOnError extends boolean = false>(options?: Options<GetV1InvitesData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1InvitesResponses, unknown, ThrowOnError>({
-        url: '/v1/invites',
+export const invitesList = <ThrowOnError extends boolean = false>(options?: Options<InvitesListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<InvitesListResponses, InvitesListErrors, ThrowOnError>({
+        url: '/api/v1/invites',
         ...options
     });
 };
@@ -501,9 +534,9 @@ export const getV1Invites = <ThrowOnError extends boolean = false>(options?: Opt
 /**
  * Create invite
  */
-export const postV1Invites = <ThrowOnError extends boolean = false>(options: Options<PostV1InvitesData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1InvitesResponses, PostV1InvitesErrors, ThrowOnError>({
-        url: '/v1/invites',
+export const invitesCreate = <ThrowOnError extends boolean = false>(options: Options<InvitesCreateData, ThrowOnError>) => {
+    return (options.client ?? client).post<InvitesCreateResponses, InvitesCreateErrors, ThrowOnError>({
+        url: '/api/v1/invites',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -515,9 +548,9 @@ export const postV1Invites = <ThrowOnError extends boolean = false>(options: Opt
 /**
  * Delete invite
  */
-export const deleteV1InvitesById = <ThrowOnError extends boolean = false>(options: Options<DeleteV1InvitesByIdData, ThrowOnError>) => {
-    return (options.client ?? client).delete<DeleteV1InvitesByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/invites/{id}',
+export const invitesDelete = <ThrowOnError extends boolean = false>(options: Options<InvitesDeleteData, ThrowOnError>) => {
+    return (options.client ?? client).delete<InvitesDeleteResponses, InvitesDeleteErrors, ThrowOnError>({
+        url: '/api/v1/invites/{id}',
         ...options
     });
 };
@@ -525,9 +558,9 @@ export const deleteV1InvitesById = <ThrowOnError extends boolean = false>(option
 /**
  * List libraries
  */
-export const getV1Libraries = <ThrowOnError extends boolean = false>(options?: Options<GetV1LibrariesData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1LibrariesResponses, unknown, ThrowOnError>({
-        url: '/v1/libraries',
+export const librariesList = <ThrowOnError extends boolean = false>(options?: Options<LibrariesListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<LibrariesListResponses, LibrariesListErrors, ThrowOnError>({
+        url: '/api/v1/libraries',
         ...options
     });
 };
@@ -535,9 +568,9 @@ export const getV1Libraries = <ThrowOnError extends boolean = false>(options?: O
 /**
  * Create library
  */
-export const postV1Libraries = <ThrowOnError extends boolean = false>(options: Options<PostV1LibrariesData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1LibrariesResponses, PostV1LibrariesErrors, ThrowOnError>({
-        url: '/v1/libraries',
+export const librariesCreate = <ThrowOnError extends boolean = false>(options: Options<LibrariesCreateData, ThrowOnError>) => {
+    return (options.client ?? client).post<LibrariesCreateResponses, LibrariesCreateErrors, ThrowOnError>({
+        url: '/api/v1/libraries',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -549,9 +582,9 @@ export const postV1Libraries = <ThrowOnError extends boolean = false>(options: O
 /**
  * Delete library
  */
-export const deleteV1LibrariesById = <ThrowOnError extends boolean = false>(options: Options<DeleteV1LibrariesByIdData, ThrowOnError>) => {
-    return (options.client ?? client).delete<DeleteV1LibrariesByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/libraries/{id}',
+export const librariesDelete = <ThrowOnError extends boolean = false>(options: Options<LibrariesDeleteData, ThrowOnError>) => {
+    return (options.client ?? client).delete<LibrariesDeleteResponses, LibrariesDeleteErrors, ThrowOnError>({
+        url: '/api/v1/libraries/{id}',
         ...options
     });
 };
@@ -559,9 +592,9 @@ export const deleteV1LibrariesById = <ThrowOnError extends boolean = false>(opti
 /**
  * Get library
  */
-export const getV1LibrariesById = <ThrowOnError extends boolean = false>(options?: Options<GetV1LibrariesByIdData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1LibrariesByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/libraries/{id}',
+export const librariesGet = <ThrowOnError extends boolean = false>(options: Options<LibrariesGetData, ThrowOnError>) => {
+    return (options.client ?? client).get<LibrariesGetResponses, LibrariesGetErrors, ThrowOnError>({
+        url: '/api/v1/libraries/{id}',
         ...options
     });
 };
@@ -569,9 +602,9 @@ export const getV1LibrariesById = <ThrowOnError extends boolean = false>(options
 /**
  * Update library
  */
-export const putV1LibrariesById = <ThrowOnError extends boolean = false>(options: Options<PutV1LibrariesByIdData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1LibrariesByIdResponses, PutV1LibrariesByIdErrors, ThrowOnError>({
-        url: '/v1/libraries/{id}',
+export const librariesUpdate = <ThrowOnError extends boolean = false>(options: Options<LibrariesUpdateData, ThrowOnError>) => {
+    return (options.client ?? client).put<LibrariesUpdateResponses, LibrariesUpdateErrors, ThrowOnError>({
+        url: '/api/v1/libraries/{id}',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -582,40 +615,43 @@ export const putV1LibrariesById = <ThrowOnError extends boolean = false>(options
 
 /**
  * Scan library
+ * Kick off an async filesystem scan for the library. Returns 202 with the scan ID; 409 if a scan is already running.
  */
-export const postV1LibrariesByIdScan = <ThrowOnError extends boolean = false>(options: Options<PostV1LibrariesByIdScanData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1LibrariesByIdScanResponses, PostV1LibrariesByIdScanErrors, ThrowOnError>({
-        url: '/v1/libraries/{id}/scan',
+export const librariesScan = <ThrowOnError extends boolean = false>(options: Options<LibrariesScanData, ThrowOnError>) => {
+    return (options.client ?? client).post<LibrariesScanResponses, LibrariesScanErrors, ThrowOnError>({
+        url: '/api/v1/libraries/{id}/scan',
         ...options
     });
 };
 
 /**
- * List media items
+ * List library items
  */
-export const getV1Library = <ThrowOnError extends boolean = false>(options?: Options<GetV1LibraryData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1LibraryResponses, unknown, ThrowOnError>({
-        url: '/v1/library',
+export const libraryList = <ThrowOnError extends boolean = false>(options?: Options<LibraryListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<LibraryListResponses, LibraryListErrors, ThrowOnError>({
+        url: '/api/v1/library',
         ...options
     });
 };
 
 /**
- * Get movie (by TMDB id)
+ * Get movie
+ * Returns the full movie detail (TMDB + local files).
  */
-export const getV1MovieById = <ThrowOnError extends boolean = false>(options: Options<GetV1MovieByIdData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1MovieByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/movie/{id}',
+export const mediaGetMovie = <ThrowOnError extends boolean = false>(options: Options<MediaGetMovieData, ThrowOnError>) => {
+    return (options.client ?? client).get<MediaGetMovieResponses, MediaGetMovieErrors, ThrowOnError>({
+        url: '/api/v1/movie/{id}',
         ...options
     });
 };
 
 /**
- * Download a download candidate
+ * Enqueue a movie download candidate
+ * Runs the policy engine, creates a download job, and returns the trace + job.
  */
-export const postV1MovieByIdCandidateDownload = <ThrowOnError extends boolean = false>(options: Options<PostV1MovieByIdCandidateDownloadData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1MovieByIdCandidateDownloadResponses, PostV1MovieByIdCandidateDownloadErrors, ThrowOnError>({
-        url: '/v1/movie/{id}/candidate/download',
+export const downloadCandidatesDownloadMovie = <ThrowOnError extends boolean = false>(options: Options<DownloadCandidatesDownloadMovieData, ThrowOnError>) => {
+    return (options.client ?? client).post<DownloadCandidatesDownloadMovieResponses, DownloadCandidatesDownloadMovieErrors, ThrowOnError>({
+        url: '/api/v1/movie/{id}/candidate/download',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -625,11 +661,11 @@ export const postV1MovieByIdCandidateDownload = <ThrowOnError extends boolean = 
 };
 
 /**
- * Preview policy evaluation for a download candidate
+ * Preview policy evaluation for a movie candidate
  */
-export const postV1MovieByIdCandidatePreview = <ThrowOnError extends boolean = false>(options: Options<PostV1MovieByIdCandidatePreviewData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1MovieByIdCandidatePreviewResponses, PostV1MovieByIdCandidatePreviewErrors, ThrowOnError>({
-        url: '/v1/movie/{id}/candidate/preview',
+export const downloadCandidatesPreviewMovie = <ThrowOnError extends boolean = false>(options: Options<DownloadCandidatesPreviewMovieData, ThrowOnError>) => {
+    return (options.client ?? client).post<DownloadCandidatesPreviewMovieResponses, DownloadCandidatesPreviewMovieErrors, ThrowOnError>({
+        url: '/api/v1/movie/{id}/candidate/preview',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -639,21 +675,22 @@ export const postV1MovieByIdCandidatePreview = <ThrowOnError extends boolean = f
 };
 
 /**
- * Get download candidates for a movie
+ * List download candidates for a movie
  */
-export const getV1MovieByIdCandidates = <ThrowOnError extends boolean = false>(options: Options<GetV1MovieByIdCandidatesData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1MovieByIdCandidatesResponses, GetV1MovieByIdCandidatesErrors, ThrowOnError>({
-        url: '/v1/movie/{id}/candidates',
+export const downloadCandidatesListMovie = <ThrowOnError extends boolean = false>(options: Options<DownloadCandidatesListMovieData, ThrowOnError>) => {
+    return (options.client ?? client).get<DownloadCandidatesListMovieResponses, DownloadCandidatesListMovieErrors, ThrowOnError>({
+        url: '/api/v1/movie/{id}/candidates',
         ...options
     });
 };
 
 /**
- * List movie download jobs
+ * List download jobs for movie
+ * List every download job tied to the given TMDB movie id.
  */
-export const getV1MovieByIdDownloadJobs = <ThrowOnError extends boolean = false>(options: Options<GetV1MovieByIdDownloadJobsData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1MovieByIdDownloadJobsResponses, GetV1MovieByIdDownloadJobsErrors, ThrowOnError>({
-        url: '/v1/movie/{id}/download-jobs',
+export const downloadJobsListForMovie = <ThrowOnError extends boolean = false>(options: Options<DownloadJobsListForMovieData, ThrowOnError>) => {
+    return (options.client ?? client).get<DownloadJobsListForMovieResponses, DownloadJobsListForMovieErrors, ThrowOnError>({
+        url: '/api/v1/movie/{id}/download-jobs',
         ...options
     });
 };
@@ -661,9 +698,9 @@ export const getV1MovieByIdDownloadJobs = <ThrowOnError extends boolean = false>
 /**
  * List name templates
  */
-export const getV1NameTemplates = <ThrowOnError extends boolean = false>(options?: Options<GetV1NameTemplatesData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1NameTemplatesResponses, unknown, ThrowOnError>({
-        url: '/v1/name-templates',
+export const nameTemplatesList = <ThrowOnError extends boolean = false>(options?: Options<NameTemplatesListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<NameTemplatesListResponses, NameTemplatesListErrors, ThrowOnError>({
+        url: '/api/v1/name-templates',
         ...options
     });
 };
@@ -671,9 +708,9 @@ export const getV1NameTemplates = <ThrowOnError extends boolean = false>(options
 /**
  * Create name template
  */
-export const postV1NameTemplates = <ThrowOnError extends boolean = false>(options: Options<PostV1NameTemplatesData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1NameTemplatesResponses, PostV1NameTemplatesErrors, ThrowOnError>({
-        url: '/v1/name-templates',
+export const nameTemplatesCreate = <ThrowOnError extends boolean = false>(options: Options<NameTemplatesCreateData, ThrowOnError>) => {
+    return (options.client ?? client).post<NameTemplatesCreateResponses, NameTemplatesCreateErrors, ThrowOnError>({
+        url: '/api/v1/name-templates',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -685,9 +722,9 @@ export const postV1NameTemplates = <ThrowOnError extends boolean = false>(option
 /**
  * Get default name template by type
  */
-export const getV1NameTemplatesDefaultByType = <ThrowOnError extends boolean = false>(options: Options<GetV1NameTemplatesDefaultByTypeData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1NameTemplatesDefaultByTypeResponses, GetV1NameTemplatesDefaultByTypeErrors, ThrowOnError>({
-        url: '/v1/name-templates/default/{type}',
+export const nameTemplatesGetDefault = <ThrowOnError extends boolean = false>(options: Options<NameTemplatesGetDefaultData, ThrowOnError>) => {
+    return (options.client ?? client).get<NameTemplatesGetDefaultResponses, NameTemplatesGetDefaultErrors, ThrowOnError>({
+        url: '/api/v1/name-templates/default/{type}',
         ...options
     });
 };
@@ -695,9 +732,9 @@ export const getV1NameTemplatesDefaultByType = <ThrowOnError extends boolean = f
 /**
  * Delete name template
  */
-export const deleteV1NameTemplatesById = <ThrowOnError extends boolean = false>(options: Options<DeleteV1NameTemplatesByIdData, ThrowOnError>) => {
-    return (options.client ?? client).delete<DeleteV1NameTemplatesByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/name-templates/{id}',
+export const nameTemplatesDelete = <ThrowOnError extends boolean = false>(options: Options<NameTemplatesDeleteData, ThrowOnError>) => {
+    return (options.client ?? client).delete<NameTemplatesDeleteResponses, NameTemplatesDeleteErrors, ThrowOnError>({
+        url: '/api/v1/name-templates/{id}',
         ...options
     });
 };
@@ -705,9 +742,9 @@ export const deleteV1NameTemplatesById = <ThrowOnError extends boolean = false>(
 /**
  * Get name template
  */
-export const getV1NameTemplatesById = <ThrowOnError extends boolean = false>(options?: Options<GetV1NameTemplatesByIdData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1NameTemplatesByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/name-templates/{id}',
+export const nameTemplatesGet = <ThrowOnError extends boolean = false>(options: Options<NameTemplatesGetData, ThrowOnError>) => {
+    return (options.client ?? client).get<NameTemplatesGetResponses, NameTemplatesGetErrors, ThrowOnError>({
+        url: '/api/v1/name-templates/{id}',
         ...options
     });
 };
@@ -715,9 +752,9 @@ export const getV1NameTemplatesById = <ThrowOnError extends boolean = false>(opt
 /**
  * Update name template
  */
-export const putV1NameTemplatesById = <ThrowOnError extends boolean = false>(options: Options<PutV1NameTemplatesByIdData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1NameTemplatesByIdResponses, PutV1NameTemplatesByIdErrors, ThrowOnError>({
-        url: '/v1/name-templates/{id}',
+export const nameTemplatesUpdate = <ThrowOnError extends boolean = false>(options: Options<NameTemplatesUpdateData, ThrowOnError>) => {
+    return (options.client ?? client).put<NameTemplatesUpdateResponses, NameTemplatesUpdateErrors, ThrowOnError>({
+        url: '/api/v1/name-templates/{id}',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -727,11 +764,12 @@ export const putV1NameTemplatesById = <ThrowOnError extends boolean = false>(opt
 };
 
 /**
- * Get person (by TMDB id)
+ * Get person
+ * Returns the full person detail.
  */
-export const getV1PersonById = <ThrowOnError extends boolean = false>(options: Options<GetV1PersonByIdData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1PersonByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/person/{id}',
+export const mediaGetPerson = <ThrowOnError extends boolean = false>(options: Options<MediaGetPersonData, ThrowOnError>) => {
+    return (options.client ?? client).get<MediaGetPersonResponses, MediaGetPersonErrors, ThrowOnError>({
+        url: '/api/v1/person/{id}',
         ...options
     });
 };
@@ -739,9 +777,9 @@ export const getV1PersonById = <ThrowOnError extends boolean = false>(options: O
 /**
  * List policies
  */
-export const getV1Policies = <ThrowOnError extends boolean = false>(options?: Options<GetV1PoliciesData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1PoliciesResponses, unknown, ThrowOnError>({
-        url: '/v1/policies',
+export const policiesList = <ThrowOnError extends boolean = false>(options?: Options<PoliciesListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<PoliciesListResponses, PoliciesListErrors, ThrowOnError>({
+        url: '/api/v1/policies',
         ...options
     });
 };
@@ -749,9 +787,9 @@ export const getV1Policies = <ThrowOnError extends boolean = false>(options?: Op
 /**
  * Create policy
  */
-export const postV1Policies = <ThrowOnError extends boolean = false>(options: Options<PostV1PoliciesData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1PoliciesResponses, PostV1PoliciesErrors, ThrowOnError>({
-        url: '/v1/policies',
+export const policiesCreate = <ThrowOnError extends boolean = false>(options: Options<PoliciesCreateData, ThrowOnError>) => {
+    return (options.client ?? client).post<PoliciesCreateResponses, PoliciesCreateErrors, ThrowOnError>({
+        url: '/api/v1/policies',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -761,11 +799,11 @@ export const postV1Policies = <ThrowOnError extends boolean = false>(options: Op
 };
 
 /**
- * Evaluate policies against torrent metadata
+ * Evaluate policies against a download candidate
  */
-export const postV1PoliciesEvaluate = <ThrowOnError extends boolean = false>(options: Options<PostV1PoliciesEvaluateData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1PoliciesEvaluateResponses, PostV1PoliciesEvaluateErrors, ThrowOnError>({
-        url: '/v1/policies/evaluate',
+export const policiesEvaluate = <ThrowOnError extends boolean = false>(options: Options<PoliciesEvaluateData, ThrowOnError>) => {
+    return (options.client ?? client).post<PoliciesEvaluateResponses, PoliciesEvaluateErrors, ThrowOnError>({
+        url: '/api/v1/policies/evaluate',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -775,21 +813,11 @@ export const postV1PoliciesEvaluate = <ThrowOnError extends boolean = false>(opt
 };
 
 /**
- * Get field definitions
+ * Get policy field definitions
  */
-export const getV1PoliciesFields = <ThrowOnError extends boolean = false>(options?: Options<GetV1PoliciesFieldsData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1PoliciesFieldsResponses, unknown, ThrowOnError>({
-        url: '/v1/policies/fields',
-        ...options
-    });
-};
-
-/**
- * List full policies
- */
-export const getV1PoliciesFull = <ThrowOnError extends boolean = false>(options?: Options<GetV1PoliciesFullData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1PoliciesFullResponses, unknown, ThrowOnError>({
-        url: '/v1/policies/full',
+export const policiesGetFields = <ThrowOnError extends boolean = false>(options?: Options<PoliciesGetFieldsData, ThrowOnError>) => {
+    return (options?.client ?? client).get<PoliciesGetFieldsResponses, PoliciesGetFieldsErrors, ThrowOnError>({
+        url: '/api/v1/policies/fields',
         ...options
     });
 };
@@ -797,9 +825,9 @@ export const getV1PoliciesFull = <ThrowOnError extends boolean = false>(options?
 /**
  * Delete policy
  */
-export const deleteV1PoliciesById = <ThrowOnError extends boolean = false>(options: Options<DeleteV1PoliciesByIdData, ThrowOnError>) => {
-    return (options.client ?? client).delete<DeleteV1PoliciesByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/policies/{id}',
+export const policiesDelete = <ThrowOnError extends boolean = false>(options: Options<PoliciesDeleteData, ThrowOnError>) => {
+    return (options.client ?? client).delete<PoliciesDeleteResponses, PoliciesDeleteErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}',
         ...options
     });
 };
@@ -807,9 +835,9 @@ export const deleteV1PoliciesById = <ThrowOnError extends boolean = false>(optio
 /**
  * Get policy
  */
-export const getV1PoliciesById = <ThrowOnError extends boolean = false>(options?: Options<GetV1PoliciesByIdData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1PoliciesByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/policies/{id}',
+export const policiesGet = <ThrowOnError extends boolean = false>(options: Options<PoliciesGetData, ThrowOnError>) => {
+    return (options.client ?? client).get<PoliciesGetResponses, PoliciesGetErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}',
         ...options
     });
 };
@@ -817,9 +845,9 @@ export const getV1PoliciesById = <ThrowOnError extends boolean = false>(options?
 /**
  * Update policy
  */
-export const putV1PoliciesById = <ThrowOnError extends boolean = false>(options: Options<PutV1PoliciesByIdData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1PoliciesByIdResponses, PutV1PoliciesByIdErrors, ThrowOnError>({
-        url: '/v1/policies/{id}',
+export const policiesUpdate = <ThrowOnError extends boolean = false>(options: Options<PoliciesUpdateData, ThrowOnError>) => {
+    return (options.client ?? client).put<PoliciesUpdateResponses, PoliciesUpdateErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -831,9 +859,9 @@ export const putV1PoliciesById = <ThrowOnError extends boolean = false>(options:
 /**
  * List actions for policy
  */
-export const getV1PoliciesByIdActions = <ThrowOnError extends boolean = false>(options?: Options<GetV1PoliciesByIdActionsData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1PoliciesByIdActionsResponses, unknown, ThrowOnError>({
-        url: '/v1/policies/{id}/actions',
+export const policiesListActions = <ThrowOnError extends boolean = false>(options: Options<PoliciesListActionsData, ThrowOnError>) => {
+    return (options.client ?? client).get<PoliciesListActionsResponses, PoliciesListActionsErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}/actions',
         ...options
     });
 };
@@ -841,9 +869,9 @@ export const getV1PoliciesByIdActions = <ThrowOnError extends boolean = false>(o
 /**
  * Create action for policy
  */
-export const postV1PoliciesByIdActions = <ThrowOnError extends boolean = false>(options: Options<PostV1PoliciesByIdActionsData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1PoliciesByIdActionsResponses, PostV1PoliciesByIdActionsErrors, ThrowOnError>({
-        url: '/v1/policies/{id}/actions',
+export const policiesCreateAction = <ThrowOnError extends boolean = false>(options: Options<PoliciesCreateActionData, ThrowOnError>) => {
+    return (options.client ?? client).post<PoliciesCreateActionResponses, PoliciesCreateActionErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}/actions',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -855,9 +883,9 @@ export const postV1PoliciesByIdActions = <ThrowOnError extends boolean = false>(
 /**
  * Delete action
  */
-export const deleteV1PoliciesByIdActionsByActionId = <ThrowOnError extends boolean = false>(options: Options<DeleteV1PoliciesByIdActionsByActionIdData, ThrowOnError>) => {
-    return (options.client ?? client).delete<DeleteV1PoliciesByIdActionsByActionIdResponses, unknown, ThrowOnError>({
-        url: '/v1/policies/{id}/actions/{actionId}',
+export const policiesDeleteAction = <ThrowOnError extends boolean = false>(options: Options<PoliciesDeleteActionData, ThrowOnError>) => {
+    return (options.client ?? client).delete<PoliciesDeleteActionResponses, PoliciesDeleteActionErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}/actions/{actionId}',
         ...options
     });
 };
@@ -865,9 +893,9 @@ export const deleteV1PoliciesByIdActionsByActionId = <ThrowOnError extends boole
 /**
  * Get action
  */
-export const getV1PoliciesByIdActionsByActionId = <ThrowOnError extends boolean = false>(options?: Options<GetV1PoliciesByIdActionsByActionIdData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1PoliciesByIdActionsByActionIdResponses, unknown, ThrowOnError>({
-        url: '/v1/policies/{id}/actions/{actionId}',
+export const policiesGetAction = <ThrowOnError extends boolean = false>(options: Options<PoliciesGetActionData, ThrowOnError>) => {
+    return (options.client ?? client).get<PoliciesGetActionResponses, PoliciesGetActionErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}/actions/{actionId}',
         ...options
     });
 };
@@ -875,9 +903,9 @@ export const getV1PoliciesByIdActionsByActionId = <ThrowOnError extends boolean 
 /**
  * Update action
  */
-export const putV1PoliciesByIdActionsByActionId = <ThrowOnError extends boolean = false>(options: Options<PutV1PoliciesByIdActionsByActionIdData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1PoliciesByIdActionsByActionIdResponses, PutV1PoliciesByIdActionsByActionIdErrors, ThrowOnError>({
-        url: '/v1/policies/{id}/actions/{actionId}',
+export const policiesUpdateAction = <ThrowOnError extends boolean = false>(options: Options<PoliciesUpdateActionData, ThrowOnError>) => {
+    return (options.client ?? client).put<PoliciesUpdateActionResponses, PoliciesUpdateActionErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}/actions/{actionId}',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -889,9 +917,9 @@ export const putV1PoliciesByIdActionsByActionId = <ThrowOnError extends boolean 
 /**
  * Delete rule for policy
  */
-export const deleteV1PoliciesByIdRule = <ThrowOnError extends boolean = false>(options: Options<DeleteV1PoliciesByIdRuleData, ThrowOnError>) => {
-    return (options.client ?? client).delete<DeleteV1PoliciesByIdRuleResponses, unknown, ThrowOnError>({
-        url: '/v1/policies/{id}/rule',
+export const policiesDeleteRule = <ThrowOnError extends boolean = false>(options: Options<PoliciesDeleteRuleData, ThrowOnError>) => {
+    return (options.client ?? client).delete<PoliciesDeleteRuleResponses, PoliciesDeleteRuleErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}/rule',
         ...options
     });
 };
@@ -899,9 +927,9 @@ export const deleteV1PoliciesByIdRule = <ThrowOnError extends boolean = false>(o
 /**
  * Get rule for policy
  */
-export const getV1PoliciesByIdRule = <ThrowOnError extends boolean = false>(options?: Options<GetV1PoliciesByIdRuleData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1PoliciesByIdRuleResponses, unknown, ThrowOnError>({
-        url: '/v1/policies/{id}/rule',
+export const policiesGetRule = <ThrowOnError extends boolean = false>(options: Options<PoliciesGetRuleData, ThrowOnError>) => {
+    return (options.client ?? client).get<PoliciesGetRuleResponses, PoliciesGetRuleErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}/rule',
         ...options
     });
 };
@@ -909,9 +937,9 @@ export const getV1PoliciesByIdRule = <ThrowOnError extends boolean = false>(opti
 /**
  * Create rule for policy
  */
-export const postV1PoliciesByIdRule = <ThrowOnError extends boolean = false>(options: Options<PostV1PoliciesByIdRuleData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1PoliciesByIdRuleResponses, PostV1PoliciesByIdRuleErrors, ThrowOnError>({
-        url: '/v1/policies/{id}/rule',
+export const policiesCreateRule = <ThrowOnError extends boolean = false>(options: Options<PoliciesCreateRuleData, ThrowOnError>) => {
+    return (options.client ?? client).post<PoliciesCreateRuleResponses, PoliciesCreateRuleErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}/rule',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -923,9 +951,9 @@ export const postV1PoliciesByIdRule = <ThrowOnError extends boolean = false>(opt
 /**
  * Update rule for policy
  */
-export const putV1PoliciesByIdRule = <ThrowOnError extends boolean = false>(options: Options<PutV1PoliciesByIdRuleData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1PoliciesByIdRuleResponses, PutV1PoliciesByIdRuleErrors, ThrowOnError>({
-        url: '/v1/policies/{id}/rule',
+export const policiesUpdateRule = <ThrowOnError extends boolean = false>(options: Options<PoliciesUpdateRuleData, ThrowOnError>) => {
+    return (options.client ?? client).put<PoliciesUpdateRuleResponses, PoliciesUpdateRuleErrors, ThrowOnError>({
+        url: '/api/v1/policies/{id}/rule',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -937,39 +965,42 @@ export const putV1PoliciesByIdRule = <ThrowOnError extends boolean = false>(opti
 /**
  * List roles
  */
-export const getV1Roles = <ThrowOnError extends boolean = false>(options?: Options<GetV1RolesData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1RolesResponses, unknown, ThrowOnError>({
-        url: '/v1/roles',
+export const rolesList = <ThrowOnError extends boolean = false>(options?: Options<RolesListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<RolesListResponses, RolesListErrors, ThrowOnError>({
+        url: '/api/v1/roles',
         ...options
     });
 };
 
 /**
- * Search TMDB for movies, series, and people
+ * Search TMDB
+ * Multi-search across movies, series, and people via TMDB.
  */
-export const getV1Search = <ThrowOnError extends boolean = false>(options: Options<GetV1SearchData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1SearchResponses, unknown, ThrowOnError>({
-        url: '/v1/search',
+export const mediaSearch = <ThrowOnError extends boolean = false>(options: Options<MediaSearchData, ThrowOnError>) => {
+    return (options.client ?? client).get<MediaSearchResponses, MediaSearchErrors, ThrowOnError>({
+        url: '/api/v1/search',
         ...options
     });
 };
 
 /**
- * Get series (by TMDB id)
+ * Get series
+ * Returns the full series detail (TMDB + local files).
  */
-export const getV1SeriesById = <ThrowOnError extends boolean = false>(options: Options<GetV1SeriesByIdData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1SeriesByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/series/{id}',
+export const mediaGetSeries = <ThrowOnError extends boolean = false>(options: Options<MediaGetSeriesData, ThrowOnError>) => {
+    return (options.client ?? client).get<MediaGetSeriesResponses, MediaGetSeriesErrors, ThrowOnError>({
+        url: '/api/v1/series/{id}',
         ...options
     });
 };
 
 /**
- * Download a series download candidate
+ * Enqueue a series download candidate
+ * Runs the policy engine, creates a download job (with season/episode if supplied), and returns the trace + job.
  */
-export const postV1SeriesByIdCandidateDownload = <ThrowOnError extends boolean = false>(options: Options<PostV1SeriesByIdCandidateDownloadData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1SeriesByIdCandidateDownloadResponses, PostV1SeriesByIdCandidateDownloadErrors, ThrowOnError>({
-        url: '/v1/series/{id}/candidate/download',
+export const downloadCandidatesDownloadSeries = <ThrowOnError extends boolean = false>(options: Options<DownloadCandidatesDownloadSeriesData, ThrowOnError>) => {
+    return (options.client ?? client).post<DownloadCandidatesDownloadSeriesResponses, DownloadCandidatesDownloadSeriesErrors, ThrowOnError>({
+        url: '/api/v1/series/{id}/candidate/download',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -979,11 +1010,11 @@ export const postV1SeriesByIdCandidateDownload = <ThrowOnError extends boolean =
 };
 
 /**
- * Preview policy evaluation for a series download candidate
+ * Preview policy evaluation for a series candidate
  */
-export const postV1SeriesByIdCandidatePreview = <ThrowOnError extends boolean = false>(options: Options<PostV1SeriesByIdCandidatePreviewData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1SeriesByIdCandidatePreviewResponses, PostV1SeriesByIdCandidatePreviewErrors, ThrowOnError>({
-        url: '/v1/series/{id}/candidate/preview',
+export const downloadCandidatesPreviewSeries = <ThrowOnError extends boolean = false>(options: Options<DownloadCandidatesPreviewSeriesData, ThrowOnError>) => {
+    return (options.client ?? client).post<DownloadCandidatesPreviewSeriesResponses, DownloadCandidatesPreviewSeriesErrors, ThrowOnError>({
+        url: '/api/v1/series/{id}/candidate/preview',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -993,21 +1024,22 @@ export const postV1SeriesByIdCandidatePreview = <ThrowOnError extends boolean = 
 };
 
 /**
- * Get download candidates for a series
+ * List download candidates for a series
  */
-export const getV1SeriesByIdCandidates = <ThrowOnError extends boolean = false>(options: Options<GetV1SeriesByIdCandidatesData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1SeriesByIdCandidatesResponses, GetV1SeriesByIdCandidatesErrors, ThrowOnError>({
-        url: '/v1/series/{id}/candidates',
+export const downloadCandidatesListSeries = <ThrowOnError extends boolean = false>(options: Options<DownloadCandidatesListSeriesData, ThrowOnError>) => {
+    return (options.client ?? client).get<DownloadCandidatesListSeriesResponses, DownloadCandidatesListSeriesErrors, ThrowOnError>({
+        url: '/api/v1/series/{id}/candidates',
         ...options
     });
 };
 
 /**
- * List series download jobs
+ * List download jobs for series
+ * List every download job tied to the given TMDB series id, enriched with season/episode numbers.
  */
-export const getV1SeriesByIdDownloadJobs = <ThrowOnError extends boolean = false>(options: Options<GetV1SeriesByIdDownloadJobsData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1SeriesByIdDownloadJobsResponses, GetV1SeriesByIdDownloadJobsErrors, ThrowOnError>({
-        url: '/v1/series/{id}/download-jobs',
+export const downloadJobsListForSeries = <ThrowOnError extends boolean = false>(options: Options<DownloadJobsListForSeriesData, ThrowOnError>) => {
+    return (options.client ?? client).get<DownloadJobsListForSeriesResponses, DownloadJobsListForSeriesErrors, ThrowOnError>({
+        url: '/api/v1/series/{id}/download-jobs',
         ...options
     });
 };
@@ -1015,9 +1047,9 @@ export const getV1SeriesByIdDownloadJobs = <ThrowOnError extends boolean = false
 /**
  * List settings
  */
-export const getV1Settings = <ThrowOnError extends boolean = false>(options?: Options<GetV1SettingsData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1SettingsResponses, unknown, ThrowOnError>({
-        url: '/v1/settings',
+export const settingsList = <ThrowOnError extends boolean = false>(options?: Options<SettingsListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<SettingsListResponses, SettingsListErrors, ThrowOnError>({
+        url: '/api/v1/settings',
         ...options
     });
 };
@@ -1025,9 +1057,9 @@ export const getV1Settings = <ThrowOnError extends boolean = false>(options?: Op
 /**
  * Update a setting
  */
-export const patchV1Settings = <ThrowOnError extends boolean = false>(options: Options<PatchV1SettingsData, ThrowOnError>) => {
-    return (options.client ?? client).patch<PatchV1SettingsResponses, PatchV1SettingsErrors, ThrowOnError>({
-        url: '/v1/settings',
+export const settingsPatch = <ThrowOnError extends boolean = false>(options: Options<SettingsPatchData, ThrowOnError>) => {
+    return (options.client ?? client).patch<SettingsPatchResponses, SettingsPatchErrors, ThrowOnError>({
+        url: '/api/v1/settings',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -1038,10 +1070,11 @@ export const patchV1Settings = <ThrowOnError extends boolean = false>(options: O
 
 /**
  * Initialize system
+ * Creates the first admin and marks the system initialized.
  */
-export const postV1SetupInitialize = <ThrowOnError extends boolean = false>(options: Options<PostV1SetupInitializeData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1SetupInitializeResponses, PostV1SetupInitializeErrors, ThrowOnError>({
-        url: '/v1/setup/initialize',
+export const setupInitialize = <ThrowOnError extends boolean = false>(options: Options<SetupInitializeData, ThrowOnError>) => {
+    return (options.client ?? client).post<SetupInitializeResponses, SetupInitializeErrors, ThrowOnError>({
+        url: '/api/v1/setup/initialize',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -1052,20 +1085,22 @@ export const postV1SetupInitialize = <ThrowOnError extends boolean = false>(opti
 
 /**
  * Get setup status
+ * Reports init status and per-step completion. Returns 409 once the system is initialized.
  */
-export const getV1SetupStatus = <ThrowOnError extends boolean = false>(options?: Options<GetV1SetupStatusData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1SetupStatusResponses, unknown, ThrowOnError>({
-        url: '/v1/setup/status',
+export const setupStatus = <ThrowOnError extends boolean = false>(options?: Options<SetupStatusData, ThrowOnError>) => {
+    return (options?.client ?? client).get<SetupStatusResponses, SetupStatusErrors, ThrowOnError>({
+        url: '/api/v1/setup/status',
         ...options
     });
 };
 
 /**
  * Set TMDB API key
+ * Validates and stores the TMDB v3 key during setup. Returns 409 once the system is initialized.
  */
-export const postV1SetupTmdb = <ThrowOnError extends boolean = false>(options: Options<PostV1SetupTmdbData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1SetupTmdbResponses, PostV1SetupTmdbErrors, ThrowOnError>({
-        url: '/v1/setup/tmdb',
+export const setupTmdb = <ThrowOnError extends boolean = false>(options: Options<SetupTmdbData, ThrowOnError>) => {
+    return (options.client ?? client).post<SetupTmdbResponses, SetupTmdbErrors, ThrowOnError>({
+        url: '/api/v1/setup/tmdb',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -1076,43 +1111,43 @@ export const postV1SetupTmdb = <ThrowOnError extends boolean = false>(options: O
 
 /**
  * List unmatched files
- * List files that couldn't be auto-matched to media items
+ * Paginated list of files that couldn't be auto-matched to media items. Optional libraryId filter.
  */
-export const getV1UnmatchedFiles = <ThrowOnError extends boolean = false>(options?: Options<GetV1UnmatchedFilesData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1UnmatchedFilesResponses, unknown, ThrowOnError>({
-        url: '/v1/unmatched-files',
+export const unmatchedFilesList = <ThrowOnError extends boolean = false>(options?: Options<UnmatchedFilesListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<UnmatchedFilesListResponses, UnmatchedFilesListErrors, ThrowOnError>({
+        url: '/api/v1/unmatched-files',
         ...options
     });
 };
 
 /**
- * Get unmatched file details
+ * Get unmatched file
  */
-export const getV1UnmatchedFilesById = <ThrowOnError extends boolean = false>(options: Options<GetV1UnmatchedFilesByIdData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1UnmatchedFilesByIdResponses, GetV1UnmatchedFilesByIdErrors, ThrowOnError>({
-        url: '/v1/unmatched-files/{id}',
+export const unmatchedFilesGet = <ThrowOnError extends boolean = false>(options: Options<UnmatchedFilesGetData, ThrowOnError>) => {
+    return (options.client ?? client).get<UnmatchedFilesGetResponses, UnmatchedFilesGetErrors, ThrowOnError>({
+        url: '/api/v1/unmatched-files/{id}',
         ...options
     });
 };
 
 /**
  * Dismiss unmatched file
- * Mark an unmatched file as dismissed (resolved without matching)
+ * Mark an unmatched file as resolved without matching it.
  */
-export const postV1UnmatchedFilesByIdDismiss = <ThrowOnError extends boolean = false>(options: Options<PostV1UnmatchedFilesByIdDismissData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1UnmatchedFilesByIdDismissResponses, PostV1UnmatchedFilesByIdDismissErrors, ThrowOnError>({
-        url: '/v1/unmatched-files/{id}/dismiss',
+export const unmatchedFilesDismiss = <ThrowOnError extends boolean = false>(options: Options<UnmatchedFilesDismissData, ThrowOnError>) => {
+    return (options.client ?? client).post<UnmatchedFilesDismissResponses, UnmatchedFilesDismissErrors, ThrowOnError>({
+        url: '/api/v1/unmatched-files/{id}/dismiss',
         ...options
     });
 };
 
 /**
  * Match unmatched file to media item
- * Manually match an unmatched file to a specific media item
+ * Manually matches an unmatched file to a TMDB-identified media item. Returns 409 if the file is already resolved.
  */
-export const postV1UnmatchedFilesByIdMatch = <ThrowOnError extends boolean = false>(options: Options<PostV1UnmatchedFilesByIdMatchData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1UnmatchedFilesByIdMatchResponses, PostV1UnmatchedFilesByIdMatchErrors, ThrowOnError>({
-        url: '/v1/unmatched-files/{id}/match',
+export const unmatchedFilesMatch = <ThrowOnError extends boolean = false>(options: Options<UnmatchedFilesMatchData, ThrowOnError>) => {
+    return (options.client ?? client).post<UnmatchedFilesMatchResponses, UnmatchedFilesMatchErrors, ThrowOnError>({
+        url: '/api/v1/unmatched-files/{id}/match',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -1123,11 +1158,11 @@ export const postV1UnmatchedFilesByIdMatch = <ThrowOnError extends boolean = fal
 
 /**
  * Refresh match suggestions
- * Regenerate match suggestions for an unmatched file
+ * Regenerate the list of suggested matches for an unmatched file.
  */
-export const postV1UnmatchedFilesByIdRefresh = <ThrowOnError extends boolean = false>(options: Options<PostV1UnmatchedFilesByIdRefreshData, ThrowOnError>) => {
-    return (options.client ?? client).post<PostV1UnmatchedFilesByIdRefreshResponses, PostV1UnmatchedFilesByIdRefreshErrors, ThrowOnError>({
-        url: '/v1/unmatched-files/{id}/refresh',
+export const unmatchedFilesRefresh = <ThrowOnError extends boolean = false>(options: Options<UnmatchedFilesRefreshData, ThrowOnError>) => {
+    return (options.client ?? client).post<UnmatchedFilesRefreshResponses, UnmatchedFilesRefreshErrors, ThrowOnError>({
+        url: '/api/v1/unmatched-files/{id}/refresh',
         ...options
     });
 };
@@ -1135,9 +1170,9 @@ export const postV1UnmatchedFilesByIdRefresh = <ThrowOnError extends boolean = f
 /**
  * List users
  */
-export const getV1Users = <ThrowOnError extends boolean = false>(options?: Options<GetV1UsersData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1UsersResponses, unknown, ThrowOnError>({
-        url: '/v1/users',
+export const usersList = <ThrowOnError extends boolean = false>(options?: Options<UsersListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<UsersListResponses, UsersListErrors, ThrowOnError>({
+        url: '/api/v1/users',
         ...options
     });
 };
@@ -1145,9 +1180,9 @@ export const getV1Users = <ThrowOnError extends boolean = false>(options?: Optio
 /**
  * Delete user
  */
-export const deleteV1UsersById = <ThrowOnError extends boolean = false>(options: Options<DeleteV1UsersByIdData, ThrowOnError>) => {
-    return (options.client ?? client).delete<DeleteV1UsersByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/users/{id}',
+export const usersDelete = <ThrowOnError extends boolean = false>(options: Options<UsersDeleteData, ThrowOnError>) => {
+    return (options.client ?? client).delete<UsersDeleteResponses, UsersDeleteErrors, ThrowOnError>({
+        url: '/api/v1/users/{id}',
         ...options
     });
 };
@@ -1155,9 +1190,9 @@ export const deleteV1UsersById = <ThrowOnError extends boolean = false>(options:
 /**
  * Get user
  */
-export const getV1UsersById = <ThrowOnError extends boolean = false>(options: Options<GetV1UsersByIdData, ThrowOnError>) => {
-    return (options.client ?? client).get<GetV1UsersByIdResponses, unknown, ThrowOnError>({
-        url: '/v1/users/{id}',
+export const usersGet = <ThrowOnError extends boolean = false>(options: Options<UsersGetData, ThrowOnError>) => {
+    return (options.client ?? client).get<UsersGetResponses, UsersGetErrors, ThrowOnError>({
+        url: '/api/v1/users/{id}',
         ...options
     });
 };
@@ -1165,9 +1200,9 @@ export const getV1UsersById = <ThrowOnError extends boolean = false>(options: Op
 /**
  * Update user
  */
-export const putV1UsersById = <ThrowOnError extends boolean = false>(options: Options<PutV1UsersByIdData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1UsersByIdResponses, PutV1UsersByIdErrors, ThrowOnError>({
-        url: '/v1/users/{id}',
+export const usersUpdate = <ThrowOnError extends boolean = false>(options: Options<UsersUpdateData, ThrowOnError>) => {
+    return (options.client ?? client).put<UsersUpdateResponses, UsersUpdateErrors, ThrowOnError>({
+        url: '/api/v1/users/{id}',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -1179,9 +1214,9 @@ export const putV1UsersById = <ThrowOnError extends boolean = false>(options: Op
 /**
  * Update user password
  */
-export const putV1UsersByIdPassword = <ThrowOnError extends boolean = false>(options: Options<PutV1UsersByIdPasswordData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1UsersByIdPasswordResponses, unknown, ThrowOnError>({
-        url: '/v1/users/{id}/password',
+export const usersUpdatePassword = <ThrowOnError extends boolean = false>(options: Options<UsersUpdatePasswordData, ThrowOnError>) => {
+    return (options.client ?? client).put<UsersUpdatePasswordResponses, UsersUpdatePasswordErrors, ThrowOnError>({
+        url: '/api/v1/users/{id}/password',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -1193,9 +1228,9 @@ export const putV1UsersByIdPassword = <ThrowOnError extends boolean = false>(opt
 /**
  * Assign role to user
  */
-export const putV1UsersByIdRole = <ThrowOnError extends boolean = false>(options: Options<PutV1UsersByIdRoleData, ThrowOnError>) => {
-    return (options.client ?? client).put<PutV1UsersByIdRoleResponses, unknown, ThrowOnError>({
-        url: '/v1/users/{id}/role',
+export const usersAssignRole = <ThrowOnError extends boolean = false>(options: Options<UsersAssignRoleData, ThrowOnError>) => {
+    return (options.client ?? client).put<UsersAssignRoleResponses, UsersAssignRoleErrors, ThrowOnError>({
+        url: '/api/v1/users/{id}/role',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -1206,10 +1241,22 @@ export const putV1UsersByIdRole = <ThrowOnError extends boolean = false>(options
 
 /**
  * Get version and update information
+ * Returns build metadata (version, commit, build date, components) plus update-check status. GitHub responses are cached for 15 minutes.
  */
-export const getV1Version = <ThrowOnError extends boolean = false>(options?: Options<GetV1VersionData, ThrowOnError>) => {
-    return (options?.client ?? client).get<GetV1VersionResponses, unknown, ThrowOnError>({
-        url: '/v1/version',
+export const versionGet = <ThrowOnError extends boolean = false>(options?: Options<VersionGetData, ThrowOnError>) => {
+    return (options?.client ?? client).get<VersionGetResponses, VersionGetErrors, ThrowOnError>({
+        url: '/api/v1/version',
+        ...options
+    });
+};
+
+/**
+ * Health check
+ * Liveness probe; returns 200 with body "ok". Bypasses auth and setup-mode.
+ */
+export const healthCheck = <ThrowOnError extends boolean = false>(options?: Options<HealthCheckData, ThrowOnError>) => {
+    return (options?.client ?? client).get<HealthCheckResponses, HealthCheckErrors, ThrowOnError>({
+        url: '/health',
         ...options
     });
 };

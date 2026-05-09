@@ -42,7 +42,14 @@ const { user } = storeToRefs(authStore)
 
 const currentPath = computed(() => router.currentRoute.value.path)
 
-const data = {
+type NavItem = {
+  title: string
+  url: string
+  icon?: typeof Home
+  items?: { title: string; url: string }[]
+}
+
+const data: { user: { name: string; email: string; initials: string }; navMain: NavItem[] } = {
   user: {
     name: user.value?.name ?? 'Unknown User',
     email: user.value?.email ?? 'Unknown Email',

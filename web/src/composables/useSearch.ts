@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import { refDebounced } from '@vueuse/core'
 import { useQuery } from '@tanstack/vue-query'
-import { getV1Search } from '@/client/sdk.gen'
+import { mediaSearch } from '@/client/sdk.gen'
 
 export function useSearch(debounceMs = 300) {
   const query = ref('')
@@ -10,7 +10,7 @@ export function useSearch(debounceMs = 300) {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: computed(() => ['search', debouncedQuery.value]),
     queryFn: async () => {
-      const { data } = await getV1Search({
+      const { data } = await mediaSearch({
         query: {
           q: debouncedQuery.value,
           limit: 6,

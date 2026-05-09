@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/model"
 	pw "github.com/kyleaupton/arrflix/internal/password"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -20,17 +20,17 @@ func NewUsersService(r *repo.Repository) *UsersService {
 }
 
 // List returns all users with their roles
-func (s *UsersService) List(ctx context.Context) ([]dbgen.ListUsersRow, error) {
+func (s *UsersService) List(ctx context.Context) ([]model.User, error) {
 	return s.repo.ListUsers(ctx)
 }
 
 // Get returns a single user with roles
-func (s *UsersService) Get(ctx context.Context, id pgtype.UUID) (dbgen.GetUserRow, error) {
+func (s *UsersService) Get(ctx context.Context, id uuid.UUID) (model.User, error) {
 	return s.repo.GetUser(ctx, id)
 }
 
 // Create creates a new user with password and role assignment
-func (s *UsersService) Create(ctx context.Context, email, username, password string, roleName string, isActive bool) (dbgen.AppUser, error) {
+func (s *UsersService) Create(ctx context.Context, email, username, password string, roleName string, isActive bool) (model.User, error) {
 	// Validation — collect every field problem before returning.
 	email = strings.TrimSpace(email)
 	username = strings.TrimSpace(username)
@@ -48,7 +48,7 @@ func (s *UsersService) Create(ctx context.Context, email, username, password str
 		fields = append(fields, apperrors.Field("body.password", "must be at least 8 characters"))
 	}
 	if len(fields) > 0 {
-		return dbgen.AppUser{}, apperrors.Validation("invalid user", fields...).Op("UsersService.Create")
+		return model.User{}, apperrors.Validation("invalid user", fields...).Op("UsersService.Create")
 	}
 
 	if roleName == "" {
@@ -58,13 +58,18 @@ func (s *UsersService) Create(ctx context.Context, email, username, password str
 	// Hash password
 	passwordHash, err := pw.Hash(password)
 	if err != nil {
-		return dbgen.AppUser{}, apperrors.Internalf("failed to hash password: %v", err).Op("UsersService.Create")
+		return model.User{}, apperrors.Internalf("failed to hash password: %v", err).Op("UsersService.Create")
 	}
 
 	// Create user. Repo translates unique violation to Conflict.
-	user, err := s.repo.CreateUser(ctx, email, username, passwordHash, isActive)
+	user, err := s.repo.CreateUser(ctx, repo.CreateUserParams{
+		Email:        email,
+		Username:     username,
+		PasswordHash: passwordHash,
+		IsActive:     isActive,
+	})
 	if err != nil {
-		return dbgen.AppUser{}, err
+		return model.User{}, err
 	}
 
 	// Assign role
@@ -80,7 +85,7 @@ func (s *UsersService) Create(ctx context.Context, email, username, password str
 }
 
 // Update updates user fields (not password)
-func (s *UsersService) Update(ctx context.Context, id pgtype.UUID, email, username string, isActive bool) (dbgen.AppUser, error) {
+func (s *UsersService) Update(ctx context.Context, id uuid.UUID, email, username string, isActive bool) (model.User, error) {
 	email = strings.TrimSpace(email)
 	username = strings.TrimSpace(username)
 
@@ -92,14 +97,19 @@ func (s *UsersService) Update(ctx context.Context, id pgtype.UUID, email, userna
 		fields = append(fields, apperrors.Field("body.username", "required"))
 	}
 	if len(fields) > 0 {
-		return dbgen.AppUser{}, apperrors.Validation("invalid user", fields...).Op("UsersService.Update")
+		return model.User{}, apperrors.Validation("invalid user", fields...).Op("UsersService.Update")
 	}
 
-	return s.repo.UpdateUser(ctx, id, email, username, isActive)
+	return s.repo.UpdateUser(ctx, repo.UpdateUserParams{
+		ID:       id,
+		Email:    email,
+		Username: username,
+		IsActive: isActive,
+	})
 }
 
 // UpdatePassword changes a user's password
-func (s *UsersService) UpdatePassword(ctx context.Context, userID pgtype.UUID, newPassword string) error {
+func (s *UsersService) UpdatePassword(ctx context.Context, userID uuid.UUID, newPassword string) error {
 	var fields []apperrors.FieldError
 	if newPassword == "" {
 		fields = append(fields, apperrors.Field("body.password", "required"))
@@ -119,7 +129,7 @@ func (s *UsersService) UpdatePassword(ctx context.Context, userID pgtype.UUID, n
 }
 
 // AssignRole assigns a single role to a user (replaces existing roles)
-func (s *UsersService) AssignRole(ctx context.Context, userID pgtype.UUID, roleName string) error {
+func (s *UsersService) AssignRole(ctx context.Context, userID uuid.UUID, roleName string) error {
 	role, err := s.repo.GetRoleByName(ctx, roleName)
 	if err != nil {
 		// Repo's NotFound for the role uses the role's name; surface that.
@@ -135,7 +145,7 @@ func (s *UsersService) AssignRole(ctx context.Context, userID pgtype.UUID, roleN
 }
 
 // Delete removes a user
-func (s *UsersService) Delete(ctx context.Context, id pgtype.UUID) error {
+func (s *UsersService) Delete(ctx context.Context, id uuid.UUID) error {
 	// Check if this is the last admin
 	roles, err := s.repo.ListUserRoles(ctx, id)
 	if err == nil {
@@ -156,6 +166,6 @@ func (s *UsersService) Delete(ctx context.Context, id pgtype.UUID) error {
 }
 
 // ListRoles returns all available roles
-func (s *UsersService) ListRoles(ctx context.Context) ([]dbgen.Role, error) {
+func (s *UsersService) ListRoles(ctx context.Context) ([]model.Role, error) {
 	return s.repo.ListRoles(ctx)
 }

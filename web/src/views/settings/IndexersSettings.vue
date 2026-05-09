@@ -3,10 +3,10 @@ import { ref } from 'vue'
 import { useQuery, useMutation } from '@tanstack/vue-query'
 import { Plus, Check, Search } from 'lucide-vue-next'
 import {
-  getV1IndexersConfiguredOptions,
-  deleteV1IndexerByIdMutation,
+  indexersListConfiguredOptions,
+  indexersDeleteMutation,
 } from '@/client/@tanstack/vue-query.gen'
-import { type ModelIndexerOutput } from '@/client/types.gen'
+import { type IndexerOutput } from '@/client/types.gen'
 import {
   indexerColumns,
   createIndexerActions,
@@ -21,14 +21,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { client } from '@/client/client.gen'
 
-const { data: indexers, isLoading, error, refetch } = useQuery(getV1IndexersConfiguredOptions())
+const { data: indexers, isLoading, error, refetch } = useQuery(indexersListConfiguredOptions())
 const modal = useModal()
 const isTestingAll = ref(false)
 
 // Mutations
-const deleteIndexerMutation = useMutation(deleteV1IndexerByIdMutation())
+const deleteIndexerMutation = useMutation(indexersDeleteMutation())
 
-const handleEdit = (indexer: ModelIndexerOutput) => {
+const handleEdit = (indexer: IndexerOutput) => {
   modal.open(EditIndexerDialog, {
     props: {
       indexer,
@@ -42,7 +42,7 @@ const handleEdit = (indexer: ModelIndexerOutput) => {
   })
 }
 
-const handleTest = async (indexer: ModelIndexerOutput) => {
+const handleTest = async (indexer: IndexerOutput) => {
   try {
     const response = await client.post({
       url: `/v1/indexer/${indexer.id}/test`,
@@ -73,7 +73,7 @@ const handleTest = async (indexer: ModelIndexerOutput) => {
   }
 }
 
-const handleToggle = async (indexer: ModelIndexerOutput) => {
+const handleToggle = async (indexer: IndexerOutput) => {
   if (!indexer.id) return
   try {
     await client.put({
@@ -90,7 +90,7 @@ const handleToggle = async (indexer: ModelIndexerOutput) => {
   }
 }
 
-const handleDelete = async (indexer: ModelIndexerOutput) => {
+const handleDelete = async (indexer: IndexerOutput) => {
   if (!indexer.id) return
   const confirmed = await modal.confirm({
     title: 'Delete Indexer',
@@ -99,7 +99,7 @@ const handleDelete = async (indexer: ModelIndexerOutput) => {
   })
   if (!confirmed) return
   try {
-    await deleteIndexerMutation.mutateAsync({ path: { id: String(indexer.id) } })
+    await deleteIndexerMutation.mutateAsync({ path: { id: indexer.id } })
     refetch()
   } catch (err) {
     const error = err as { message?: string }
@@ -195,7 +195,7 @@ const indexerActions = createIndexerActions(handleEdit, handleTest, handleToggle
         </div>
         <DataTable
           v-else
-          :data="(indexers || []) as unknown as ModelIndexerOutput[]"
+          :data="(indexers || []) as unknown as IndexerOutput[]"
           :columns="indexerColumns"
           :actions="indexerActions"
           :loading="isLoading"

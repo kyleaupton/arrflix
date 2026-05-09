@@ -1,109 +1,117 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/http/middlewares"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/service"
-	"github.com/labstack/echo/v4"
 )
+
+// ----- Handler -----
 
 type Invites struct{ svc *service.Services }
 
 func NewInvites(s *service.Services) *Invites { return &Invites{svc: s} }
 
-func (h *Invites) RegisterProtected(v1 *echo.Group) {
-	v1.GET("/invites", h.List)
-	v1.POST("/invites", h.Create)
-	v1.DELETE("/invites/:id", h.Delete)
+// ----- List -----
+
+type InvitesListInput struct{}
+
+type InvitesListOutput struct {
+	Body []model.Invite
 }
 
-type InviteCreateRequest struct {
-	Email string `json:"email"`
-}
-
-// inviteSwagger is used only for Swagger documentation.
-type inviteSwagger struct {
-	ID        string  `json:"id"`
-	Email     string  `json:"email"`
-	InvitedBy string  `json:"invited_by"`
-	CreatedAt string  `json:"created_at"`
-	ClaimedAt *string `json:"claimed_at"`
-}
-
-// List invites
-// @Summary List invites
-// @Tags    invites
-// @Produce json
-// @Success 200 {array} handlers.inviteSwagger
-// @Router  /v1/invites [get]
-func (h *Invites) List(c echo.Context) error {
-	ctx := c.Request().Context()
-	invites, err := h.svc.Invites.List(ctx)
+func (h *Invites) List(ctx context.Context, _ *InvitesListInput) (*InvitesListOutput, error) {
+	out, err := h.svc.Invites.List(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list invites"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, invites)
+	return &InvitesListOutput{Body: out}, nil
 }
 
-// Create invite
-// @Summary Create invite
-// @Tags    invites
-// @Accept  json
-// @Produce json
-// @Param   payload body handlers.InviteCreateRequest true "Create invite"
-// @Success 201 {object} handlers.inviteSwagger
-// @Failure 400 {object} map[string]string
-// @Router  /v1/invites [post]
-func (h *Invites) Create(c echo.Context) error {
-	var req InviteCreateRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
-	}
+// ----- Create -----
 
-	claims := c.Get("claims")
-	if claims == nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-	}
-	claimsMap, ok := claims.(jwt.MapClaims)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid claims"})
-	}
-	userIDStr, ok := claimsMap["sub"].(string)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token subject"})
-	}
-	var invitedBy pgtype.UUID
-	if err := invitedBy.Scan(userIDStr); err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
-	}
+type InvitesCreateBody struct {
+	Email string `json:"email" required:"true" format:"email" minLength:"1" doc:"Invitee email"`
+}
 
-	ctx := c.Request().Context()
-	invite, err := h.svc.Invites.Create(ctx, req.Email, invitedBy)
+type InvitesCreateInput struct {
+	Body InvitesCreateBody
+}
+
+type InvitesCreateOutput struct {
+	Body model.Invite
+}
+
+func (h *Invites) Create(ctx context.Context, input *InvitesCreateInput) (*InvitesCreateOutput, error) {
+	claims, ok := middlewares.ClaimsFromContext(ctx)
+	if !ok {
+		return nil, apperrors.Unauthenticatedf("missing credentials").Op("InvitesHandler.Create")
+	}
+	userIDStr, ok := claims["sub"].(string)
+	if !ok {
+		return nil, apperrors.Unauthenticatedf("invalid token subject").Op("InvitesHandler.Create")
+	}
+	invitedBy, err := uuid.Parse(userIDStr)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return nil, apperrors.Unauthenticatedf("invalid token").Op("InvitesHandler.Create")
 	}
 
-	return c.JSON(http.StatusCreated, invite)
+	invite, err := h.svc.Invites.Create(ctx, input.Body.Email, invitedBy)
+	if err != nil {
+		return nil, err
+	}
+	return &InvitesCreateOutput{Body: invite}, nil
 }
 
-// Delete invite
-// @Summary Delete invite
-// @Tags    invites
-// @Param   id path string true "Invite ID"
-// @Success 204 {string} string ""
-// @Router  /v1/invites/{id} [delete]
-func (h *Invites) Delete(c echo.Context) error {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid id"})
-	}
+// ----- Delete -----
 
-	ctx := c.Request().Context()
-	if err := h.svc.Invites.Delete(ctx, id); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
+type InvitesDeleteInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Invite ID"`
+}
 
-	return c.NoContent(http.StatusNoContent)
+type InvitesDeleteOutput struct{}
+
+func (h *Invites) Delete(ctx context.Context, input *InvitesDeleteInput) (*InvitesDeleteOutput, error) {
+	if err := h.svc.Invites.Delete(ctx, input.ID); err != nil {
+		return nil, err
+	}
+	return &InvitesDeleteOutput{}, nil
+}
+
+// ----- Register -----
+
+func (h *Invites) RegisterHumachi(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "invites-list",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/invites",
+		Summary:     "List invites",
+		Tags:        []string{"invites"},
+	}, h.List)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "invites-create",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/invites",
+		Summary:       "Create invite",
+		Tags:          []string{"invites"},
+		DefaultStatus: http.StatusCreated,
+		Errors:        errsWrite,
+	}, h.Create)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "invites-delete",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/invites/{id}",
+		Summary:       "Delete invite",
+		Tags:          []string{"invites"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsRead,
+	}, h.Delete)
 }

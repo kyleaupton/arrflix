@@ -17,11 +17,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ModelWatchProvider } from '@/client/types.gen'
+import type { WatchProvider } from '@/client/types.gen'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 const props = defineProps<{
-  provider: ModelWatchProvider
+  provider: WatchProvider
 }>()
 
 const logoUrl = computed(() => {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
@@ -214,7 +215,7 @@ func (s *UnmatchedFilesService) RefreshSuggestions(ctx context.Context, id pgtyp
 	}
 
 	// Get library to determine type
-	lib, err := s.repo.GetLibrary(ctx, file.LibraryID)
+	lib, err := s.repo.GetLibrary(ctx, uuid.UUID(file.LibraryID.Bytes))
 	if err != nil {
 		return UnmatchedFileResponse{}, err
 	}

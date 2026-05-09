@@ -5,10 +5,10 @@ export interface User {
   id: string
   email: string | null
   username: string | null
-  is_active: boolean
+  isActive: boolean
   roles?: any // JSONB from database
-  created_at: string
-  updated_at: string
+  createdAt: string
+  updatedAt: string
 }
 
 export const userColumns: TableColumn<User>[] = [
@@ -55,7 +55,7 @@ export const userColumns: TableColumn<User>[] = [
     },
   },
   {
-    key: 'is_active',
+    key: 'isActive',
     label: 'Status',
     sortable: true,
     width: '120px',
@@ -67,7 +67,7 @@ export const userColumns: TableColumn<User>[] = [
     },
   },
   {
-    key: 'created_at',
+    key: 'createdAt',
     label: 'Created',
     sortable: true,
     width: '150px',

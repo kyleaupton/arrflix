@@ -43,11 +43,11 @@ import { computed, ref } from 'vue'
 import { CheckCircle2, Loader2 } from 'lucide-vue-next'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  type ModelHydratedTitle,
-  type ModelLibraryItem,
-  type ModelMovieDetail,
-  type ModelMovieRail,
-  type ModelSeriesDetail,
+  type HydratedTitle,
+  type LibraryItem,
+  type MovieDetail,
+  type MovieRail,
+  type SeriesDetail,
 } from '@/client/types.gen'
 
 /**
@@ -85,7 +85,7 @@ type PosterSize = keyof typeof POSTER_SIZES
 
 const props = withDefaults(
   defineProps<{
-    item: ModelMovieDetail | ModelSeriesDetail | ModelHydratedTitle | ModelMovieRail |  ModelLibraryItem
+    item: MovieDetail | SeriesDetail | HydratedTitle | MovieRail |  LibraryItem
     size?: PosterSize
     to?: { path: string } | string
     clickable?: boolean

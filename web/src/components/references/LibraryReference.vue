@@ -24,7 +24,7 @@ import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { Loader2, AlertTriangle } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
-import { getV1LibrariesByIdOptions } from '@/client/@tanstack/vue-query.gen'
+import { librariesGetOptions } from '@/client/@tanstack/vue-query.gen'
 
 const props = defineProps<{
   libraryId: string
@@ -36,7 +36,7 @@ const {
   error,
 } = useQuery(
   computed(() =>
-    getV1LibrariesByIdOptions({
+    librariesGetOptions({
       path: { id: props.libraryId },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any),

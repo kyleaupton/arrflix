@@ -1,68 +1,79 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/kyleaupton/arrflix/internal/service"
-	"github.com/labstack/echo/v4"
 )
+
+// ----- Handler -----
 
 type Settings struct{ svc *service.Services }
 
 func NewSettings(s *service.Services) *Settings { return &Settings{svc: s} }
 
-func (h *Settings) RegisterProtected(v1 *echo.Group) {
-	v1.GET("/settings", h.List)
-	v1.PATCH("/settings", h.Patch)
-}
+// ----- List -----
 
-// SettingsListResponse represents a map of setting keys to their values.
-// Values may be string, bool, number, or object depending on the registered type.
+// SettingsListResponse is a map of setting keys to their values. Values may
+// be string, bool, number, or object depending on the registered type.
 type SettingsListResponse map[string]any
 
-// List returns all settings with defaults applied.
-//
-// @Summary List settings
-// @Tags    settings
-// @Produce json
-// @Success 200 {object} handlers.SettingsListResponse
-// @Router  /v1/settings [get]
-func (h *Settings) List(c echo.Context) error {
-	ctx := c.Request().Context()
+type SettingsListInput struct{}
+
+type SettingsListOutput struct {
+	Body SettingsListResponse
+}
+
+func (h *Settings) List(ctx context.Context, _ *SettingsListInput) (*SettingsListOutput, error) {
 	out, err := h.svc.Settings.GetAll(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list settings"})
+		return nil, err
 	}
-	return c.JSON(http.StatusOK, out)
+	return &SettingsListOutput{Body: out}, nil
 }
 
-// PatchRequest updates a single setting value.
-// The type of value must match the server-side registry for the given key.
-type PatchRequest struct {
-	Key   string      `json:"key"`
-	Value interface{} `json:"value"`
+// ----- Patch -----
+
+type SettingsPatchBody struct {
+	Key   string `json:"key" required:"true" minLength:"1" doc:"Registered setting key"`
+	Value any    `json:"value" doc:"Setting value; type must match the registry entry for the key"`
 }
 
-// Patch updates a single setting value.
-//
-// @Summary Update a setting
-// @Tags    settings
-// @Accept  json
-// @Param   payload body  handlers.PatchRequest true "Patch request"
-// @Success 204  {string} string ""
-// @Failure 400  {object} map[string]string
-// @Router  /v1/settings [patch]
-func (h *Settings) Patch(c echo.Context) error {
-	var req PatchRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
+type SettingsPatchInput struct {
+	Body SettingsPatchBody
+}
+
+type SettingsPatchOutput struct{}
+
+func (h *Settings) Patch(ctx context.Context, input *SettingsPatchInput) (*SettingsPatchOutput, error) {
+	if err := h.svc.Settings.Set(ctx, input.Body.Key, input.Body.Value); err != nil {
+		return nil, err
 	}
-	ctx := c.Request().Context()
-	if req.Key == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "key required"})
-	}
-	if err := h.svc.Settings.Set(ctx, req.Key, req.Value); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-	return c.NoContent(http.StatusNoContent)
+	return &SettingsPatchOutput{}, nil
+}
+
+// ----- Register -----
+
+func (h *Settings) RegisterHumachi(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "settings-list",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/settings",
+		Summary:     "List settings",
+		Tags:        []string{"settings"},
+	}, h.List)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "settings-patch",
+		Method:        http.MethodPatch,
+		Path:          "/api/v1/settings",
+		Summary:       "Update a setting",
+		Tags:          []string{"settings"},
+		DefaultStatus: http.StatusNoContent,
+		// 404 = unknown setting key; 422 = value type mismatch with registry.
+		// No conflict surface here — a setting overwrite cannot 409.
+		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity},
+	}, h.Patch)
 }

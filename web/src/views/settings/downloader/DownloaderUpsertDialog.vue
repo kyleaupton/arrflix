@@ -3,14 +3,13 @@ import { ref, inject, computed, watch } from 'vue'
 import { useMutation } from '@tanstack/vue-query'
 import { Check, Eye, EyeOff } from 'lucide-vue-next'
 import {
-  postV1DownloadersMutation,
-  putV1DownloadersByIdMutation,
+  downloadersCreateMutation,
+  downloadersUpdateMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import { client } from '@/client/client.gen'
 import {
-  type DbgenDownloader,
-  type HandlersDownloaderCreateRequest,
-  type HandlersDownloaderUpdateRequest,
+  type Downloader,
+  type DownloaderWriteBody,
 } from '@/client/types.gen'
 import BaseDialog from '@/components/modals/BaseDialog.vue'
 import { Button } from '@/components/ui/button'
@@ -27,7 +26,7 @@ import {
 import { useModal } from '@/composables/useModal'
 
 interface Props {
-  downloader?: DbgenDownloader | null
+  downloader?: Downloader | null
 }
 
 const props = defineProps<Props>()
@@ -36,8 +35,8 @@ const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => v
 const modal = useModal()
 
 // Mutations
-const createDownloaderMutation = useMutation(postV1DownloadersMutation())
-const updateDownloaderMutation = useMutation(putV1DownloadersByIdMutation())
+const createDownloaderMutation = useMutation(downloadersCreateMutation())
+const updateDownloaderMutation = useMutation(downloadersUpdateMutation())
 
 // Form state
 const downloaderForm = ref({
@@ -47,7 +46,7 @@ const downloaderForm = ref({
   url: '',
   username: '',
   password: '',
-  config_json: {} as Record<string, unknown>,
+  configJson: {} as Record<string, unknown>,
   enabled: true,
   default: false,
 })
@@ -68,8 +67,8 @@ watch(
         url: downloader.url || '',
         username: downloader.username || '',
         password: '', // Don't populate password for security
-        config_json:
-          (downloader.config_json as unknown as Record<string, unknown>) ||
+        configJson:
+          (downloader.configJson as unknown as Record<string, unknown>) ||
           ({} as Record<string, unknown>),
         enabled: downloader.enabled ?? true,
         default: downloader.default || false,
@@ -82,7 +81,7 @@ watch(
         url: '',
         username: '',
         password: '',
-        config_json: {} as Record<string, unknown>,
+        configJson: {} as Record<string, unknown>,
         enabled: true,
         default: false,
       }
@@ -99,14 +98,13 @@ const handleSaveDownloader = async () => {
   }
 
   try {
-    // @ts-expect-error: fix this type error, the backend type is `*string` so it should be optional
-    const body: HandlersDownloaderCreateRequest | HandlersDownloaderUpdateRequest = {
+    const body: DownloaderWriteBody = {
       name: downloaderForm.value.name,
       type: downloaderForm.value.type,
       protocol: downloaderForm.value.protocol,
       url: downloaderForm.value.url,
       username: downloaderForm.value.username || '',
-      config_json: downloaderForm.value.config_json,
+      configJson: downloaderForm.value.configJson,
       enabled: downloaderForm.value.enabled,
       default: downloaderForm.value.default,
     }
@@ -152,7 +150,7 @@ const handleTestDownloader = async () => {
         url: downloaderForm.value.url,
         username: downloaderForm.value.username || undefined,
         password: downloaderForm.value.password || undefined,
-        config_json: downloaderForm.value.config_json,
+        configJson: downloaderForm.value.configJson,
       },
     })
 
