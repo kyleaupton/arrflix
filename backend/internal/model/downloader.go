@@ -7,16 +7,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// Downloader is the domain shape for a downloader row. It mirrors the
-// persistence-layer dbgen.Downloader but uses idiomatic Go types
-// (uuid.UUID, time.Time, json.RawMessage in place of the raw []byte
-// config_json column).
+// Downloader is the domain shape for a downloader row.
 //
-// Password redaction note: the prior wire shape was an ad-hoc map produced
-// by downloaderToMap which included the raw password field on every
-// response. We preserve that wire shape exactly (no redaction change) so
-// this migration is byte-identical at the JSON layer; tightening the
-// redaction is a separate concern tracked outside the model migration.
+// Password is on the wire (not redacted) — the FE settings UI re-displays
+// it on edit. Tightening this would need a parallel "set new password"
+// flow on the FE before the field can be redacted on read.
 type Downloader struct {
 	ID         uuid.UUID       `json:"id"`
 	Name       string          `json:"name"`
@@ -32,12 +27,9 @@ type Downloader struct {
 	UpdatedAt  time.Time       `json:"updatedAt"`
 }
 
-// DownloaderWithStatus is the list-endpoint shape: a Downloader plus a
-// runtime Initialized flag derived from the downloader Manager. The flag
-// reports whether the manager currently has an initialized client for this
-// downloader (and the downloader is enabled). Embedding Downloader keeps
-// the wire shape flat — `initialized` sits alongside the other fields,
-// matching the prior downloaderToMap output exactly.
+// DownloaderWithStatus is the list-endpoint shape: Downloader embedded
+// alongside a runtime Initialized flag indicating whether the manager
+// currently has an initialized client for this downloader.
 type DownloaderWithStatus struct {
 	Downloader
 	Initialized bool `json:"initialized"`

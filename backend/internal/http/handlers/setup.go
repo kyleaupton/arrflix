@@ -1,12 +1,6 @@
-// setup.go is the humachi-shaped setup handler. The system can be in one of
-// two modes: uninitialized (no admin yet) or initialized (admin + TMDB key
-// in place). The setup endpoints are reachable only in uninitialized mode —
-// once the system is initialized, every setup route emits 409 Conflict.
-//
-// Pre-migration this gate was group-scoped Echo middleware (SetupOnly).
-// Humachi handlers don't share a chi group with custom middleware here, so
-// the equivalent check now lives at the top of each handler. Wire behavior
-// is unchanged.
+// setup.go is the humachi-shaped setup handler. The setup endpoints are only
+// reachable while the system is uninitialized (no admin yet); once initialized
+// every setup route emits 409 Conflict via guardUninitialized.
 package handlers
 
 import (
@@ -24,9 +18,6 @@ type Setup struct{ svc *service.Services }
 
 func NewSetup(s *service.Services) *Setup { return &Setup{svc: s} }
 
-// guardUninitialized returns Conflict if the system is already initialized.
-// Mirrors the pre-migration SetupOnly Echo middleware exactly: any setup
-// route hit after init responds 409.
 func (h *Setup) guardUninitialized(ctx context.Context, op string) error {
 	initialized, err := h.svc.Setup.IsInitialized(ctx)
 	if err != nil {
@@ -40,24 +31,17 @@ func (h *Setup) guardUninitialized(ctx context.Context, op string) error {
 
 // ----- Status -----
 
-// SetupStatusInput is empty.
 type SetupStatusInput struct{}
 
-// SetupStatusResponse is the wire shape returned by GET /setup/status.
 type SetupStatusResponse struct {
 	Initialized bool                `json:"initialized" doc:"Whether the system has completed setup"`
 	Steps       *service.SetupSteps `json:"steps,omitempty" doc:"Per-step completion (only when not yet initialized)"`
 }
 
-// SetupStatusOutput wraps SetupStatusResponse.
 type SetupStatusOutput struct {
 	Body SetupStatusResponse
 }
 
-// GetStatus reports overall init status plus, when not yet initialized, the
-// per-step completion of the setup wizard. Once the system is initialized
-// the SetupOnly equivalent kicks in and the route returns 409 — matching the
-// pre-migration Echo behavior exactly.
 func (h *Setup) GetStatus(ctx context.Context, _ *SetupStatusInput) (*SetupStatusOutput, error) {
 	if err := h.guardUninitialized(ctx, "SetupHandler.GetStatus"); err != nil {
 		return nil, err
@@ -74,7 +58,6 @@ func (h *Setup) GetStatus(ctx context.Context, _ *SetupStatusInput) (*SetupStatu
 
 // ----- Initialize -----
 
-// SetupInitializeInput carries the bootstrap admin payload.
 type SetupInitializeInput struct {
 	Body struct {
 		Email    string `json:"email" required:"true" minLength:"1" format:"email" doc:"Admin email"`
@@ -83,19 +66,17 @@ type SetupInitializeInput struct {
 	}
 }
 
-// SetupInitializeResponse is the wire shape returned by POST /setup/initialize.
 type SetupInitializeResponse struct {
 	Success bool `json:"success" doc:"Always true on success"`
 }
 
-// SetupInitializeOutput wraps SetupInitializeResponse.
 type SetupInitializeOutput struct {
 	Body SetupInitializeResponse
 }
 
 // Initialize creates the first admin and marks the system initialized. The
 // service's repo.InitializeSystem returns Conflict if already initialized,
-// so we don't need a separate guard on this op.
+// so a separate guard isn't needed here.
 func (h *Setup) Initialize(ctx context.Context, input *SetupInitializeInput) (*SetupInitializeOutput, error) {
 	if err := h.svc.Setup.Initialize(ctx, input.Body.Email, input.Body.Username, input.Body.Password); err != nil {
 		return nil, err
@@ -105,26 +86,20 @@ func (h *Setup) Initialize(ctx context.Context, input *SetupInitializeInput) (*S
 
 // ----- TMDB key -----
 
-// SetupTmdbInput carries the TMDB API key payload.
 type SetupTmdbInput struct {
 	Body struct {
 		ApiKey string `json:"api_key" required:"true" minLength:"1" doc:"TMDB API v3 key"`
 	}
 }
 
-// SetupTmdbResponse is the wire shape returned by POST /setup/tmdb.
 type SetupTmdbResponse struct {
 	Success bool `json:"success" doc:"Always true on success"`
 }
 
-// SetupTmdbOutput wraps SetupTmdbResponse.
 type SetupTmdbOutput struct {
 	Body SetupTmdbResponse
 }
 
-// SetTmdbKey validates and persists the TMDB key during the setup wizard.
-// Subject to the same SetupOnly equivalent as GetStatus: once the system is
-// initialized this route 409s.
 func (h *Setup) SetTmdbKey(ctx context.Context, input *SetupTmdbInput) (*SetupTmdbOutput, error) {
 	if err := h.guardUninitialized(ctx, "SetupHandler.SetTmdbKey"); err != nil {
 		return nil, err
@@ -137,9 +112,9 @@ func (h *Setup) SetTmdbKey(ctx context.Context, input *SetupTmdbInput) (*SetupTm
 
 // ----- Register -----
 
-// RegisterHumachi wires the setup operations onto the humachi API. All three
-// routes are public (bypass JWT) — the setup wizard runs before there's any
-// admin to authenticate. Public-path entries live in middlewares/chi.go.
+// All three routes are public (bypass JWT) — the setup wizard runs before
+// there's any admin to authenticate. Public-path entries live in
+// middlewares/chi.go.
 func (h *Setup) RegisterHumachi(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "setup-status",

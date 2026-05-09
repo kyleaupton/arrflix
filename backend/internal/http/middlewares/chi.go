@@ -1,10 +1,7 @@
-// Package middlewares contains the HTTP middleware chain. As of phase 4 of
-// the humachi migration, chi is the only router and runs middleware before
-// any handler dispatch. ChiJWT and ChiSetupMode are the cross-cutting
-// gates; both run as chi.Router.Use middleware so they apply once per
-// request regardless of whether the route is humachi-shaped or a plain
+// Package middlewares contains the cross-cutting HTTP gates. ChiJWT and
+// ChiSetupMode are wired as chi.Router.Use middleware so they apply once
+// per request regardless of whether the route is humachi-shaped or a plain
 // chi handler.
-
 package middlewares
 
 import (
@@ -86,12 +83,9 @@ var publicPathPrefixes = []string{
 	"/dev/",
 }
 
-// isPublicPath reports whether the given URL path is a public route that
-// should bypass JWT validation.
-//
-// Note: any path that isn't /api/v1/* and isn't /health or /dev/* falls
-// outside the API surface entirely; we still let those bypass so static
-// asset routes (none today) and unknown paths reach chi's NotFound (404).
+// isPublicPath reports whether the given URL path bypasses JWT validation.
+// Anything outside /api/v1/* isn't the API surface, so we let it through to
+// reach chi's NotFound (or whatever else is mounted).
 func isPublicPath(path string) bool {
 	if _, ok := publicPathSet[path]; ok {
 		return true
@@ -101,8 +95,6 @@ func isPublicPath(path string) bool {
 			return true
 		}
 	}
-	// Anything outside /api/v1/* is not the API surface — don't gate it.
-	// (Echo will 404 / handle as appropriate.)
 	if !strings.HasPrefix(path, "/api/v1/") {
 		return true
 	}
@@ -132,7 +124,7 @@ func ChiJWT(secret string) func(http.Handler) http.Handler {
 				return
 			}
 			raw := strings.TrimPrefix(authz, "Bearer ")
-			tok, err := jwt.Parse(raw, func(t *jwt.Token) (interface{}, error) {
+			tok, err := jwt.Parse(raw, func(t *jwt.Token) (any, error) {
 				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 					return nil, apperrors.Unauthenticatedf("bad token method")
 				}

@@ -1,13 +1,8 @@
-// unmatched_files.go is the humachi-shaped unmatched-files handler. Five
-// operations: list (paginated, optional library filter), get-by-id, manual
-// match, dismiss, and refresh-suggestions.
+// unmatched_files.go is the humachi-shaped unmatched-files handler.
 //
-// Note: the underlying UnmatchedFilesService still takes pgtype.UUID for ids
-// and pgtype.UUID for the optional library filter — handlers normally only
-// see uuid.UUID, but this service hasn't been migrated to the model.* shape
-// yet. The handler converts at the boundary so the wire shape is the
-// idiomatic uuid.UUID. Service-layer cleanup is a follow-up — flagged in the
-// migration report.
+// TODO(model-migration): UnmatchedFilesService still takes pgtype.UUID for
+// ids. The handler converts at the boundary so the wire stays uuid.UUID;
+// drop pgtypeUUID once the service follows the model.* pattern.
 package handlers
 
 import (
@@ -26,34 +21,24 @@ type UnmatchedFiles struct{ svc *service.Services }
 
 func NewUnmatchedFiles(s *service.Services) *UnmatchedFiles { return &UnmatchedFiles{svc: s} }
 
-// pgtypeUUID wraps a uuid.UUID into the pgtype.UUID shape that the
-// UnmatchedFilesService still uses. Drop once the service is migrated to
-// model.* / uuid.UUID.
 func pgtypeUUID(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
 // ----- List -----
 
-// UnmatchedFilesListInput carries the pagination + optional library filter.
-//
-// Huma doesn't accept pointer types for query params; LibraryID is bound as
-// uuid.UUID and the zero value (uuid.Nil) acts as "no filter". The
-// pre-migration Echo handler also let an unparseable libraryId silently fall
-// through to "no filter" — this matches.
+// UnmatchedFilesListInput uses uuid.Nil as the "no filter" sentinel because
+// huma doesn't accept pointer types for query params.
 type UnmatchedFilesListInput struct {
 	LibraryID uuid.UUID `query:"libraryId" format:"uuid" doc:"Optional library filter (uuid.Nil / omitted = no filter)"`
 	Page      int       `query:"page" minimum:"1" default:"1" doc:"Page number (1-indexed)"`
 	PageSize  int       `query:"pageSize" minimum:"1" maximum:"100" default:"20" doc:"Page size (1-100)"`
 }
 
-// UnmatchedFilesListOutput is the paginated list shape returned by the
-// service as-is — preserves the pre-migration Echo wire envelope.
 type UnmatchedFilesListOutput struct {
 	Body service.ListResult
 }
 
-// List returns a paginated list of unresolved unmatched files.
 func (h *UnmatchedFiles) List(ctx context.Context, input *UnmatchedFilesListInput) (*UnmatchedFilesListOutput, error) {
 	params := service.ListParams{
 		Page:     input.Page,
@@ -72,17 +57,14 @@ func (h *UnmatchedFiles) List(ctx context.Context, input *UnmatchedFilesListInpu
 
 // ----- Get -----
 
-// UnmatchedFilesGetInput holds the path id.
 type UnmatchedFilesGetInput struct {
 	ID uuid.UUID `path:"id" format:"uuid" doc:"Unmatched file ID"`
 }
 
-// UnmatchedFilesGetOutput wraps the response shape.
 type UnmatchedFilesGetOutput struct {
 	Body service.UnmatchedFileResponse
 }
 
-// Get fetches a single unmatched file with its current suggestions.
 func (h *UnmatchedFiles) Get(ctx context.Context, input *UnmatchedFilesGetInput) (*UnmatchedFilesGetOutput, error) {
 	out, err := h.svc.UnmatchedFiles.Get(ctx, pgtypeUUID(input.ID))
 	if err != nil {
@@ -93,7 +75,6 @@ func (h *UnmatchedFiles) Get(ctx context.Context, input *UnmatchedFilesGetInput)
 
 // ----- Match -----
 
-// UnmatchedFilesMatchInput is the path id + match request body.
 type UnmatchedFilesMatchInput struct {
 	ID   uuid.UUID `path:"id" format:"uuid" doc:"Unmatched file ID"`
 	Body struct {
@@ -104,21 +85,15 @@ type UnmatchedFilesMatchInput struct {
 	}
 }
 
-// UnmatchedFilesMatchResponse is the match response shape — small and
-// purpose-built for "what was created"; matches the pre-migration Echo
-// `map[string]interface{}` body but as a typed struct.
 type UnmatchedFilesMatchResponse struct {
 	MediaFileID string `json:"mediaFileId" doc:"Created media file ID (UUID string)"`
 	Path        string `json:"path" doc:"Path of the matched file"`
 }
 
-// UnmatchedFilesMatchOutput wraps the typed match response.
 type UnmatchedFilesMatchOutput struct {
 	Body UnmatchedFilesMatchResponse
 }
 
-// Match manually matches an unmatched file to a TMDB media item. The service
-// returns Conflict if the file is already resolved.
 func (h *UnmatchedFiles) Match(ctx context.Context, input *UnmatchedFilesMatchInput) (*UnmatchedFilesMatchOutput, error) {
 	mediaFile, err := h.svc.UnmatchedFiles.Match(ctx, pgtypeUUID(input.ID), service.MatchRequest{
 		TmdbID:  input.Body.TmdbID,
@@ -137,15 +112,12 @@ func (h *UnmatchedFiles) Match(ctx context.Context, input *UnmatchedFilesMatchIn
 
 // ----- Dismiss -----
 
-// UnmatchedFilesDismissInput holds the path id.
 type UnmatchedFilesDismissInput struct {
 	ID uuid.UUID `path:"id" format:"uuid" doc:"Unmatched file ID"`
 }
 
-// UnmatchedFilesDismissOutput is empty — DefaultStatus 204.
 type UnmatchedFilesDismissOutput struct{}
 
-// Dismiss marks an unmatched file as dismissed (resolved without a match).
 func (h *UnmatchedFiles) Dismiss(ctx context.Context, input *UnmatchedFilesDismissInput) (*UnmatchedFilesDismissOutput, error) {
 	if err := h.svc.UnmatchedFiles.Dismiss(ctx, pgtypeUUID(input.ID)); err != nil {
 		return nil, err
@@ -155,18 +127,14 @@ func (h *UnmatchedFiles) Dismiss(ctx context.Context, input *UnmatchedFilesDismi
 
 // ----- Refresh -----
 
-// UnmatchedFilesRefreshInput holds the path id.
 type UnmatchedFilesRefreshInput struct {
 	ID uuid.UUID `path:"id" format:"uuid" doc:"Unmatched file ID"`
 }
 
-// UnmatchedFilesRefreshOutput wraps the refreshed response shape.
 type UnmatchedFilesRefreshOutput struct {
 	Body service.UnmatchedFileResponse
 }
 
-// Refresh regenerates the suggestion list for an unmatched file by
-// re-querying TMDB.
 func (h *UnmatchedFiles) Refresh(ctx context.Context, input *UnmatchedFilesRefreshInput) (*UnmatchedFilesRefreshOutput, error) {
 	out, err := h.svc.UnmatchedFiles.RefreshSuggestions(ctx, pgtypeUUID(input.ID))
 	if err != nil {
@@ -177,7 +145,6 @@ func (h *UnmatchedFiles) Refresh(ctx context.Context, input *UnmatchedFilesRefre
 
 // ----- Register -----
 
-// RegisterHumachi wires every unmatched-files operation onto the humachi API.
 func (h *UnmatchedFiles) RegisterHumachi(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "unmatched-files-list",

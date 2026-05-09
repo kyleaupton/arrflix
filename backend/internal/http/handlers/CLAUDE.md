@@ -1,8 +1,6 @@
 # HTTP handlers — humachi pattern
 
-`libraries.go` is the reference vertical. Every handler that migrates in phase 3 follows the same shape — read it alongside this guide.
-
-Currently humachi-shaped: `libraries`. Everything else lives on Echo and uses `RenderError` until it migrates.
+`libraries.go` is the canonical example. Every handler in this directory follows the same shape — read it alongside this guide.
 
 ## File layout
 
@@ -11,7 +9,7 @@ One file per entity, sectioned by operation. **Do not split into a sibling `_dto
 1. Handler struct + constructor.
 2. Shared body shape (only when ≥2 operations share the same body — see below).
 3. Per-operation sections — each section contains the Input struct, the Output struct, and the handler method, in that order.
-   - Order: `List`, `Get`, `Create`, `Update`, `Delete`, then any bespoke verbs (`Scan`, etc.).
+   - Order: `List`, `Get`, `Create`, `Update`, `Delete`, then any bespoke verbs (`Scan`, `GetDefault`, etc.).
 4. `RegisterHumachi(api huma.API)` at the bottom.
 
 A skeleton:
@@ -93,7 +91,7 @@ The handler does three things:
 
 1. Reads parsed inputs from the Input struct (path / query / header / body).
 2. Calls a service method, passing typed values (`uuid.UUID`, `model.*`).
-3. Wraps the result in `&<Op>Output{Body: ...}`. On error, returns the service error directly — **no manual rendering, no `RenderError`**.
+3. Wraps the result in `&<Op>Output{Body: ...}`. On error, returns the service error directly — no manual rendering.
 
 When the input ↔ service args translation is more than a couple of lines, factor a small helper.
 
@@ -107,7 +105,7 @@ type LibrariesGetInput struct {
 }
 ```
 
-Huma routes path params through `encoding.TextUnmarshaler` when the target type implements it, and `*uuid.UUID` does. On a malformed value huma emits a 422 RFC-9457 response with the bad value at `path.id` — same shape as tag-level validation errors. **Do not write a Resolve method for this.** No `parsedID` field, no `uuid.Parse` call, no helper like `invalidLibraryID`.
+Huma routes path params through `encoding.TextUnmarshaler` when the target type implements it, and `*uuid.UUID` does. On a malformed value huma emits a 422 RFC-9457 response with the bad value at `path.id` — same shape as tag-level validation errors. **Do not write a Resolve method for this.** No `parsedID` field, no `uuid.Parse` call.
 
 The `format:"uuid"` tag is still required: it sets the OpenAPI `format: uuid` annotation on the path-param schema, which the TypeScript client uses for its types.
 
@@ -131,7 +129,7 @@ RootPath string `json:"rootPath" required:"true" minLength:"1"`
 
 **Resolve() — only when a tag won't do it:**
 
-The libraries handler doesn't have any. UUID parsing isn't a Resolve concern (huma binds `uuid.UUID` natively). Reach for Resolve when you have a cross-field rule like "exactly one of `a` or `b` must be set" that no struct tag can express. Emit `apperrors.Validation(detail, apperrors.Field("body.<fieldName>", msg))` so the wire shape matches a tag-emitted or service-emitted validation error. There's no need to declare a `var _ huma.Resolver = ...` assertion — the registration call surfaces type mismatches.
+Reach for Resolve when you have a cross-field rule like "exactly one of `a` or `b` must be set" that no struct tag can express. Emit `apperrors.Validation(detail, apperrors.Field("body.<fieldName>", msg))` so the wire shape matches a tag-emitted or service-emitted validation error. There's no need to declare a `var _ huma.Resolver = ...` assertion — the registration call surfaces type mismatches.
 
 **Service — stateful checks:**
 
@@ -162,6 +160,8 @@ The handler returns `&LibrariesDeleteOutput{}` on success; huma writes no body b
 
 ## Auth claims
 
+JWT and setup-mode middleware run at the chi layer (see `internal/http/http.go`), so every route registered on humachi is implicitly protected. The handler only needs to read claims when it actually uses them. Public routes (login, signup, bootstrap, etc.) bypass the JWT middleware via the `publicPathSet` allowlist in `middlewares/chi.go`; adding a new public route requires updating that allowlist.
+
 ```go
 import "github.com/kyleaupton/arrflix/internal/http/middlewares"
 
@@ -171,8 +171,6 @@ if !ok {
 }
 ```
 
-`ChiJWT` runs at the chi layer (see `internal/http/http.go`) so any route registered on humachi is implicitly protected; the handler only needs to read claims when it actually uses them. Public routes (login, signup, bootstrap, etc.) bypass the JWT middleware via the `publicPathSet` allowlist in `middlewares/chi.go` — phase 3 won't migrate any of those without first updating that allowlist.
-
 ## Error rule
 
 Service code already produces typed `*apperrors.Error` values. The handler just returns them. `internal/http/humaerr` overrides `huma.NewError` so any error in the chain that matches `*apperrors.Error` renders as RFC 9457 problem-details with the typed kind, op, and field details preserved.
@@ -180,7 +178,6 @@ Service code already produces typed `*apperrors.Error` values. The handler just 
 What this means concretely:
 
 - **Don't construct typed errors in the handler.** The service builds them; the handler hands them back.
-- **Don't call `RenderError`** from a humachi handler. That function still exists for un-migrated Echo handlers; using it from a humachi handler would double-render.
 - For the very rare handler-level invariant (e.g. "this code path is unreachable"), use the typed constructor with `.Op("<Resource>Handler.<Method>")`.
 
 Tag-level validation, path-param binding, and Resolve-emitted errors are all aggregated by huma into a single 422 response. The wire shape for these binding-time errors is huma's default `{status, title, errors: []string}` — the `path.id` / `body.<field>` location appears in the stringified message. Service-emitted `apperrors.Validation` produces the richer `ProblemDetails` shape (`{type, title, status, detail, errors: []FieldError}`). The two shapes are not byte-identical, but both communicate the same information.
@@ -217,22 +214,9 @@ Errors: []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnproce
 
 **Omit `Errors` entirely** when the op has no semantic error surface — list endpoints, simple GETs that can only fail with 500, etc. Huma emits a single `default` response, which correctly says "no per-op error branches beyond universals."
 
-## Echo cleanup as you migrate
+## Adding a new handler
 
-As each handler migrates in phase 3:
-
-1. Move the operation methods to humachi shape (`func(ctx, *Input) (*Output, error)`).
-2. Add `RegisterHumachi(api)` at the bottom of the new single file.
-3. Strip the swag-style `// @Summary ...` annotations off the now-dead Echo methods or delete the methods outright. Don't leave annotations on un-migrated handlers either — phase 1's spec generator no longer reads them, so they're dead text. Move the prose into `Operation.Summary` / `Operation.Description`.
-4. Remove the Echo registration from `internal/http/http.go` (`<handler>.RegisterProtected(protected)`).
-5. Add the humachi registration in `internal/http/http.go::NewServer`.
-6. Add the handler to `cmd/genspec/main.go` so the spec picks it up.
-7. Run `go run ./cmd/genspec` to regenerate the OpenAPI spec, then regenerate the TS client (`npm run openapi-ts` from `web/`) — or use the `arrflix_gen_api` MCP tool which does both.
-
-Don't migrate handlers in groups; do one resource at a time so the diff stays reviewable and the spec growth is incremental.
-
-## What's still on Echo
-
-Every handler in this directory other than `libraries` (as of phase 2). They use the old pattern: `func(c echo.Context) error`, `c.Bind(&req)`, `RenderError(c, err)`. They continue to work because chi falls through to the Echo router on un-routed paths.
-
-`render.go::RenderError` and `middlewares.EchoClaimsBridge()` both stay until the last Echo handler migrates. Phase 4 deletes them in the same change that drops the Echo router.
+1. Create `<entity>.go` in this directory following the layout above.
+2. Add `RegisterHumachi(api)` at the bottom.
+3. Wire it into `internal/http/http.go::NewServer` and `cmd/genspec/main.go::main`.
+4. Run `go run ./cmd/genspec` to regenerate the OpenAPI spec, then regenerate the TS client (`npm run openapi-ts` from `web/`) — or use the `arrflix_gen_api` MCP tool which does both.

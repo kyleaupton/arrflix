@@ -1,20 +1,15 @@
-// genspec generates the OpenAPI 3.1 spec for the humachi-served portion
-// of the arrflix API and writes it to backend/internal/http/docs/openapi.json.
-//
-// As of phase 2 of the humachi migration, the libraries handler is registered
-// on this API as the reference vertical; phase 3 adds the rest of the
-// handlers as they migrate. This entrypoint registers operations against a
-// nil service (the registration only inspects type information for spec
-// generation — no service methods are actually invoked), so the build stays
-// minimal: no DB, no service init, no logger.
+// genspec generates the OpenAPI 3.1 spec for the humachi-served portion of
+// the arrflix API and writes it to internal/http/docs/openapi.{yaml,json}.
+// Operations are registered against a nil service — huma.Register only
+// inspects type metadata for spec generation, so the build stays minimal
+// (no DB, no service init).
 //
 // Usage:
 //
 //	go run ./cmd/genspec
 //
-// The output (openapi.yaml + openapi.json) is committed to the repo and is
-// what the frontend's openapi-ts step consumes. Regenerate after any
-// humachi handler change.
+// The output is committed and consumed by the frontend's openapi-ts step.
+// Regenerate after any handler change.
 package main
 
 import (
@@ -29,7 +24,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/http/handlers"
 
-	// Imported for the side effect of huma.NewError wiring (apperrors.ToProblem).
+	// Side-effect import: installs apperrors.ToProblem as huma's NewError.
 	_ "github.com/kyleaupton/arrflix/internal/http/humaerr"
 )
 
@@ -37,13 +32,7 @@ func main() {
 	router := chi.NewRouter()
 	api := humachi.New(router, huma.DefaultConfig("Arrflix API", "0.0.1"))
 
-	// Phase 2: register the libraries handler so its operations appear in
-	// the spec. The handler is constructed against a nil service — huma.Register
-	// only inspects the input/output type metadata to build the spec, it
-	// does not invoke the handler function bodies.
 	handlers.NewLibraries(nil).RegisterHumachi(api)
-
-	// Phase 3 wave 1.
 	handlers.NewDownloaders(nil, nil).RegisterHumachi(api)
 	handlers.NewNameTemplates(nil).RegisterHumachi(api)
 	handlers.NewPolicies(nil).RegisterHumachi(api)
@@ -51,20 +40,12 @@ func main() {
 	handlers.NewInvites(nil).RegisterHumachi(api)
 	handlers.NewUsers(nil).RegisterHumachi(api)
 	handlers.NewRoles(nil).RegisterHumachi(api)
-
-	// Phase 3 wave 2a: auth, setup, media. Same nil-service trick —
-	// huma.Register reads only the operation metadata.
 	handlers.NewAuth(config.Config{}, nil, nil, nil).RegisterHumachi(api)
 	handlers.NewSetup(nil).RegisterHumachi(api)
 	handlers.NewMedia(nil).RegisterHumachi(api)
-
-	// Phase 3 wave 2b: events, download-jobs, import-tasks.
 	handlers.NewEvents(nil, nil).RegisterHumachi(api)
 	handlers.NewDownloadJobs(nil).RegisterHumachi(api)
 	handlers.NewImportTasks(nil).RegisterHumachi(api)
-
-	// Phase 3 wave 2c: bootstrap, health, version, download-candidates,
-	// filesystem, feed, indexers, unmatched-files.
 	handlers.NewBootstrap(config.Config{}, nil).RegisterHumachi(api)
 	handlers.NewHealth().RegisterHumachi(api)
 	handlers.NewVersion(nil).RegisterHumachi(api)

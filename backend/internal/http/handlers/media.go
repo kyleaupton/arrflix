@@ -1,11 +1,3 @@
-// media.go is the humachi-shaped media handler. The route shape is the
-// pre-migration one: paginated /library, /search via TMDB, and
-// {movie,series,person}/{tmdbId} detail endpoints. There are no slug or UUID
-// addressed routes today — TMDB ids (int64) are the only addressable form.
-//
-// All endpoints are protected by the global ChiJWT middleware; reads of the
-// authenticated principal aren't required by any handler here, so we don't
-// touch the claims context.
 package handlers
 
 import (
@@ -25,7 +17,6 @@ func NewMedia(s *service.Services) *Media { return &Media{svc: s} }
 
 // ----- List (library) -----
 
-// MediaListInput carries pagination + filtering for GET /library.
 type MediaListInput struct {
 	Page     int    `query:"page" minimum:"1" doc:"1-based page index"`
 	PageSize int    `query:"pageSize" minimum:"1" maximum:"100" doc:"Items per page (1-100)"`
@@ -35,14 +26,10 @@ type MediaListInput struct {
 	SortDir  string `query:"sortDir" enum:",asc,desc" doc:"Sort direction"`
 }
 
-// MediaListOutput wraps the paginated library page. The Page generic was
-// aliased to PaginatedLibraryResponse upstream for stable schema naming.
 type MediaListOutput struct {
 	Body model.PaginatedLibraryResponse
 }
 
-// List returns a paginated, optionally filtered slice of media items in the
-// library. Defaults / clamps are applied in the service layer.
 func (h *Media) List(ctx context.Context, input *MediaListInput) (*MediaListOutput, error) {
 	res, err := h.svc.Media.ListLibraryItemsPaginated(ctx, service.LibraryQueryParams{
 		Page:     input.Page,
@@ -60,20 +47,16 @@ func (h *Media) List(ctx context.Context, input *MediaListInput) (*MediaListOutp
 
 // ----- Search -----
 
-// MediaSearchInput carries the TMDB multi-search query.
 type MediaSearchInput struct {
 	Q     string `query:"q" required:"true" minLength:"1" doc:"Search query"`
 	Limit int    `query:"limit" minimum:"1" maximum:"100" doc:"Max results (default 20)"`
 	Page  int    `query:"page" minimum:"1" doc:"1-based page index"`
 }
 
-// MediaSearchOutput wraps the TMDB search response shape.
 type MediaSearchOutput struct {
 	Body model.SearchResponse
 }
 
-// Search runs a TMDB multi-search and enriches the results with library
-// status. Upstream failures surface as 502 BadGateway via the service.
 func (h *Media) Search(ctx context.Context, input *MediaSearchInput) (*MediaSearchOutput, error) {
 	res, err := h.svc.Media.Search(ctx, input.Q, input.Limit, input.Page)
 	if err != nil {
@@ -84,18 +67,14 @@ func (h *Media) Search(ctx context.Context, input *MediaSearchInput) (*MediaSear
 
 // ----- Get movie -----
 
-// MediaGetMovieInput carries the TMDB movie id.
 type MediaGetMovieInput struct {
 	ID int64 `path:"id" minimum:"1" doc:"TMDB movie id"`
 }
 
-// MediaGetMovieOutput wraps the movie-detail shape.
 type MediaGetMovieOutput struct {
 	Body model.MovieDetail
 }
 
-// GetMovie returns the full movie detail (TMDB-enriched, with local files
-// and active download jobs spliced in by the service).
 func (h *Media) GetMovie(ctx context.Context, input *MediaGetMovieInput) (*MediaGetMovieOutput, error) {
 	res, err := h.svc.Media.GetMovieDetail(ctx, input.ID)
 	if err != nil {
@@ -106,17 +85,14 @@ func (h *Media) GetMovie(ctx context.Context, input *MediaGetMovieInput) (*Media
 
 // ----- Get series -----
 
-// MediaGetSeriesInput carries the TMDB series id.
 type MediaGetSeriesInput struct {
 	ID int64 `path:"id" minimum:"1" doc:"TMDB series id"`
 }
 
-// MediaGetSeriesOutput wraps the series-detail shape.
 type MediaGetSeriesOutput struct {
 	Body model.SeriesDetail
 }
 
-// GetSeries returns the full series detail.
 func (h *Media) GetSeries(ctx context.Context, input *MediaGetSeriesInput) (*MediaGetSeriesOutput, error) {
 	res, err := h.svc.Media.GetSeriesDetail(ctx, input.ID)
 	if err != nil {
@@ -127,17 +103,14 @@ func (h *Media) GetSeries(ctx context.Context, input *MediaGetSeriesInput) (*Med
 
 // ----- Get person -----
 
-// MediaGetPersonInput carries the TMDB person id.
 type MediaGetPersonInput struct {
 	ID int64 `path:"id" minimum:"1" doc:"TMDB person id"`
 }
 
-// MediaGetPersonOutput wraps the person-detail shape.
 type MediaGetPersonOutput struct {
 	Body model.PersonDetail
 }
 
-// GetPerson returns the full person detail.
 func (h *Media) GetPerson(ctx context.Context, input *MediaGetPersonInput) (*MediaGetPersonOutput, error) {
 	res, err := h.svc.Media.GetPersonDetail(ctx, input.ID)
 	if err != nil {
@@ -148,8 +121,6 @@ func (h *Media) GetPerson(ctx context.Context, input *MediaGetPersonInput) (*Med
 
 // ----- Register -----
 
-// RegisterHumachi wires the media operations onto the humachi API. All
-// routes are protected (no public-path entries).
 func (h *Media) RegisterHumachi(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "library-list",
