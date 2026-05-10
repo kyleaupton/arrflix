@@ -142,12 +142,17 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 	srcInfo, err := os.Stat(task.SourcePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return apperrors.Internalf("source file not found: %s", task.SourcePath).NotRetryable()
+			return apperrors.Internalf("source file not found: %s", task.SourcePath).
+				Op("ImportWorker.processTask").
+				NotRetryable()
 		}
-		return fmt.Errorf("stat source: %w", err)
+		return apperrors.Internalf("stat source %s: %v", task.SourcePath, err).
+			Op("ImportWorker.processTask")
 	}
 	if srcInfo.IsDir() {
-		return apperrors.Internalf("source is a directory, expected file: %s", task.SourcePath).NotRetryable()
+		return apperrors.Internalf("source is a directory, expected file: %s", task.SourcePath).
+			Op("ImportWorker.processTask").
+			NotRetryable()
 	}
 
 	// Extract mediainfo from source file for template rendering
@@ -159,13 +164,13 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 	// Get required data
 	taskDetails, err := w.repo.GetImportTaskWithDetails(ctx, task.ID)
 	if err != nil {
-		return fmt.Errorf("get task details: %w", err)
+		return err
 	}
 
 	// Compute destination path using name template
 	destPath, err := w.computeDestPath(task, taskDetails, mi)
 	if err != nil {
-		return apperrors.Internalf("compute dest path: %w", err).NotRetryable()
+		return err
 	}
 
 	// Full absolute destination
@@ -180,18 +185,21 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 				Str("dest", fullDest).
 				Msg("reimport: removing existing destination")
 			if err := os.Remove(fullDest); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("remove existing dest: %w", err)
+				return apperrors.Internalf("remove existing dest %s: %v", fullDest, err).
+					Op("ImportWorker.processTask")
 			}
 		} else {
 			// Not a reimport, fail
-			return apperrors.Internalf("destination already exists: %s", fullDest).NotRetryable()
+			return apperrors.Conflictf("destination already exists: %s", fullDest).
+				Op("ImportWorker.processTask")
 		}
 	}
 
 	// Perform import (hardlink or copy)
 	method, err := importer.HardlinkOrCopy(task.SourcePath, fullDest)
 	if err != nil {
-		return fmt.Errorf("import file: %w", err)
+		return apperrors.Internalf("import file %s: %v", task.SourcePath, err).
+			Op("ImportWorker.processTask")
 	}
 
 	w.log.Info().
@@ -250,7 +258,7 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 		MediaFileID:  mediaFile.ID,
 	})
 	if err != nil {
-		return fmt.Errorf("set task completed: %w", err)
+		return err
 	}
 
 	w.logEvent(ctx, task.ID, "status_changed", "", map[string]any{
@@ -317,15 +325,21 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 	if task.MediaType == "series" {
 		showPart, err := template.Render(coalesce(details.SeriesShowTemplate), templateData)
 		if err != nil {
-			return "", fmt.Errorf("render show template: %w", err)
+			return "", apperrors.Internalf("render show template: %v", err).
+				Op("ImportWorker.computeDestPath").
+				NotRetryable()
 		}
 		seasonPart, err := template.Render(coalesce(details.SeriesSeasonTemplate), templateData)
 		if err != nil {
-			return "", fmt.Errorf("render season template: %w", err)
+			return "", apperrors.Internalf("render season template: %v", err).
+				Op("ImportWorker.computeDestPath").
+				NotRetryable()
 		}
 		filePart, err := template.Render(details.NameTemplate, templateData)
 		if err != nil {
-			return "", fmt.Errorf("render file template: %w", err)
+			return "", apperrors.Internalf("render file template: %v", err).
+				Op("ImportWorker.computeDestPath").
+				NotRetryable()
 		}
 		rel = filepath.Join(showPart, seasonPart, filePart)
 	} else {
@@ -335,12 +349,16 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 			var err error
 			dirPart, err = template.Render(*details.MovieDirTemplate, templateData)
 			if err != nil {
-				return "", fmt.Errorf("render movie dir template: %w", err)
+				return "", apperrors.Internalf("render movie dir template: %v", err).
+					Op("ImportWorker.computeDestPath").
+					NotRetryable()
 			}
 		}
 		filePart, err := template.Render(details.NameTemplate, templateData)
 		if err != nil {
-			return "", fmt.Errorf("render file template: %w", err)
+			return "", apperrors.Internalf("render file template: %v", err).
+				Op("ImportWorker.computeDestPath").
+				NotRetryable()
 		}
 		if dirPart != "" {
 			rel = filepath.Join(dirPart, filePart)
@@ -508,7 +526,9 @@ func (w *Worker) deriveSourcePath(ctx context.Context, task model.ImportTask) (s
 	if task.MediaType == "movie" {
 		mainFile, ok := importer.PickMainMovieFile(files)
 		if !ok {
-			return "", apperrors.Internalf("no video files found in download").NotRetryable()
+			return "", apperrors.Internalf("no video files found in download").
+				Op("ImportWorker.deriveSourcePath").
+				NotRetryable()
 		}
 		rawPath = mainFile.Path
 	} else {
@@ -536,7 +556,9 @@ func (w *Worker) deriveSourcePath(ctx context.Context, task model.ImportTask) (s
 		if f, ok := matched[epNum]; ok {
 			rawPath = f.Path
 		} else {
-			return "", apperrors.Internalf("no file matched episode S%02dE%02d", seasonNum, epNum).NotRetryable()
+			return "", apperrors.Internalf("no file matched episode S%02dE%02d", seasonNum, epNum).
+				Op("ImportWorker.deriveSourcePath").
+				NotRetryable()
 		}
 	}
 

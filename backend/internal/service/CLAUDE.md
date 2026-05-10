@@ -1,19 +1,19 @@
-# Service layer rules
+# Service and worker layer rules
 
-Services orchestrate business logic. They consume typed errors from `internal/repo`, validate inputs, and return typed errors that handlers render to clients.
+These rules apply to both service code (`internal/service/`) and worker code (`internal/jobs/`). Services orchestrate business logic; workers drive long-running jobs. Both consume typed errors from `internal/repo`, may invoke external dependencies, and return typed errors. Where a rule is service-specific or worker-specific the text calls it out; otherwise treat both layers the same.
 
 **Read [`specs/errors/README.md`](../../../specs/errors/README.md) before writing error-producing code.** This file is the layer-specific cheat sheet; the spec has the full rationale.
 
 ## Rules
 
 1. **Repo errors are already typed. Pass them through unchanged in the common case.**
-   No `if err != nil { return apperrors.NotFound... }` after a repo call. The repo did that work.
+   No `if err != nil { return apperrors.NotFound... }` after a repo call. The repo did that work. (Same rule applies to `internal/jobs/*` workers.)
 
 2. **Use `apperrors.Wrap` ONLY when you have a better identifier than the repo had.**
    E.g., the user passed a slug; the repo only knows the UUID. `Wrap` replaces the `detail` while preserving the kind, the captured stack, and the original error chain (so logs still see everything).
 
-3. **Never use `errors.New(...)` or `fmt.Errorf(...)` in service code.**
-   Those produce naked errors that surface as 500s with hidden details. Use the typed constructors:
+3. **Never use `errors.New(...)` or `fmt.Errorf(...)` in service or worker code.**
+   Those produce naked errors that surface as 500s with hidden details. Use the typed constructors: (Same rule applies to `internal/jobs/*` workers.)
    - `apperrors.NotFoundf` — 404
    - `apperrors.Conflictf` — 409 (state conflicts: "already exists", "already running")
    - `apperrors.Validation(detail, fields...)` — 422 (invalid input)
@@ -26,7 +26,7 @@ Services orchestrate business logic. They consume typed errors from `internal/re
    The user should see all errors at once, not one-at-a-time. Use `apperrors.Validation` with multiple `apperrors.Field` entries.
 
 5. **Don't introduce sentinel errors (`var ErrFoo = errors.New(...)`).**
-   Sentinels were how we used to signal "this specific failure" before kinds existed. Now the kind plus the detail message carry that signal. Existing sentinels (e.g., `ErrScanAlreadyRunning`) will be migrated as we touch them; don't add new ones.
+   Sentinels were how we used to signal "this specific failure" before kinds existed. Now the kind plus the detail message carry that signal. Existing sentinels (e.g., `ErrScanAlreadyRunning`) will be migrated as we touch them; don't add new ones. (Same rule applies to `internal/jobs/*` workers.)
 
 6. **Never import `dbgen.*` or `pgtype.*`.**
    Services and workers speak `model.*` (idiomatic Go domain types). The repo handles the persistence ↔ domain translation. Service signatures take and return `model.*` and `uuid.UUID`; pgtype-shaped values are a repo-internal concern. If a service file imports `github.com/kyleaupton/arrflix/internal/db/sqlc` or `github.com/jackc/pgx/v5/pgtype`, the layering is wrong — fix the repo, not the service. (Same rule applies to `internal/jobs/*` workers.)
@@ -169,9 +169,13 @@ return apperrors.Internalf("unknown protocol: %s", proto).
 
 Use sparingly. The kind already encodes the default retry behavior; `.NotRetryable()` is for the rare case where Internal is the right kind for the wire but you know retrying is hopeless.
 
+### Workers and retry semantics
+
+Worker error sites care about retryability in addition to the kind. The defaults are derived from the kind (see [`specs/errors/README.md`](../../../specs/errors/README.md)): `apperrors.BadGateway` is retryable by default, so workers should use it for upstream API failures (qBittorrent, TMDB, Prowlarr) — the worker loop will back off and try again without any extra annotation. `apperrors.Internalf(...)` is also retryable by default, but invariant violations the worker can't recover from (unknown protocol, missing external id, "this should never happen") should chain `.NotRetryable()` so a single failure trips the job to `failed` instead of burning attempts. Repo errors flow through unchanged — `KindNotFound` and `KindConflict` are non-retryable by default, which is the right behavior for "the row vanished" or "we already enqueued this."
+
 ## What goes in `errors.New` / `fmt.Errorf` instead
 
-Nothing. If you find yourself reaching for them in service code, ask:
+Nothing. If you find yourself reaching for them in service or worker code, ask:
 
 - **Is it user input?** → `apperrors.Validation`.
 - **Is it state conflict?** → `apperrors.Conflictf`.

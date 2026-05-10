@@ -105,7 +105,9 @@ func (w *Worker) processJob(ctx context.Context, job model.DownloadJob) error {
 
 	client, err := w.dlm.GetClientByID(ctx, job.DownloaderID.String())
 	if err != nil {
-		return apperrors.Internalf("get downloader client: %w", err).NotRetryable()
+		return apperrors.Internalf("get downloader client: %v", err).
+			Op("DownloadWorker.processJob").
+			NotRetryable()
 	}
 
 	switch job.Status {
@@ -126,7 +128,9 @@ func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, 
 	case "usenet":
 		addReq.NZBURL = job.CandidateLink
 	default:
-		return apperrors.Internalf("unknown protocol: %s", job.Protocol).NotRetryable()
+		return apperrors.Internalf("unknown protocol: %s", job.Protocol).
+			Op("DownloadWorker.enqueueDownload").
+			NotRetryable()
 	}
 
 	w.log.Info().
@@ -138,7 +142,8 @@ func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, 
 	res, err := client.Add(ctx, addReq)
 	if err != nil {
 		w.log.Error().Err(err).Str("job_id", job.ID.String()).Msg("[DEBUG] Add() failed")
-		return apperrors.BadGatewayf("downloader add: %w", err)
+		return apperrors.BadGatewayf("downloader add: %v", err).
+			Op("DownloadWorker.enqueueDownload")
 	}
 
 	w.log.Info().
@@ -149,7 +154,7 @@ func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, 
 
 	updated, err := w.repo.SetDownloadJobEnqueued(ctx, job.ID, res.ExternalID)
 	if err != nil {
-		return fmt.Errorf("set enqueued: %w", err)
+		return err
 	}
 
 	w.logEvent(ctx, job.ID, "status_changed", "", map[string]any{
@@ -163,13 +168,16 @@ func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, 
 
 func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job model.DownloadJob) error {
 	if job.DownloaderExternalID == nil || *job.DownloaderExternalID == "" {
-		return apperrors.Internalf("job missing downloader_external_id").NotRetryable()
+		return apperrors.Internalf("job missing downloader_external_id").
+			Op("DownloadWorker.pollDownload").
+			NotRetryable()
 	}
 
 	externalID := *job.DownloaderExternalID
 	item, err := client.Get(ctx, externalID)
 	if err != nil {
-		return apperrors.BadGatewayf("downloader get: %w", err)
+		return apperrors.BadGatewayf("downloader get: %v", err).
+			Op("DownloadWorker.pollDownload")
 	}
 
 	newStatus := mapItemStatus(item.Status)
@@ -197,7 +205,7 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 		TotalSize:        ptr(item.TotalSize),
 	})
 	if err != nil {
-		return fmt.Errorf("update snapshot: %w", err)
+		return err
 	}
 
 	if job.Status != newStatus {
@@ -237,14 +245,17 @@ func (w *Worker) spawnMovieImportTask(ctx context.Context, client downloader.Cli
 
 	files, err := client.ListFiles(ctx, externalID)
 	if err != nil && err != downloader.ErrUnsupported {
-		return apperrors.BadGatewayf("list files: %w", err)
+		return apperrors.BadGatewayf("list files: %v", err).
+			Op("DownloadWorker.spawnMovieImportTask")
 	}
 
 	sourcePath := ""
 	if len(files) > 0 {
 		mainFile, ok := importer.PickMainMovieFile(files)
 		if !ok {
-			return apperrors.Internalf("no suitable video files found for import").NotRetryable()
+			return apperrors.Internalf("no suitable video files found for import").
+				Op("DownloadWorker.spawnMovieImportTask").
+				NotRetryable()
 		}
 		if filepath.IsAbs(mainFile.Path) {
 			sourcePath = mainFile.Path
@@ -259,7 +270,9 @@ func (w *Worker) spawnMovieImportTask(ctx context.Context, client downloader.Cli
 	}
 
 	if sourcePath == "" {
-		return apperrors.Internalf("unable to determine source path for import").NotRetryable()
+		return apperrors.Internalf("unable to determine source path for import").
+			Op("DownloadWorker.spawnMovieImportTask").
+			NotRetryable()
 	}
 
 	task, err := w.repo.CreateImportTask(ctx, repo.CreateImportTaskParams{
@@ -273,7 +286,7 @@ func (w *Worker) spawnMovieImportTask(ctx context.Context, client downloader.Cli
 		NameTemplateID: job.NameTemplateID,
 	})
 	if err != nil {
-		return fmt.Errorf("create import task: %w", err)
+		return err
 	}
 
 	w.log.Info().
@@ -290,7 +303,8 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 
 	files, err := client.ListFiles(ctx, externalID)
 	if err != nil {
-		return apperrors.BadGatewayf("list files: %w", err)
+		return apperrors.BadGatewayf("list files: %v", err).
+			Op("DownloadWorker.spawnSeriesImportTasks")
 	}
 
 	// Derive target season and episode from job
@@ -327,7 +341,9 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 
 	matchedFiles := importer.MatchFilesToEpisodes(files, targetSeason, targetEpisode)
 	if len(matchedFiles) == 0 {
-		return apperrors.Internalf("no files matched target episodes").NotRetryable()
+		return apperrors.Internalf("no files matched target episodes").
+			Op("DownloadWorker.spawnSeriesImportTasks").
+			NotRetryable()
 	}
 
 	tasksCreated := 0
@@ -374,7 +390,9 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 	}
 
 	if tasksCreated == 0 {
-		return apperrors.Internalf("failed to create any import tasks").NotRetryable()
+		return apperrors.Internalf("failed to create any import tasks").
+			Op("DownloadWorker.spawnSeriesImportTasks").
+			NotRetryable()
 	}
 
 	return nil
@@ -392,7 +410,7 @@ func (w *Worker) resolveEpisodeID(ctx context.Context, mediaItemID uuid.UUID, ta
 		SeasonNumber: int32(seasonNum),
 	})
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("upsert season: %w", err)
+		return uuid.Nil, err
 	}
 
 	// Get or create episode
@@ -401,7 +419,7 @@ func (w *Worker) resolveEpisodeID(ctx context.Context, mediaItemID uuid.UUID, ta
 		EpisodeNumber: int32(epNum),
 	})
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("upsert episode: %w", err)
+		return uuid.Nil, err
 	}
 
 	return episode.ID, nil
