@@ -498,7 +498,7 @@ func TestGetField(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		expected interface{}
+		expected any
 	}{
 		{"Full", "HDTV-720p"},
 		{"Resolution", "720p"},

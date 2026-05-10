@@ -37,7 +37,7 @@ type downloaderWriteBody struct {
 	URL        string                 `json:"url" required:"true" minLength:"1" doc:"Base URL of the downloader"`
 	Username   *string                `json:"username,omitempty" doc:"Optional username"`
 	Password   *string                `json:"password,omitempty" doc:"Optional password; on Update, empty string preserves existing"`
-	ConfigJSON map[string]interface{} `json:"configJson,omitempty" doc:"Implementation-specific config blob"`
+	ConfigJSON map[string]any `json:"configJson,omitempty" doc:"Implementation-specific config blob"`
 	Enabled    bool                   `json:"enabled" doc:"Whether the downloader is active"`
 	Default    bool                   `json:"default" doc:"Whether this is the default for its protocol"`
 }
@@ -241,7 +241,7 @@ type DownloadersTestConfigBody struct {
 	URL        string                 `json:"url" required:"true" minLength:"1" doc:"Base URL"`
 	Username   *string                `json:"username,omitempty" doc:"Optional username"`
 	Password   *string                `json:"password,omitempty" doc:"Optional password"`
-	ConfigJSON map[string]interface{} `json:"configJson,omitempty" doc:"Implementation-specific config blob"`
+	ConfigJSON map[string]any `json:"configJson,omitempty" doc:"Implementation-specific config blob"`
 }
 
 type DownloadersTestConfigInput struct {

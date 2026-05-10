@@ -26,7 +26,7 @@ type IndexerDefinition struct {
 	Language           string              `json:"language" swagger:"description:Language code"`
 	LegacyUrls         []string            `json:"legacyUrls" swagger:"description:Legacy URLs"`
 	Name               string              `json:"name" swagger:"description:Indexer name"`
-	Presets            []interface{}       `json:"presets" swagger:"description:Configuration presets"`
+	Presets            []any       `json:"presets" swagger:"description:Configuration presets"`
 	Priority           int                 `json:"priority" swagger:"description:Indexer priority"`
 	Privacy            string              `json:"privacy" swagger:"description:Privacy level (public, private, semiPrivate)"`
 	Protocol           string              `json:"protocol" swagger:"description:Protocol (torrent, usenet)"`
@@ -75,7 +75,7 @@ type IndexerField struct {
 	SelectOptionsProviderAction string                `json:"selectOptionsProviderAction,omitempty" swagger:"description:Select options provider action"`
 	Type                        string                `json:"type" swagger:"description:Field type"`
 	Unit                        string                `json:"unit,omitempty" swagger:"description:Value unit"`
-	Value                       interface{}           `json:"value,omitempty" swagger:"description:Default value"`
+	Value                       any           `json:"value,omitempty" swagger:"description:Default value"`
 }
 
 // IndexerSelectOption represents an option for a select field
@@ -83,7 +83,7 @@ type IndexerSelectOption struct {
 	Hint  string      `json:"hint,omitempty" swagger:"description:Option hint"`
 	Name  string      `json:"name" swagger:"description:Option name"`
 	Order int         `json:"order" swagger:"description:Option order"`
-	Value interface{} `json:"value" swagger:"description:Option value"`
+	Value any `json:"value" swagger:"description:Option value"`
 }
 
 // Protocol used to download media. Comes with enum constants.
@@ -158,7 +158,7 @@ type FieldOutput struct {
 	SelectOptionsProviderAction string          `json:"selectOptionsProviderAction,omitempty"`
 	Type                        string          `json:"type,omitempty"`
 	Privacy                     string          `json:"privacy"`
-	Value                       interface{}     `json:"value,omitempty"`
+	Value                       any     `json:"value,omitempty"`
 	SelectOptions               []*SelectOption `json:"selectOptions,omitempty"`
 }
 
@@ -174,7 +174,7 @@ type SelectOption struct {
 // FieldInput is generic Name/Value struct applied to a few places.
 type FieldInput struct {
 	Name  string      `json:"name"`
-	Value interface{} `json:"value,omitempty"`
+	Value any `json:"value,omitempty"`
 }
 
 type IndexerInput struct {

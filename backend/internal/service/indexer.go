@@ -181,7 +181,7 @@ func (s *IndexerService) ToggleIndexer(ctx context.Context, indexerID int64) (*p
 	return result, nil
 }
 
-func (s *IndexerService) Action(ctx context.Context, actionName string, input interface{}) (any, error) {
+func (s *IndexerService) Action(ctx context.Context, actionName string, input any) (any, error) {
 	// hand-roll action call
 	url := fmt.Sprintf("%s/api/v1/indexer/action/%s", s.prowlarrURL, actionName)
 
@@ -315,7 +315,7 @@ func (s *IndexerService) TestAllIndexers(ctx context.Context) ([]*model.IndexerB
 	}
 
 	// Parse Prowlarr response (returns array of test results)
-	var prowlarrResults []map[string]interface{}
+	var prowlarrResults []map[string]any
 	if err := json.Unmarshal(responseBytes, &prowlarrResults); err != nil {
 		return nil, apperrors.Internalf("parse prowlarr testall response: %v", err).
 			Op("IndexerService.TestAllIndexers").
@@ -342,8 +342,8 @@ func (s *IndexerService) TestAllIndexers(ctx context.Context) ([]*model.IndexerB
 		}
 
 		if !result.Success {
-			if validationFailures, ok := pr["validationFailures"].([]interface{}); ok && len(validationFailures) > 0 {
-				if failure, ok := validationFailures[0].(map[string]interface{}); ok {
+			if validationFailures, ok := pr["validationFailures"].([]any); ok && len(validationFailures) > 0 {
+				if failure, ok := validationFailures[0].(map[string]any); ok {
 					if msg, ok := failure["errorMessage"].(string); ok {
 						result.Error = msg
 					}

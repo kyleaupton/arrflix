@@ -90,7 +90,7 @@ func (h *Bootstrap) GetBootstrap(ctx context.Context, input *BootstrapGetInput) 
 // tryParseUser parses the JWT inline. Returns nil on any failure — bootstrap
 // is public, so a bad token degrades to "no user" rather than 401.
 func (h *Bootstrap) tryParseUser(raw string) *BootstrapUser {
-	tok, err := jwt.Parse(raw, func(t *jwt.Token) (interface{}, error) {
+	tok, err := jwt.Parse(raw, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}

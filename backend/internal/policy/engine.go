@@ -271,7 +271,7 @@ func (e *Engine) getRuleByID(ctx context.Context, ruleIDStr string) (model.Rule,
 }
 
 // getValue gets a value from the evaluation context or returns the literal value
-func (e *Engine) getValue(operand string, evalCtx model.EvaluationContext) (interface{}, error) {
+func (e *Engine) getValue(operand string, evalCtx model.EvaluationContext) (any, error) {
 	// Check if it's a field reference using the unified context
 	if strings.Contains(operand, ".") {
 		parts := strings.SplitN(operand, ".", 2)
@@ -310,7 +310,7 @@ func (e *Engine) getValue(operand string, evalCtx model.EvaluationContext) (inte
 }
 
 // compare compares two values based on operator
-func (e *Engine) compare(left interface{}, operator model.Operator, right interface{}) (bool, error) {
+func (e *Engine) compare(left any, operator model.Operator, right any) (bool, error) {
 	switch operator {
 	case model.OpEq:
 		return e.equals(left, right), nil
@@ -346,11 +346,11 @@ func (e *Engine) compare(left interface{}, operator model.Operator, right interf
 	}
 }
 
-func (e *Engine) equals(left, right interface{}) bool {
+func (e *Engine) equals(left, right any) bool {
 	return fmt.Sprintf("%v", left) == fmt.Sprintf("%v", right)
 }
 
-func (e *Engine) greaterThan(left, right interface{}) (bool, error) {
+func (e *Engine) greaterThan(left, right any) (bool, error) {
 	leftNum, rightNum, err := e.toNumbers(left, right)
 	if err != nil {
 		return false, err
@@ -358,7 +358,7 @@ func (e *Engine) greaterThan(left, right interface{}) (bool, error) {
 	return leftNum > rightNum, nil
 }
 
-func (e *Engine) lessThan(left, right interface{}) (bool, error) {
+func (e *Engine) lessThan(left, right any) (bool, error) {
 	leftNum, rightNum, err := e.toNumbers(left, right)
 	if err != nil {
 		return false, err
@@ -366,7 +366,7 @@ func (e *Engine) lessThan(left, right interface{}) (bool, error) {
 	return leftNum < rightNum, nil
 }
 
-func (e *Engine) toNumbers(left, right interface{}) (float64, float64, error) {
+func (e *Engine) toNumbers(left, right any) (float64, float64, error) {
 	leftNum, ok := e.toFloat64(left)
 	if !ok {
 		return 0, 0, fmt.Errorf("left operand is not a number: %v", left)
@@ -378,7 +378,7 @@ func (e *Engine) toNumbers(left, right interface{}) (float64, float64, error) {
 	return leftNum, rightNum, nil
 }
 
-func (e *Engine) toFloat64(v interface{}) (float64, bool) {
+func (e *Engine) toFloat64(v any) (float64, bool) {
 	switch val := v.(type) {
 	case int64:
 		return float64(val), true
@@ -395,13 +395,13 @@ func (e *Engine) toFloat64(v interface{}) (float64, bool) {
 	}
 }
 
-func (e *Engine) contains(left, right interface{}) (bool, error) {
+func (e *Engine) contains(left, right any) (bool, error) {
 	leftStr := fmt.Sprintf("%v", left)
 	rightStr := fmt.Sprintf("%v", right)
 	return strings.Contains(leftStr, rightStr), nil
 }
 
-func (e *Engine) in(left, right interface{}) (bool, error) {
+func (e *Engine) in(left, right any) (bool, error) {
 	leftStr := fmt.Sprintf("%v", left)
 
 	// Right should be a comma-separated list or array

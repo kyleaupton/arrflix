@@ -171,7 +171,7 @@ func (ctx EvaluationContext) WithMediaInfo(mi *MediaInfoFields) EvaluationContex
 }
 
 // GetField retrieves a field value by its path (e.g., "candidate.size", "quality.resolution")
-func (ctx *EvaluationContext) GetField(path string) (interface{}, error) {
+func (ctx *EvaluationContext) GetField(path string) (any, error) {
 	parts := strings.SplitN(path, ".", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid field path: %s (expected namespace.field)", path)
@@ -198,7 +198,7 @@ func (ctx *EvaluationContext) GetField(path string) (interface{}, error) {
 }
 
 // getFieldByPath uses reflection to find a struct field by its path tag
-func getFieldByPath(obj interface{}, path string) (interface{}, error) {
+func getFieldByPath(obj any, path string) (any, error) {
 	v := reflect.ValueOf(obj)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()

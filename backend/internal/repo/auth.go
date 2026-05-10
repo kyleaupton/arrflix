@@ -87,7 +87,7 @@ func toModelRole(row dbgen.Role) model.Role {
 // []model.Role. The SQL emits role objects with id/name/description (no
 // built_in or created_at — those stay zero-valued in the slice). The column
 // arrives as either a []byte (raw JSONB) or nil; both are handled.
-func rolesFromAggregate(raw interface{}) []model.Role {
+func rolesFromAggregate(raw any) []model.Role {
 	if raw == nil {
 		return nil
 	}
@@ -354,7 +354,7 @@ func (r *Repository) UpsertIdentity(ctx context.Context, params UpsertIdentityPa
 	if params.TokenExpiresAt != nil {
 		expires = pgtype.Timestamptz{Time: *params.TokenExpiresAt, Valid: true}
 	}
-	var raw interface{}
+	var raw any
 	if len(params.Raw) > 0 {
 		raw = []byte(params.Raw)
 	}

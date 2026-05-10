@@ -292,7 +292,7 @@ type FieldInfo struct {
 	Name        string                         // Field name (e.g., "Full", "Resolution")
 	Type        string                         // Field type: "string", "bool", "int"
 	Description string                         // Human-readable description
-	Accessor    func(QualityModel) interface{} // Function to get the field value
+	Accessor    func(QualityModel) any // Function to get the field value
 }
 
 // QualityFields is the registry of all available quality fields
@@ -301,43 +301,43 @@ var QualityFields = []FieldInfo{
 		Name:        "Full",
 		Type:        "string",
 		Description: "Full quality tag (e.g., HDTV-720p, WEBDL-1080p)",
-		Accessor:    func(qm QualityModel) interface{} { return qm.Full() },
+		Accessor:    func(qm QualityModel) any { return qm.Full() },
 	},
 	{
 		Name:        "Resolution",
 		Type:        "string",
 		Description: "Resolution value (e.g., 720p, 1080p, 2160p)",
-		Accessor:    func(qm QualityModel) interface{} { return qm.Resolution() },
+		Accessor:    func(qm QualityModel) any { return qm.Resolution() },
 	},
 	{
 		Name:        "Source",
 		Type:        "string",
 		Description: "Source type (e.g., HDTV, WEB-DL, BluRay)",
-		Accessor:    func(qm QualityModel) interface{} { return qm.Source() },
+		Accessor:    func(qm QualityModel) any { return qm.Source() },
 	},
 	{
 		Name:        "IsRemux",
 		Type:        "bool",
 		Description: "Whether the quality is a remux",
-		Accessor:    func(qm QualityModel) interface{} { return qm.IsRemux() },
+		Accessor:    func(qm QualityModel) any { return qm.IsRemux() },
 	},
 	{
 		Name:        "IsRepack",
 		Type:        "bool",
 		Description: "Whether the release is a repack",
-		Accessor:    func(qm QualityModel) interface{} { return qm.Revision.IsRepack },
+		Accessor:    func(qm QualityModel) any { return qm.Revision.IsRepack },
 	},
 	{
 		Name:        "Version",
 		Type:        "int",
 		Description: "Revision version number",
-		Accessor:    func(qm QualityModel) interface{} { return qm.Version() },
+		Accessor:    func(qm QualityModel) any { return qm.Version() },
 	},
 	{
 		Name:        "ReleaseGroup",
 		Type:        "string",
 		Description: "Release group name (e.g., DIMENSION, NTb, Tigole)",
-		Accessor: func(qm QualityModel) interface{} {
+		Accessor: func(qm QualityModel) any {
 			if qm.ReleaseGroup == nil {
 				return ""
 			}
@@ -348,7 +348,7 @@ var QualityFields = []FieldInfo{
 		Name:        "Edition",
 		Type:        "string",
 		Description: "Movie edition (e.g., Director's Cut, Extended) - movies only",
-		Accessor: func(qm QualityModel) interface{} {
+		Accessor: func(qm QualityModel) any {
 			if qm.Edition == nil {
 				return ""
 			}
@@ -358,7 +358,7 @@ var QualityFields = []FieldInfo{
 }
 
 // GetField retrieves a field value by name from a QualityModel
-func GetField(name string, qm QualityModel) (interface{}, error) {
+func GetField(name string, qm QualityModel) (any, error) {
 	for _, field := range QualityFields {
 		if field.Name == name {
 			return field.Accessor(qm), nil

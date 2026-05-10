@@ -23,7 +23,7 @@ func NewDevDownloaderTest(manager *downloader.Manager, repo *repo.Repository) *D
 }
 
 // RegisterDev registers dev-only routes outside the typed OpenAPI surface —
-// shapes mirror raw downloader-client wire (arbitrary interface{}). Only
+// shapes mirror raw downloader-client wire (arbitrary any). Only
 // registered when cfg.Env == "dev".
 func (h *DevDownloaderTest) RegisterDev(r chi.Router) {
 	r.Get("/dev/downloader-test", h.ServeUI)
@@ -34,7 +34,7 @@ func (h *DevDownloaderTest) RegisterDev(r chi.Router) {
 	r.Get("/dev/api/downloaders/{id}/items/{hash}/files", h.GetItemFiles)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
@@ -447,12 +447,12 @@ func (h *DevDownloaderTest) ListDownloaders(w http.ResponseWriter, r *http.Reque
 		initializedIDs[string(client.InstanceID())] = true
 	}
 
-	result := make([]map[string]interface{}, 0, len(downloaders))
+	result := make([]map[string]any, 0, len(downloaders))
 	for _, dl := range downloaders {
 		dlID := dl.ID.String()
 		isInitialized := initializedIDs[dlID] && dl.Enabled
 
-		result = append(result, map[string]interface{}{
+		result = append(result, map[string]any{
 			"id":          dlID,
 			"name":        dl.Name,
 			"type":        dl.Type,

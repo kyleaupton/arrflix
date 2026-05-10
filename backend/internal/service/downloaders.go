@@ -57,7 +57,7 @@ func validateDownloaderInput(name, downloaderType, protocol, downloaderURL strin
 
 // marshalConfig serializes the loose config map to a json.RawMessage. Returns
 // a typed Validation error if marshaling fails.
-func marshalConfig(configJSON map[string]interface{}, op string) (json.RawMessage, error) {
+func marshalConfig(configJSON map[string]any, op string) (json.RawMessage, error) {
 	if configJSON == nil {
 		return nil, nil
 	}
@@ -70,7 +70,7 @@ func marshalConfig(configJSON map[string]interface{}, op string) (json.RawMessag
 	return json.RawMessage(b), nil
 }
 
-func (s *DownloadersService) Create(ctx context.Context, name, downloaderType, protocol, downloaderURL string, username, password *string, configJSON map[string]interface{}, enabled, isDefault bool) (model.Downloader, error) {
+func (s *DownloadersService) Create(ctx context.Context, name, downloaderType, protocol, downloaderURL string, username, password *string, configJSON map[string]any, enabled, isDefault bool) (model.Downloader, error) {
 	if err := validateDownloaderInput(name, downloaderType, protocol, downloaderURL); err != nil {
 		return model.Downloader{}, err.Op("DownloadersService.Create")
 	}
@@ -117,7 +117,7 @@ func (s *DownloadersService) Create(ctx context.Context, name, downloaderType, p
 	})
 }
 
-func (s *DownloadersService) Update(ctx context.Context, id uuid.UUID, name, downloaderType, protocol, downloaderURL string, username, password *string, configJSON map[string]interface{}, enabled, isDefault bool) (model.Downloader, error) {
+func (s *DownloadersService) Update(ctx context.Context, id uuid.UUID, name, downloaderType, protocol, downloaderURL string, username, password *string, configJSON map[string]any, enabled, isDefault bool) (model.Downloader, error) {
 	if err := validateDownloaderInput(name, downloaderType, protocol, downloaderURL); err != nil {
 		return model.Downloader{}, err.Op("DownloadersService.Update")
 	}
