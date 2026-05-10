@@ -56,10 +56,9 @@ func (s *DownloadJobsService) ListBySeries(ctx context.Context, tmdbSeriesID int
 }
 
 // Cancel cancels a download job and all its pending import tasks.
-func (s *DownloadJobsService) Cancel(ctx context.Context, id uuid.UUID) (model.DownloadJob, error) {
-	job, err := s.repo.CancelDownloadJob(ctx, id)
-	if err != nil {
-		return model.DownloadJob{}, err
+func (s *DownloadJobsService) Cancel(ctx context.Context, id uuid.UUID) error {
+	if _, err := s.repo.CancelDownloadJob(ctx, id); err != nil {
+		return err
 	}
 
 	// Also cancel all pending import tasks for this job
@@ -68,7 +67,7 @@ func (s *DownloadJobsService) Cancel(ctx context.Context, id uuid.UUID) (model.D
 		_ = err
 	}
 
-	return job, nil
+	return nil
 }
 
 // ListImportTasks returns all import tasks for a download job.

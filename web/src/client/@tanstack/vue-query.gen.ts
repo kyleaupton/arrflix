@@ -214,7 +214,7 @@ export const downloadJobsListOptions = (options?: Options<DownloadJobsListData>)
 
 /**
  * Cancel download job
- * Cancel the download and any pending import tasks linked to it. Returns the cancelled job (200), not 204.
+ * Cancel the download and any pending import tasks linked to it.
  */
 export const downloadJobsCancelMutation = (options?: Partial<Options<DownloadJobsCancelData>>): UseMutationOptions<DownloadJobsCancelResponse, DownloadJobsCancelError, Options<DownloadJobsCancelData>> => {
     const mutationOptions: UseMutationOptions<DownloadJobsCancelResponse, DownloadJobsCancelError, Options<DownloadJobsCancelData>> = {

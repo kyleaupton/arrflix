@@ -132,12 +132,12 @@ export const useDownloadJobsStore = defineStore('downloadJobs', () => {
   }
 
   async function cancelJob(id: string) {
-    const res = await downloadJobsCancel({
+    await downloadJobsCancel({
       throwOnError: true,
       path: { id },
     })
-    // Optimistically update local state; SSE may also deliver an update later.
-    upsert(res.data as unknown as DownloadJob)
+    // Server returns 204; rely on the SSE `download_job_updated` event to
+    // reflect the cancellation in local state.
   }
 
   function getJobById(jobId: string): DownloadJob | undefined {

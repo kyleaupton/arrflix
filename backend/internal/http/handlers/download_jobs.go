@@ -147,18 +147,13 @@ type DownloadJobsCancelInput struct {
 	ID uuid.UUID `path:"id" format:"uuid" doc:"Download job ID"`
 }
 
-// Cancel returns the cancelled job (200 with body) rather than 204 — the FE
-// uses the returned status fields to drive its UI without a follow-up fetch.
-type DownloadJobsCancelOutput struct {
-	Body model.DownloadJob
-}
+type DownloadJobsCancelOutput struct{}
 
 func (h *DownloadJobs) Cancel(ctx context.Context, input *DownloadJobsCancelInput) (*DownloadJobsCancelOutput, error) {
-	out, err := h.svc.DownloadJobs.Cancel(ctx, input.ID)
-	if err != nil {
+	if err := h.svc.DownloadJobs.Cancel(ctx, input.ID); err != nil {
 		return nil, err
 	}
-	return &DownloadJobsCancelOutput{Body: out}, nil
+	return &DownloadJobsCancelOutput{}, nil
 }
 
 // ----- List for Movie -----
@@ -267,13 +262,14 @@ func (h *DownloadJobs) RegisterHumachi(api huma.API) {
 	}, h.GetHistory)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "download-jobs-cancel",
-		Method:      http.MethodDelete,
-		Path:        "/api/v1/download-jobs/{id}",
-		Summary:     "Cancel download job",
-		Description: "Cancel the download and any pending import tasks linked to it. Returns the cancelled job (200), not 204.",
-		Tags:        []string{"download-jobs"},
-		Errors:      errsRead,
+		OperationID:   "download-jobs-cancel",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/download-jobs/{id}",
+		Summary:       "Cancel download job",
+		Description:   "Cancel the download and any pending import tasks linked to it.",
+		Tags:          []string{"download-jobs"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsRead,
 	}, h.Cancel)
 
 	huma.Register(api, huma.Operation{

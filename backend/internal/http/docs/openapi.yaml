@@ -415,13 +415,6 @@ components:
     DownloadJob:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/DownloadJob.json
-          format: uri
-          readOnly: true
-          type: string
         attemptCount:
           format: int32
           type: integer
@@ -4136,7 +4129,7 @@ paths:
         - download-jobs
   /api/v1/download-jobs/{id}:
     delete:
-      description: Cancel the download and any pending import tasks linked to it. Returns the cancelled job (200), not 204.
+      description: Cancel the download and any pending import tasks linked to it.
       operationId: download-jobs-cancel
       parameters:
         - description: Download job ID
@@ -4148,12 +4141,8 @@ paths:
             format: uuid
             type: string
       responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DownloadJob"
-          description: OK
+        "204":
+          description: No Content
         "404":
           content:
             application/json:

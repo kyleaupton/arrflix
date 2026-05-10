@@ -191,10 +191,6 @@ export type DownloadCandidateResponse = {
 };
 
 export type DownloadJob = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
     attemptCount: number;
     candidateLink: string;
     candidateTitle: string;
@@ -1680,40 +1676,8 @@ export type DownloadCandidateWritable = {
 };
 
 export type DownloadCandidateResponseWritable = {
-    job: DownloadJobWritable;
+    job: DownloadJob;
     trace: EvaluationTraceWritable;
-};
-
-export type DownloadJobWritable = {
-    attemptCount: number;
-    candidateLink: string;
-    candidateTitle: string;
-    contentPath: string | null;
-    createdAt: string;
-    downloadSpeed: number | null;
-    downloaderExternalId: string | null;
-    downloaderId: string;
-    downloaderStatus: string | null;
-    episodeId: string;
-    errorKind: string | null;
-    etaSeconds: number | null;
-    guid: string;
-    id: string;
-    indexerId: number;
-    lastError: string | null;
-    libraryId: string;
-    mediaItemId: string;
-    mediaType: string;
-    nameTemplateId: string;
-    nextRunAt: string;
-    previousJobId: string;
-    progress: number | null;
-    protocol: string;
-    savePath: string | null;
-    seasonId: string;
-    status: string;
-    totalSize: number | null;
-    updatedAt: string;
 };
 
 export type DownloadJobWithSummaryWritable = {
@@ -2824,9 +2788,9 @@ export type DownloadJobsCancelError = DownloadJobsCancelErrors[keyof DownloadJob
 
 export type DownloadJobsCancelResponses = {
     /**
-     * OK
+     * No Content
      */
-    200: DownloadJob;
+    204: void;
 };
 
 export type DownloadJobsCancelResponse = DownloadJobsCancelResponses[keyof DownloadJobsCancelResponses];

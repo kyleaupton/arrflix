@@ -136,7 +136,7 @@ export const downloadJobsList = <ThrowOnError extends boolean = false>(options?:
 
 /**
  * Cancel download job
- * Cancel the download and any pending import tasks linked to it. Returns the cancelled job (200), not 204.
+ * Cancel the download and any pending import tasks linked to it.
  */
 export const downloadJobsCancel = <ThrowOnError extends boolean = false>(options: Options<DownloadJobsCancelData, ThrowOnError>) => {
     return (options.client ?? client).delete<DownloadJobsCancelResponses, DownloadJobsCancelErrors, ThrowOnError>({
