@@ -21,7 +21,6 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/http/handlers"
 
 	// Side-effect import: installs apperrors.ToProblem as huma's NewError.
@@ -32,28 +31,7 @@ func main() {
 	router := chi.NewRouter()
 	api := humachi.New(router, huma.DefaultConfig("Arrflix API", "0.0.1"))
 
-	handlers.NewLibraries(nil).RegisterHumachi(api)
-	handlers.NewDownloaders(nil, nil).RegisterHumachi(api)
-	handlers.NewNameTemplates(nil).RegisterHumachi(api)
-	handlers.NewPolicies(nil).RegisterHumachi(api)
-	handlers.NewSettings(nil).RegisterHumachi(api)
-	handlers.NewInvites(nil).RegisterHumachi(api)
-	handlers.NewUsers(nil).RegisterHumachi(api)
-	handlers.NewRoles(nil).RegisterHumachi(api)
-	handlers.NewAuth(config.Config{}, nil, nil, nil).RegisterHumachi(api)
-	handlers.NewSetup(nil).RegisterHumachi(api)
-	handlers.NewMedia(nil).RegisterHumachi(api)
-	handlers.NewEvents(nil, nil).RegisterHumachi(api)
-	handlers.NewDownloadJobs(nil).RegisterHumachi(api)
-	handlers.NewImportTasks(nil).RegisterHumachi(api)
-	handlers.NewBootstrap(config.Config{}, nil).RegisterHumachi(api)
-	handlers.NewHealth().RegisterHumachi(api)
-	handlers.NewVersion(nil).RegisterHumachi(api)
-	handlers.NewDownloadCandidates(nil).RegisterHumachi(api)
-	handlers.NewFilesystem(nil).RegisterHumachi(api)
-	handlers.NewFeed(nil).RegisterHumachi(api)
-	handlers.NewIndexers(nil).RegisterHumachi(api)
-	handlers.NewUnmatchedFiles(nil).RegisterHumachi(api)
+	handlers.RegisterHumachiHandlers(api, handlers.Deps{})
 
 	bytes, err := api.OpenAPI().YAML()
 	if err != nil {

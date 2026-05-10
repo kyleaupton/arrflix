@@ -42,34 +42,16 @@ func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, servic
 
 	api := humachi.New(r, huma.DefaultConfig("Arrflix API", "0.0.1"))
 
-	handlers.NewLibraries(services).RegisterHumachi(api)
-	handlers.NewDownloaders(services, downloaderManager).RegisterHumachi(api)
-	handlers.NewNameTemplates(services).RegisterHumachi(api)
-	handlers.NewPolicies(services).RegisterHumachi(api)
-	handlers.NewSettings(services).RegisterHumachi(api)
-	handlers.NewInvites(services).RegisterHumachi(api)
-	handlers.NewUsers(services).RegisterHumachi(api)
-	handlers.NewRoles(services).RegisterHumachi(api)
-
-	authH := handlers.NewAuth(cfg, log, pool, services)
-	authH.RegisterHumachi(api)
-	handlers.NewSetup(services).RegisterHumachi(api)
-	handlers.NewMedia(services).RegisterHumachi(api)
-	handlers.NewEvents(services, broker).RegisterHumachi(api)
-	handlers.NewDownloadJobs(services).RegisterHumachi(api)
-	handlers.NewImportTasks(services).RegisterHumachi(api)
-	handlers.NewBootstrap(cfg, services).RegisterHumachi(api)
-	handlers.NewHealth().RegisterHumachi(api)
-	handlers.NewVersion(services).RegisterHumachi(api)
-	handlers.NewDownloadCandidates(services).RegisterHumachi(api)
-	handlers.NewFilesystem(services).RegisterHumachi(api)
-	handlers.NewFeed(services).RegisterHumachi(api)
-	handlers.NewIndexers(services).RegisterHumachi(api)
-	handlers.NewUnmatchedFiles(services).RegisterHumachi(api)
-
-	// Plex SSO start is a 302 redirect, which humachi (JSON-first) can't model
-	// cleanly. Public via the publicPathSet allowlist in middlewares/chi.go.
-	r.Get("/api/v1/auth/plex/start", authH.PlexStart)
+	deps := handlers.Deps{
+		Cfg:               cfg,
+		Logger:            log,
+		Pool:              pool,
+		Services:          services,
+		DownloaderManager: downloaderManager,
+		Broker:            broker,
+	}
+	handlers.RegisterHumachiHandlers(api, deps)
+	handlers.RegisterChiRoutes(r, deps)
 
 	if cfg.Env == "dev" {
 		handlers.NewDevDownloaderTest(downloaderManager, repo).RegisterDev(r)
