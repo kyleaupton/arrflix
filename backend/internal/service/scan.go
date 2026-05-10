@@ -22,35 +22,10 @@ import (
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
 
-// scanRepo is the subset of repo.Repository used by the scanner.
-type scanRepo interface {
-	GetLibrary(ctx context.Context, id uuid.UUID) (model.Library, error)
-	GetMediaFileByLibraryAndPath(ctx context.Context, params repo.GetMediaFileByLibraryAndPathParams) (model.MediaFile, error)
-	GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error)
-	CreateMediaItem(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error)
-	UpsertSeason(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error)
-	UpsertEpisode(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error)
-	CreateMediaFile(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error)
-	UpsertMediaFileState(ctx context.Context, params repo.UpsertMediaFileStateParams) (model.MediaFileState, error)
-	CreateMediaFileImport(ctx context.Context, params repo.CreateMediaFileImportParams) (model.MediaFileImport, error)
-	ListMediaFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
-	ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
-	UpsertUnmatchedFile(ctx context.Context, params repo.UpsertUnmatchedFileParams) (model.UnmatchedFile, error)
-}
-
-// scanTmdb is the subset of TmdbService used by the scanner.
-type scanTmdb interface {
-	FindByID(ctx context.Context, id, source string) (tmdb.FindByID, error)
-	GetMovieDetails(ctx context.Context, id int64) (tmdb.MovieDetails, error)
-	GetSeriesDetails(ctx context.Context, id int64) (tmdb.TVDetails, error)
-	GetEpisodeDetails(ctx context.Context, id int64, season int64, episode int64) (tmdb.TVEpisodeDetails, error)
-	MultiSearch(ctx context.Context, query string, page int) (tmdb.SearchMulti, error)
-}
-
 type ScannerService struct {
-	repo       scanRepo
+	repo       *repo.Repository
 	logger     *logger.Logger
-	tmdb       scanTmdb
+	tmdb       *TmdbService
 	broker     *sse.Broker
 	guessit    *guessit.Client
 	enrichment *EnrichmentService
@@ -882,6 +857,3 @@ func isExtraFile(path string) bool {
 	return false
 }
 
-// Compile-time assertion: *repo.Repository must satisfy scanRepo. Catches
-// drift if the repo signature changes without updating the interface.
-var _ scanRepo = (*repo.Repository)(nil)
