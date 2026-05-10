@@ -41,8 +41,8 @@ type scanRepo interface {
 	GetMediaFileByLibraryAndPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error)
 	GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error)
 	CreateMediaItem(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error)
-	UpsertSeason(ctx context.Context, mediaItemID pgtype.UUID, seasonNumber int32, airDate pgtype.Date) (dbgen.MediaSeason, error)
-	UpsertEpisode(ctx context.Context, seasonID pgtype.UUID, episodeNumber int32, title *string, airDate pgtype.Date, tmdbID *int64, tvdbID *int64) (dbgen.MediaEpisode, error)
+	UpsertSeason(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error)
+	UpsertEpisode(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error)
 	CreateMediaFile(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error)
 	UpsertMediaFileState(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error)
 	CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error)
@@ -200,12 +200,20 @@ func (s *ScannerService) publishEvent(eventType, scanID, libraryID string, extra
 
 // ensureSeasonAndEpisode upserts the season and episode for a series media file.
 // Returns the episode ID if one was created, or nil for movies / missing season info.
+//
+// MediaSeason/MediaEpisode now speak uuid.UUID (model migration). The
+// mediaItemID parameter and the *pgtype.UUID return are still pgtype-shaped
+// because MediaItem and MediaFile haven't been migrated yet — the call site
+// (processIdentifiedFile) bridges the seam.
 func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID pgtype.UUID, tmdbID int64, season, episode *int32, path string) (*pgtype.UUID, error) {
 	if season == nil {
 		return nil, nil
 	}
 
-	seasonRow, err := s.repo.UpsertSeason(ctx, mediaItemID, *season, pgtype.Date{})
+	seasonRow, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
+		MediaItemID:  uuid.UUID(mediaItemID.Bytes),
+		SeasonNumber: *season,
+	})
 	if err != nil {
 		s.logger.Error().Err(err).Str("path", path).Msg("Error upserting season")
 		return nil, err
@@ -221,13 +229,18 @@ func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID
 		return nil, err
 	}
 
-	episodeRow, err := s.repo.UpsertEpisode(ctx, seasonRow.ID, *episode, &ep.Name, pgtype.Date{}, nil, nil)
+	episodeRow, err := s.repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
+		SeasonID:      seasonRow.ID,
+		EpisodeNumber: *episode,
+		Title:         &ep.Name,
+	})
 	if err != nil {
 		s.logger.Error().Err(err).Str("path", path).Msg("Error upserting episode")
 		return nil, err
 	}
 
-	return &episodeRow.ID, nil
+	episodeIDPg := pgtype.UUID{Bytes: episodeRow.ID, Valid: true}
+	return &episodeIDPg, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -866,3 +879,7 @@ func isExtraFile(path string) bool {
 
 	return false
 }
+
+// Compile-time assertion: *repo.Repository must satisfy scanRepo. Catches
+// drift if the repo signature changes without updating the interface.
+var _ scanRepo = (*repo.Repository)(nil)

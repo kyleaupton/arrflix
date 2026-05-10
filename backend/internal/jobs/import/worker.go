@@ -522,10 +522,7 @@ func (w *Worker) deriveSourcePath(ctx context.Context, task model.ImportTask) (s
 			return task.SourcePath, nil
 		}
 
-		// MediaEpisode/MediaSeason repo surface still uses pgtype.UUID
-		// (future migration wave).
-		episodeIDPg := pgtype.UUID{Bytes: task.EpisodeID, Valid: true}
-		episode, err := w.repo.GetEpisode(ctx, episodeIDPg)
+		episode, err := w.repo.GetEpisode(ctx, task.EpisodeID)
 		if err != nil {
 			w.log.Debug().Err(err).Msg("failed to get episode, using stored path")
 			return task.SourcePath, nil

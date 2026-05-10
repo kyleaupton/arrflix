@@ -4,9 +4,11 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/model"
 )
 
 // LibraryQueryParams contains parameters for paginated library queries
@@ -45,16 +47,16 @@ type MediaRepo interface {
 	UpsertMediaMetadataSource(ctx context.Context, mediaItemID pgtype.UUID, source string, data []byte) error
 
 	// Seasons
-	ListSeasonsForMedia(ctx context.Context, mediaItemID pgtype.UUID) ([]dbgen.MediaSeason, error)
-	GetSeason(ctx context.Context, id pgtype.UUID) (dbgen.MediaSeason, error)
-	GetSeasonByNumber(ctx context.Context, mediaItemID pgtype.UUID, seasonNumber int32) (dbgen.MediaSeason, error)
-	UpsertSeason(ctx context.Context, mediaItemID pgtype.UUID, seasonNumber int32, airDate pgtype.Date) (dbgen.MediaSeason, error)
+	ListSeasonsForMedia(ctx context.Context, mediaItemID uuid.UUID) ([]model.MediaSeason, error)
+	GetSeason(ctx context.Context, id uuid.UUID) (model.MediaSeason, error)
+	GetSeasonByNumber(ctx context.Context, mediaItemID uuid.UUID, seasonNumber int32) (model.MediaSeason, error)
+	UpsertSeason(ctx context.Context, params UpsertSeasonParams) (model.MediaSeason, error)
 
 	// Episodes
-	ListEpisodesForSeason(ctx context.Context, seasonID pgtype.UUID) ([]dbgen.MediaEpisode, error)
-	GetEpisode(ctx context.Context, id pgtype.UUID) (dbgen.MediaEpisode, error)
-	GetEpisodeByNumber(ctx context.Context, seasonID pgtype.UUID, episodeNumber int32) (dbgen.MediaEpisode, error)
-	UpsertEpisode(ctx context.Context, seasonID pgtype.UUID, episodeNumber int32, title *string, airDate pgtype.Date, tmdbID *int64, tvdbID *int64) (dbgen.MediaEpisode, error)
+	ListEpisodesForSeason(ctx context.Context, seasonID uuid.UUID) ([]model.MediaEpisode, error)
+	GetEpisode(ctx context.Context, id uuid.UUID) (model.MediaEpisode, error)
+	GetEpisodeByNumber(ctx context.Context, seasonID uuid.UUID, episodeNumber int32) (model.MediaEpisode, error)
+	UpsertEpisode(ctx context.Context, params UpsertEpisodeParams) (model.MediaEpisode, error)
 
 	// File path loading for scanner
 	ListMediaFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
@@ -198,61 +200,155 @@ func (r *Repository) UpsertMediaMetadataSource(ctx context.Context, mediaItemID 
 	}), "upsert metadata source %q for media item %s", source, mediaItemID)
 }
 
-func (r *Repository) ListSeasonsForMedia(ctx context.Context, mediaID pgtype.UUID) ([]dbgen.MediaSeason, error) {
-	seasons, err := r.Q.ListSeasonsForMedia(ctx, mediaID)
-	return seasons, apperrors.FromPg(err, "list seasons for media %s", mediaID)
+// toModelMediaSeason translates the persistence-shaped dbgen.MediaSeason into
+// the domain-shaped model.MediaSeason. Lives next to the methods that use it.
+func toModelMediaSeason(row dbgen.MediaSeason) model.MediaSeason {
+	s := model.MediaSeason{
+		ID:           uuidFromPgtype(row.ID),
+		MediaItemID:  uuidFromPgtype(row.MediaItemID),
+		SeasonNumber: row.SeasonNumber,
+		CreatedAt:    row.CreatedAt,
+	}
+	if row.AirDate.Valid {
+		t := row.AirDate.Time
+		s.AirDate = &t
+	}
+	return s
 }
 
-func (r *Repository) GetSeason(ctx context.Context, id pgtype.UUID) (dbgen.MediaSeason, error) {
-	season, err := r.Q.GetSeason(ctx, id)
-	return season, apperrors.FromPg(err, "season %s not found", id)
+// toModelMediaEpisode translates the persistence-shaped dbgen.MediaEpisode
+// into the domain-shaped model.MediaEpisode.
+func toModelMediaEpisode(row dbgen.MediaEpisode) model.MediaEpisode {
+	e := model.MediaEpisode{
+		ID:            uuidFromPgtype(row.ID),
+		SeasonID:      uuidFromPgtype(row.SeasonID),
+		EpisodeNumber: row.EpisodeNumber,
+		Title:         row.Title,
+		TmdbID:        row.TmdbID,
+		TvdbID:        row.TvdbID,
+		CreatedAt:     row.CreatedAt,
+	}
+	if row.AirDate.Valid {
+		t := row.AirDate.Time
+		e.AirDate = &t
+	}
+	return e
 }
 
-func (r *Repository) GetSeasonByNumber(ctx context.Context, mediaItemID pgtype.UUID, seasonNumber int32) (dbgen.MediaSeason, error) {
-	season, err := r.Q.GetSeasonByNumber(ctx, dbgen.GetSeasonByNumberParams{
-		MediaItemID:  mediaItemID,
+// UpsertSeasonParams is the domain-shaped input for UpsertSeason. Mirrors
+// the writeable subset of model.MediaSeason (omits server-managed ID/CreatedAt).
+type UpsertSeasonParams struct {
+	MediaItemID  uuid.UUID
+	SeasonNumber int32
+	AirDate      *time.Time
+}
+
+// UpsertEpisodeParams is the domain-shaped input for UpsertEpisode. Mirrors
+// the writeable subset of model.MediaEpisode (omits server-managed ID/CreatedAt).
+type UpsertEpisodeParams struct {
+	SeasonID      uuid.UUID
+	EpisodeNumber int32
+	Title         *string
+	AirDate       *time.Time
+	TmdbID        *int64
+	TvdbID        *int64
+}
+
+func (r *Repository) ListSeasonsForMedia(ctx context.Context, mediaID uuid.UUID) ([]model.MediaSeason, error) {
+	rows, err := r.Q.ListSeasonsForMedia(ctx, pgtypeFromUUID(mediaID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list seasons for media %s", mediaID)
+	}
+	out := make([]model.MediaSeason, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaSeason(row))
+	}
+	return out, nil
+}
+
+func (r *Repository) GetSeason(ctx context.Context, id uuid.UUID) (model.MediaSeason, error) {
+	row, err := r.Q.GetSeason(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.MediaSeason{}, apperrors.FromPg(err, "season %s not found", id)
+	}
+	return toModelMediaSeason(row), nil
+}
+
+func (r *Repository) GetSeasonByNumber(ctx context.Context, mediaItemID uuid.UUID, seasonNumber int32) (model.MediaSeason, error) {
+	row, err := r.Q.GetSeasonByNumber(ctx, dbgen.GetSeasonByNumberParams{
+		MediaItemID:  pgtypeFromUUID(mediaItemID),
 		SeasonNumber: seasonNumber,
 	})
-	return season, apperrors.FromPg(err, "season %d for media %s not found", seasonNumber, mediaItemID)
+	if err != nil {
+		return model.MediaSeason{}, apperrors.FromPg(err, "season %d for media %s not found", seasonNumber, mediaItemID)
+	}
+	return toModelMediaSeason(row), nil
 }
 
-func (r *Repository) UpsertSeason(ctx context.Context, mediaItemID pgtype.UUID, seasonNumber int32, airDate pgtype.Date) (dbgen.MediaSeason, error) {
-	season, err := r.Q.UpsertSeason(ctx, dbgen.UpsertSeasonParams{
-		MediaItemID:  mediaItemID,
-		SeasonNumber: seasonNumber,
+func (r *Repository) UpsertSeason(ctx context.Context, params UpsertSeasonParams) (model.MediaSeason, error) {
+	airDate := pgtype.Date{Valid: false}
+	if params.AirDate != nil {
+		airDate = pgtype.Date{Time: *params.AirDate, Valid: true}
+	}
+	row, err := r.Q.UpsertSeason(ctx, dbgen.UpsertSeasonParams{
+		MediaItemID:  pgtypeFromUUID(params.MediaItemID),
+		SeasonNumber: params.SeasonNumber,
 		AirDate:      airDate,
 	})
-	return season, apperrors.FromPg(err, "upsert season %d for media %s", seasonNumber, mediaItemID)
+	if err != nil {
+		return model.MediaSeason{}, apperrors.FromPg(err, "upsert season %d for media %s", params.SeasonNumber, params.MediaItemID)
+	}
+	return toModelMediaSeason(row), nil
 }
 
-func (r *Repository) ListEpisodesForSeason(ctx context.Context, seasonID pgtype.UUID) ([]dbgen.MediaEpisode, error) {
-	episodes, err := r.Q.ListEpisodesForSeason(ctx, seasonID)
-	return episodes, apperrors.FromPg(err, "list episodes for season %s", seasonID)
+func (r *Repository) ListEpisodesForSeason(ctx context.Context, seasonID uuid.UUID) ([]model.MediaEpisode, error) {
+	rows, err := r.Q.ListEpisodesForSeason(ctx, pgtypeFromUUID(seasonID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list episodes for season %s", seasonID)
+	}
+	out := make([]model.MediaEpisode, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaEpisode(row))
+	}
+	return out, nil
 }
 
-func (r *Repository) GetEpisode(ctx context.Context, id pgtype.UUID) (dbgen.MediaEpisode, error) {
-	ep, err := r.Q.GetEpisode(ctx, id)
-	return ep, apperrors.FromPg(err, "episode %s not found", id)
+func (r *Repository) GetEpisode(ctx context.Context, id uuid.UUID) (model.MediaEpisode, error) {
+	row, err := r.Q.GetEpisode(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.MediaEpisode{}, apperrors.FromPg(err, "episode %s not found", id)
+	}
+	return toModelMediaEpisode(row), nil
 }
 
-func (r *Repository) GetEpisodeByNumber(ctx context.Context, seasonID pgtype.UUID, episodeNumber int32) (dbgen.MediaEpisode, error) {
-	ep, err := r.Q.GetEpisodeByNumber(ctx, dbgen.GetEpisodeByNumberParams{
-		SeasonID:      seasonID,
+func (r *Repository) GetEpisodeByNumber(ctx context.Context, seasonID uuid.UUID, episodeNumber int32) (model.MediaEpisode, error) {
+	row, err := r.Q.GetEpisodeByNumber(ctx, dbgen.GetEpisodeByNumberParams{
+		SeasonID:      pgtypeFromUUID(seasonID),
 		EpisodeNumber: episodeNumber,
 	})
-	return ep, apperrors.FromPg(err, "episode %d for season %s not found", episodeNumber, seasonID)
+	if err != nil {
+		return model.MediaEpisode{}, apperrors.FromPg(err, "episode %d for season %s not found", episodeNumber, seasonID)
+	}
+	return toModelMediaEpisode(row), nil
 }
 
-func (r *Repository) UpsertEpisode(ctx context.Context, seasonID pgtype.UUID, episodeNumber int32, title *string, airDate pgtype.Date, tmdbID *int64, tvdbID *int64) (dbgen.MediaEpisode, error) {
-	ep, err := r.Q.UpsertEpisode(ctx, dbgen.UpsertEpisodeParams{
-		SeasonID:      seasonID,
-		EpisodeNumber: episodeNumber,
-		Title:         title,
+func (r *Repository) UpsertEpisode(ctx context.Context, params UpsertEpisodeParams) (model.MediaEpisode, error) {
+	airDate := pgtype.Date{Valid: false}
+	if params.AirDate != nil {
+		airDate = pgtype.Date{Time: *params.AirDate, Valid: true}
+	}
+	row, err := r.Q.UpsertEpisode(ctx, dbgen.UpsertEpisodeParams{
+		SeasonID:      pgtypeFromUUID(params.SeasonID),
+		EpisodeNumber: params.EpisodeNumber,
+		Title:         params.Title,
 		AirDate:       airDate,
-		TmdbID:        tmdbID,
-		TvdbID:        tvdbID,
+		TmdbID:        params.TmdbID,
+		TvdbID:        params.TvdbID,
 	})
-	return ep, apperrors.FromPg(err, "upsert episode %d for season %s", episodeNumber, seasonID)
+	if err != nil {
+		return model.MediaEpisode{}, apperrors.FromPg(err, "upsert episode %d for season %s", params.EpisodeNumber, params.SeasonID)
+	}
+	return toModelMediaEpisode(row), nil
 }
 
 func (r *Repository) GetMediaFile(ctx context.Context, id pgtype.UUID) (dbgen.MediaFile, error) {

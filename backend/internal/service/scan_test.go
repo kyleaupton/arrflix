@@ -19,6 +19,7 @@ import (
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/guessit"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/rs/zerolog"
 )
 
@@ -31,6 +32,13 @@ func testUUID(n byte) pgtype.UUID {
 }
 
 func testLibraryUUID(n byte) uuid.UUID {
+	return uuid.UUID([16]byte{n})
+}
+
+// testUUIDDomain returns a uuid.UUID seeded the same way testUUID seeds a
+// pgtype.UUID, so domain-shaped test fixtures stay aligned with pgtype-shaped
+// fixtures used for not-yet-migrated entities.
+func testUUIDDomain(n byte) uuid.UUID {
 	return uuid.UUID([16]byte{n})
 }
 
@@ -80,8 +88,8 @@ type fakeRepo struct {
 	getMediaFileByLibraryAndPathFn func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error)
 	getMediaItemByTmdbIDAndTypeFn  func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error)
 	createMediaItemFn              func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error)
-	upsertSeasonFn                 func(ctx context.Context, mediaItemID pgtype.UUID, seasonNumber int32, airDate pgtype.Date) (dbgen.MediaSeason, error)
-	upsertEpisodeFn                func(ctx context.Context, seasonID pgtype.UUID, episodeNumber int32, title *string, airDate pgtype.Date, tmdbID *int64, tvdbID *int64) (dbgen.MediaEpisode, error)
+	upsertSeasonFn                 func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error)
+	upsertEpisodeFn                func(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error)
 	createMediaFileFn              func(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error)
 	upsertMediaFileStateFn         func(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error)
 	createMediaFileImportFn        func(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error)
@@ -129,24 +137,24 @@ func (f *fakeRepo) CreateMediaItem(ctx context.Context, typ, title string, year 
 	return dbgen.MediaItem{}, nil
 }
 
-func (f *fakeRepo) UpsertSeason(ctx context.Context, mediaItemID pgtype.UUID, seasonNumber int32, airDate pgtype.Date) (dbgen.MediaSeason, error) {
+func (f *fakeRepo) UpsertSeason(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
 	f.mu.Lock()
 	f.upsertSeasonCalls++
 	f.mu.Unlock()
 	if f.upsertSeasonFn != nil {
-		return f.upsertSeasonFn(ctx, mediaItemID, seasonNumber, airDate)
+		return f.upsertSeasonFn(ctx, params)
 	}
-	return dbgen.MediaSeason{}, nil
+	return model.MediaSeason{}, nil
 }
 
-func (f *fakeRepo) UpsertEpisode(ctx context.Context, seasonID pgtype.UUID, episodeNumber int32, title *string, airDate pgtype.Date, tmdbID *int64, tvdbID *int64) (dbgen.MediaEpisode, error) {
+func (f *fakeRepo) UpsertEpisode(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error) {
 	f.mu.Lock()
 	f.upsertEpisodeCalls++
 	f.mu.Unlock()
 	if f.upsertEpisodeFn != nil {
-		return f.upsertEpisodeFn(ctx, seasonID, episodeNumber, title, airDate, tmdbID, tvdbID)
+		return f.upsertEpisodeFn(ctx, params)
 	}
-	return dbgen.MediaEpisode{}, nil
+	return model.MediaEpisode{}, nil
 }
 
 func (f *fakeRepo) CreateMediaFile(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
@@ -282,8 +290,9 @@ func TestIsMediaFile(t *testing.T) {
 
 func TestEnsureSeasonAndEpisode(t *testing.T) {
 	mediaItemID := testUUID(1)
-	seasonID := testUUID(2)
-	episodeID := testUUID(3)
+	seasonID := testUUIDDomain(2)
+	episodeID := testUUIDDomain(3)
+	episodeIDPg := testUUID(3)
 
 	var tmdbID int64 = 12345
 	var seasonNum int32 = 1
@@ -302,8 +311,8 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 
 	t.Run("nil episode upserts season only", func(t *testing.T) {
 		fr := &fakeRepo{
-			upsertSeasonFn: func(ctx context.Context, mid pgtype.UUID, sn int32, ad pgtype.Date) (dbgen.MediaSeason, error) {
-				return dbgen.MediaSeason{ID: seasonID}, nil
+			upsertSeasonFn: func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
+				return model.MediaSeason{ID: seasonID}, nil
 			},
 		}
 		s := newTestScanner(fr, &fakeTmdb{})
@@ -322,14 +331,14 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		epName := "Test Episode"
 		fr := &fakeRepo{
-			upsertSeasonFn: func(ctx context.Context, mid pgtype.UUID, sn int32, ad pgtype.Date) (dbgen.MediaSeason, error) {
-				return dbgen.MediaSeason{ID: seasonID}, nil
+			upsertSeasonFn: func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
+				return model.MediaSeason{ID: seasonID}, nil
 			},
-			upsertEpisodeFn: func(ctx context.Context, sid pgtype.UUID, en int32, title *string, ad pgtype.Date, tid *int64, tvid *int64) (dbgen.MediaEpisode, error) {
-				if title == nil || *title != epName {
-					t.Errorf("expected episode title %q, got %v", epName, title)
+			upsertEpisodeFn: func(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error) {
+				if params.Title == nil || *params.Title != epName {
+					t.Errorf("expected episode title %q, got %v", epName, params.Title)
 				}
-				return dbgen.MediaEpisode{ID: episodeID}, nil
+				return model.MediaEpisode{ID: episodeID}, nil
 			},
 		}
 		ft := &fakeTmdb{
@@ -345,15 +354,15 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 		if got == nil {
 			t.Fatal("expected non-nil episode ID")
 		}
-		if *got != episodeID {
-			t.Fatalf("expected episode ID %v, got %v", episodeID, *got)
+		if *got != episodeIDPg {
+			t.Fatalf("expected episode ID %v, got %v", episodeIDPg, *got)
 		}
 	})
 
 	t.Run("UpsertSeason error", func(t *testing.T) {
 		fr := &fakeRepo{
-			upsertSeasonFn: func(ctx context.Context, mid pgtype.UUID, sn int32, ad pgtype.Date) (dbgen.MediaSeason, error) {
-				return dbgen.MediaSeason{}, errors.New("db error")
+			upsertSeasonFn: func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
+				return model.MediaSeason{}, errors.New("db error")
 			},
 		}
 		s := newTestScanner(fr, &fakeTmdb{})
@@ -365,8 +374,8 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 
 	t.Run("GetEpisodeDetails error", func(t *testing.T) {
 		fr := &fakeRepo{
-			upsertSeasonFn: func(ctx context.Context, mid pgtype.UUID, sn int32, ad pgtype.Date) (dbgen.MediaSeason, error) {
-				return dbgen.MediaSeason{ID: seasonID}, nil
+			upsertSeasonFn: func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
+				return model.MediaSeason{ID: seasonID}, nil
 			},
 		}
 		ft := &fakeTmdb{
@@ -383,11 +392,11 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 
 	t.Run("UpsertEpisode error", func(t *testing.T) {
 		fr := &fakeRepo{
-			upsertSeasonFn: func(ctx context.Context, mid pgtype.UUID, sn int32, ad pgtype.Date) (dbgen.MediaSeason, error) {
-				return dbgen.MediaSeason{ID: seasonID}, nil
+			upsertSeasonFn: func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
+				return model.MediaSeason{ID: seasonID}, nil
 			},
-			upsertEpisodeFn: func(ctx context.Context, sid pgtype.UUID, en int32, title *string, ad pgtype.Date, tid *int64, tvid *int64) (dbgen.MediaEpisode, error) {
-				return dbgen.MediaEpisode{}, errors.New("db error")
+			upsertEpisodeFn: func(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error) {
+				return model.MediaEpisode{}, errors.New("db error")
 			},
 		}
 		ft := &fakeTmdb{
@@ -591,8 +600,8 @@ func TestExecuteScan_SeriesHappyPath(t *testing.T) {
 	}
 
 	mediaItemID := testUUID(10)
-	seasonID := testUUID(11)
-	episodeID := testUUID(12)
+	seasonID := testUUIDDomain(11)
+	episodeID := testUUIDDomain(12)
 	mediaFileID := testUUID(13)
 
 	fr := &fakeRepo{
@@ -602,17 +611,17 @@ func TestExecuteScan_SeriesHappyPath(t *testing.T) {
 		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
 			return dbgen.MediaItem{ID: mediaItemID}, nil
 		},
-		upsertSeasonFn: func(ctx context.Context, mid pgtype.UUID, sn int32, ad pgtype.Date) (dbgen.MediaSeason, error) {
-			if sn != 1 {
-				t.Errorf("expected season 1, got %d", sn)
+		upsertSeasonFn: func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
+			if params.SeasonNumber != 1 {
+				t.Errorf("expected season 1, got %d", params.SeasonNumber)
 			}
-			return dbgen.MediaSeason{ID: seasonID}, nil
+			return model.MediaSeason{ID: seasonID}, nil
 		},
-		upsertEpisodeFn: func(ctx context.Context, sid pgtype.UUID, en int32, title *string, ad pgtype.Date, tid *int64, tvid *int64) (dbgen.MediaEpisode, error) {
-			if en != 1 {
-				t.Errorf("expected episode 1, got %d", en)
+		upsertEpisodeFn: func(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error) {
+			if params.EpisodeNumber != 1 {
+				t.Errorf("expected episode 1, got %d", params.EpisodeNumber)
 			}
-			return dbgen.MediaEpisode{ID: episodeID}, nil
+			return model.MediaEpisode{ID: episodeID}, nil
 		},
 		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, epID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
 			if epID == nil {
@@ -666,22 +675,22 @@ func TestExecuteScan_ExistingSeriesNewEpisode(t *testing.T) {
 	}
 
 	mediaItemID := testUUID(10)
-	seasonID := testUUID(11)
-	episodeID := testUUID(12)
+	seasonID := testUUIDDomain(11)
+	episodeID := testUUIDDomain(12)
 	mediaFileID := testUUID(13)
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
 			return dbgen.MediaItem{ID: mediaItemID}, nil // media item already exists
 		},
-		upsertSeasonFn: func(ctx context.Context, mid pgtype.UUID, sn int32, ad pgtype.Date) (dbgen.MediaSeason, error) {
-			return dbgen.MediaSeason{ID: seasonID}, nil
+		upsertSeasonFn: func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
+			return model.MediaSeason{ID: seasonID}, nil
 		},
-		upsertEpisodeFn: func(ctx context.Context, sid pgtype.UUID, en int32, title *string, ad pgtype.Date, tid *int64, tvid *int64) (dbgen.MediaEpisode, error) {
-			if en != 2 {
-				t.Errorf("expected episode 2, got %d", en)
+		upsertEpisodeFn: func(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error) {
+			if params.EpisodeNumber != 2 {
+				t.Errorf("expected episode 2, got %d", params.EpisodeNumber)
 			}
-			return dbgen.MediaEpisode{ID: episodeID}, nil
+			return model.MediaEpisode{ID: episodeID}, nil
 		},
 		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, epID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
 			if epID == nil {
@@ -878,7 +887,7 @@ func TestExecuteScan_GuessitSeriesDedup(t *testing.T) {
 	}
 
 	mediaItemID := testUUID(10)
-	seasonID := testUUID(11)
+	seasonID := testUUIDDomain(11)
 	mediaFileID := testUUID(13)
 
 	fr := &fakeRepo{
@@ -891,11 +900,11 @@ func TestExecuteScan_GuessitSeriesDedup(t *testing.T) {
 		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
 			return dbgen.MediaItem{ID: mediaItemID}, nil
 		},
-		upsertSeasonFn: func(ctx context.Context, mid pgtype.UUID, sn int32, ad pgtype.Date) (dbgen.MediaSeason, error) {
-			return dbgen.MediaSeason{ID: seasonID}, nil
+		upsertSeasonFn: func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
+			return model.MediaSeason{ID: seasonID}, nil
 		},
-		upsertEpisodeFn: func(ctx context.Context, sid pgtype.UUID, en int32, title *string, ad pgtype.Date, tid *int64, tvid *int64) (dbgen.MediaEpisode, error) {
-			return dbgen.MediaEpisode{ID: testUUID(byte(20 + en))}, nil
+		upsertEpisodeFn: func(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error) {
+			return model.MediaEpisode{ID: testUUIDDomain(byte(20 + params.EpisodeNumber))}, nil
 		},
 		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, epID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
 			return dbgen.MediaFile{ID: mediaFileID}, nil

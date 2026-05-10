@@ -156,17 +156,24 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 	// For series, upsert season and episode
 	var episodeID *pgtype.UUID
 	if req.Type == "series" && req.Season != nil {
-		season, err := s.repo.UpsertSeason(ctx, mediaItem.ID, int32(*req.Season), pgtype.Date{})
+		season, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
+			MediaItemID:  uuid.UUID(mediaItem.ID.Bytes),
+			SeasonNumber: int32(*req.Season),
+		})
 		if err != nil {
 			return dbgen.MediaFile{}, err
 		}
 
 		if req.Episode != nil {
-			episode, err := s.repo.UpsertEpisode(ctx, season.ID, int32(*req.Episode), nil, pgtype.Date{}, nil, nil)
+			episode, err := s.repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
+				SeasonID:      season.ID,
+				EpisodeNumber: int32(*req.Episode),
+			})
 			if err != nil {
 				return dbgen.MediaFile{}, err
 			}
-			episodeID = &episode.ID
+			epIDPg := pgtype.UUID{Bytes: episode.ID, Valid: true}
+			episodeID = &epIDPg
 		}
 	}
 

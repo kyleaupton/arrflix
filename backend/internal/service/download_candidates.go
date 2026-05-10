@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/indexer"
 	"github.com/kyleaupton/arrflix/internal/logger"
@@ -361,11 +360,14 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 	var seasonID, episodeID uuid.UUID
 	if seasonNumber != nil {
 		// Ensure season exists
-		season, err := s.repo.UpsertSeason(ctx, mi.ID, int32(*seasonNumber), pgtype.Date{Valid: false})
+		season, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
+			MediaItemID:  uuid.UUID(mi.ID.Bytes),
+			SeasonNumber: int32(*seasonNumber),
+		})
 		if err != nil {
 			return trace, model.DownloadJob{}, err
 		}
-		seasonID = uuid.UUID(season.ID.Bytes)
+		seasonID = season.ID
 
 		if episodeNumber != nil {
 			// Ensure episode exists
@@ -375,11 +377,15 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 				title = tmdbEpisode.Name
 			}
 
-			episode, err := s.repo.UpsertEpisode(ctx, season.ID, int32(*episodeNumber), &title, pgtype.Date{Valid: false}, nil, nil)
+			episode, err := s.repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
+				SeasonID:      season.ID,
+				EpisodeNumber: int32(*episodeNumber),
+				Title:         &title,
+			})
 			if err != nil {
 				return trace, model.DownloadJob{}, err
 			}
-			episodeID = uuid.UUID(episode.ID.Bytes)
+			episodeID = episode.ID
 		}
 	}
 

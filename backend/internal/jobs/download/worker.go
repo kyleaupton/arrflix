@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/importer"
@@ -302,8 +301,7 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 
 	// First check SeasonID (always set for series downloads after schema update)
 	if job.SeasonID != uuid.Nil {
-		// MediaSeason repo surface still uses pgtype.UUID (future migration wave).
-		season, err := w.repo.GetSeason(ctx, pgtype.UUID{Bytes: job.SeasonID, Valid: true})
+		season, err := w.repo.GetSeason(ctx, job.SeasonID)
 		if err == nil {
 			sNum := int(season.SeasonNumber)
 			targetSeason = &sNum
@@ -312,8 +310,7 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 
 	// Then check EpisodeID for single-episode downloads
 	if job.EpisodeID != uuid.Nil {
-		// MediaEpisode repo surface still uses pgtype.UUID (future migration wave).
-		episode, err := w.repo.GetEpisode(ctx, pgtype.UUID{Bytes: job.EpisodeID, Valid: true})
+		episode, err := w.repo.GetEpisode(ctx, job.EpisodeID)
 		if err == nil {
 			eNum := int(episode.EpisodeNumber)
 			targetEpisode = &eNum
@@ -340,22 +337,13 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 			sourcePath = filepath.Join(item.SavePath, f.Path)
 		}
 
-		// Resolve episode ID for this file. resolveEpisodeID still speaks
-		// pgtype.UUID because MediaEpisode/MediaSeason aren't migrated.
-		mediaItemIDPg := pgtype.UUID{Bytes: job.MediaItemID, Valid: true}
-		episodeID, err := w.resolveEpisodeID(ctx, mediaItemIDPg, targetSeason, epNum)
+		// Resolve episode ID for this file.
+		episodeID, err := w.resolveEpisodeID(ctx, job.MediaItemID, targetSeason, epNum)
 		if err != nil {
 			w.log.Warn().Err(err).
 				Int("episode", epNum).
 				Msg("failed to resolve episode ID, skipping")
 			continue
-		}
-
-		// Convert episodeID (pgtype.UUID) → domain uuid.UUID, mapping
-		// invalid (NULL) to uuid.Nil.
-		episodeUUID := uuid.Nil
-		if episodeID.Valid {
-			episodeUUID = uuid.UUID(episodeID.Bytes)
 		}
 
 		task, err := w.repo.CreateImportTask(ctx, repo.CreateImportTaskParams{
@@ -364,7 +352,7 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 			PreviousTaskID: uuid.Nil,
 			MediaType:      "series",
 			MediaItemID:    job.MediaItemID,
-			EpisodeID:      episodeUUID,
+			EpisodeID:      episodeID,
 			LibraryID:      job.LibraryID,
 			NameTemplateID: job.NameTemplateID,
 		})
@@ -392,22 +380,28 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 	return nil
 }
 
-func (w *Worker) resolveEpisodeID(ctx context.Context, mediaItemID pgtype.UUID, targetSeason *int, epNum int) (pgtype.UUID, error) {
+func (w *Worker) resolveEpisodeID(ctx context.Context, mediaItemID uuid.UUID, targetSeason *int, epNum int) (uuid.UUID, error) {
 	seasonNum := 1
 	if targetSeason != nil {
 		seasonNum = *targetSeason
 	}
 
 	// Get or create season
-	season, err := w.repo.UpsertSeason(ctx, mediaItemID, int32(seasonNum), pgtype.Date{Valid: false})
+	season, err := w.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
+		MediaItemID:  mediaItemID,
+		SeasonNumber: int32(seasonNum),
+	})
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("upsert season: %w", err)
+		return uuid.Nil, fmt.Errorf("upsert season: %w", err)
 	}
 
 	// Get or create episode
-	episode, err := w.repo.UpsertEpisode(ctx, season.ID, int32(epNum), nil, pgtype.Date{Valid: false}, nil, nil)
+	episode, err := w.repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
+		SeasonID:      season.ID,
+		EpisodeNumber: int32(epNum),
+	})
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("upsert episode: %w", err)
+		return uuid.Nil, fmt.Errorf("upsert episode: %w", err)
 	}
 
 	return episode.ID, nil
