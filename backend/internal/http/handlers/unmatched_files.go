@@ -1,4 +1,3 @@
-// unmatched_files.go is the humachi-shaped unmatched-files handler.
 package handlers
 
 import (

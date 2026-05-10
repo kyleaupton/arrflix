@@ -1,14 +1,3 @@
-// bootstrap.go is the humachi-shaped bootstrap handler. The single GET
-// /bootstrap endpoint is public (no auth required) — the FE calls it on app
-// load to learn the system's init status, the authenticated user (if a
-// Bearer token is present and parses), and a small slice of public app
-// config (site title, signup strategy, version).
-//
-// Bootstrap is special in two ways: (1) it's reachable in setup-mode (the
-// chi setup-mode middleware allowlists it explicitly), and (2) it does
-// "opportunistic" auth — a missing or invalid token is not an error; the
-// `user` field just stays nil. That's why the JWT bearer is parsed inline
-// here rather than reading claims out of context.
 package handlers
 
 import (
@@ -35,22 +24,20 @@ func NewBootstrap(cfg config.Config, svc *service.Services) *Bootstrap {
 
 // ----- Bootstrap response shape -----
 
-// BootstrapUser is the optional currently-authenticated user, derived from
-// the Bearer token if present and valid. Absent when no token / bad token.
+// BootstrapUser is derived from the Bearer token only — not from session
+// state. Absent on missing/invalid token (degraded path, not 401).
 type BootstrapUser struct {
 	ID       string  `json:"id" doc:"User id (JWT subject)"`
 	Email    *string `json:"email" doc:"Email from JWT claims"`
 	Username *string `json:"username" doc:"Username from JWT claims"`
 }
 
-// BootstrapConfig is the public-app config slice surfaced to the FE on load.
 type BootstrapConfig struct {
 	SiteTitle      string `json:"siteTitle" doc:"Display name of the site"`
 	SignupStrategy string `json:"signupStrategy" doc:"Configured signup strategy (open / invite_only)"`
 	Version        string `json:"version" doc:"Build version string"`
 }
 
-// BootstrapResponse is the wire shape returned by GET /bootstrap.
 type BootstrapResponse struct {
 	Initialized bool                `json:"initialized" doc:"Whether the system has completed setup"`
 	User        *BootstrapUser      `json:"user" doc:"Authenticated principal, when a valid token was supplied; null otherwise"`
@@ -60,21 +47,16 @@ type BootstrapResponse struct {
 
 // ----- Get -----
 
-// BootstrapGetInput pulls the optional Authorization header out of the
-// request. Bootstrap is a public route (no JWT middleware); the header is
-// parsed inline so an invalid/missing token degrades to "no user" instead of
-// returning 401.
+// BootstrapGetInput pulls the optional Authorization header. Invalid/missing
+// token degrades to no user instead of 401 — bootstrap is a public endpoint.
 type BootstrapGetInput struct {
 	Authorization string `header:"Authorization" doc:"Optional Bearer token; if valid the response includes the authenticated user"`
 }
 
-// BootstrapGetOutput wraps BootstrapResponse.
 type BootstrapGetOutput struct {
 	Body BootstrapResponse
 }
 
-// GetBootstrap returns init status + opportunistic user + public config.
-// Errors: only Internal (the FE has nothing to branch on; 500 is universal).
 func (h *Bootstrap) GetBootstrap(ctx context.Context, input *BootstrapGetInput) (*BootstrapGetOutput, error) {
 	initialized, err := h.svc.Setup.IsInitialized(ctx)
 	if err != nil {
@@ -165,8 +147,6 @@ func (h *Bootstrap) getPublicConfig(ctx context.Context) BootstrapConfig {
 
 // ----- Register -----
 
-// RegisterHumachi wires the single bootstrap operation. The path is in the
-// publicPathSet allowlist (middlewares/chi.go) so JWT is bypassed.
 func (h *Bootstrap) RegisterHumachi(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "bootstrap-get",

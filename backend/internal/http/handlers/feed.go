@@ -1,6 +1,3 @@
-// feed.go is the humachi-shaped feed handler. The single GET /home
-// endpoint returns the home-screen feed: rows of media curated for the
-// authenticated user.
 package handlers
 
 import (
@@ -20,10 +17,8 @@ func NewFeed(s *service.Services) *Feed { return &Feed{svc: s} }
 
 // ----- Get -----
 
-// FeedGetInput is empty — no parameters.
 type FeedGetInput struct{}
 
-// FeedGetOutput wraps model.Feed.
 type FeedGetOutput struct {
 	Body model.Feed
 }
@@ -41,7 +36,6 @@ func (h *Feed) GetFeed(ctx context.Context, _ *FeedGetInput) (*FeedGetOutput, er
 
 // ----- Register -----
 
-// RegisterHumachi wires the single feed operation onto the humachi API.
 func (h *Feed) RegisterHumachi(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "feed-get",

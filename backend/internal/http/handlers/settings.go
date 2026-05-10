@@ -16,8 +16,6 @@ func NewSettings(s *service.Services) *Settings { return &Settings{svc: s} }
 
 // ----- List -----
 
-// SettingsListResponse is a map of setting keys to their values. Values may
-// be string, bool, number, or object depending on the registered type.
 type SettingsListResponse map[string]any
 
 type SettingsListInput struct{}

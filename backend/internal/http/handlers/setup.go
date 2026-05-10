@@ -1,6 +1,3 @@
-// setup.go is the humachi-shaped setup handler. The setup endpoints are only
-// reachable while the system is uninitialized (no admin yet); once initialized
-// every setup route emits 409 Conflict via guardUninitialized.
 package handlers
 
 import (
@@ -74,9 +71,8 @@ type SetupInitializeOutput struct {
 	Body SetupInitializeResponse
 }
 
-// Initialize creates the first admin and marks the system initialized. The
-// service's repo.InitializeSystem returns Conflict if already initialized,
-// so a separate guard isn't needed here.
+// Initialize: no guardUninitialized call — repo.InitializeSystem returns
+// Conflict if already initialized.
 func (h *Setup) Initialize(ctx context.Context, input *SetupInitializeInput) (*SetupInitializeOutput, error) {
 	if err := h.svc.Setup.Initialize(ctx, input.Body.Email, input.Body.Username, input.Body.Password); err != nil {
 		return nil, err

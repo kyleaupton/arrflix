@@ -29,8 +29,6 @@ type enqueueCandidateBody struct {
 	Episode   *int   `json:"episode,omitempty" doc:"Episode number (series only)"`
 }
 
-// DownloadCandidateResponse is the shared response shape for the download
-// enqueue operations: the policy evaluation trace plus the created job.
 type DownloadCandidateResponse struct {
 	Trace model.EvaluationTrace `json:"trace"`
 	Job   model.DownloadJob     `json:"job"`

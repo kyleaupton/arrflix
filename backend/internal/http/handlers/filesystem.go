@@ -1,7 +1,3 @@
-// filesystem.go is the humachi-shaped filesystem handler. The single
-// GET /filesystem/browse endpoint backs the FE's directory picker. Security
-// checks (path validity, permission, hides system dirs at root, hides
-// dotfiles) live in the service; this handler is a thin pass-through.
 package handlers
 
 import (

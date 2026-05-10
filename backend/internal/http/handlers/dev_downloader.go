@@ -22,13 +22,9 @@ func NewDevDownloaderTest(manager *downloader.Manager, repo *repo.Repository) *D
 	}
 }
 
-// RegisterDev registers the dev-only downloader-test routes on the chi
-// router. These are outside the typed OpenAPI surface — an HTML UI plus
-// opaque debug endpoints whose request/response shapes intentionally
-// mirror raw downloader-client wire shapes (arbitrary interface{}).
-//
-// Auth is bypassed for the entire /dev/* tree via the publicPathPrefixes
-// allowlist in middlewares/chi.go. Only registered when cfg.Env == "dev".
+// RegisterDev registers dev-only routes outside the typed OpenAPI surface —
+// shapes mirror raw downloader-client wire (arbitrary interface{}). Only
+// registered when cfg.Env == "dev".
 func (h *DevDownloaderTest) RegisterDev(r chi.Router) {
 	r.Get("/dev/downloader-test", h.ServeUI)
 	r.Get("/dev/api/downloaders", h.ListDownloaders)
@@ -38,21 +34,16 @@ func (h *DevDownloaderTest) RegisterDev(r chi.Router) {
 	r.Get("/dev/api/downloaders/{id}/items/{hash}/files", h.GetItemFiles)
 }
 
-// writeJSON writes v as JSON with the given status. Errors during encoding
-// are silently dropped — the response has already started; there's nothing
-// useful to do with a write error here.
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// writeJSONError writes a {"error": msg} JSON body with the given status.
 func writeJSONError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-// ServeUI serves the HTML testing interface
 func (h *DevDownloaderTest) ServeUI(w http.ResponseWriter, r *http.Request) {
 	html := `<!DOCTYPE html>
 <html>
@@ -441,7 +432,6 @@ func (h *DevDownloaderTest) ServeUI(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(html))
 }
 
-// ListDownloaders lists all downloaders with their initialization status
 func (h *DevDownloaderTest) ListDownloaders(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	downloaders, err := h.repo.ListDownloaders(ctx)
@@ -475,12 +465,10 @@ func (h *DevDownloaderTest) ListDownloaders(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, result)
 }
 
-// AddMagnetRequest is the request body for adding a magnet link or torrent URL
 type AddMagnetRequest struct {
 	Magnet string `json:"magnet"` // Can be a magnet: URL or http/https URL to a .torrent file
 }
 
-// AddMagnet adds a magnet link to a downloader
 func (h *DevDownloaderTest) AddMagnet(w http.ResponseWriter, r *http.Request) {
 	downloaderID := chi.URLParam(r, "id")
 	if downloaderID == "" {
@@ -519,7 +507,6 @@ func (h *DevDownloaderTest) AddMagnet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// ListItems lists all items (torrents) for a downloader
 func (h *DevDownloaderTest) ListItems(w http.ResponseWriter, r *http.Request) {
 	downloaderID := chi.URLParam(r, "id")
 	if downloaderID == "" {
@@ -547,7 +534,6 @@ func (h *DevDownloaderTest) ListItems(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
-// GetItem gets a specific item by hash
 func (h *DevDownloaderTest) GetItem(w http.ResponseWriter, r *http.Request) {
 	downloaderID := chi.URLParam(r, "id")
 	hash := chi.URLParam(r, "hash")
@@ -572,7 +558,6 @@ func (h *DevDownloaderTest) GetItem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, item)
 }
 
-// GetItemFiles lists files for an item
 func (h *DevDownloaderTest) GetItemFiles(w http.ResponseWriter, r *http.Request) {
 	downloaderID := chi.URLParam(r, "id")
 	hash := chi.URLParam(r, "hash")

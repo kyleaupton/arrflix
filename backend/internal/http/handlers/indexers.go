@@ -72,8 +72,7 @@ func (h *Indexers) Get(ctx context.Context, input *IndexersGetInput) (*IndexersG
 
 // ----- Save -----
 
-// IndexersSaveInput carries an IndexerInput. ID == 0 inserts a new indexer;
-// non-zero updates the existing one.
+// IndexersSaveInput: ID == 0 inserts a new indexer; non-zero updates.
 type IndexersSaveInput struct {
 	Body prowlarr.IndexerInput
 }

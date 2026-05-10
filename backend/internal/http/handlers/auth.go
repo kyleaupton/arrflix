@@ -1,8 +1,3 @@
-// auth.go is the humachi-shaped auth handler. It registers login / signup /
-// plex-exchange / me on humachi; the plex-start endpoint is a plain chi
-// handler (see PlexStart below) because it returns a 302 redirect, which
-// huma's JSON-first model doesn't shape cleanly. Public routes bypass JWT
-// via the publicPathSet allowlist in middlewares/chi.go.
 package handlers
 
 import (
@@ -38,7 +33,6 @@ func NewAuth(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, svc *ser
 
 // ----- Login -----
 
-// LoginInput carries credentials.
 type LoginInput struct {
 	Body struct {
 		Login    string `json:"login" required:"true" minLength:"1" doc:"Username or email"`
@@ -46,20 +40,14 @@ type LoginInput struct {
 	}
 }
 
-// LoginResponse is the success body for POST /auth/login.
 type LoginResponse struct {
 	Token string `json:"token" doc:"JWT bearer token"`
 }
 
-// LoginOutput wraps LoginResponse.
 type LoginOutput struct {
 	Body LoginResponse
 }
 
-// Login validates credentials and issues a JWT. The handler returns the
-// service error directly; the service emits Unauthenticated for bad
-// credentials, which humaerr renders as RFC 9457 problem-details with
-// status 401.
 func (h *Auth) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
 	signed, err := h.svc.Auth.Login(ctx, input.Body.Login, input.Body.Password)
 	if err != nil {
@@ -70,7 +58,6 @@ func (h *Auth) Login(ctx context.Context, input *LoginInput) (*LoginOutput, erro
 
 // ----- Signup -----
 
-// SignupInput carries the signup payload.
 type SignupInput struct {
 	Body struct {
 		Email    string `json:"email" required:"true" minLength:"1" format:"email" doc:"Email address"`
@@ -79,19 +66,16 @@ type SignupInput struct {
 	}
 }
 
-// SignupResponse is the success body for POST /auth/signup.
 type SignupResponse struct {
 	Success bool `json:"success" doc:"Always true on success"`
 }
 
-// SignupOutput wraps SignupResponse.
 type SignupOutput struct {
 	Body SignupResponse
 }
 
-// Signup creates a new user. Honors the configured signup strategy:
-// invite_only requires a matching invite (Forbidden if missing); open allows
-// arbitrary signups. Service returns typed errors that humaerr translates.
+// Signup honors the configured signup strategy: invite_only requires a
+// matching invite (Forbidden if missing); open allows arbitrary signups.
 func (h *Auth) Signup(ctx context.Context, input *SignupInput) (*SignupOutput, error) {
 	all, err := h.svc.Settings.GetAll(ctx)
 	if err != nil {
@@ -116,19 +100,16 @@ func (h *Auth) Signup(ctx context.Context, input *SignupInput) (*SignupOutput, e
 
 // ----- Plex Exchange -----
 
-// PlexExchangeInput carries the Plex pin id.
 type PlexExchangeInput struct {
 	Body struct {
 		PinID int `json:"pin_id" required:"true" minimum:"1" doc:"Plex pin id returned from /auth/plex/start"`
 	}
 }
 
-// PlexExchangeResponse is the success body for POST /auth/plex/exchange.
 type PlexExchangeResponse struct {
 	Token string `json:"token" doc:"JWT bearer token"`
 }
 
-// PlexExchangeOutput wraps PlexExchangeResponse.
 type PlexExchangeOutput struct {
 	Body PlexExchangeResponse
 }
@@ -173,23 +154,18 @@ func (h *Auth) PlexExchange(ctx context.Context, input *PlexExchangeInput) (*Ple
 
 // ----- Me -----
 
-// AuthMeInput is empty; the operation reads claims from the request context.
 type AuthMeInput struct{}
 
-// MeResponse is the success body for GET /auth/me.
 type MeResponse struct {
 	Sub   string  `json:"sub" doc:"User id (UUID string from JWT subject)"`
 	Email *string `json:"email,omitempty" doc:"Email from JWT claims"`
 	Name  *string `json:"name,omitempty" doc:"Username from JWT claims"`
 }
 
-// AuthMeOutput wraps MeResponse.
 type AuthMeOutput struct {
 	Body MeResponse
 }
 
-// Me echoes back the authenticated principal, sourced from the JWT claims
-// that ChiJWT placed on the request context.
 func (h *Auth) Me(ctx context.Context, _ *AuthMeInput) (*AuthMeOutput, error) {
 	claims, ok := middlewares.ClaimsFromContext(ctx)
 	if !ok {
@@ -246,13 +222,8 @@ func (h *Auth) PlexStart(w http.ResponseWriter, r *http.Request) {
 
 // ----- Register -----
 
-// RegisterHumachi wires the auth operations onto the humachi API. The Plex
-// start route is a plain chi handler (PlexStart, registered directly on the
-// chi router in http.go); everything else lives here.
-//
-// Public paths (login, signup, plex/exchange) bypass the JWT middleware via
-// publicPathSet in middlewares/chi.go. The /auth/me route is protected (no
-// allowlist entry).
+// RegisterHumachi registers the auth operations. PlexStart is registered
+// separately on the chi router (see registry.go) because it returns a 302.
 func (h *Auth) RegisterHumachi(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "auth-login",
