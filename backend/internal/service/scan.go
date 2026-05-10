@@ -26,12 +26,16 @@ import (
 
 // libraryIDPg adapts a domain uuid.UUID into the pgtype.UUID shape that
 // scanRepo's still-pgtype-shaped methods expect. Library, MediaItem,
-// MediaSeason, and MediaEpisode have been migrated to model/uuid types;
-// MediaFile and the file-state/import family haven't yet, so we bridge
-// at the call site rather than in the repo.
+// MediaSeason, MediaEpisode, MediaFile, and MediaFileState have been
+// migrated to model/uuid types; UnmatchedFile and MediaFileImport haven't
+// yet, so we bridge at the call site rather than in the repo. The helper
+// name reflects the historical first use (library IDs) but the function is
+// a generic uuid→pgtype.UUID adapter and is now also used for media-file
+// IDs passed to MediaFileImport.
 //
-// TODO(model-migration): remove once MediaFile follows the same pattern
-// and the scanRepo interface speaks uuid.UUID throughout.
+// TODO(model-migration): remove once UnmatchedFile and MediaFileImport
+// follow the same pattern and the scanRepo interface speaks uuid.UUID
+// throughout.
 func libraryIDPg(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
@@ -39,15 +43,15 @@ func libraryIDPg(id uuid.UUID) pgtype.UUID {
 // scanRepo is the subset of repo.Repository used by the scanner.
 type scanRepo interface {
 	GetLibrary(ctx context.Context, id uuid.UUID) (model.Library, error)
-	GetMediaFileByLibraryAndPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error)
+	GetMediaFileByLibraryAndPath(ctx context.Context, params repo.GetMediaFileByLibraryAndPathParams) (model.MediaFile, error)
 	GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error)
 	CreateMediaItem(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error)
 	UpsertSeason(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error)
 	UpsertEpisode(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error)
-	CreateMediaFile(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error)
-	UpsertMediaFileState(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error)
+	CreateMediaFile(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error)
+	UpsertMediaFileState(ctx context.Context, params repo.UpsertMediaFileStateParams) (model.MediaFileState, error)
 	CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error)
-	ListMediaFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
+	ListMediaFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
 	ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
 	UpsertUnmatchedFile(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error)
 }
@@ -201,18 +205,13 @@ func (s *ScannerService) publishEvent(eventType, scanID, libraryID string, extra
 
 // ensureSeasonAndEpisode upserts the season and episode for a series media file.
 // Returns the episode ID if one was created, or nil for movies / missing season info.
-//
-// MediaSeason/MediaEpisode/MediaItem now speak uuid.UUID (model migration).
-// The mediaItemID parameter and the *pgtype.UUID return are still pgtype-shaped
-// because MediaFile hasn't been migrated yet — the call site
-// (processIdentifiedFile) bridges the seam.
-func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID pgtype.UUID, tmdbID int64, season, episode *int32, path string) (*pgtype.UUID, error) {
+func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID uuid.UUID, tmdbID int64, season, episode *int32, path string) (*uuid.UUID, error) {
 	if season == nil {
 		return nil, nil
 	}
 
 	seasonRow, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
-		MediaItemID:  uuid.UUID(mediaItemID.Bytes),
+		MediaItemID:  mediaItemID,
 		SeasonNumber: *season,
 	})
 	if err != nil {
@@ -240,8 +239,8 @@ func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID
 		return nil, err
 	}
 
-	episodeIDPg := pgtype.UUID{Bytes: episodeRow.ID, Valid: true}
-	return &episodeIDPg, nil
+	episodeID := episodeRow.ID
+	return &episodeID, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +256,7 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 	s.logger.Info().Str("library_name", library.Name).Str("library_path", library.RootPath).Msg("Starting Scan")
 
 	// Phase 1: Walk & Collect
-	knownPaths, err := s.loadKnownPaths(ctx, libIDPg)
+	knownPaths, err := s.loadKnownPaths(ctx, library.ID, libIDPg)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("Failed to bulk-load known paths, falling back to per-file checks")
 		knownPaths = nil // will fall back to per-file DB lookups
@@ -302,7 +301,10 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 			}
 		} else {
 			// Fallback: per-file DB check
-			_, dbErr := s.repo.GetMediaFileByLibraryAndPath(ctx, libIDPg, relPath)
+			_, dbErr := s.repo.GetMediaFileByLibraryAndPath(ctx, repo.GetMediaFileByLibraryAndPathParams{
+				LibraryID: library.ID,
+				Path:      relPath,
+			})
 			if dbErr == nil {
 				stats.FilesSkipped++
 				return nil
@@ -422,13 +424,13 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 
 // loadKnownPaths bulk-loads all media_file and unresolved unmatched_file paths
 // for the given library into a set for O(1) dedup during the walk phase.
-func (s *ScannerService) loadKnownPaths(ctx context.Context, libraryID pgtype.UUID) (map[string]struct{}, error) {
+func (s *ScannerService) loadKnownPaths(ctx context.Context, libraryID uuid.UUID, libraryIDPg pgtype.UUID) (map[string]struct{}, error) {
 	mediaPaths, err := s.repo.ListMediaFilePathsForLibrary(ctx, libraryID)
 	if err != nil {
 		return nil, err
 	}
 
-	unmatchedPaths, err := s.repo.ListUnmatchedFilePathsForLibrary(ctx, libraryID)
+	unmatchedPaths, err := s.repo.ListUnmatchedFilePathsForLibrary(ctx, libraryIDPg)
 	if err != nil {
 		return nil, err
 	}
@@ -485,16 +487,14 @@ func (s *ScannerService) resolveTmdbID(ctx context.Context, library model.Librar
 }
 
 // ensureMediaItem looks up or creates a media item for the given TMDB ID.
-// Returns the media item ID (in pgtype shape, since downstream scan callers
-// like CreateMediaFile haven't been migrated yet) and whether a new item
-// was created.
-func (s *ScannerService) ensureMediaItem(ctx context.Context, library model.Library, tmdbID int64) (pgtype.UUID, bool, error) {
+// Returns the media item ID and whether a new item was created.
+func (s *ScannerService) ensureMediaItem(ctx context.Context, library model.Library, tmdbID int64) (uuid.UUID, bool, error) {
 	existing, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, library.Type)
 	if err == nil {
-		return libraryIDPg(existing.ID), false, nil
+		return existing.ID, false, nil
 	}
 	if !apperrors.IsNotFound(err) {
-		return pgtype.UUID{}, false, err
+		return uuid.Nil, false, err
 	}
 
 	// Fetch details from TMDB
@@ -505,17 +505,17 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library model.Libr
 	case "movie":
 		movie, detErr := s.tmdb.GetMovieDetails(ctx, tmdbID)
 		if detErr != nil {
-			return pgtype.UUID{}, false, detErr
+			return uuid.Nil, false, detErr
 		}
 		title = movie.Title
 		if movie.ReleaseDate == "" {
-			return pgtype.UUID{}, false, apperrors.BadGatewayf("tmdb movie %d has empty release date", tmdbID).
+			return uuid.Nil, false, apperrors.BadGatewayf("tmdb movie %d has empty release date", tmdbID).
 				Op("ScannerService.ensureMediaItem")
 		}
 		yearStr := strings.Split(movie.ReleaseDate, "-")[0]
 		year64, parseErr := strconv.ParseInt(yearStr, 10, 32)
 		if parseErr != nil {
-			return pgtype.UUID{}, false, apperrors.BadGatewayf("tmdb movie %d release date %q unparseable: %v", tmdbID, movie.ReleaseDate, parseErr).
+			return uuid.Nil, false, apperrors.BadGatewayf("tmdb movie %d release date %q unparseable: %v", tmdbID, movie.ReleaseDate, parseErr).
 				Op("ScannerService.ensureMediaItem")
 		}
 		year = int32(year64)
@@ -523,17 +523,17 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library model.Libr
 	case "series":
 		tv, detErr := s.tmdb.GetSeriesDetails(ctx, tmdbID)
 		if detErr != nil {
-			return pgtype.UUID{}, false, detErr
+			return uuid.Nil, false, detErr
 		}
 		title = tv.Name
 		if tv.FirstAirDate == "" {
-			return pgtype.UUID{}, false, apperrors.BadGatewayf("tmdb series %d has empty first air date", tmdbID).
+			return uuid.Nil, false, apperrors.BadGatewayf("tmdb series %d has empty first air date", tmdbID).
 				Op("ScannerService.ensureMediaItem")
 		}
 		yearStr := strings.Split(tv.FirstAirDate, "-")[0]
 		year64, parseErr := strconv.ParseInt(yearStr, 10, 32)
 		if parseErr != nil {
-			return pgtype.UUID{}, false, apperrors.BadGatewayf("tmdb series %d first air date %q unparseable: %v", tmdbID, tv.FirstAirDate, parseErr).
+			return uuid.Nil, false, apperrors.BadGatewayf("tmdb series %d first air date %q unparseable: %v", tmdbID, tv.FirstAirDate, parseErr).
 				Op("ScannerService.ensureMediaItem")
 		}
 		year = int32(year64)
@@ -546,7 +546,7 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library model.Libr
 		TmdbID: &tmdbID,
 	})
 	if err != nil {
-		return pgtype.UUID{}, false, err
+		return uuid.Nil, false, err
 	}
 
 	// Fire async enrichment so metadata is available quickly
@@ -558,7 +558,7 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library model.Libr
 		}()
 	}
 
-	return libraryIDPg(item.ID), true, nil
+	return item.ID, true, nil
 }
 
 // processIdentifiedFile creates all DB records for a single identified file.
@@ -574,17 +574,26 @@ func (s *ScannerService) processIdentifiedFile(ctx context.Context, library mode
 		return created, true, nil // skip file, continue
 	}
 
-	mf, err := s.repo.CreateMediaFile(ctx, libraryIDPg(library.ID), mediaItemID, episodeID, f.RelPath)
+	mf, err := s.repo.CreateMediaFile(ctx, repo.CreateMediaFileParams{
+		LibraryID:   library.ID,
+		MediaItemID: mediaItemID,
+		EpisodeID:   episodeID,
+		Path:        f.RelPath,
+	})
 	if err != nil {
 		return created, false, err
 	}
 
-	if _, err := s.repo.UpsertMediaFileState(ctx, mf.ID, true, f.FileSize); err != nil {
+	if _, err := s.repo.UpsertMediaFileState(ctx, repo.UpsertMediaFileStateParams{
+		MediaFileID: mf.ID,
+		FileExists:  true,
+		FileSize:    f.FileSize,
+	}); err != nil {
 		s.logger.Warn().Err(err).Msg("Failed to create media file state")
 	}
 
 	if _, err := s.repo.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
-		MediaFileID: mf.ID,
+		MediaFileID: libraryIDPg(mf.ID),
 		Method:      "scan",
 		DestPath:    f.AbsPath,
 		Success:     true,

@@ -85,16 +85,16 @@ func makeSearchMulti(t *testing.T, entries []map[string]any) tmdb.SearchMulti {
 
 type fakeRepo struct {
 	getLibraryFn                   func(ctx context.Context, id uuid.UUID) (model.Library, error)
-	getMediaFileByLibraryAndPathFn func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error)
+	getMediaFileByLibraryAndPathFn func(ctx context.Context, params repo.GetMediaFileByLibraryAndPathParams) (model.MediaFile, error)
 	getMediaItemByTmdbIDAndTypeFn  func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error)
 	createMediaItemFn              func(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error)
 	upsertSeasonFn                 func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error)
 	upsertEpisodeFn                func(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error)
-	createMediaFileFn              func(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error)
-	upsertMediaFileStateFn         func(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error)
+	createMediaFileFn              func(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error)
+	upsertMediaFileStateFn         func(ctx context.Context, params repo.UpsertMediaFileStateParams) (model.MediaFileState, error)
 	createMediaFileImportFn        func(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error)
 
-	listMediaFilePathsForLibraryFn     func(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
+	listMediaFilePathsForLibraryFn     func(ctx context.Context, libraryID uuid.UUID) ([]string, error)
 	listUnmatchedFilePathsForLibraryFn func(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
 	upsertUnmatchedFileFn              func(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error)
 
@@ -113,11 +113,11 @@ func (f *fakeRepo) GetLibrary(ctx context.Context, id uuid.UUID) (model.Library,
 	return model.Library{}, nil
 }
 
-func (f *fakeRepo) GetMediaFileByLibraryAndPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
+func (f *fakeRepo) GetMediaFileByLibraryAndPath(ctx context.Context, params repo.GetMediaFileByLibraryAndPathParams) (model.MediaFile, error) {
 	if f.getMediaFileByLibraryAndPathFn != nil {
-		return f.getMediaFileByLibraryAndPathFn(ctx, libraryID, path)
+		return f.getMediaFileByLibraryAndPathFn(ctx, params)
 	}
-	return dbgen.MediaFile{}, apperrors.NotFoundf("media file not found")
+	return model.MediaFile{}, apperrors.NotFoundf("media file not found")
 }
 
 func (f *fakeRepo) GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
@@ -157,21 +157,21 @@ func (f *fakeRepo) UpsertEpisode(ctx context.Context, params repo.UpsertEpisodeP
 	return model.MediaEpisode{}, nil
 }
 
-func (f *fakeRepo) CreateMediaFile(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
+func (f *fakeRepo) CreateMediaFile(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error) {
 	f.mu.Lock()
 	f.createMediaFileCalls++
 	f.mu.Unlock()
 	if f.createMediaFileFn != nil {
-		return f.createMediaFileFn(ctx, libraryID, mediaItemID, episodeID, path)
+		return f.createMediaFileFn(ctx, params)
 	}
-	return dbgen.MediaFile{}, nil
+	return model.MediaFile{}, nil
 }
 
-func (f *fakeRepo) UpsertMediaFileState(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error) {
+func (f *fakeRepo) UpsertMediaFileState(ctx context.Context, params repo.UpsertMediaFileStateParams) (model.MediaFileState, error) {
 	if f.upsertMediaFileStateFn != nil {
-		return f.upsertMediaFileStateFn(ctx, mediaFileID, fileExists, fileSize)
+		return f.upsertMediaFileStateFn(ctx, params)
 	}
-	return dbgen.MediaFileState{}, nil
+	return model.MediaFileState{}, nil
 }
 
 func (f *fakeRepo) CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error) {
@@ -181,7 +181,7 @@ func (f *fakeRepo) CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMe
 	return dbgen.MediaFileImport{}, nil
 }
 
-func (f *fakeRepo) ListMediaFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+func (f *fakeRepo) ListMediaFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error) {
 	if f.listMediaFilePathsForLibraryFn != nil {
 		return f.listMediaFilePathsForLibraryFn(ctx, libraryID)
 	}
@@ -289,10 +289,9 @@ func TestIsMediaFile(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEnsureSeasonAndEpisode(t *testing.T) {
-	mediaItemID := testUUID(1)
+	mediaItemID := testUUIDDomain(1)
 	seasonID := testUUIDDomain(2)
 	episodeID := testUUIDDomain(3)
-	episodeIDPg := testUUID(3)
 
 	var tmdbID int64 = 12345
 	var seasonNum int32 = 1
@@ -354,8 +353,8 @@ func TestEnsureSeasonAndEpisode(t *testing.T) {
 		if got == nil {
 			t.Fatal("expected non-nil episode ID")
 		}
-		if *got != episodeIDPg {
-			t.Fatalf("expected episode ID %v, got %v", episodeIDPg, *got)
+		if *got != episodeID {
+			t.Fatalf("expected episode ID %v, got %v", episodeID, *got)
 		}
 	})
 
@@ -433,12 +432,12 @@ func TestStartScan_ConcurrencyGuard(t *testing.T) {
 		getLibraryFn: func(ctx context.Context, id uuid.UUID) (model.Library, error) {
 			return model.Library{ID: id, RootPath: dir, Type: "movie", Name: "test"}, nil
 		},
-		getMediaFileByLibraryAndPathFn: func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
+		getMediaFileByLibraryAndPathFn: func(ctx context.Context, params repo.GetMediaFileByLibraryAndPathParams) (model.MediaFile, error) {
 			<-block
-			return dbgen.MediaFile{}, apperrors.NotFoundf("media file not found")
+			return model.MediaFile{}, apperrors.NotFoundf("media file not found")
 		},
 		// loadKnownPaths will fail, so scanner falls back to per-file check (which blocks)
-		listMediaFilePathsForLibraryFn: func(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+		listMediaFilePathsForLibraryFn: func(ctx context.Context, libraryID uuid.UUID) ([]string, error) {
 			return nil, errors.New("block via fallback")
 		},
 	}
@@ -477,7 +476,7 @@ func TestExecuteScan_SkipsExistingFiles(t *testing.T) {
 
 	fr := &fakeRepo{
 		// Return the file path as already known
-		listMediaFilePathsForLibraryFn: func(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+		listMediaFilePathsForLibraryFn: func(ctx context.Context, libraryID uuid.UUID) ([]string, error) {
 			return []string{filepath.Join("Movie {tmdb-100}", "movie.mkv")}, nil
 		},
 	}
@@ -533,7 +532,7 @@ func TestExecuteScan_MovieHappyPath(t *testing.T) {
 	}
 
 	mediaItemID := testUUIDDomain(10)
-	mediaFileID := testUUID(11)
+	mediaFileID := testUUIDDomain(11)
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
@@ -548,11 +547,11 @@ func TestExecuteScan_MovieHappyPath(t *testing.T) {
 			}
 			return model.MediaItem{ID: mediaItemID}, nil
 		},
-		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
-			if episodeID != nil {
+		createMediaFileFn: func(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error) {
+			if params.EpisodeID != nil {
 				t.Error("expected nil episodeID for movie")
 			}
-			return dbgen.MediaFile{ID: mediaFileID}, nil
+			return model.MediaFile{ID: mediaFileID}, nil
 		},
 	}
 
@@ -602,7 +601,7 @@ func TestExecuteScan_SeriesHappyPath(t *testing.T) {
 	mediaItemID := testUUIDDomain(10)
 	seasonID := testUUIDDomain(11)
 	episodeID := testUUIDDomain(12)
-	mediaFileID := testUUID(13)
+	mediaFileID := testUUIDDomain(13)
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
@@ -623,11 +622,11 @@ func TestExecuteScan_SeriesHappyPath(t *testing.T) {
 			}
 			return model.MediaEpisode{ID: episodeID}, nil
 		},
-		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, epID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
-			if epID == nil {
+		createMediaFileFn: func(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error) {
+			if params.EpisodeID == nil {
 				t.Error("expected non-nil episodeID for series")
 			}
-			return dbgen.MediaFile{ID: mediaFileID}, nil
+			return model.MediaFile{ID: mediaFileID}, nil
 		},
 	}
 
@@ -677,7 +676,7 @@ func TestExecuteScan_ExistingSeriesNewEpisode(t *testing.T) {
 	mediaItemID := testUUIDDomain(10)
 	seasonID := testUUIDDomain(11)
 	episodeID := testUUIDDomain(12)
-	mediaFileID := testUUID(13)
+	mediaFileID := testUUIDDomain(13)
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
@@ -692,11 +691,11 @@ func TestExecuteScan_ExistingSeriesNewEpisode(t *testing.T) {
 			}
 			return model.MediaEpisode{ID: episodeID}, nil
 		},
-		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, epID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
-			if epID == nil {
+		createMediaFileFn: func(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error) {
+			if params.EpisodeID == nil {
 				t.Error("expected non-nil episodeID")
 			}
-			return dbgen.MediaFile{ID: mediaFileID}, nil
+			return model.MediaFile{ID: mediaFileID}, nil
 		},
 	}
 
@@ -815,7 +814,7 @@ func TestExecuteScan_GuessitMovieHappyPath(t *testing.T) {
 	}
 
 	mediaItemID := testUUIDDomain(10)
-	mediaFileID := testUUID(11)
+	mediaFileID := testUUIDDomain(11)
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
@@ -827,8 +826,8 @@ func TestExecuteScan_GuessitMovieHappyPath(t *testing.T) {
 			}
 			return model.MediaItem{ID: mediaItemID}, nil
 		},
-		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
-			return dbgen.MediaFile{ID: mediaFileID}, nil
+		createMediaFileFn: func(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error) {
+			return model.MediaFile{ID: mediaFileID}, nil
 		},
 	}
 
@@ -888,7 +887,7 @@ func TestExecuteScan_GuessitSeriesDedup(t *testing.T) {
 
 	mediaItemID := testUUIDDomain(10)
 	seasonID := testUUIDDomain(11)
-	mediaFileID := testUUID(13)
+	mediaFileID := testUUIDDomain(13)
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
@@ -906,8 +905,8 @@ func TestExecuteScan_GuessitSeriesDedup(t *testing.T) {
 		upsertEpisodeFn: func(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error) {
 			return model.MediaEpisode{ID: testUUIDDomain(byte(20 + params.EpisodeNumber))}, nil
 		},
-		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, epID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
-			return dbgen.MediaFile{ID: mediaFileID}, nil
+		createMediaFileFn: func(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error) {
+			return model.MediaFile{ID: mediaFileID}, nil
 		},
 	}
 
@@ -1061,7 +1060,7 @@ func TestExecuteScan_Mixed(t *testing.T) {
 	}
 
 	mediaItemID := testUUIDDomain(10)
-	mediaFileID := testUUID(11)
+	mediaFileID := testUUIDDomain(11)
 
 	fr := &fakeRepo{
 		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
@@ -1070,8 +1069,8 @@ func TestExecuteScan_Mixed(t *testing.T) {
 		createMediaItemFn: func(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error) {
 			return model.MediaItem{ID: mediaItemID}, nil
 		},
-		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
-			return dbgen.MediaFile{ID: mediaFileID}, nil
+		createMediaFileFn: func(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error) {
+			return model.MediaFile{ID: mediaFileID}, nil
 		},
 	}
 

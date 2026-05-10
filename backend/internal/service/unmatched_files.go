@@ -9,6 +9,7 @@ import (
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -112,16 +113,16 @@ type MatchRequest struct {
 }
 
 // Match manually matches an unmatched file to a media item
-func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req MatchRequest) (dbgen.MediaFile, error) {
+func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req MatchRequest) (model.MediaFile, error) {
 	// Get the unmatched file
 	unmatched, err := s.repo.GetUnmatchedFile(ctx, id)
 	if err != nil {
-		return dbgen.MediaFile{}, err
+		return model.MediaFile{}, err
 	}
 
 	// Check if already resolved
 	if unmatched.ResolvedAt.Valid {
-		return dbgen.MediaFile{}, apperrors.Conflictf("unmatched file %s already resolved", id).
+		return model.MediaFile{}, apperrors.Conflictf("unmatched file %s already resolved", id).
 			Op("UnmatchedFilesService.Match")
 	}
 
@@ -155,18 +156,18 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 		TmdbID: &req.TmdbID,
 	})
 	if err != nil {
-		return dbgen.MediaFile{}, err
+		return model.MediaFile{}, err
 	}
 
 	// For series, upsert season and episode
-	var episodeID *pgtype.UUID
+	var episodeID *uuid.UUID
 	if req.Type == "series" && req.Season != nil {
 		season, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
 			MediaItemID:  mediaItem.ID,
 			SeasonNumber: int32(*req.Season),
 		})
 		if err != nil {
-			return dbgen.MediaFile{}, err
+			return model.MediaFile{}, err
 		}
 
 		if req.Episode != nil {
@@ -175,28 +176,39 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 				EpisodeNumber: int32(*req.Episode),
 			})
 			if err != nil {
-				return dbgen.MediaFile{}, err
+				return model.MediaFile{}, err
 			}
-			epIDPg := pgtype.UUID{Bytes: episode.ID, Valid: true}
-			episodeID = &epIDPg
+			epID := episode.ID
+			episodeID = &epID
 		}
 	}
 
-	// Create media file
-	mediaItemIDPg := pgtype.UUID{Bytes: mediaItem.ID, Valid: true}
-	mediaFile, err := s.repo.CreateMediaFile(ctx, unmatched.LibraryID, mediaItemIDPg, episodeID, unmatched.Path)
+	// Create media file. unmatched.LibraryID is still pgtype.UUID until the
+	// UnmatchedFile entity is migrated; bridge here.
+	mediaFile, err := s.repo.CreateMediaFile(ctx, repo.CreateMediaFileParams{
+		LibraryID:   uuid.UUID(unmatched.LibraryID.Bytes),
+		MediaItemID: mediaItem.ID,
+		EpisodeID:   episodeID,
+		Path:        unmatched.Path,
+	})
 	if err != nil {
-		return dbgen.MediaFile{}, err
+		return model.MediaFile{}, err
 	}
 
 	// Create file state
-	if _, err := s.repo.UpsertMediaFileState(ctx, mediaFile.ID, true, unmatched.FileSize); err != nil {
+	if _, err := s.repo.UpsertMediaFileState(ctx, repo.UpsertMediaFileStateParams{
+		MediaFileID: mediaFile.ID,
+		FileExists:  true,
+		FileSize:    unmatched.FileSize,
+	}); err != nil {
 		s.logger.Warn().Err(err).Msg("Failed to create media file state")
 	}
 
-	// Record import history
+	// Record import history. CreateMediaFileImport is still on the
+	// dbgen-typed surface (next migration slice); bridge here.
+	mediaFileIDPg := pgtype.UUID{Bytes: mediaFile.ID, Valid: true}
 	if _, err := s.repo.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
-		MediaFileID: mediaFile.ID,
+		MediaFileID: mediaFileIDPg,
 		Method:      "manual_match",
 		DestPath:    unmatched.Path,
 		Success:     true,
@@ -205,7 +217,7 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 	}
 
 	// Mark unmatched file as resolved
-	if _, err := s.repo.ResolveUnmatchedFile(ctx, id, mediaFile.ID); err != nil {
+	if _, err := s.repo.ResolveUnmatchedFile(ctx, id, mediaFileIDPg); err != nil {
 		s.logger.Warn().Err(err).Msg("Failed to mark unmatched file as resolved")
 	}
 

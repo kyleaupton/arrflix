@@ -8,8 +8,6 @@ import (
 	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
@@ -391,9 +389,9 @@ func (s *MediaService) GetMovieDetail(ctx context.Context, tmdbID int64) (model.
 		local = false
 	}
 
-	var files []dbgen.ListMediaFilesForItemRow
+	var files []model.MediaFileWithState
 	if local {
-		files, _ = s.repo.ListMediaFilesForItem(ctx, pgtype.UUID{Bytes: mediaItem.ID, Valid: true})
+		files, _ = s.repo.ListMediaFilesForItem(ctx, mediaItem.ID)
 	}
 
 	fileInfos := buildFileInfos(files)
@@ -548,9 +546,9 @@ func (s *MediaService) GetSeriesDetail(ctx context.Context, tmdbID int64) (model
 		local = false
 	}
 
-	var files []dbgen.ListMediaFilesForItemRow
+	var files []model.MediaFileWithState
 	if local {
-		files, _ = s.repo.ListMediaFilesForItem(ctx, pgtype.UUID{Bytes: mediaItem.ID, Valid: true})
+		files, _ = s.repo.ListMediaFilesForItem(ctx, mediaItem.ID)
 	}
 
 	fileInfos, availability := buildFileInfoAndAvailability(files)
@@ -773,7 +771,7 @@ func (s *MediaService) GetPersonDetail(ctx context.Context, tmdbID int64) (model
 	}, nil
 }
 
-func buildFileInfos(files []dbgen.ListMediaFilesForItemRow) []model.FileInfo {
+func buildFileInfos(files []model.MediaFileWithState) []model.FileInfo {
 	fileInfos := make([]model.FileInfo, 0, len(files))
 
 	for _, f := range files {
@@ -804,7 +802,7 @@ func buildFileInfos(files []dbgen.ListMediaFilesForItemRow) []model.FileInfo {
 	return fileInfos
 }
 
-func buildFileInfoAndAvailability(files []dbgen.ListMediaFilesForItemRow) ([]model.FileInfo, model.Availability) {
+func buildFileInfoAndAvailability(files []model.MediaFileWithState) ([]model.FileInfo, model.Availability) {
 	fileInfos := make([]model.FileInfo, 0, len(files))
 	libAgg := map[string]struct {
 		count  int

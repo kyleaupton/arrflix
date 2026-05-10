@@ -60,24 +60,24 @@ type MediaRepo interface {
 	UpsertEpisode(ctx context.Context, params UpsertEpisodeParams) (model.MediaEpisode, error)
 
 	// File path loading for scanner
-	ListMediaFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
+	ListMediaFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
 	ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
 
 	// Files (removed season_id and status)
-	GetMediaFile(ctx context.Context, id pgtype.UUID) (dbgen.MediaFile, error)
-	GetMediaFileByLibraryAndPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error)
-	CreateMediaFile(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error)
-	ListMediaFilesForItem(ctx context.Context, mediaItemID pgtype.UUID) ([]dbgen.ListMediaFilesForItemRow, error)
-	ListEpisodeAvailabilityForSeries(ctx context.Context, mediaItemID pgtype.UUID) ([]dbgen.ListEpisodeAvailabilityForSeriesRow, error)
-	DeleteMediaFile(ctx context.Context, id pgtype.UUID) error
+	GetMediaFile(ctx context.Context, id uuid.UUID) (model.MediaFile, error)
+	GetMediaFileByLibraryAndPath(ctx context.Context, params GetMediaFileByLibraryAndPathParams) (model.MediaFile, error)
+	CreateMediaFile(ctx context.Context, params CreateMediaFileParams) (model.MediaFile, error)
+	ListMediaFilesForItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.MediaFileWithState, error)
+	ListEpisodeAvailabilityForSeries(ctx context.Context, mediaItemID uuid.UUID) ([]model.SeriesEpisodeAvailability, error)
+	DeleteMediaFile(ctx context.Context, id uuid.UUID) error
 
 	// File state
-	CreateMediaFileState(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error)
-	UpsertMediaFileState(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error)
-	GetMediaFileState(ctx context.Context, mediaFileID pgtype.UUID) (dbgen.MediaFileState, error)
-	UpdateMediaFileState(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error)
-	ListMissingFiles(ctx context.Context) ([]dbgen.ListMissingFilesRow, error)
-	ListFilesNeedingVerification(ctx context.Context, beforeTime time.Time, limit int32) ([]dbgen.ListFilesNeedingVerificationRow, error)
+	CreateMediaFileState(ctx context.Context, mediaFileID uuid.UUID, fileExists bool, fileSize *int64) (model.MediaFileState, error)
+	UpsertMediaFileState(ctx context.Context, params UpsertMediaFileStateParams) (model.MediaFileState, error)
+	GetMediaFileState(ctx context.Context, mediaFileID uuid.UUID) (model.MediaFileState, error)
+	UpdateMediaFileState(ctx context.Context, mediaFileID uuid.UUID, fileExists bool, fileSize *int64) (model.MediaFileState, error)
+	ListMissingFiles(ctx context.Context) ([]model.MediaFileWithState, error)
+	ListFilesNeedingVerification(ctx context.Context, beforeTime time.Time, limit int32) ([]model.MediaFileWithState, error)
 
 	// File imports
 	CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error)
@@ -514,49 +514,233 @@ func (r *Repository) UpsertEpisode(ctx context.Context, params UpsertEpisodePara
 	return toModelMediaEpisode(row), nil
 }
 
-func (r *Repository) GetMediaFile(ctx context.Context, id pgtype.UUID) (dbgen.MediaFile, error) {
-	mf, err := r.Q.GetMediaFile(ctx, id)
-	return mf, apperrors.FromPg(err, "media file %s not found", id)
+// CreateMediaFileParams is the domain-shaped input for CreateMediaFile. Mirrors
+// the writeable subset of model.MediaFile (omits server-managed ID/CreatedAt).
+type CreateMediaFileParams struct {
+	LibraryID   uuid.UUID
+	MediaItemID uuid.UUID
+	EpisodeID   *uuid.UUID
+	Path        string
 }
 
-func (r *Repository) GetMediaFileByLibraryAndPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error) {
-	mf, err := r.Q.GetMediaFileByLibraryAndPath(ctx, dbgen.GetMediaFileByLibraryAndPathParams{
-		LibraryID: libraryID,
-		Path:      path,
-	})
-	return mf, apperrors.FromPg(err, "media file at %q in library %s not found", path, libraryID)
+// GetMediaFileByLibraryAndPathParams is the domain-shaped input for
+// GetMediaFileByLibraryAndPath.
+type GetMediaFileByLibraryAndPathParams struct {
+	LibraryID uuid.UUID
+	Path      string
 }
 
-func (r *Repository) CreateMediaFile(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
-	var episode pgtype.UUID
-	if episodeID != nil {
-		episode = *episodeID
+// UpsertMediaFileStateParams is the domain-shaped input for UpsertMediaFileState.
+// Mirrors the writeable subset of model.MediaFileState (omits server-managed
+// LastVerifiedAt, set to now() in SQL).
+type UpsertMediaFileStateParams struct {
+	MediaFileID uuid.UUID
+	FileExists  bool
+	FileSize    *int64
+}
+
+// toModelMediaFile translates the persistence-shaped dbgen.MediaFile into
+// the domain-shaped model.MediaFile.
+func toModelMediaFile(row dbgen.MediaFile) model.MediaFile {
+	mf := model.MediaFile{
+		ID:          uuidFromPgtype(row.ID),
+		LibraryID:   uuidFromPgtype(row.LibraryID),
+		MediaItemID: uuidFromPgtype(row.MediaItemID),
+		Path:        row.Path,
+		CreatedAt:   row.CreatedAt,
 	}
-	mf, err := r.Q.CreateMediaFile(ctx, dbgen.CreateMediaFileParams{
-		LibraryID:   libraryID,
-		MediaItemID: mediaItemID,
-		EpisodeID:   episode,
-		Path:        path,
+	if row.EpisodeID.Valid {
+		id := uuidFromPgtype(row.EpisodeID)
+		mf.EpisodeID = &id
+	}
+	return mf
+}
+
+// toModelMediaFileState translates the persistence-shaped dbgen.MediaFileState
+// into the domain-shaped model.MediaFileState.
+func toModelMediaFileState(row dbgen.MediaFileState) model.MediaFileState {
+	return model.MediaFileState{
+		MediaFileID:    uuidFromPgtype(row.MediaFileID),
+		FileExists:     row.FileExists,
+		FileSize:       row.FileSize,
+		LastVerifiedAt: row.LastVerifiedAt,
+	}
+}
+
+// toModelMediaFileWithState translates a ListMediaFilesForItemRow (which
+// LEFT-JOINs season/episode/state) into the domain composite.
+func toModelMediaFileWithState(row dbgen.ListMediaFilesForItemRow) model.MediaFileWithState {
+	mf := model.MediaFile{
+		ID:          uuidFromPgtype(row.ID),
+		LibraryID:   uuidFromPgtype(row.LibraryID),
+		MediaItemID: uuidFromPgtype(row.MediaItemID),
+		Path:        row.Path,
+		CreatedAt:   row.CreatedAt,
+	}
+	if row.EpisodeID.Valid {
+		id := uuidFromPgtype(row.EpisodeID)
+		mf.EpisodeID = &id
+	}
+	out := model.MediaFileWithState{
+		MediaFile:     mf,
+		FileExists:    row.FileExists,
+		FileSize:      row.FileSize,
+		SeasonNumber:  row.SeasonNumber,
+		EpisodeNumber: row.EpisodeNumber,
+	}
+	if row.SeasonID.Valid {
+		id := uuidFromPgtype(row.SeasonID)
+		out.SeasonID = &id
+	}
+	if row.LastVerifiedAt.Valid {
+		t := row.LastVerifiedAt.Time
+		out.LastVerifiedAt = &t
+	}
+	return out
+}
+
+// toModelMediaFileWithStateFromMissing translates a ListMissingFilesRow into
+// the domain composite. The query joins media_file_state but doesn't carry
+// season/episode context.
+func toModelMediaFileWithStateFromMissing(row dbgen.ListMissingFilesRow) model.MediaFileWithState {
+	mf := model.MediaFile{
+		ID:          uuidFromPgtype(row.ID),
+		LibraryID:   uuidFromPgtype(row.LibraryID),
+		MediaItemID: uuidFromPgtype(row.MediaItemID),
+		Path:        row.Path,
+		CreatedAt:   row.CreatedAt,
+	}
+	if row.EpisodeID.Valid {
+		id := uuidFromPgtype(row.EpisodeID)
+		mf.EpisodeID = &id
+	}
+	// ListMissingFiles selects rows where file_exists = false; surface that
+	// explicitly so callers don't have to assume.
+	missing := false
+	t := row.LastVerifiedAt
+	return model.MediaFileWithState{
+		MediaFile:      mf,
+		FileExists:     &missing,
+		FileSize:       row.FileSize,
+		LastVerifiedAt: &t,
+	}
+}
+
+// toModelMediaFileWithStateFromVerification translates a
+// ListFilesNeedingVerificationRow into the domain composite.
+func toModelMediaFileWithStateFromVerification(row dbgen.ListFilesNeedingVerificationRow) model.MediaFileWithState {
+	mf := model.MediaFile{
+		ID:          uuidFromPgtype(row.ID),
+		LibraryID:   uuidFromPgtype(row.LibraryID),
+		MediaItemID: uuidFromPgtype(row.MediaItemID),
+		Path:        row.Path,
+		CreatedAt:   row.CreatedAt,
+	}
+	if row.EpisodeID.Valid {
+		id := uuidFromPgtype(row.EpisodeID)
+		mf.EpisodeID = &id
+	}
+	exists := row.FileExists
+	t := row.LastVerifiedAt
+	return model.MediaFileWithState{
+		MediaFile:      mf,
+		FileExists:     &exists,
+		FileSize:       row.FileSize,
+		LastVerifiedAt: &t,
+	}
+}
+
+// toModelSeriesEpisodeAvailability translates a
+// ListEpisodeAvailabilityForSeriesRow into the persistence-shape composite.
+func toModelSeriesEpisodeAvailability(row dbgen.ListEpisodeAvailabilityForSeriesRow) model.SeriesEpisodeAvailability {
+	out := model.SeriesEpisodeAvailability{
+		SeasonNumber:  row.SeasonNumber,
+		EpisodeNumber: row.EpisodeNumber,
+		EpisodeID:     uuidFromPgtype(row.EpisodeID),
+		Title:         row.Title,
+		FileExists:    row.FileExists,
+	}
+	if row.AirDate.Valid {
+		t := row.AirDate.Time
+		out.AirDate = &t
+	}
+	if row.FileID.Valid {
+		id := uuidFromPgtype(row.FileID)
+		out.FileID = &id
+	}
+	if row.LibraryID.Valid {
+		id := uuidFromPgtype(row.LibraryID)
+		out.LibraryID = &id
+	}
+	return out
+}
+
+func (r *Repository) GetMediaFile(ctx context.Context, id uuid.UUID) (model.MediaFile, error) {
+	row, err := r.Q.GetMediaFile(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.MediaFile{}, apperrors.FromPg(err, "media file %s not found", id)
+	}
+	return toModelMediaFile(row), nil
+}
+
+func (r *Repository) GetMediaFileByLibraryAndPath(ctx context.Context, params GetMediaFileByLibraryAndPathParams) (model.MediaFile, error) {
+	row, err := r.Q.GetMediaFileByLibraryAndPath(ctx, dbgen.GetMediaFileByLibraryAndPathParams{
+		LibraryID: pgtypeFromUUID(params.LibraryID),
+		Path:      params.Path,
 	})
-	return mf, apperrors.FromPg(err, "create media file %q in library %s", path, libraryID)
+	if err != nil {
+		return model.MediaFile{}, apperrors.FromPg(err, "media file at %q in library %s not found", params.Path, params.LibraryID)
+	}
+	return toModelMediaFile(row), nil
 }
 
-func (r *Repository) ListMediaFilesForItem(ctx context.Context, mediaItemID pgtype.UUID) ([]dbgen.ListMediaFilesForItemRow, error) {
-	rows, err := r.Q.ListMediaFilesForItem(ctx, mediaItemID)
-	return rows, apperrors.FromPg(err, "list media files for item %s", mediaItemID)
+func (r *Repository) CreateMediaFile(ctx context.Context, params CreateMediaFileParams) (model.MediaFile, error) {
+	var episode pgtype.UUID
+	if params.EpisodeID != nil {
+		episode = pgtypeFromUUID(*params.EpisodeID)
+	}
+	row, err := r.Q.CreateMediaFile(ctx, dbgen.CreateMediaFileParams{
+		LibraryID:   pgtypeFromUUID(params.LibraryID),
+		MediaItemID: pgtypeFromUUID(params.MediaItemID),
+		EpisodeID:   episode,
+		Path:        params.Path,
+	})
+	if err != nil {
+		return model.MediaFile{}, apperrors.FromPg(err, "create media file %q in library %s", params.Path, params.LibraryID)
+	}
+	return toModelMediaFile(row), nil
 }
 
-func (r *Repository) ListEpisodeAvailabilityForSeries(ctx context.Context, mediaItemID pgtype.UUID) ([]dbgen.ListEpisodeAvailabilityForSeriesRow, error) {
-	rows, err := r.Q.ListEpisodeAvailabilityForSeries(ctx, mediaItemID)
-	return rows, apperrors.FromPg(err, "list episode availability for series %s", mediaItemID)
+func (r *Repository) ListMediaFilesForItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.MediaFileWithState, error) {
+	rows, err := r.Q.ListMediaFilesForItem(ctx, pgtypeFromUUID(mediaItemID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list media files for item %s", mediaItemID)
+	}
+	out := make([]model.MediaFileWithState, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaFileWithState(row))
+	}
+	return out, nil
 }
 
-func (r *Repository) DeleteMediaFile(ctx context.Context, id pgtype.UUID) error {
-	return apperrors.FromPg(r.Q.DeleteMediaFile(ctx, id), "delete media file %s", id)
+func (r *Repository) ListEpisodeAvailabilityForSeries(ctx context.Context, mediaItemID uuid.UUID) ([]model.SeriesEpisodeAvailability, error) {
+	rows, err := r.Q.ListEpisodeAvailabilityForSeries(ctx, pgtypeFromUUID(mediaItemID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list episode availability for series %s", mediaItemID)
+	}
+	out := make([]model.SeriesEpisodeAvailability, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelSeriesEpisodeAvailability(row))
+	}
+	return out, nil
 }
 
-func (r *Repository) ListMediaFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
-	paths, err := r.Q.ListMediaFilePathsForLibrary(ctx, libraryID)
+func (r *Repository) DeleteMediaFile(ctx context.Context, id uuid.UUID) error {
+	return apperrors.FromPg(r.Q.DeleteMediaFile(ctx, pgtypeFromUUID(id)), "delete media file %s", id)
+}
+
+func (r *Repository) ListMediaFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error) {
+	paths, err := r.Q.ListMediaFilePathsForLibrary(ctx, pgtypeFromUUID(libraryID))
 	return paths, apperrors.FromPg(err, "list media file paths for library %s", libraryID)
 }
 
@@ -590,49 +774,75 @@ func (r *Repository) CheckMediaItemsInLibrary(ctx context.Context, tmdbIDs []int
 
 // Media File State methods
 
-func (r *Repository) CreateMediaFileState(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error) {
-	state, err := r.Q.CreateMediaFileState(ctx, dbgen.CreateMediaFileStateParams{
-		MediaFileID: mediaFileID,
+func (r *Repository) CreateMediaFileState(ctx context.Context, mediaFileID uuid.UUID, fileExists bool, fileSize *int64) (model.MediaFileState, error) {
+	row, err := r.Q.CreateMediaFileState(ctx, dbgen.CreateMediaFileStateParams{
+		MediaFileID: pgtypeFromUUID(mediaFileID),
 		FileExists:  fileExists,
 		FileSize:    fileSize,
 	})
-	return state, apperrors.FromPg(err, "create media file state for %s", mediaFileID)
+	if err != nil {
+		return model.MediaFileState{}, apperrors.FromPg(err, "create media file state for %s", mediaFileID)
+	}
+	return toModelMediaFileState(row), nil
 }
 
-func (r *Repository) UpsertMediaFileState(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error) {
-	state, err := r.Q.UpsertMediaFileState(ctx, dbgen.UpsertMediaFileStateParams{
-		MediaFileID: mediaFileID,
+func (r *Repository) UpsertMediaFileState(ctx context.Context, params UpsertMediaFileStateParams) (model.MediaFileState, error) {
+	row, err := r.Q.UpsertMediaFileState(ctx, dbgen.UpsertMediaFileStateParams{
+		MediaFileID: pgtypeFromUUID(params.MediaFileID),
+		FileExists:  params.FileExists,
+		FileSize:    params.FileSize,
+	})
+	if err != nil {
+		return model.MediaFileState{}, apperrors.FromPg(err, "upsert media file state for %s", params.MediaFileID)
+	}
+	return toModelMediaFileState(row), nil
+}
+
+func (r *Repository) GetMediaFileState(ctx context.Context, mediaFileID uuid.UUID) (model.MediaFileState, error) {
+	row, err := r.Q.GetMediaFileState(ctx, pgtypeFromUUID(mediaFileID))
+	if err != nil {
+		return model.MediaFileState{}, apperrors.FromPg(err, "media file state for %s not found", mediaFileID)
+	}
+	return toModelMediaFileState(row), nil
+}
+
+func (r *Repository) UpdateMediaFileState(ctx context.Context, mediaFileID uuid.UUID, fileExists bool, fileSize *int64) (model.MediaFileState, error) {
+	row, err := r.Q.UpdateMediaFileState(ctx, dbgen.UpdateMediaFileStateParams{
+		MediaFileID: pgtypeFromUUID(mediaFileID),
 		FileExists:  fileExists,
 		FileSize:    fileSize,
 	})
-	return state, apperrors.FromPg(err, "upsert media file state for %s", mediaFileID)
+	if err != nil {
+		return model.MediaFileState{}, apperrors.FromPg(err, "update media file state for %s", mediaFileID)
+	}
+	return toModelMediaFileState(row), nil
 }
 
-func (r *Repository) GetMediaFileState(ctx context.Context, mediaFileID pgtype.UUID) (dbgen.MediaFileState, error) {
-	state, err := r.Q.GetMediaFileState(ctx, mediaFileID)
-	return state, apperrors.FromPg(err, "media file state for %s not found", mediaFileID)
-}
-
-func (r *Repository) UpdateMediaFileState(ctx context.Context, mediaFileID pgtype.UUID, fileExists bool, fileSize *int64) (dbgen.MediaFileState, error) {
-	state, err := r.Q.UpdateMediaFileState(ctx, dbgen.UpdateMediaFileStateParams{
-		MediaFileID: mediaFileID,
-		FileExists:  fileExists,
-		FileSize:    fileSize,
-	})
-	return state, apperrors.FromPg(err, "update media file state for %s", mediaFileID)
-}
-
-func (r *Repository) ListMissingFiles(ctx context.Context) ([]dbgen.ListMissingFilesRow, error) {
+func (r *Repository) ListMissingFiles(ctx context.Context) ([]model.MediaFileWithState, error) {
 	rows, err := r.Q.ListMissingFiles(ctx)
-	return rows, apperrors.FromPg(err, "list missing files")
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list missing files")
+	}
+	out := make([]model.MediaFileWithState, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaFileWithStateFromMissing(row))
+	}
+	return out, nil
 }
 
-func (r *Repository) ListFilesNeedingVerification(ctx context.Context, beforeTime time.Time, limit int32) ([]dbgen.ListFilesNeedingVerificationRow, error) {
+func (r *Repository) ListFilesNeedingVerification(ctx context.Context, beforeTime time.Time, limit int32) ([]model.MediaFileWithState, error) {
 	rows, err := r.Q.ListFilesNeedingVerification(ctx, dbgen.ListFilesNeedingVerificationParams{
 		BeforeTime: beforeTime,
 		LimitVal:   limit,
 	})
-	return rows, apperrors.FromPg(err, "list files needing verification")
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list files needing verification")
+	}
+	out := make([]model.MediaFileWithState, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaFileWithStateFromVerification(row))
+	}
+	return out, nil
 }
 
 // Media File Import methods

@@ -202,18 +202,19 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 		Str("dest", fullDest).
 		Msg("file imported successfully")
 
-	// Create media file record. CreateMediaFile is still on the dbgen-typed
-	// repo surface (MediaFile is a future migration wave); convert at the
-	// boundary.
-	libIDPg := pgtype.UUID{Bytes: task.LibraryID, Valid: true}
-	mediaItemIDPg := pgtype.UUID{Bytes: task.MediaItemID, Valid: true}
-	var episodeIDPg *pgtype.UUID
+	// Create media file record.
+	var episodeIDPtr *uuid.UUID
 	if task.EpisodeID != uuid.Nil {
-		ep := pgtype.UUID{Bytes: task.EpisodeID, Valid: true}
-		episodeIDPg = &ep
+		ep := task.EpisodeID
+		episodeIDPtr = &ep
 	}
 
-	mediaFile, err := w.repo.CreateMediaFile(ctx, libIDPg, mediaItemIDPg, episodeIDPg, destPath)
+	mediaFile, err := w.repo.CreateMediaFile(ctx, repo.CreateMediaFileParams{
+		LibraryID:   task.LibraryID,
+		MediaItemID: task.MediaItemID,
+		EpisodeID:   episodeIDPtr,
+		Path:        destPath,
+	})
 	if err != nil {
 		// File was created but record failed - log but don't fail the task
 		w.log.Error().Err(err).
@@ -223,16 +224,22 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 	}
 
 	// Create file state
-	if mediaFile.ID.Valid {
+	if mediaFile.ID != uuid.Nil {
 		fileSize := srcInfo.Size()
-		_, _ = w.repo.UpsertMediaFileState(ctx, mediaFile.ID, true, &fileSize)
+		_, _ = w.repo.UpsertMediaFileState(ctx, repo.UpsertMediaFileStateParams{
+			MediaFileID: mediaFile.ID,
+			FileExists:  true,
+			FileSize:    &fileSize,
+		})
 	}
 
 	// Record import in media_file_import table. Still on the dbgen-typed
-	// repo surface (MediaFile is a future migration wave).
+	// repo surface (MediaFileImport is a future migration wave); bridge at
+	// the call site.
+	mediaFileIDPg := pgtype.UUID{Bytes: mediaFile.ID, Valid: mediaFile.ID != uuid.Nil}
 	taskIDPg := pgtype.UUID{Bytes: task.ID, Valid: true}
 	_, _ = w.repo.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
-		MediaFileID:  mediaFile.ID,
+		MediaFileID:  mediaFileIDPg,
 		ImportTaskID: taskIDPg,
 		Method:       method,
 		SourcePath:   &task.SourcePath,
@@ -241,18 +248,12 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 		ErrorMessage: nil,
 	})
 
-	// Convert mediaFile.ID (pgtype.UUID) to uuid.UUID for the now-domain repo call.
-	mediaFileUUID := uuid.Nil
-	if mediaFile.ID.Valid {
-		mediaFileUUID = uuid.UUID(mediaFile.ID.Bytes)
-	}
-
 	// Mark task completed
 	_, err = w.repo.SetImportTaskCompleted(ctx, repo.SetImportTaskCompletedParams{
 		ID:           task.ID,
 		DestPath:     destPath,
 		ImportMethod: method,
-		MediaFileID:  mediaFileUUID,
+		MediaFileID:  mediaFile.ID,
 	})
 	if err != nil {
 		return fmt.Errorf("set task completed: %w", err)
