@@ -86,8 +86,8 @@ func makeSearchMulti(t *testing.T, entries []map[string]any) tmdb.SearchMulti {
 type fakeRepo struct {
 	getLibraryFn                   func(ctx context.Context, id uuid.UUID) (model.Library, error)
 	getMediaFileByLibraryAndPathFn func(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error)
-	getMediaItemByTmdbIDAndTypeFn  func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error)
-	createMediaItemFn              func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error)
+	getMediaItemByTmdbIDAndTypeFn  func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error)
+	createMediaItemFn              func(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error)
 	upsertSeasonFn                 func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error)
 	upsertEpisodeFn                func(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error)
 	createMediaFileFn              func(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error)
@@ -120,21 +120,21 @@ func (f *fakeRepo) GetMediaFileByLibraryAndPath(ctx context.Context, libraryID p
 	return dbgen.MediaFile{}, apperrors.NotFoundf("media file not found")
 }
 
-func (f *fakeRepo) GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
+func (f *fakeRepo) GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
 	if f.getMediaItemByTmdbIDAndTypeFn != nil {
 		return f.getMediaItemByTmdbIDAndTypeFn(ctx, tmdbID, typ)
 	}
-	return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
+	return model.MediaItem{}, apperrors.NotFoundf("media item not found")
 }
 
-func (f *fakeRepo) CreateMediaItem(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
+func (f *fakeRepo) CreateMediaItem(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error) {
 	f.mu.Lock()
 	f.createMediaItemCalls++
 	f.mu.Unlock()
 	if f.createMediaItemFn != nil {
-		return f.createMediaItemFn(ctx, typ, title, year, tmdbID)
+		return f.createMediaItemFn(ctx, params)
 	}
-	return dbgen.MediaItem{}, nil
+	return model.MediaItem{}, nil
 }
 
 func (f *fakeRepo) UpsertSeason(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
@@ -532,21 +532,21 @@ func TestExecuteScan_MovieHappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mediaItemID := testUUID(10)
+	mediaItemID := testUUIDDomain(10)
 	mediaFileID := testUUID(11)
 
 	fr := &fakeRepo{
-		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
+		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
+			return model.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
-		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
-			if typ != "movie" {
-				t.Errorf("expected type 'movie', got %q", typ)
+		createMediaItemFn: func(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error) {
+			if params.Type != "movie" {
+				t.Errorf("expected type 'movie', got %q", params.Type)
 			}
-			if title != "Movie Title" {
-				t.Errorf("expected title 'Movie Title', got %q", title)
+			if params.Title != "Movie Title" {
+				t.Errorf("expected title 'Movie Title', got %q", params.Title)
 			}
-			return dbgen.MediaItem{ID: mediaItemID}, nil
+			return model.MediaItem{ID: mediaItemID}, nil
 		},
 		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
 			if episodeID != nil {
@@ -599,17 +599,17 @@ func TestExecuteScan_SeriesHappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mediaItemID := testUUID(10)
+	mediaItemID := testUUIDDomain(10)
 	seasonID := testUUIDDomain(11)
 	episodeID := testUUIDDomain(12)
 	mediaFileID := testUUID(13)
 
 	fr := &fakeRepo{
-		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
+		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
+			return model.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
-		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{ID: mediaItemID}, nil
+		createMediaItemFn: func(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error) {
+			return model.MediaItem{ID: mediaItemID}, nil
 		},
 		upsertSeasonFn: func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
 			if params.SeasonNumber != 1 {
@@ -674,14 +674,14 @@ func TestExecuteScan_ExistingSeriesNewEpisode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mediaItemID := testUUID(10)
+	mediaItemID := testUUIDDomain(10)
 	seasonID := testUUIDDomain(11)
 	episodeID := testUUIDDomain(12)
 	mediaFileID := testUUID(13)
 
 	fr := &fakeRepo{
-		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{ID: mediaItemID}, nil // media item already exists
+		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
+			return model.MediaItem{ID: mediaItemID}, nil // media item already exists
 		},
 		upsertSeasonFn: func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
 			return model.MediaSeason{ID: seasonID}, nil
@@ -744,8 +744,8 @@ func TestExecuteScan_EmptyReleaseDate(t *testing.T) {
 	}
 
 	fr := &fakeRepo{
-		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
+		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
+			return model.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
 	}
 
@@ -814,18 +814,18 @@ func TestExecuteScan_GuessitMovieHappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mediaItemID := testUUID(10)
+	mediaItemID := testUUIDDomain(10)
 	mediaFileID := testUUID(11)
 
 	fr := &fakeRepo{
-		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
+		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
+			return model.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
-		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
-			if *tmdbID != 603 {
-				t.Errorf("expected TMDB ID 603, got %d", *tmdbID)
+		createMediaItemFn: func(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error) {
+			if params.TmdbID == nil || *params.TmdbID != 603 {
+				t.Errorf("expected TMDB ID 603, got %v", params.TmdbID)
 			}
-			return dbgen.MediaItem{ID: mediaItemID}, nil
+			return model.MediaItem{ID: mediaItemID}, nil
 		},
 		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
 			return dbgen.MediaFile{ID: mediaFileID}, nil
@@ -886,19 +886,19 @@ func TestExecuteScan_GuessitSeriesDedup(t *testing.T) {
 		}
 	}
 
-	mediaItemID := testUUID(10)
+	mediaItemID := testUUIDDomain(10)
 	seasonID := testUUIDDomain(11)
 	mediaFileID := testUUID(13)
 
 	fr := &fakeRepo{
-		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
+		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
 			if tmdbID == 2190 {
-				return dbgen.MediaItem{ID: mediaItemID}, nil
+				return model.MediaItem{ID: mediaItemID}, nil
 			}
-			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
+			return model.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
-		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{ID: mediaItemID}, nil
+		createMediaItemFn: func(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error) {
+			return model.MediaItem{ID: mediaItemID}, nil
 		},
 		upsertSeasonFn: func(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error) {
 			return model.MediaSeason{ID: seasonID}, nil
@@ -1060,15 +1060,15 @@ func TestExecuteScan_Mixed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mediaItemID := testUUID(10)
+	mediaItemID := testUUIDDomain(10)
 	mediaFileID := testUUID(11)
 
 	fr := &fakeRepo{
-		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{}, apperrors.NotFoundf("media item not found")
+		getMediaItemByTmdbIDAndTypeFn: func(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
+			return model.MediaItem{}, apperrors.NotFoundf("media item not found")
 		},
-		createMediaItemFn: func(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
-			return dbgen.MediaItem{ID: mediaItemID}, nil
+		createMediaItemFn: func(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error) {
+			return model.MediaItem{ID: mediaItemID}, nil
 		},
 		createMediaFileFn: func(ctx context.Context, libraryID, mid pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error) {
 			return dbgen.MediaFile{ID: mediaFileID}, nil

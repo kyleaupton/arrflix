@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,21 +31,21 @@ type UnmatchedFilesQueryParams struct {
 
 type MediaRepo interface {
 	// Media items
-	ListMediaItems(ctx context.Context) ([]dbgen.MediaItem, error)
-	ListMediaItemsPaginated(ctx context.Context, params LibraryQueryParams) ([]dbgen.MediaItem, error)
+	ListMediaItems(ctx context.Context) ([]model.MediaItem, error)
+	ListMediaItemsPaginated(ctx context.Context, params LibraryQueryParams) ([]model.MediaItem, error)
 	CountMediaItems(ctx context.Context, typeFilter, search *string) (int64, error)
-	GetMediaItem(ctx context.Context, id pgtype.UUID) (dbgen.MediaItem, error)
-	GetMediaItemByTmdbID(ctx context.Context, tmdbID int64) (dbgen.MediaItem, error)
-	GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error)
-	CreateMediaItem(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error)
-	UpsertMediaItem(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error)
-	UpdateMediaItem(ctx context.Context, id pgtype.UUID, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error)
-	DeleteMediaItem(ctx context.Context, id pgtype.UUID) error
+	GetMediaItem(ctx context.Context, id uuid.UUID) (model.MediaItem, error)
+	GetMediaItemByTmdbID(ctx context.Context, tmdbID int64) (model.MediaItem, error)
+	GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error)
+	CreateMediaItem(ctx context.Context, params CreateMediaItemParams) (model.MediaItem, error)
+	UpsertMediaItem(ctx context.Context, params UpsertMediaItemParams) (model.MediaItem, error)
+	UpdateMediaItem(ctx context.Context, params UpdateMediaItemParams) (model.MediaItem, error)
+	DeleteMediaItem(ctx context.Context, id uuid.UUID) error
 
 	// Metadata enrichment
-	UpdateMediaItemMetadata(ctx context.Context, params dbgen.UpdateMediaItemMetadataParams) (dbgen.MediaItem, error)
-	ListStaleMediaItems(ctx context.Context, staleBefore time.Time, batchSize int32) ([]dbgen.MediaItem, error)
-	UpsertMediaMetadataSource(ctx context.Context, mediaItemID pgtype.UUID, source string, data []byte) error
+	UpdateMediaItemMetadata(ctx context.Context, params UpdateMediaItemMetadataParams) (model.MediaItem, error)
+	ListStaleMediaItems(ctx context.Context, staleBefore time.Time, batchSize int32) ([]model.MediaItem, error)
+	UpsertMediaMetadataSource(ctx context.Context, params UpsertMediaMetadataSourceParams) error
 
 	// Seasons
 	ListSeasonsForMedia(ctx context.Context, mediaItemID uuid.UUID) ([]model.MediaSeason, error)
@@ -102,13 +103,125 @@ type MediaRepo interface {
 	DeleteResolvedUnmatchedFilesOlderThan(ctx context.Context, beforeTime time.Time) error
 }
 
-func (r *Repository) ListMediaItems(ctx context.Context) ([]dbgen.MediaItem, error) {
-	items, err := r.Q.ListMediaItems(ctx)
-	return items, apperrors.FromPg(err, "list media items")
+// CreateMediaItemParams is the domain-shaped input for CreateMediaItem. Mirrors
+// the writeable subset of model.MediaItem (omits server-managed ID/CreatedAt/UpdatedAt
+// and metadata fields populated by enrichment).
+type CreateMediaItemParams struct {
+	Type   string
+	Title  string
+	Year   *int32
+	TmdbID *int64
 }
 
-func (r *Repository) ListMediaItemsPaginated(ctx context.Context, params LibraryQueryParams) ([]dbgen.MediaItem, error) {
-	items, err := r.Q.ListMediaItemsPaginated(ctx, dbgen.ListMediaItemsPaginatedParams{
+// UpsertMediaItemParams is the domain-shaped input for UpsertMediaItem. Mirrors
+// the writeable subset of model.MediaItem.
+type UpsertMediaItemParams struct {
+	Type   string
+	Title  string
+	Year   *int32
+	TmdbID *int64
+}
+
+// UpdateMediaItemParams is the domain-shaped input for UpdateMediaItem. Mirrors
+// the writeable subset of model.MediaItem plus the target ID.
+type UpdateMediaItemParams struct {
+	ID     uuid.UUID
+	Title  string
+	Year   *int32
+	TmdbID *int64
+}
+
+// UpdateMediaItemMetadataParams is the domain-shaped input for UpdateMediaItemMetadata.
+// Mirrors the metadata subset of model.MediaItem populated by enrichment.
+// MetadataUpdatedAt and UpdatedAt are server-managed (set to now() in SQL) and
+// not exposed here.
+type UpdateMediaItemMetadataParams struct {
+	ID            uuid.UUID
+	PosterPath    *string
+	BackdropPath  *string
+	Overview      *string
+	VoteAverage   *float64
+	VoteCount     *int32
+	Runtime       *int32
+	Status        *string
+	Certification *string
+	Genres        json.RawMessage
+	ReleaseDate   *time.Time
+	LastAirDate   *time.Time
+	InProduction  *bool
+	ImdbID        *string
+}
+
+// UpsertMediaMetadataSourceParams is the domain-shaped input for
+// UpsertMediaMetadataSource. Mirrors the writeable subset of the
+// media_metadata_source row.
+type UpsertMediaMetadataSourceParams struct {
+	MediaItemID uuid.UUID
+	Source      string
+	Data        json.RawMessage
+}
+
+// toModelMediaItem translates the persistence-shaped dbgen.MediaItem into the
+// domain-shaped model.MediaItem. Lives next to the methods that use it.
+func toModelMediaItem(row dbgen.MediaItem) model.MediaItem {
+	m := model.MediaItem{
+		ID:            uuidFromPgtype(row.ID),
+		Type:          row.Type,
+		Title:         row.Title,
+		Year:          row.Year,
+		TmdbID:        row.TmdbID,
+		PosterPath:    row.PosterPath,
+		BackdropPath:  row.BackdropPath,
+		Overview:      row.Overview,
+		VoteAverage:   row.VoteAverage,
+		VoteCount:     row.VoteCount,
+		Runtime:       row.Runtime,
+		Status:        row.Status,
+		Certification: row.Certification,
+		Genres:        json.RawMessage(row.Genres),
+		InProduction:  row.InProduction,
+		ImdbID:        row.ImdbID,
+		CreatedAt:     row.CreatedAt,
+		UpdatedAt:     row.UpdatedAt,
+	}
+	if row.ReleaseDate.Valid {
+		t := row.ReleaseDate.Time
+		m.ReleaseDate = &t
+	}
+	if row.LastAirDate.Valid {
+		t := row.LastAirDate.Time
+		m.LastAirDate = &t
+	}
+	if row.MetadataUpdatedAt.Valid {
+		t := row.MetadataUpdatedAt.Time
+		m.MetadataUpdatedAt = &t
+	}
+	return m
+}
+
+// pgDateFromTimePtr converts a *time.Time into the pgtype.Date shape that
+// SQLC-generated query parameters expect. Nil maps to a NULL-shaped value.
+func pgDateFromTimePtr(t *time.Time) pgtype.Date {
+	if t == nil {
+		return pgtype.Date{Valid: false}
+	}
+	return pgtype.Date{Time: *t, Valid: true}
+}
+
+func (r *Repository) ListMediaItems(ctx context.Context) ([]model.MediaItem, error) {
+	rows, err := r.Q.ListMediaItems(ctx)
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list media items")
+	}
+	out := make([]model.MediaItem, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaItem(row))
+	}
+	return out, nil
+}
+
+func (r *Repository) ListMediaItemsPaginated(ctx context.Context, params LibraryQueryParams) ([]model.MediaItem, error) {
+	rows, err := r.Q.ListMediaItemsPaginated(ctx, dbgen.ListMediaItemsPaginatedParams{
 		TypeFilter: params.TypeFilter,
 		Search:     params.Search,
 		SortBy:     params.SortBy,
@@ -116,7 +229,14 @@ func (r *Repository) ListMediaItemsPaginated(ctx context.Context, params Library
 		PageSize:   params.PageSize,
 		OffsetVal:  params.Offset,
 	})
-	return items, apperrors.FromPg(err, "list media items paginated")
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list media items paginated")
+	}
+	out := make([]model.MediaItem, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaItem(row))
+	}
+	return out, nil
 }
 
 func (r *Repository) CountMediaItems(ctx context.Context, typeFilter, search *string) (int64, error) {
@@ -127,77 +247,120 @@ func (r *Repository) CountMediaItems(ctx context.Context, typeFilter, search *st
 	return count, apperrors.FromPg(err, "count media items")
 }
 
-func (r *Repository) GetMediaItem(ctx context.Context, id pgtype.UUID) (dbgen.MediaItem, error) {
-	item, err := r.Q.GetMediaItem(ctx, id)
-	return item, apperrors.FromPg(err, "media item %s not found", id)
+func (r *Repository) GetMediaItem(ctx context.Context, id uuid.UUID) (model.MediaItem, error) {
+	row, err := r.Q.GetMediaItem(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.MediaItem{}, apperrors.FromPg(err, "media item %s not found", id)
+	}
+	return toModelMediaItem(row), nil
 }
 
-func (r *Repository) GetMediaItemByTmdbID(ctx context.Context, tmdbID int64) (dbgen.MediaItem, error) {
-	item, err := r.Q.GetMediaItemByTmdbID(ctx, &tmdbID)
-	return item, apperrors.FromPg(err, "media item with tmdb id %d not found", tmdbID)
+func (r *Repository) GetMediaItemByTmdbID(ctx context.Context, tmdbID int64) (model.MediaItem, error) {
+	row, err := r.Q.GetMediaItemByTmdbID(ctx, &tmdbID)
+	if err != nil {
+		return model.MediaItem{}, apperrors.FromPg(err, "media item with tmdb id %d not found", tmdbID)
+	}
+	return toModelMediaItem(row), nil
 }
 
-func (r *Repository) GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error) {
-	item, err := r.Q.GetMediaItemByTmdbIDAndType(ctx, dbgen.GetMediaItemByTmdbIDAndTypeParams{
+func (r *Repository) GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error) {
+	row, err := r.Q.GetMediaItemByTmdbIDAndType(ctx, dbgen.GetMediaItemByTmdbIDAndTypeParams{
 		TmdbID: &tmdbID,
 		Type:   typ,
 	})
-	return item, apperrors.FromPg(err, "media item with tmdb id %d (type %s) not found", tmdbID, typ)
+	if err != nil {
+		return model.MediaItem{}, apperrors.FromPg(err, "media item with tmdb id %d (type %s) not found", tmdbID, typ)
+	}
+	return toModelMediaItem(row), nil
 }
 
-func (r *Repository) CreateMediaItem(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
-	item, err := r.Q.CreateMediaItem(ctx, dbgen.CreateMediaItemParams{
-		Type:   typ,
-		Title:  title,
-		Year:   year,
-		TmdbID: tmdbID,
+func (r *Repository) CreateMediaItem(ctx context.Context, params CreateMediaItemParams) (model.MediaItem, error) {
+	row, err := r.Q.CreateMediaItem(ctx, dbgen.CreateMediaItemParams{
+		Type:   params.Type,
+		Title:  params.Title,
+		Year:   params.Year,
+		TmdbID: params.TmdbID,
 	})
-	return item, apperrors.FromPg(err, "create media item %q", title)
+	if err != nil {
+		return model.MediaItem{}, apperrors.FromPg(err, "create media item %q", params.Title)
+	}
+	return toModelMediaItem(row), nil
 }
 
-func (r *Repository) UpsertMediaItem(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
-	item, err := r.Q.UpsertMediaItem(ctx, dbgen.UpsertMediaItemParams{
-		Type:   typ,
-		Title:  title,
-		Year:   year,
-		TmdbID: tmdbID,
+func (r *Repository) UpsertMediaItem(ctx context.Context, params UpsertMediaItemParams) (model.MediaItem, error) {
+	row, err := r.Q.UpsertMediaItem(ctx, dbgen.UpsertMediaItemParams{
+		Type:   params.Type,
+		Title:  params.Title,
+		Year:   params.Year,
+		TmdbID: params.TmdbID,
 	})
-	return item, apperrors.FromPg(err, "upsert media item %q", title)
+	if err != nil {
+		return model.MediaItem{}, apperrors.FromPg(err, "upsert media item %q", params.Title)
+	}
+	return toModelMediaItem(row), nil
 }
 
-func (r *Repository) UpdateMediaItem(ctx context.Context, id pgtype.UUID, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error) {
-	item, err := r.Q.UpdateMediaItem(ctx, dbgen.UpdateMediaItemParams{
-		ID:     id,
-		Title:  title,
-		Year:   year,
-		TmdbID: tmdbID,
+func (r *Repository) UpdateMediaItem(ctx context.Context, params UpdateMediaItemParams) (model.MediaItem, error) {
+	row, err := r.Q.UpdateMediaItem(ctx, dbgen.UpdateMediaItemParams{
+		ID:     pgtypeFromUUID(params.ID),
+		Title:  params.Title,
+		Year:   params.Year,
+		TmdbID: params.TmdbID,
 	})
-	return item, apperrors.FromPg(err, "update media item %s", id)
+	if err != nil {
+		return model.MediaItem{}, apperrors.FromPg(err, "update media item %s", params.ID)
+	}
+	return toModelMediaItem(row), nil
 }
 
-func (r *Repository) DeleteMediaItem(ctx context.Context, id pgtype.UUID) error {
-	return apperrors.FromPg(r.Q.DeleteMediaItem(ctx, id), "delete media item %s", id)
+func (r *Repository) DeleteMediaItem(ctx context.Context, id uuid.UUID) error {
+	return apperrors.FromPg(r.Q.DeleteMediaItem(ctx, pgtypeFromUUID(id)), "delete media item %s", id)
 }
 
-func (r *Repository) UpdateMediaItemMetadata(ctx context.Context, params dbgen.UpdateMediaItemMetadataParams) (dbgen.MediaItem, error) {
-	item, err := r.Q.UpdateMediaItemMetadata(ctx, params)
-	return item, apperrors.FromPg(err, "update metadata for media item %s", params.ID)
+func (r *Repository) UpdateMediaItemMetadata(ctx context.Context, params UpdateMediaItemMetadataParams) (model.MediaItem, error) {
+	row, err := r.Q.UpdateMediaItemMetadata(ctx, dbgen.UpdateMediaItemMetadataParams{
+		ID:            pgtypeFromUUID(params.ID),
+		PosterPath:    params.PosterPath,
+		BackdropPath:  params.BackdropPath,
+		Overview:      params.Overview,
+		VoteAverage:   params.VoteAverage,
+		VoteCount:     params.VoteCount,
+		Runtime:       params.Runtime,
+		Status:        params.Status,
+		Certification: params.Certification,
+		Genres:        []byte(params.Genres),
+		ReleaseDate:   pgDateFromTimePtr(params.ReleaseDate),
+		LastAirDate:   pgDateFromTimePtr(params.LastAirDate),
+		InProduction:  params.InProduction,
+		ImdbID:        params.ImdbID,
+	})
+	if err != nil {
+		return model.MediaItem{}, apperrors.FromPg(err, "update metadata for media item %s", params.ID)
+	}
+	return toModelMediaItem(row), nil
 }
 
-func (r *Repository) ListStaleMediaItems(ctx context.Context, staleBefore time.Time, batchSize int32) ([]dbgen.MediaItem, error) {
-	items, err := r.Q.ListStaleMediaItems(ctx, dbgen.ListStaleMediaItemsParams{
+func (r *Repository) ListStaleMediaItems(ctx context.Context, staleBefore time.Time, batchSize int32) ([]model.MediaItem, error) {
+	rows, err := r.Q.ListStaleMediaItems(ctx, dbgen.ListStaleMediaItemsParams{
 		StaleBefore: pgtype.Timestamptz{Time: staleBefore, Valid: true},
 		BatchSize:   batchSize,
 	})
-	return items, apperrors.FromPg(err, "list stale media items")
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list stale media items")
+	}
+	out := make([]model.MediaItem, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaItem(row))
+	}
+	return out, nil
 }
 
-func (r *Repository) UpsertMediaMetadataSource(ctx context.Context, mediaItemID pgtype.UUID, source string, data []byte) error {
+func (r *Repository) UpsertMediaMetadataSource(ctx context.Context, params UpsertMediaMetadataSourceParams) error {
 	return apperrors.FromPg(r.Q.UpsertMediaMetadataSource(ctx, dbgen.UpsertMediaMetadataSourceParams{
-		MediaItemID: mediaItemID,
-		Source:      source,
-		Data:        data,
-	}), "upsert metadata source %q for media item %s", source, mediaItemID)
+		MediaItemID: pgtypeFromUUID(params.MediaItemID),
+		Source:      params.Source,
+		Data:        []byte(params.Data),
+	}), "upsert metadata source %q for media item %s", params.Source, params.MediaItemID)
 }
 
 // toModelMediaSeason translates the persistence-shaped dbgen.MediaSeason into

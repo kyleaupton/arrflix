@@ -252,7 +252,12 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 				}
 			}
 			tmdb := movieID
-			mi, err = s.repo.CreateMediaItem(ctx, "movie", movie.Title, yearInt, &tmdb)
+			mi, err = s.repo.CreateMediaItem(ctx, repo.CreateMediaItemParams{
+				Type:   "movie",
+				Title:  movie.Title,
+				Year:   yearInt,
+				TmdbID: &tmdb,
+			})
 			if err != nil {
 				return trace, model.DownloadJob{}, err
 			}
@@ -264,7 +269,7 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 	job, err := s.repo.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
 		Protocol:       candidate.Protocol,
 		MediaType:      "movie",
-		MediaItemID:    uuid.UUID(mi.ID.Bytes),
+		MediaItemID:    mi.ID,
 		EpisodeID:      uuid.Nil,
 		IndexerID:      indexerID,
 		Guid:           guid,
@@ -348,7 +353,12 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 				}
 			}
 			tmdb := seriesID
-			mi, err = s.repo.CreateMediaItem(ctx, "series", series.Title, yearInt, &tmdb)
+			mi, err = s.repo.CreateMediaItem(ctx, repo.CreateMediaItemParams{
+				Type:   "series",
+				Title:  series.Title,
+				Year:   yearInt,
+				TmdbID: &tmdb,
+			})
 			if err != nil {
 				return trace, model.DownloadJob{}, err
 			}
@@ -361,7 +371,7 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 	if seasonNumber != nil {
 		// Ensure season exists
 		season, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
-			MediaItemID:  uuid.UUID(mi.ID.Bytes),
+			MediaItemID:  mi.ID,
 			SeasonNumber: int32(*seasonNumber),
 		})
 		if err != nil {
@@ -392,7 +402,7 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 	job, err := s.repo.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
 		Protocol:       candidate.Protocol,
 		MediaType:      "series",
-		MediaItemID:    uuid.UUID(mi.ID.Bytes),
+		MediaItemID:    mi.ID,
 		SeasonID:       seasonID,
 		EpisodeID:      episodeID,
 		IndexerID:      indexerID,

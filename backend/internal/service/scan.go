@@ -25,12 +25,13 @@ import (
 )
 
 // libraryIDPg adapts a domain uuid.UUID into the pgtype.UUID shape that
-// scanRepo's still-pgtype-shaped methods expect. Library has been migrated
-// to model/uuid types; the rest of the entities scan touches haven't yet,
-// so we bridge at the call site rather than in the repo.
+// scanRepo's still-pgtype-shaped methods expect. Library, MediaItem,
+// MediaSeason, and MediaEpisode have been migrated to model/uuid types;
+// MediaFile and the file-state/import family haven't yet, so we bridge
+// at the call site rather than in the repo.
 //
-// TODO(model-migration): remove once MediaFile/MediaItem/etc. follow the
-// Library pattern and the scanRepo interface speaks uuid.UUID throughout.
+// TODO(model-migration): remove once MediaFile follows the same pattern
+// and the scanRepo interface speaks uuid.UUID throughout.
 func libraryIDPg(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
@@ -39,8 +40,8 @@ func libraryIDPg(id uuid.UUID) pgtype.UUID {
 type scanRepo interface {
 	GetLibrary(ctx context.Context, id uuid.UUID) (model.Library, error)
 	GetMediaFileByLibraryAndPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.MediaFile, error)
-	GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (dbgen.MediaItem, error)
-	CreateMediaItem(ctx context.Context, typ, title string, year *int32, tmdbID *int64) (dbgen.MediaItem, error)
+	GetMediaItemByTmdbIDAndType(ctx context.Context, tmdbID int64, typ string) (model.MediaItem, error)
+	CreateMediaItem(ctx context.Context, params repo.CreateMediaItemParams) (model.MediaItem, error)
 	UpsertSeason(ctx context.Context, params repo.UpsertSeasonParams) (model.MediaSeason, error)
 	UpsertEpisode(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error)
 	CreateMediaFile(ctx context.Context, libraryID, mediaItemID pgtype.UUID, episodeID *pgtype.UUID, path string) (dbgen.MediaFile, error)
@@ -201,9 +202,9 @@ func (s *ScannerService) publishEvent(eventType, scanID, libraryID string, extra
 // ensureSeasonAndEpisode upserts the season and episode for a series media file.
 // Returns the episode ID if one was created, or nil for movies / missing season info.
 //
-// MediaSeason/MediaEpisode now speak uuid.UUID (model migration). The
-// mediaItemID parameter and the *pgtype.UUID return are still pgtype-shaped
-// because MediaItem and MediaFile haven't been migrated yet — the call site
+// MediaSeason/MediaEpisode/MediaItem now speak uuid.UUID (model migration).
+// The mediaItemID parameter and the *pgtype.UUID return are still pgtype-shaped
+// because MediaFile hasn't been migrated yet — the call site
 // (processIdentifiedFile) bridges the seam.
 func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID pgtype.UUID, tmdbID int64, season, episode *int32, path string) (*pgtype.UUID, error) {
 	if season == nil {
@@ -484,11 +485,13 @@ func (s *ScannerService) resolveTmdbID(ctx context.Context, library model.Librar
 }
 
 // ensureMediaItem looks up or creates a media item for the given TMDB ID.
-// Returns the media item ID and whether a new item was created.
+// Returns the media item ID (in pgtype shape, since downstream scan callers
+// like CreateMediaFile haven't been migrated yet) and whether a new item
+// was created.
 func (s *ScannerService) ensureMediaItem(ctx context.Context, library model.Library, tmdbID int64) (pgtype.UUID, bool, error) {
 	existing, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, library.Type)
 	if err == nil {
-		return existing.ID, false, nil
+		return libraryIDPg(existing.ID), false, nil
 	}
 	if !apperrors.IsNotFound(err) {
 		return pgtype.UUID{}, false, err
@@ -536,7 +539,12 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library model.Libr
 		year = int32(year64)
 	}
 
-	item, err := s.repo.CreateMediaItem(ctx, library.Type, title, &year, &tmdbID)
+	item, err := s.repo.CreateMediaItem(ctx, repo.CreateMediaItemParams{
+		Type:   library.Type,
+		Title:  title,
+		Year:   &year,
+		TmdbID: &tmdbID,
+	})
 	if err != nil {
 		return pgtype.UUID{}, false, err
 	}
@@ -550,7 +558,7 @@ func (s *ScannerService) ensureMediaItem(ctx context.Context, library model.Libr
 		}()
 	}
 
-	return item.ID, true, nil
+	return libraryIDPg(item.ID), true, nil
 }
 
 // processIdentifiedFile creates all DB records for a single identified file.

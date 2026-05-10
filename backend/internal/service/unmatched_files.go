@@ -148,7 +148,12 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 		}
 	}
 
-	mediaItem, err := s.repo.UpsertMediaItem(ctx, req.Type, title, year, &req.TmdbID)
+	mediaItem, err := s.repo.UpsertMediaItem(ctx, repo.UpsertMediaItemParams{
+		Type:   req.Type,
+		Title:  title,
+		Year:   year,
+		TmdbID: &req.TmdbID,
+	})
 	if err != nil {
 		return dbgen.MediaFile{}, err
 	}
@@ -157,7 +162,7 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 	var episodeID *pgtype.UUID
 	if req.Type == "series" && req.Season != nil {
 		season, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
-			MediaItemID:  uuid.UUID(mediaItem.ID.Bytes),
+			MediaItemID:  mediaItem.ID,
 			SeasonNumber: int32(*req.Season),
 		})
 		if err != nil {
@@ -178,7 +183,8 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 	}
 
 	// Create media file
-	mediaFile, err := s.repo.CreateMediaFile(ctx, unmatched.LibraryID, mediaItem.ID, episodeID, unmatched.Path)
+	mediaItemIDPg := pgtype.UUID{Bytes: mediaItem.ID, Valid: true}
+	mediaFile, err := s.repo.CreateMediaFile(ctx, unmatched.LibraryID, mediaItemIDPg, episodeID, unmatched.Path)
 	if err != nil {
 		return dbgen.MediaFile{}, err
 	}

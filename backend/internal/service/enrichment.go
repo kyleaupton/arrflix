@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -23,7 +22,7 @@ func NewEnrichmentService(r *repo.Repository, l *logger.Logger, tmdb *TmdbServic
 }
 
 // EnrichMediaItem fetches metadata from TMDB and stores it on the media item.
-func (s *EnrichmentService) EnrichMediaItem(ctx context.Context, item dbgen.MediaItem) error {
+func (s *EnrichmentService) EnrichMediaItem(ctx context.Context, item model.MediaItem) error {
 	if item.TmdbID == nil {
 		return nil
 	}
@@ -38,7 +37,7 @@ func (s *EnrichmentService) EnrichMediaItem(ctx context.Context, item dbgen.Medi
 	}
 }
 
-func (s *EnrichmentService) enrichMovie(ctx context.Context, item dbgen.MediaItem) error {
+func (s *EnrichmentService) enrichMovie(ctx context.Context, item model.MediaItem) error {
 	details, err := s.tmdb.GetMovieDetailsForEnrichment(ctx, *item.TmdbID)
 	if err != nil {
 		return apperrors.BadGatewayf("tmdb movie details for %d: %v", *item.TmdbID, err).
@@ -53,13 +52,13 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item dbgen.MediaIte
 
 	genres, _ := json.Marshal(details.Genres)
 
-	releaseDate := parseDateToPgtype(details.ReleaseDate)
+	releaseDate := parseDateToTimePtr(details.ReleaseDate)
 	runtime := int32(details.Runtime)
 	voteAvg := float64(details.VoteAverage)
 	voteCount := int32(details.VoteCount)
 	inProd := false
 
-	params := dbgen.UpdateMediaItemMetadataParams{
+	params := repo.UpdateMediaItemMetadataParams{
 		ID:            item.ID,
 		PosterPath:    strPtrIfNotEmpty(details.PosterPath),
 		BackdropPath:  strPtrIfNotEmpty(details.BackdropPath),
@@ -71,7 +70,7 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item dbgen.MediaIte
 		Certification: strPtrIfNotEmpty(certification),
 		Genres:        genres,
 		ReleaseDate:   releaseDate,
-		LastAirDate:   pgtype.Date{},
+		LastAirDate:   nil,
 		InProduction:  &inProd,
 		ImdbID:        strPtrIfNotEmpty(details.IMDbID),
 	}
@@ -83,13 +82,17 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item dbgen.MediaIte
 	// Store raw source data
 	rawJSON, err := json.Marshal(details)
 	if err == nil {
-		_ = s.repo.UpsertMediaMetadataSource(ctx, item.ID, "tmdb", rawJSON)
+		_ = s.repo.UpsertMediaMetadataSource(ctx, repo.UpsertMediaMetadataSourceParams{
+			MediaItemID: item.ID,
+			Source:      "tmdb",
+			Data:        rawJSON,
+		})
 	}
 
 	return nil
 }
 
-func (s *EnrichmentService) enrichSeries(ctx context.Context, item dbgen.MediaItem) error {
+func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaItem) error {
 	details, err := s.tmdb.GetSeriesDetailsForEnrichment(ctx, *item.TmdbID)
 	if err != nil {
 		return apperrors.BadGatewayf("tmdb series details for %d: %v", *item.TmdbID, err).
@@ -110,8 +113,8 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item dbgen.MediaIt
 
 	genres, _ := json.Marshal(details.Genres)
 
-	firstAirDate := parseDateToPgtype(details.FirstAirDate)
-	lastAirDate := parseDateToPgtype(details.LastAirDate)
+	firstAirDate := parseDateToTimePtr(details.FirstAirDate)
+	lastAirDate := parseDateToTimePtr(details.LastAirDate)
 
 	// Use first episode runtime if available
 	var runtime *int32
@@ -123,7 +126,7 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item dbgen.MediaIt
 	voteAvg := float64(details.VoteAverage)
 	voteCount := int32(details.VoteCount)
 
-	params := dbgen.UpdateMediaItemMetadataParams{
+	params := repo.UpdateMediaItemMetadataParams{
 		ID:            item.ID,
 		PosterPath:    strPtrIfNotEmpty(details.PosterPath),
 		BackdropPath:  strPtrIfNotEmpty(details.BackdropPath),
@@ -147,7 +150,11 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item dbgen.MediaIt
 	// Store raw source data
 	rawJSON, err := json.Marshal(details)
 	if err == nil {
-		_ = s.repo.UpsertMediaMetadataSource(ctx, item.ID, "tmdb", rawJSON)
+		_ = s.repo.UpsertMediaMetadataSource(ctx, repo.UpsertMediaMetadataSourceParams{
+			MediaItemID: item.ID,
+			Source:      "tmdb",
+			Data:        rawJSON,
+		})
 	}
 
 	return nil
@@ -186,16 +193,17 @@ func strPtrIfNotEmpty(s string) *string {
 	return &s
 }
 
-func parseDateToPgtype(dateStr string) pgtype.Date {
+// parseDateToTimePtr parses a YYYY-MM-DD date string into a *time.Time.
+// Empty or unparseable inputs return nil — the metadata params struct
+// represents absence as nil, which the repo translates to a NULL-shaped
+// pgtype.Date.
+func parseDateToTimePtr(dateStr string) *time.Time {
 	if dateStr == "" {
-		return pgtype.Date{}
+		return nil
 	}
 	t, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
-		return pgtype.Date{}
+		return nil
 	}
-	return pgtype.Date{
-		Time:  t,
-		Valid: true,
-	}
+	return &t
 }

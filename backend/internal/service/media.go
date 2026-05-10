@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
+	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -25,7 +26,7 @@ func NewMediaService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, se
 	return &MediaService{repo: r, logger: l, tmdb: tmdb, settings: settings}
 }
 
-func (s *MediaService) ListLibraryItems(ctx context.Context) ([]dbgen.MediaItem, error) {
+func (s *MediaService) ListLibraryItems(ctx context.Context) ([]model.MediaItem, error) {
 	return s.repo.ListMediaItems(ctx)
 }
 
@@ -383,7 +384,7 @@ func (s *MediaService) GetMovieDetail(ctx context.Context, tmdbID int64) (model.
 		return model.MovieDetail{}, err
 	}
 
-	var mediaItem dbgen.MediaItem
+	var mediaItem model.MediaItem
 	local := true
 	mediaItem, err = s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, string(model.MediaTypeMovie))
 	if err != nil {
@@ -392,7 +393,7 @@ func (s *MediaService) GetMovieDetail(ctx context.Context, tmdbID int64) (model.
 
 	var files []dbgen.ListMediaFilesForItemRow
 	if local {
-		files, _ = s.repo.ListMediaFilesForItem(ctx, mediaItem.ID)
+		files, _ = s.repo.ListMediaFilesForItem(ctx, pgtype.UUID{Bytes: mediaItem.ID, Valid: true})
 	}
 
 	fileInfos := buildFileInfos(files)
@@ -540,7 +541,7 @@ func (s *MediaService) GetSeriesDetail(ctx context.Context, tmdbID int64) (model
 		return model.SeriesDetail{}, err
 	}
 
-	var mediaItem dbgen.MediaItem
+	var mediaItem model.MediaItem
 	local := true
 	mediaItem, err = s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, string(model.MediaTypeSeries))
 	if err != nil {
@@ -549,7 +550,7 @@ func (s *MediaService) GetSeriesDetail(ctx context.Context, tmdbID int64) (model
 
 	var files []dbgen.ListMediaFilesForItemRow
 	if local {
-		files, _ = s.repo.ListMediaFilesForItem(ctx, mediaItem.ID)
+		files, _ = s.repo.ListMediaFilesForItem(ctx, pgtype.UUID{Bytes: mediaItem.ID, Valid: true})
 	}
 
 	fileInfos, availability := buildFileInfoAndAvailability(files)
