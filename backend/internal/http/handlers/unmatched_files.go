@@ -1,8 +1,4 @@
 // unmatched_files.go is the humachi-shaped unmatched-files handler.
-//
-// TODO(model-migration): UnmatchedFilesService still takes pgtype.UUID for
-// ids. The handler converts at the boundary so the wire stays uuid.UUID;
-// drop pgtypeUUID once the service follows the model.* pattern.
 package handlers
 
 import (
@@ -11,7 +7,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/kyleaupton/arrflix/internal/service"
 )
 
@@ -20,10 +15,6 @@ import (
 type UnmatchedFiles struct{ svc *service.Services }
 
 func NewUnmatchedFiles(s *service.Services) *UnmatchedFiles { return &UnmatchedFiles{svc: s} }
-
-func pgtypeUUID(id uuid.UUID) pgtype.UUID {
-	return pgtype.UUID{Bytes: id, Valid: true}
-}
 
 // ----- List -----
 
@@ -45,8 +36,8 @@ func (h *UnmatchedFiles) List(ctx context.Context, input *UnmatchedFilesListInpu
 		PageSize: input.PageSize,
 	}
 	if input.LibraryID != uuid.Nil {
-		pg := pgtypeUUID(input.LibraryID)
-		params.LibraryID = &pg
+		id := input.LibraryID
+		params.LibraryID = &id
 	}
 	out, err := h.svc.UnmatchedFiles.List(ctx, params)
 	if err != nil {
@@ -66,7 +57,7 @@ type UnmatchedFilesGetOutput struct {
 }
 
 func (h *UnmatchedFiles) Get(ctx context.Context, input *UnmatchedFilesGetInput) (*UnmatchedFilesGetOutput, error) {
-	out, err := h.svc.UnmatchedFiles.Get(ctx, pgtypeUUID(input.ID))
+	out, err := h.svc.UnmatchedFiles.Get(ctx, input.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +86,7 @@ type UnmatchedFilesMatchOutput struct {
 }
 
 func (h *UnmatchedFiles) Match(ctx context.Context, input *UnmatchedFilesMatchInput) (*UnmatchedFilesMatchOutput, error) {
-	mediaFile, err := h.svc.UnmatchedFiles.Match(ctx, pgtypeUUID(input.ID), service.MatchRequest{
+	mediaFile, err := h.svc.UnmatchedFiles.Match(ctx, input.ID, service.MatchRequest{
 		TmdbID:  input.Body.TmdbID,
 		Type:    input.Body.Type,
 		Season:  input.Body.Season,
@@ -119,7 +110,7 @@ type UnmatchedFilesDismissInput struct {
 type UnmatchedFilesDismissOutput struct{}
 
 func (h *UnmatchedFiles) Dismiss(ctx context.Context, input *UnmatchedFilesDismissInput) (*UnmatchedFilesDismissOutput, error) {
-	if err := h.svc.UnmatchedFiles.Dismiss(ctx, pgtypeUUID(input.ID)); err != nil {
+	if err := h.svc.UnmatchedFiles.Dismiss(ctx, input.ID); err != nil {
 		return nil, err
 	}
 	return &UnmatchedFilesDismissOutput{}, nil
@@ -136,7 +127,7 @@ type UnmatchedFilesRefreshOutput struct {
 }
 
 func (h *UnmatchedFiles) Refresh(ctx context.Context, input *UnmatchedFilesRefreshInput) (*UnmatchedFilesRefreshOutput, error) {
-	out, err := h.svc.UnmatchedFiles.RefreshSuggestions(ctx, pgtypeUUID(input.ID))
+	out, err := h.svc.UnmatchedFiles.RefreshSuggestions(ctx, input.ID)
 	if err != nil {
 		return nil, err
 	}

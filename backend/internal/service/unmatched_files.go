@@ -2,11 +2,8 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -23,28 +20,19 @@ func NewUnmatchedFilesService(r *repo.Repository, l *logger.Logger, tmdb *TmdbSe
 	return &UnmatchedFilesService{repo: r, logger: l, tmdb: tmdb}
 }
 
-// SuggestedMatch represents a potential match for an unmatched file
-type SuggestedMatch struct {
-	TmdbID int64  `json:"tmdbId"`
-	Title  string `json:"title"`
-	Year   int    `json:"year,omitempty"`
-	Type   string `json:"type"` // movie or series
-	Score  int    `json:"score"`
-}
-
 // UnmatchedFileResponse is the API response for an unmatched file
 type UnmatchedFileResponse struct {
-	ID               string           `json:"id"`
-	LibraryID        string           `json:"libraryId"`
-	Path             string           `json:"path"`
-	FileSize         *int64           `json:"fileSize,omitempty"`
-	DiscoveredAt     string           `json:"discoveredAt"`
-	SuggestedMatches []SuggestedMatch `json:"suggestedMatches,omitempty"`
+	ID               string                 `json:"id"`
+	LibraryID        string                 `json:"libraryId"`
+	Path             string                 `json:"path"`
+	FileSize         *int64                 `json:"fileSize,omitempty"`
+	DiscoveredAt     string                 `json:"discoveredAt"`
+	SuggestedMatches []model.SuggestedMatch `json:"suggestedMatches,omitempty"`
 }
 
 // ListParams contains parameters for listing unmatched files
 type ListParams struct {
-	LibraryID *pgtype.UUID
+	LibraryID *uuid.UUID
 	Page      int
 	PageSize  int
 }
@@ -96,7 +84,7 @@ func (s *UnmatchedFilesService) List(ctx context.Context, params ListParams) (Li
 }
 
 // Get returns a single unmatched file by ID
-func (s *UnmatchedFilesService) Get(ctx context.Context, id pgtype.UUID) (UnmatchedFileResponse, error) {
+func (s *UnmatchedFilesService) Get(ctx context.Context, id uuid.UUID) (UnmatchedFileResponse, error) {
 	file, err := s.repo.GetUnmatchedFile(ctx, id)
 	if err != nil {
 		return UnmatchedFileResponse{}, err
@@ -113,7 +101,7 @@ type MatchRequest struct {
 }
 
 // Match manually matches an unmatched file to a media item
-func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req MatchRequest) (model.MediaFile, error) {
+func (s *UnmatchedFilesService) Match(ctx context.Context, id uuid.UUID, req MatchRequest) (model.MediaFile, error) {
 	// Get the unmatched file
 	unmatched, err := s.repo.GetUnmatchedFile(ctx, id)
 	if err != nil {
@@ -121,7 +109,7 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 	}
 
 	// Check if already resolved
-	if unmatched.ResolvedAt.Valid {
+	if unmatched.ResolvedAt != nil {
 		return model.MediaFile{}, apperrors.Conflictf("unmatched file %s already resolved", id).
 			Op("UnmatchedFilesService.Match")
 	}
@@ -183,10 +171,8 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 		}
 	}
 
-	// Create media file. unmatched.LibraryID is still pgtype.UUID until the
-	// UnmatchedFile entity is migrated; bridge here.
 	mediaFile, err := s.repo.CreateMediaFile(ctx, repo.CreateMediaFileParams{
-		LibraryID:   uuid.UUID(unmatched.LibraryID.Bytes),
+		LibraryID:   unmatched.LibraryID,
 		MediaItemID: mediaItem.ID,
 		EpisodeID:   episodeID,
 		Path:        unmatched.Path,
@@ -204,11 +190,9 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 		s.logger.Warn().Err(err).Msg("Failed to create media file state")
 	}
 
-	// Record import history. CreateMediaFileImport is still on the
-	// dbgen-typed surface (next migration slice); bridge here.
-	mediaFileIDPg := pgtype.UUID{Bytes: mediaFile.ID, Valid: true}
-	if _, err := s.repo.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
-		MediaFileID: mediaFileIDPg,
+	// Record import history.
+	if _, err := s.repo.CreateMediaFileImport(ctx, repo.CreateMediaFileImportParams{
+		MediaFileID: mediaFile.ID,
 		Method:      "manual_match",
 		DestPath:    unmatched.Path,
 		Success:     true,
@@ -217,7 +201,10 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 	}
 
 	// Mark unmatched file as resolved
-	if _, err := s.repo.ResolveUnmatchedFile(ctx, id, mediaFileIDPg); err != nil {
+	if _, err := s.repo.ResolveUnmatchedFile(ctx, repo.ResolveUnmatchedFileParams{
+		ID:                  id,
+		ResolvedMediaFileID: mediaFile.ID,
+	}); err != nil {
 		s.logger.Warn().Err(err).Msg("Failed to mark unmatched file as resolved")
 	}
 
@@ -225,7 +212,7 @@ func (s *UnmatchedFilesService) Match(ctx context.Context, id pgtype.UUID, req M
 }
 
 // Dismiss marks an unmatched file as dismissed (resolved without matching)
-func (s *UnmatchedFilesService) Dismiss(ctx context.Context, id pgtype.UUID) error {
+func (s *UnmatchedFilesService) Dismiss(ctx context.Context, id uuid.UUID) error {
 	if _, err := s.repo.DismissUnmatchedFile(ctx, id); err != nil {
 		return err
 	}
@@ -233,14 +220,14 @@ func (s *UnmatchedFilesService) Dismiss(ctx context.Context, id pgtype.UUID) err
 }
 
 // RefreshSuggestions regenerates match suggestions for an unmatched file
-func (s *UnmatchedFilesService) RefreshSuggestions(ctx context.Context, id pgtype.UUID) (UnmatchedFileResponse, error) {
+func (s *UnmatchedFilesService) RefreshSuggestions(ctx context.Context, id uuid.UUID) (UnmatchedFileResponse, error) {
 	file, err := s.repo.GetUnmatchedFile(ctx, id)
 	if err != nil {
 		return UnmatchedFileResponse{}, err
 	}
 
 	// Get library to determine type
-	lib, err := s.repo.GetLibrary(ctx, uuid.UUID(file.LibraryID.Bytes))
+	lib, err := s.repo.GetLibrary(ctx, file.LibraryID)
 	if err != nil {
 		return UnmatchedFileResponse{}, err
 	}
@@ -249,8 +236,10 @@ func (s *UnmatchedFilesService) RefreshSuggestions(ctx context.Context, id pgtyp
 	suggestions := s.generateSuggestions(ctx, file.Path, lib.Type)
 
 	// Update suggestions in database
-	suggestionsJSON, _ := json.Marshal(suggestions)
-	file, err = s.repo.UpdateUnmatchedFileSuggestions(ctx, id, suggestionsJSON)
+	file, err = s.repo.UpdateUnmatchedFileSuggestions(ctx, repo.UpdateUnmatchedFileSuggestionsParams{
+		ID:               id,
+		SuggestedMatches: suggestions,
+	})
 	if err != nil {
 		return UnmatchedFileResponse{}, err
 	}
@@ -258,24 +247,19 @@ func (s *UnmatchedFilesService) RefreshSuggestions(ctx context.Context, id pgtyp
 	return s.toResponse(file), nil
 }
 
-func (s *UnmatchedFilesService) toResponse(f dbgen.UnmatchedFile) UnmatchedFileResponse {
-	var suggestions []SuggestedMatch
-	if f.SuggestedMatches != nil {
-		_ = json.Unmarshal(f.SuggestedMatches, &suggestions)
-	}
-
+func (s *UnmatchedFilesService) toResponse(f model.UnmatchedFile) UnmatchedFileResponse {
 	return UnmatchedFileResponse{
 		ID:               f.ID.String(),
 		LibraryID:        f.LibraryID.String(),
 		Path:             f.Path,
 		FileSize:         f.FileSize,
 		DiscoveredAt:     f.DiscoveredAt.Format("2006-01-02T15:04:05Z"),
-		SuggestedMatches: suggestions,
+		SuggestedMatches: f.SuggestedMatches,
 	}
 }
 
-func (s *UnmatchedFilesService) generateSuggestions(ctx context.Context, path string, mediaType string) []SuggestedMatch {
+func (s *UnmatchedFilesService) generateSuggestions(ctx context.Context, path string, mediaType string) []model.SuggestedMatch {
 	// TODO: Implement suggestion generation by parsing filename and searching TMDB
 	// For now, return empty suggestions
-	return []SuggestedMatch{}
+	return []model.SuggestedMatch{}
 }

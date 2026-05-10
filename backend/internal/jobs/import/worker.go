@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/importer"
@@ -233,14 +231,10 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 		})
 	}
 
-	// Record import in media_file_import table. Still on the dbgen-typed
-	// repo surface (MediaFileImport is a future migration wave); bridge at
-	// the call site.
-	mediaFileIDPg := pgtype.UUID{Bytes: mediaFile.ID, Valid: mediaFile.ID != uuid.Nil}
-	taskIDPg := pgtype.UUID{Bytes: task.ID, Valid: true}
-	_, _ = w.repo.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
-		MediaFileID:  mediaFileIDPg,
-		ImportTaskID: taskIDPg,
+	// Record import in media_file_import table.
+	_, _ = w.repo.CreateMediaFileImport(ctx, repo.CreateMediaFileImportParams{
+		MediaFileID:  mediaFile.ID,
+		ImportTaskID: task.ID,
 		Method:       method,
 		SourcePath:   &task.SourcePath,
 		DestPath:     destPath,

@@ -24,7 +24,7 @@ type LibraryQueryParams struct {
 
 // UnmatchedFilesQueryParams contains parameters for paginated unmatched files queries
 type UnmatchedFilesQueryParams struct {
-	LibraryID *pgtype.UUID
+	LibraryID *uuid.UUID
 	PageSize  int32
 	Offset    int32
 }
@@ -61,7 +61,7 @@ type MediaRepo interface {
 
 	// File path loading for scanner
 	ListMediaFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
-	ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
+	ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
 
 	// Files (removed season_id and status)
 	GetMediaFile(ctx context.Context, id uuid.UUID) (model.MediaFile, error)
@@ -80,26 +80,26 @@ type MediaRepo interface {
 	ListFilesNeedingVerification(ctx context.Context, beforeTime time.Time, limit int32) ([]model.MediaFileWithState, error)
 
 	// File imports
-	CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error)
-	GetMediaFileImport(ctx context.Context, id pgtype.UUID) (dbgen.MediaFileImport, error)
-	ListImportsForMediaFile(ctx context.Context, mediaFileID pgtype.UUID) ([]dbgen.MediaFileImport, error)
-	ListImportsForImportTask(ctx context.Context, importTaskID pgtype.UUID) ([]dbgen.MediaFileImport, error)
-	ListRecentImports(ctx context.Context, limit int32) ([]dbgen.MediaFileImport, error)
-	ListFailedImports(ctx context.Context, limit int32) ([]dbgen.MediaFileImport, error)
+	CreateMediaFileImport(ctx context.Context, params CreateMediaFileImportParams) (model.MediaFileImport, error)
+	GetMediaFileImport(ctx context.Context, id uuid.UUID) (model.MediaFileImport, error)
+	ListImportsForMediaFile(ctx context.Context, mediaFileID uuid.UUID) ([]model.MediaFileImport, error)
+	ListImportsForImportTask(ctx context.Context, importTaskID uuid.UUID) ([]model.MediaFileImport, error)
+	ListRecentImports(ctx context.Context, limit int32) ([]model.MediaFileImport, error)
+	ListFailedImports(ctx context.Context, limit int32) ([]model.MediaFileImport, error)
 
 	// Unmatched files
-	CreateUnmatchedFile(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error)
-	UpsertUnmatchedFile(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error)
-	GetUnmatchedFile(ctx context.Context, id pgtype.UUID) (dbgen.UnmatchedFile, error)
-	GetUnmatchedFileByPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.UnmatchedFile, error)
-	ListUnmatchedFiles(ctx context.Context) ([]dbgen.UnmatchedFile, error)
-	ListUnmatchedFilesForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]dbgen.UnmatchedFile, error)
-	ListUnmatchedFilesPaginated(ctx context.Context, params UnmatchedFilesQueryParams) ([]dbgen.UnmatchedFile, error)
-	CountUnmatchedFiles(ctx context.Context, libraryID *pgtype.UUID) (int64, error)
-	ResolveUnmatchedFile(ctx context.Context, id pgtype.UUID, resolvedMediaFileID pgtype.UUID) (dbgen.UnmatchedFile, error)
-	DismissUnmatchedFile(ctx context.Context, id pgtype.UUID) (dbgen.UnmatchedFile, error)
-	UpdateUnmatchedFileSuggestions(ctx context.Context, id pgtype.UUID, suggestedMatches []byte) (dbgen.UnmatchedFile, error)
-	DeleteUnmatchedFile(ctx context.Context, id pgtype.UUID) error
+	CreateUnmatchedFile(ctx context.Context, params CreateUnmatchedFileParams) (model.UnmatchedFile, error)
+	UpsertUnmatchedFile(ctx context.Context, params UpsertUnmatchedFileParams) (model.UnmatchedFile, error)
+	GetUnmatchedFile(ctx context.Context, id uuid.UUID) (model.UnmatchedFile, error)
+	GetUnmatchedFileByPath(ctx context.Context, params GetUnmatchedFileByPathParams) (model.UnmatchedFile, error)
+	ListUnmatchedFiles(ctx context.Context) ([]model.UnmatchedFile, error)
+	ListUnmatchedFilesForLibrary(ctx context.Context, libraryID uuid.UUID) ([]model.UnmatchedFile, error)
+	ListUnmatchedFilesPaginated(ctx context.Context, params UnmatchedFilesQueryParams) ([]model.UnmatchedFile, error)
+	CountUnmatchedFiles(ctx context.Context, libraryID *uuid.UUID) (int64, error)
+	ResolveUnmatchedFile(ctx context.Context, params ResolveUnmatchedFileParams) (model.UnmatchedFile, error)
+	DismissUnmatchedFile(ctx context.Context, id uuid.UUID) (model.UnmatchedFile, error)
+	UpdateUnmatchedFileSuggestions(ctx context.Context, params UpdateUnmatchedFileSuggestionsParams) (model.UnmatchedFile, error)
+	DeleteUnmatchedFile(ctx context.Context, id uuid.UUID) error
 	DeleteResolvedUnmatchedFilesOlderThan(ctx context.Context, beforeTime time.Time) error
 }
 
@@ -145,7 +145,7 @@ type UpdateMediaItemMetadataParams struct {
 	Runtime       *int32
 	Status        *string
 	Certification *string
-	Genres        json.RawMessage
+	Genres        []model.Genre
 	ReleaseDate   *time.Time
 	LastAirDate   *time.Time
 	InProduction  *bool
@@ -178,11 +178,17 @@ func toModelMediaItem(row dbgen.MediaItem) model.MediaItem {
 		Runtime:       row.Runtime,
 		Status:        row.Status,
 		Certification: row.Certification,
-		Genres:        json.RawMessage(row.Genres),
 		InProduction:  row.InProduction,
 		ImdbID:        row.ImdbID,
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
+	}
+	if len(row.Genres) > 0 {
+		var genres []model.Genre
+		if err := json.Unmarshal(row.Genres, &genres); err == nil {
+			m.Genres = genres
+		}
+		// Silent-empty on parse failure (legacy rows with TMDB's {id,name} shape will fall here).
 	}
 	if row.ReleaseDate.Valid {
 		t := row.ReleaseDate.Time
@@ -318,6 +324,14 @@ func (r *Repository) DeleteMediaItem(ctx context.Context, id uuid.UUID) error {
 }
 
 func (r *Repository) UpdateMediaItemMetadata(ctx context.Context, params UpdateMediaItemMetadataParams) (model.MediaItem, error) {
+	var genresJSON []byte
+	if len(params.Genres) > 0 {
+		var err error
+		genresJSON, err = json.Marshal(params.Genres)
+		if err != nil {
+			return model.MediaItem{}, apperrors.Internalf("marshal genres: %v", err).Op("Repository.UpdateMediaItemMetadata")
+		}
+	}
 	row, err := r.Q.UpdateMediaItemMetadata(ctx, dbgen.UpdateMediaItemMetadataParams{
 		ID:            pgtypeFromUUID(params.ID),
 		PosterPath:    params.PosterPath,
@@ -328,7 +342,7 @@ func (r *Repository) UpdateMediaItemMetadata(ctx context.Context, params UpdateM
 		Runtime:       params.Runtime,
 		Status:        params.Status,
 		Certification: params.Certification,
-		Genres:        []byte(params.Genres),
+		Genres:        genresJSON,
 		ReleaseDate:   pgDateFromTimePtr(params.ReleaseDate),
 		LastAirDate:   pgDateFromTimePtr(params.LastAirDate),
 		InProduction:  params.InProduction,
@@ -744,8 +758,8 @@ func (r *Repository) ListMediaFilePathsForLibrary(ctx context.Context, libraryID
 	return paths, apperrors.FromPg(err, "list media file paths for library %s", libraryID)
 }
 
-func (r *Repository) ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
-	paths, err := r.Q.ListUnmatchedFilePathsForLibrary(ctx, libraryID)
+func (r *Repository) ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error) {
+	paths, err := r.Q.ListUnmatchedFilePathsForLibrary(ctx, pgtypeFromUUID(libraryID))
 	return paths, apperrors.FromPg(err, "list unmatched file paths for library %s", libraryID)
 }
 
@@ -847,126 +861,332 @@ func (r *Repository) ListFilesNeedingVerification(ctx context.Context, beforeTim
 
 // Media File Import methods
 
-func (r *Repository) CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error) {
-	imp, err := r.Q.CreateMediaFileImport(ctx, arg)
-	return imp, apperrors.FromPg(err, "create media file import for task %s", arg.ImportTaskID)
+// CreateMediaFileImportParams is the domain-shaped input for CreateMediaFileImport.
+// Mirrors the writeable subset of model.MediaFileImport (omits server-managed
+// ID and AttemptedAt).
+type CreateMediaFileImportParams struct {
+	MediaFileID  uuid.UUID
+	ImportTaskID uuid.UUID
+	Method       string
+	SourcePath   *string
+	DestPath     string
+	Success      bool
+	ErrorMessage *string
 }
 
-func (r *Repository) GetMediaFileImport(ctx context.Context, id pgtype.UUID) (dbgen.MediaFileImport, error) {
-	imp, err := r.Q.GetMediaFileImport(ctx, id)
-	return imp, apperrors.FromPg(err, "media file import %s not found", id)
+// toModelMediaFileImport translates the persistence-shaped dbgen.MediaFileImport
+// into the domain-shaped model.MediaFileImport.
+func toModelMediaFileImport(row dbgen.MediaFileImport) model.MediaFileImport {
+	return model.MediaFileImport{
+		ID:           uuidFromPgtype(row.ID),
+		MediaFileID:  uuidFromPgtype(row.MediaFileID),
+		ImportTaskID: uuidFromPgtype(row.ImportTaskID),
+		Method:       row.Method,
+		SourcePath:   row.SourcePath,
+		DestPath:     row.DestPath,
+		AttemptedAt:  row.AttemptedAt,
+		Success:      row.Success,
+		ErrorMessage: row.ErrorMessage,
+	}
 }
 
-func (r *Repository) ListImportsForMediaFile(ctx context.Context, mediaFileID pgtype.UUID) ([]dbgen.MediaFileImport, error) {
-	imps, err := r.Q.ListImportsForMediaFile(ctx, mediaFileID)
-	return imps, apperrors.FromPg(err, "list imports for media file %s", mediaFileID)
+func (r *Repository) CreateMediaFileImport(ctx context.Context, params CreateMediaFileImportParams) (model.MediaFileImport, error) {
+	row, err := r.Q.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
+		MediaFileID:  pgtypeFromUUID(params.MediaFileID),
+		ImportTaskID: pgtypeFromUUID(params.ImportTaskID),
+		Method:       params.Method,
+		SourcePath:   params.SourcePath,
+		DestPath:     params.DestPath,
+		Success:      params.Success,
+		ErrorMessage: params.ErrorMessage,
+	})
+	if err != nil {
+		return model.MediaFileImport{}, apperrors.FromPg(err, "create media file import for task %s", params.ImportTaskID)
+	}
+	return toModelMediaFileImport(row), nil
 }
 
-func (r *Repository) ListImportsForImportTask(ctx context.Context, importTaskID pgtype.UUID) ([]dbgen.MediaFileImport, error) {
-	imps, err := r.Q.ListImportsForImportTask(ctx, importTaskID)
-	return imps, apperrors.FromPg(err, "list imports for import task %s", importTaskID)
+func (r *Repository) GetMediaFileImport(ctx context.Context, id uuid.UUID) (model.MediaFileImport, error) {
+	row, err := r.Q.GetMediaFileImport(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.MediaFileImport{}, apperrors.FromPg(err, "media file import %s not found", id)
+	}
+	return toModelMediaFileImport(row), nil
 }
 
-func (r *Repository) ListRecentImports(ctx context.Context, limit int32) ([]dbgen.MediaFileImport, error) {
-	imps, err := r.Q.ListRecentImports(ctx, limit)
-	return imps, apperrors.FromPg(err, "list recent imports")
+func (r *Repository) ListImportsForMediaFile(ctx context.Context, mediaFileID uuid.UUID) ([]model.MediaFileImport, error) {
+	rows, err := r.Q.ListImportsForMediaFile(ctx, pgtypeFromUUID(mediaFileID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list imports for media file %s", mediaFileID)
+	}
+	out := make([]model.MediaFileImport, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaFileImport(row))
+	}
+	return out, nil
 }
 
-func (r *Repository) ListFailedImports(ctx context.Context, limit int32) ([]dbgen.MediaFileImport, error) {
-	imps, err := r.Q.ListFailedImports(ctx, limit)
-	return imps, apperrors.FromPg(err, "list failed imports")
+func (r *Repository) ListImportsForImportTask(ctx context.Context, importTaskID uuid.UUID) ([]model.MediaFileImport, error) {
+	rows, err := r.Q.ListImportsForImportTask(ctx, pgtypeFromUUID(importTaskID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list imports for import task %s", importTaskID)
+	}
+	out := make([]model.MediaFileImport, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaFileImport(row))
+	}
+	return out, nil
+}
+
+func (r *Repository) ListRecentImports(ctx context.Context, limit int32) ([]model.MediaFileImport, error) {
+	rows, err := r.Q.ListRecentImports(ctx, limit)
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list recent imports")
+	}
+	out := make([]model.MediaFileImport, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaFileImport(row))
+	}
+	return out, nil
+}
+
+func (r *Repository) ListFailedImports(ctx context.Context, limit int32) ([]model.MediaFileImport, error) {
+	rows, err := r.Q.ListFailedImports(ctx, limit)
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list failed imports")
+	}
+	out := make([]model.MediaFileImport, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMediaFileImport(row))
+	}
+	return out, nil
 }
 
 // Unmatched File methods
 
-func (r *Repository) CreateUnmatchedFile(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error) {
-	uf, err := r.Q.CreateUnmatchedFile(ctx, dbgen.CreateUnmatchedFileParams{
-		LibraryID:        libraryID,
-		Path:             path,
-		FileSize:         fileSize,
-		SuggestedMatches: suggestedMatches,
+// CreateUnmatchedFileParams is the domain-shaped input for CreateUnmatchedFile.
+// Mirrors the writeable subset of model.UnmatchedFile (omits server-managed
+// ID/DiscoveredAt and resolution fields).
+type CreateUnmatchedFileParams struct {
+	LibraryID        uuid.UUID
+	Path             string
+	FileSize         *int64
+	SuggestedMatches []model.SuggestedMatch
+}
+
+// UpsertUnmatchedFileParams is the domain-shaped input for UpsertUnmatchedFile.
+// Same shape as CreateUnmatchedFileParams; conflict on (library_id, path) updates
+// the suggestions and file size.
+type UpsertUnmatchedFileParams struct {
+	LibraryID        uuid.UUID
+	Path             string
+	FileSize         *int64
+	SuggestedMatches []model.SuggestedMatch
+}
+
+// GetUnmatchedFileByPathParams is the domain-shaped input for
+// GetUnmatchedFileByPath.
+type GetUnmatchedFileByPathParams struct {
+	LibraryID uuid.UUID
+	Path      string
+}
+
+// ResolveUnmatchedFileParams is the domain-shaped input for ResolveUnmatchedFile.
+type ResolveUnmatchedFileParams struct {
+	ID                  uuid.UUID
+	ResolvedMediaFileID uuid.UUID
+}
+
+// UpdateUnmatchedFileSuggestionsParams is the domain-shaped input for
+// UpdateUnmatchedFileSuggestions.
+type UpdateUnmatchedFileSuggestionsParams struct {
+	ID               uuid.UUID
+	SuggestedMatches []model.SuggestedMatch
+}
+
+// toModelUnmatchedFile translates the persistence-shaped dbgen.UnmatchedFile
+// into the domain-shaped model.UnmatchedFile.
+func toModelUnmatchedFile(row dbgen.UnmatchedFile) model.UnmatchedFile {
+	uf := model.UnmatchedFile{
+		ID:           uuidFromPgtype(row.ID),
+		LibraryID:    uuidFromPgtype(row.LibraryID),
+		Path:         row.Path,
+		FileSize:     row.FileSize,
+		DiscoveredAt: row.DiscoveredAt,
+	}
+	if len(row.SuggestedMatches) > 0 {
+		var matches []model.SuggestedMatch
+		if err := json.Unmarshal(row.SuggestedMatches, &matches); err == nil {
+			uf.SuggestedMatches = matches
+		}
+		// Silent-empty on parse failure: bad rows shouldn't fail the whole query.
+	}
+	if row.ResolvedAt.Valid {
+		t := row.ResolvedAt.Time
+		uf.ResolvedAt = &t
+	}
+	if row.ResolvedMediaFileID.Valid {
+		id := uuidFromPgtype(row.ResolvedMediaFileID)
+		uf.ResolvedMediaFileID = &id
+	}
+	return uf
+}
+
+// marshalSuggestions serializes a SuggestedMatch slice to JSON bytes for
+// persistence. Returns nil bytes for an empty slice (the column is nullable).
+func marshalSuggestions(matches []model.SuggestedMatch, op string) ([]byte, error) {
+	if len(matches) == 0 {
+		return nil, nil
+	}
+	b, err := json.Marshal(matches)
+	if err != nil {
+		return nil, apperrors.Internalf("marshal suggestions: %v", err).Op(op)
+	}
+	return b, nil
+}
+
+func (r *Repository) CreateUnmatchedFile(ctx context.Context, params CreateUnmatchedFileParams) (model.UnmatchedFile, error) {
+	suggestionsJSON, err := marshalSuggestions(params.SuggestedMatches, "Repository.CreateUnmatchedFile")
+	if err != nil {
+		return model.UnmatchedFile{}, err
+	}
+	row, err := r.Q.CreateUnmatchedFile(ctx, dbgen.CreateUnmatchedFileParams{
+		LibraryID:        pgtypeFromUUID(params.LibraryID),
+		Path:             params.Path,
+		FileSize:         params.FileSize,
+		SuggestedMatches: suggestionsJSON,
 	})
-	return uf, apperrors.FromPg(err, "create unmatched file %q in library %s", path, libraryID)
+	if err != nil {
+		return model.UnmatchedFile{}, apperrors.FromPg(err, "create unmatched file %q in library %s", params.Path, params.LibraryID)
+	}
+	return toModelUnmatchedFile(row), nil
 }
 
-func (r *Repository) UpsertUnmatchedFile(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error) {
-	uf, err := r.Q.UpsertUnmatchedFile(ctx, dbgen.UpsertUnmatchedFileParams{
-		LibraryID:        libraryID,
-		Path:             path,
-		FileSize:         fileSize,
-		SuggestedMatches: suggestedMatches,
+func (r *Repository) UpsertUnmatchedFile(ctx context.Context, params UpsertUnmatchedFileParams) (model.UnmatchedFile, error) {
+	suggestionsJSON, err := marshalSuggestions(params.SuggestedMatches, "Repository.UpsertUnmatchedFile")
+	if err != nil {
+		return model.UnmatchedFile{}, err
+	}
+	row, err := r.Q.UpsertUnmatchedFile(ctx, dbgen.UpsertUnmatchedFileParams{
+		LibraryID:        pgtypeFromUUID(params.LibraryID),
+		Path:             params.Path,
+		FileSize:         params.FileSize,
+		SuggestedMatches: suggestionsJSON,
 	})
-	return uf, apperrors.FromPg(err, "upsert unmatched file %q in library %s", path, libraryID)
+	if err != nil {
+		return model.UnmatchedFile{}, apperrors.FromPg(err, "upsert unmatched file %q in library %s", params.Path, params.LibraryID)
+	}
+	return toModelUnmatchedFile(row), nil
 }
 
-func (r *Repository) GetUnmatchedFile(ctx context.Context, id pgtype.UUID) (dbgen.UnmatchedFile, error) {
-	uf, err := r.Q.GetUnmatchedFile(ctx, id)
-	return uf, apperrors.FromPg(err, "unmatched file %s not found", id)
+func (r *Repository) GetUnmatchedFile(ctx context.Context, id uuid.UUID) (model.UnmatchedFile, error) {
+	row, err := r.Q.GetUnmatchedFile(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.UnmatchedFile{}, apperrors.FromPg(err, "unmatched file %s not found", id)
+	}
+	return toModelUnmatchedFile(row), nil
 }
 
-func (r *Repository) GetUnmatchedFileByPath(ctx context.Context, libraryID pgtype.UUID, path string) (dbgen.UnmatchedFile, error) {
-	uf, err := r.Q.GetUnmatchedFileByPath(ctx, dbgen.GetUnmatchedFileByPathParams{
-		LibraryID: libraryID,
-		Path:      path,
+func (r *Repository) GetUnmatchedFileByPath(ctx context.Context, params GetUnmatchedFileByPathParams) (model.UnmatchedFile, error) {
+	row, err := r.Q.GetUnmatchedFileByPath(ctx, dbgen.GetUnmatchedFileByPathParams{
+		LibraryID: pgtypeFromUUID(params.LibraryID),
+		Path:      params.Path,
 	})
-	return uf, apperrors.FromPg(err, "unmatched file at %q in library %s not found", path, libraryID)
+	if err != nil {
+		return model.UnmatchedFile{}, apperrors.FromPg(err, "unmatched file at %q in library %s not found", params.Path, params.LibraryID)
+	}
+	return toModelUnmatchedFile(row), nil
 }
 
-func (r *Repository) ListUnmatchedFiles(ctx context.Context) ([]dbgen.UnmatchedFile, error) {
-	ufs, err := r.Q.ListUnmatchedFiles(ctx)
-	return ufs, apperrors.FromPg(err, "list unmatched files")
+func (r *Repository) ListUnmatchedFiles(ctx context.Context) ([]model.UnmatchedFile, error) {
+	rows, err := r.Q.ListUnmatchedFiles(ctx)
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list unmatched files")
+	}
+	out := make([]model.UnmatchedFile, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelUnmatchedFile(row))
+	}
+	return out, nil
 }
 
-func (r *Repository) ListUnmatchedFilesForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]dbgen.UnmatchedFile, error) {
-	ufs, err := r.Q.ListUnmatchedFilesForLibrary(ctx, libraryID)
-	return ufs, apperrors.FromPg(err, "list unmatched files for library %s", libraryID)
+func (r *Repository) ListUnmatchedFilesForLibrary(ctx context.Context, libraryID uuid.UUID) ([]model.UnmatchedFile, error) {
+	rows, err := r.Q.ListUnmatchedFilesForLibrary(ctx, pgtypeFromUUID(libraryID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list unmatched files for library %s", libraryID)
+	}
+	out := make([]model.UnmatchedFile, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelUnmatchedFile(row))
+	}
+	return out, nil
 }
 
-func (r *Repository) ListUnmatchedFilesPaginated(ctx context.Context, params UnmatchedFilesQueryParams) ([]dbgen.UnmatchedFile, error) {
+func (r *Repository) ListUnmatchedFilesPaginated(ctx context.Context, params UnmatchedFilesQueryParams) ([]model.UnmatchedFile, error) {
 	var libID pgtype.UUID
 	if params.LibraryID != nil {
-		libID = *params.LibraryID
+		libID = pgtypeFromUUID(*params.LibraryID)
 	}
-	ufs, err := r.Q.ListUnmatchedFilesPaginated(ctx, dbgen.ListUnmatchedFilesPaginatedParams{
+	rows, err := r.Q.ListUnmatchedFilesPaginated(ctx, dbgen.ListUnmatchedFilesPaginatedParams{
 		LibraryID: libID,
 		PageSize:  params.PageSize,
 		OffsetVal: params.Offset,
 	})
-	return ufs, apperrors.FromPg(err, "list unmatched files paginated")
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list unmatched files paginated")
+	}
+	out := make([]model.UnmatchedFile, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelUnmatchedFile(row))
+	}
+	return out, nil
 }
 
-func (r *Repository) CountUnmatchedFiles(ctx context.Context, libraryID *pgtype.UUID) (int64, error) {
+func (r *Repository) CountUnmatchedFiles(ctx context.Context, libraryID *uuid.UUID) (int64, error) {
 	var libID pgtype.UUID
 	if libraryID != nil {
-		libID = *libraryID
+		libID = pgtypeFromUUID(*libraryID)
 	}
 	count, err := r.Q.CountUnmatchedFiles(ctx, libID)
 	return count, apperrors.FromPg(err, "count unmatched files")
 }
 
-func (r *Repository) ResolveUnmatchedFile(ctx context.Context, id pgtype.UUID, resolvedMediaFileID pgtype.UUID) (dbgen.UnmatchedFile, error) {
-	uf, err := r.Q.ResolveUnmatchedFile(ctx, dbgen.ResolveUnmatchedFileParams{
-		ID:                  id,
-		ResolvedMediaFileID: resolvedMediaFileID,
+func (r *Repository) ResolveUnmatchedFile(ctx context.Context, params ResolveUnmatchedFileParams) (model.UnmatchedFile, error) {
+	row, err := r.Q.ResolveUnmatchedFile(ctx, dbgen.ResolveUnmatchedFileParams{
+		ID:                  pgtypeFromUUID(params.ID),
+		ResolvedMediaFileID: pgtypeFromUUID(params.ResolvedMediaFileID),
 	})
-	return uf, apperrors.FromPg(err, "resolve unmatched file %s", id)
+	if err != nil {
+		return model.UnmatchedFile{}, apperrors.FromPg(err, "resolve unmatched file %s", params.ID)
+	}
+	return toModelUnmatchedFile(row), nil
 }
 
-func (r *Repository) DismissUnmatchedFile(ctx context.Context, id pgtype.UUID) (dbgen.UnmatchedFile, error) {
-	uf, err := r.Q.DismissUnmatchedFile(ctx, id)
-	return uf, apperrors.FromPg(err, "dismiss unmatched file %s", id)
+func (r *Repository) DismissUnmatchedFile(ctx context.Context, id uuid.UUID) (model.UnmatchedFile, error) {
+	row, err := r.Q.DismissUnmatchedFile(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.UnmatchedFile{}, apperrors.FromPg(err, "dismiss unmatched file %s", id)
+	}
+	return toModelUnmatchedFile(row), nil
 }
 
-func (r *Repository) UpdateUnmatchedFileSuggestions(ctx context.Context, id pgtype.UUID, suggestedMatches []byte) (dbgen.UnmatchedFile, error) {
-	uf, err := r.Q.UpdateUnmatchedFileSuggestions(ctx, dbgen.UpdateUnmatchedFileSuggestionsParams{
-		ID:               id,
-		SuggestedMatches: suggestedMatches,
+func (r *Repository) UpdateUnmatchedFileSuggestions(ctx context.Context, params UpdateUnmatchedFileSuggestionsParams) (model.UnmatchedFile, error) {
+	suggestionsJSON, err := marshalSuggestions(params.SuggestedMatches, "Repository.UpdateUnmatchedFileSuggestions")
+	if err != nil {
+		return model.UnmatchedFile{}, err
+	}
+	row, err := r.Q.UpdateUnmatchedFileSuggestions(ctx, dbgen.UpdateUnmatchedFileSuggestionsParams{
+		ID:               pgtypeFromUUID(params.ID),
+		SuggestedMatches: suggestionsJSON,
 	})
-	return uf, apperrors.FromPg(err, "update suggestions for unmatched file %s", id)
+	if err != nil {
+		return model.UnmatchedFile{}, apperrors.FromPg(err, "update suggestions for unmatched file %s", params.ID)
+	}
+	return toModelUnmatchedFile(row), nil
 }
 
-func (r *Repository) DeleteUnmatchedFile(ctx context.Context, id pgtype.UUID) error {
-	return apperrors.FromPg(r.Q.DeleteUnmatchedFile(ctx, id), "delete unmatched file %s", id)
+func (r *Repository) DeleteUnmatchedFile(ctx context.Context, id uuid.UUID) error {
+	return apperrors.FromPg(r.Q.DeleteUnmatchedFile(ctx, pgtypeFromUUID(id)), "delete unmatched file %s", id)
 }
 
 func (r *Repository) DeleteResolvedUnmatchedFilesOlderThan(ctx context.Context, beforeTime time.Time) error {

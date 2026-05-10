@@ -13,8 +13,6 @@ import (
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/guessit"
 	"github.com/kyleaupton/arrflix/internal/identity"
@@ -23,22 +21,6 @@ import (
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
-
-// libraryIDPg adapts a domain uuid.UUID into the pgtype.UUID shape that
-// scanRepo's still-pgtype-shaped methods expect. Library, MediaItem,
-// MediaSeason, MediaEpisode, MediaFile, and MediaFileState have been
-// migrated to model/uuid types; UnmatchedFile and MediaFileImport haven't
-// yet, so we bridge at the call site rather than in the repo. The helper
-// name reflects the historical first use (library IDs) but the function is
-// a generic uuid→pgtype.UUID adapter and is now also used for media-file
-// IDs passed to MediaFileImport.
-//
-// TODO(model-migration): remove once UnmatchedFile and MediaFileImport
-// follow the same pattern and the scanRepo interface speaks uuid.UUID
-// throughout.
-func libraryIDPg(id uuid.UUID) pgtype.UUID {
-	return pgtype.UUID{Bytes: id, Valid: true}
-}
 
 // scanRepo is the subset of repo.Repository used by the scanner.
 type scanRepo interface {
@@ -50,10 +32,10 @@ type scanRepo interface {
 	UpsertEpisode(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error)
 	CreateMediaFile(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error)
 	UpsertMediaFileState(ctx context.Context, params repo.UpsertMediaFileStateParams) (model.MediaFileState, error)
-	CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error)
+	CreateMediaFileImport(ctx context.Context, params repo.CreateMediaFileImportParams) (model.MediaFileImport, error)
 	ListMediaFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
-	ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
-	UpsertUnmatchedFile(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error)
+	ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
+	UpsertUnmatchedFile(ctx context.Context, params repo.UpsertUnmatchedFileParams) (model.UnmatchedFile, error)
 }
 
 // scanTmdb is the subset of TmdbService used by the scanner.
@@ -115,7 +97,7 @@ type identifiedFile struct {
 
 type unmatchedFileEntry struct {
 	collectedFile
-	Suggestions []SuggestedMatch
+	Suggestions []model.SuggestedMatch
 }
 
 // tmdbSearchKey is used to deduplicate TMDB searches for files that likely belong to the same title.
@@ -251,12 +233,11 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 	stats := scanStats{}
 	start := time.Now()
 	libKey := library.ID.String()
-	libIDPg := libraryIDPg(library.ID)
 
 	s.logger.Info().Str("library_name", library.Name).Str("library_path", library.RootPath).Msg("Starting Scan")
 
 	// Phase 1: Walk & Collect
-	knownPaths, err := s.loadKnownPaths(ctx, library.ID, libIDPg)
+	knownPaths, err := s.loadKnownPaths(ctx, library.ID)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("Failed to bulk-load known paths, falling back to per-file checks")
 		knownPaths = nil // will fall back to per-file DB lookups
@@ -375,8 +356,12 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 
 			// Create unmatched entries
 			for _, uf := range unmatched {
-				suggestionsJSON, _ := json.Marshal(uf.Suggestions)
-				if _, upsertErr := s.repo.UpsertUnmatchedFile(ctx, libIDPg, uf.RelPath, uf.FileSize, suggestionsJSON); upsertErr != nil {
+				if _, upsertErr := s.repo.UpsertUnmatchedFile(ctx, repo.UpsertUnmatchedFileParams{
+					LibraryID:        library.ID,
+					Path:             uf.RelPath,
+					FileSize:         uf.FileSize,
+					SuggestedMatches: uf.Suggestions,
+				}); upsertErr != nil {
 					s.logger.Warn().Err(upsertErr).Str("path", uf.RelPath).Msg("Failed to upsert unmatched file")
 				}
 				stats.UnmatchedCount++
@@ -424,13 +409,13 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 
 // loadKnownPaths bulk-loads all media_file and unresolved unmatched_file paths
 // for the given library into a set for O(1) dedup during the walk phase.
-func (s *ScannerService) loadKnownPaths(ctx context.Context, libraryID uuid.UUID, libraryIDPg pgtype.UUID) (map[string]struct{}, error) {
+func (s *ScannerService) loadKnownPaths(ctx context.Context, libraryID uuid.UUID) (map[string]struct{}, error) {
 	mediaPaths, err := s.repo.ListMediaFilePathsForLibrary(ctx, libraryID)
 	if err != nil {
 		return nil, err
 	}
 
-	unmatchedPaths, err := s.repo.ListUnmatchedFilePathsForLibrary(ctx, libraryIDPg)
+	unmatchedPaths, err := s.repo.ListUnmatchedFilePathsForLibrary(ctx, libraryID)
 	if err != nil {
 		return nil, err
 	}
@@ -592,8 +577,8 @@ func (s *ScannerService) processIdentifiedFile(ctx context.Context, library mode
 		s.logger.Warn().Err(err).Msg("Failed to create media file state")
 	}
 
-	if _, err := s.repo.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
-		MediaFileID: libraryIDPg(mf.ID),
+	if _, err := s.repo.CreateMediaFileImport(ctx, repo.CreateMediaFileImportParams{
+		MediaFileID: mf.ID,
 		Method:      "scan",
 		DestPath:    f.AbsPath,
 		Success:     true,
@@ -664,7 +649,7 @@ func (s *ScannerService) processWithGuessit(ctx context.Context, library model.L
 			for _, e := range entries {
 				unmatched = append(unmatched, unmatchedFileEntry{
 					collectedFile: e.file,
-					Suggestions:   []SuggestedMatch{},
+					Suggestions:   []model.SuggestedMatch{},
 				})
 			}
 			continue
@@ -676,7 +661,7 @@ func (s *ScannerService) processWithGuessit(ctx context.Context, library model.L
 			for _, e := range entries {
 				unmatched = append(unmatched, unmatchedFileEntry{
 					collectedFile: e.file,
-					Suggestions:   []SuggestedMatch{},
+					Suggestions:   []model.SuggestedMatch{},
 				})
 			}
 			continue
@@ -780,9 +765,9 @@ type tmdbMatch struct {
 // evaluateSearchResults matches TMDB search results against a search key.
 // First filters by media type, then narrows by year if available. Returns a
 // match if exactly 1 candidate remains, otherwise returns up to 5 suggestions.
-func evaluateSearchResults(libraryType string, key tmdbSearchKey, searchResult tmdb.SearchMulti) (*tmdbMatch, []SuggestedMatch) {
+func evaluateSearchResults(libraryType string, key tmdbSearchKey, searchResult tmdb.SearchMulti) (*tmdbMatch, []model.SuggestedMatch) {
 	if searchResult.SearchMultiResults == nil {
-		return nil, []SuggestedMatch{}
+		return nil, []model.SuggestedMatch{}
 	}
 
 	// Map library type to TMDB media type
@@ -848,14 +833,14 @@ func evaluateSearchResults(libraryType string, key tmdbSearchKey, searchResult t
 		limit = len(candidates)
 	}
 
-	suggestions := make([]SuggestedMatch, 0, limit)
+	suggestions := make([]model.SuggestedMatch, 0, limit)
 	for i := 0; i < limit; i++ {
 		c := candidates[i]
 		score := 100 - (i * 15) // rank-based score: 100, 85, 70, 55, 40
 		if score < 10 {
 			score = 10
 		}
-		suggestions = append(suggestions, SuggestedMatch{
+		suggestions = append(suggestions, model.SuggestedMatch{
 			TmdbID: c.ID,
 			Title:  c.Title,
 			Year:   c.Year,

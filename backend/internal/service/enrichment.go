@@ -5,11 +5,25 @@ import (
 	"encoding/json"
 	"time"
 
+	tmdb "github.com/cyruzin/golang-tmdb"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
+
+// genresFromTmdb converts TMDB's genre shape ([]tmdb.Genre with {ID,Name})
+// into our domain []model.Genre with {TmdbID,Name}.
+func genresFromTmdb(in []tmdb.Genre) []model.Genre {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]model.Genre, 0, len(in))
+	for _, g := range in {
+		out = append(out, model.Genre{TmdbID: g.ID, Name: g.Name})
+	}
+	return out
+}
 
 type EnrichmentService struct {
 	repo   *repo.Repository
@@ -50,8 +64,6 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item model.MediaIte
 		certification = extractMovieCertification(details.ReleaseDates)
 	}
 
-	genres, _ := json.Marshal(details.Genres)
-
 	releaseDate := parseDateToTimePtr(details.ReleaseDate)
 	runtime := int32(details.Runtime)
 	voteAvg := float64(details.VoteAverage)
@@ -68,7 +80,7 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item model.MediaIte
 		Runtime:       &runtime,
 		Status:        strPtrIfNotEmpty(details.Status),
 		Certification: strPtrIfNotEmpty(certification),
-		Genres:        genres,
+		Genres:        genresFromTmdb(details.Genres),
 		ReleaseDate:   releaseDate,
 		LastAirDate:   nil,
 		InProduction:  &inProd,
@@ -111,8 +123,6 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 		imdbID = details.TVExternalIDs.IMDbID
 	}
 
-	genres, _ := json.Marshal(details.Genres)
-
 	firstAirDate := parseDateToTimePtr(details.FirstAirDate)
 	lastAirDate := parseDateToTimePtr(details.LastAirDate)
 
@@ -136,7 +146,7 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 		Runtime:       runtime,
 		Status:        strPtrIfNotEmpty(details.Status),
 		Certification: strPtrIfNotEmpty(certification),
-		Genres:        genres,
+		Genres:        genresFromTmdb(details.Genres),
 		ReleaseDate:   firstAirDate,
 		LastAirDate:   lastAirDate,
 		InProduction:  &details.InProduction,

@@ -14,8 +14,6 @@ import (
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
-	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/guessit"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -27,17 +25,12 @@ import (
 // Helpers
 // ---------------------------------------------------------------------------
 
-func testUUID(n byte) pgtype.UUID {
-	return pgtype.UUID{Bytes: [16]byte{n}, Valid: true}
-}
-
 func testLibraryUUID(n byte) uuid.UUID {
 	return uuid.UUID([16]byte{n})
 }
 
-// testUUIDDomain returns a uuid.UUID seeded the same way testUUID seeds a
-// pgtype.UUID, so domain-shaped test fixtures stay aligned with pgtype-shaped
-// fixtures used for not-yet-migrated entities.
+// testUUIDDomain returns a uuid.UUID seeded by a single byte, used for
+// domain-shaped test fixtures.
 func testUUIDDomain(n byte) uuid.UUID {
 	return uuid.UUID([16]byte{n})
 }
@@ -92,11 +85,11 @@ type fakeRepo struct {
 	upsertEpisodeFn                func(ctx context.Context, params repo.UpsertEpisodeParams) (model.MediaEpisode, error)
 	createMediaFileFn              func(ctx context.Context, params repo.CreateMediaFileParams) (model.MediaFile, error)
 	upsertMediaFileStateFn         func(ctx context.Context, params repo.UpsertMediaFileStateParams) (model.MediaFileState, error)
-	createMediaFileImportFn        func(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error)
+	createMediaFileImportFn        func(ctx context.Context, params repo.CreateMediaFileImportParams) (model.MediaFileImport, error)
 
 	listMediaFilePathsForLibraryFn     func(ctx context.Context, libraryID uuid.UUID) ([]string, error)
-	listUnmatchedFilePathsForLibraryFn func(ctx context.Context, libraryID pgtype.UUID) ([]string, error)
-	upsertUnmatchedFileFn              func(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error)
+	listUnmatchedFilePathsForLibraryFn func(ctx context.Context, libraryID uuid.UUID) ([]string, error)
+	upsertUnmatchedFileFn              func(ctx context.Context, params repo.UpsertUnmatchedFileParams) (model.UnmatchedFile, error)
 
 	mu                   sync.Mutex
 	createMediaItemCalls int
@@ -174,11 +167,11 @@ func (f *fakeRepo) UpsertMediaFileState(ctx context.Context, params repo.UpsertM
 	return model.MediaFileState{}, nil
 }
 
-func (f *fakeRepo) CreateMediaFileImport(ctx context.Context, arg dbgen.CreateMediaFileImportParams) (dbgen.MediaFileImport, error) {
+func (f *fakeRepo) CreateMediaFileImport(ctx context.Context, params repo.CreateMediaFileImportParams) (model.MediaFileImport, error) {
 	if f.createMediaFileImportFn != nil {
-		return f.createMediaFileImportFn(ctx, arg)
+		return f.createMediaFileImportFn(ctx, params)
 	}
-	return dbgen.MediaFileImport{}, nil
+	return model.MediaFileImport{}, nil
 }
 
 func (f *fakeRepo) ListMediaFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error) {
@@ -188,21 +181,21 @@ func (f *fakeRepo) ListMediaFilePathsForLibrary(ctx context.Context, libraryID u
 	return nil, nil
 }
 
-func (f *fakeRepo) ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID pgtype.UUID) ([]string, error) {
+func (f *fakeRepo) ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error) {
 	if f.listUnmatchedFilePathsForLibraryFn != nil {
 		return f.listUnmatchedFilePathsForLibraryFn(ctx, libraryID)
 	}
 	return nil, nil
 }
 
-func (f *fakeRepo) UpsertUnmatchedFile(ctx context.Context, libraryID pgtype.UUID, path string, fileSize *int64, suggestedMatches []byte) (dbgen.UnmatchedFile, error) {
+func (f *fakeRepo) UpsertUnmatchedFile(ctx context.Context, params repo.UpsertUnmatchedFileParams) (model.UnmatchedFile, error) {
 	f.mu.Lock()
 	f.upsertUnmatchedCalls++
 	f.mu.Unlock()
 	if f.upsertUnmatchedFileFn != nil {
-		return f.upsertUnmatchedFileFn(ctx, libraryID, path, fileSize, suggestedMatches)
+		return f.upsertUnmatchedFileFn(ctx, params)
 	}
-	return dbgen.UnmatchedFile{}, nil
+	return model.UnmatchedFile{}, nil
 }
 
 type fakeTmdb struct {
