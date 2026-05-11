@@ -238,46 +238,57 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 
 	// Ensure media_item exists for this movie/library and link the job to it.
 	mi, err := s.repo.GetMediaItemByTmdbID(ctx, movieID)
-	if err != nil {
-		if apperrors.IsNotFound(err) {
-			movie, err := s.media.GetMovie(ctx, movieID)
-			if err != nil {
-				return trace, model.DownloadJob{}, err
-			}
-			var yearInt *int32
-			if len(movie.ReleaseDate) >= 4 {
-				if y, err := strconv.Atoi(movie.ReleaseDate[:4]); err == nil {
-					yy := int32(y)
-					yearInt = &yy
-				}
-			}
-			tmdb := movieID
-			mi, err = s.repo.CreateMediaItem(ctx, repo.CreateMediaItemParams{
-				Type:   "movie",
-				Title:  movie.Title,
-				Year:   yearInt,
-				TmdbID: &tmdb,
-			})
-			if err != nil {
-				return trace, model.DownloadJob{}, err
-			}
-		} else {
+	needsCreate := apperrors.IsNotFound(err)
+	if err != nil && !needsCreate {
+		return trace, model.DownloadJob{}, err
+	}
+
+	var createParams repo.CreateMediaItemParams
+	if needsCreate {
+		movie, err := s.media.GetMovie(ctx, movieID)
+		if err != nil {
 			return trace, model.DownloadJob{}, err
+		}
+		var yearInt *int32
+		if len(movie.ReleaseDate) >= 4 {
+			if y, err := strconv.Atoi(movie.ReleaseDate[:4]); err == nil {
+				yy := int32(y)
+				yearInt = &yy
+			}
+		}
+		tmdb := movieID
+		createParams = repo.CreateMediaItemParams{
+			Type:   "movie",
+			Title:  movie.Title,
+			Year:   yearInt,
+			TmdbID: &tmdb,
 		}
 	}
 
-	job, err := s.repo.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
-		Protocol:       candidate.Protocol,
-		MediaType:      "movie",
-		MediaItemID:    mi.ID,
-		EpisodeID:      uuid.Nil,
-		IndexerID:      indexerID,
-		Guid:           guid,
-		CandidateTitle: candidate.Title,
-		CandidateLink:  candidate.Link,
-		DownloaderID:   downloaderID,
-		LibraryID:      libraryID,
-		NameTemplateID: nameTemplateID,
+	var job model.DownloadJob
+	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
+		if needsCreate {
+			var cerr error
+			mi, cerr = r.CreateMediaItem(ctx, createParams)
+			if cerr != nil {
+				return cerr
+			}
+		}
+		var jerr error
+		job, jerr = r.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
+			Protocol:       candidate.Protocol,
+			MediaType:      "movie",
+			MediaItemID:    mi.ID,
+			EpisodeID:      uuid.Nil,
+			IndexerID:      indexerID,
+			Guid:           guid,
+			CandidateTitle: candidate.Title,
+			CandidateLink:  candidate.Link,
+			DownloaderID:   downloaderID,
+			LibraryID:      libraryID,
+			NameTemplateID: nameTemplateID,
+		})
+		return jerr
 	})
 	if err != nil {
 		return trace, model.DownloadJob{}, err
