@@ -135,8 +135,16 @@ func (s *Server) URL() string {
 
 // OnSearchMulti registers a handler for GET /search/multi that responds with
 // the provided hits when the `query` URL parameter matches expectedQuery.
-// A mismatched query returns 404 (and does NOT fail the test, so callers can
-// register multiple distinct queries).
+// Passing zero hits is the explicit way to express "TMDB returned no results
+// for this query" — the handler still responds 200 with an empty results
+// array.
+//
+// A mismatched query fails the test loudly: either the test author registered
+// the wrong query or the production code is computing the query string
+// differently than expected, and both are bugs worth surfacing immediately.
+// To exercise multiple distinct queries in one test, this would need to grow
+// into a map[query][]Hit; today only one expectedQuery is supported and a
+// second OnSearchMulti call overwrites the first.
 func (s *Server) OnSearchMulti(expectedQuery string, hits ...Hit) {
 	results := make([]map[string]any, 0, len(hits))
 	for _, h := range hits {
@@ -149,8 +157,10 @@ func (s *Server) OnSearchMulti(expectedQuery string, hits ...Hit) {
 		"total_results": len(results),
 	}
 	s.register(http.MethodGet, "/search/multi", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("query") != expectedQuery {
-			http.NotFound(w, r)
+		got := r.URL.Query().Get("query")
+		if got != expectedQuery {
+			s.t.Errorf("tmdbtest: GET /search/multi: expected query %q, got %q", expectedQuery, got)
+			http.Error(w, "tmdbtest: query mismatch", http.StatusNotImplemented)
 			return
 		}
 		writeJSON(w, body)
