@@ -167,16 +167,71 @@ func (s *Server) OnSearchMulti(expectedQuery string, hits ...Hit) {
 	})
 }
 
-// OnMovieDetails registers a handler for GET /movie/<id>.
+// OnMovieDetails registers a handler for GET /movie/<id>. Pass a zero-value
+// MovieDetails to satisfy MediaService.GetMovieDetail's main fetch without
+// asserting on the upstream payload — the appended sub-trees
+// (MovieReleaseDatesAppend, MovieWatchProvidersAppend) are nil by default,
+// which the service handles gracefully.
 func (s *Server) OnMovieDetails(id int64, details tmdb.MovieDetails) {
 	s.register(http.MethodGet, fmt.Sprintf("/movie/%d", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, details)
 	})
 }
 
+// OnMovieCredits registers a handler for GET /movie/<id>/credits. The
+// service treats credits as optional (logs + continues on error), but the
+// unregistered-route check in dispatch still fires loudly — every test that
+// exercises GetMovieDetail must register this even if it doesn't care
+// about credits. A zero-value MovieCredits is fine for that case.
+func (s *Server) OnMovieCredits(id int64, credits tmdb.MovieCredits) {
+	s.register(http.MethodGet, fmt.Sprintf("/movie/%d/credits", id), func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, credits)
+	})
+}
+
+// OnMovieVideos registers a handler for GET /movie/<id>/videos. Same
+// graceful-but-must-register rule as OnMovieCredits.
+func (s *Server) OnMovieVideos(id int64, videos tmdb.VideoResults) {
+	s.register(http.MethodGet, fmt.Sprintf("/movie/%d/videos", id), func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, videos)
+	})
+}
+
+// OnMovieRecommendations registers a handler for GET
+// /movie/<id>/recommendations. Same graceful-but-must-register rule as
+// OnMovieCredits.
+func (s *Server) OnMovieRecommendations(id int64, recs tmdb.MovieRecommendations) {
+	s.register(http.MethodGet, fmt.Sprintf("/movie/%d/recommendations", id), func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, recs)
+	})
+}
+
 // OnTVDetails registers a handler for GET /tv/<id>.
 func (s *Server) OnTVDetails(id int64, details tmdb.TVDetails) {
 	s.register(http.MethodGet, fmt.Sprintf("/tv/%d", id), func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, details)
+	})
+}
+
+// OnTVCredits registers a handler for GET /tv/<id>/credits. Same
+// graceful-but-must-register rule as OnMovieCredits.
+func (s *Server) OnTVCredits(id int64, credits tmdb.TVCredits) {
+	s.register(http.MethodGet, fmt.Sprintf("/tv/%d/credits", id), func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, credits)
+	})
+}
+
+// OnTVVideos registers a handler for GET /tv/<id>/videos. Same
+// graceful-but-must-register rule as OnMovieCredits.
+func (s *Server) OnTVVideos(id int64, videos tmdb.VideoResults) {
+	s.register(http.MethodGet, fmt.Sprintf("/tv/%d/videos", id), func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, videos)
+	})
+}
+
+// OnPersonDetails registers a handler for GET /person/<id>.
+func (s *Server) OnPersonDetails(id int64, details tmdb.PersonDetails) {
+	s.register(http.MethodGet, fmt.Sprintf("/person/%d", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, details)
 	})
 }

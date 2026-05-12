@@ -86,6 +86,84 @@ The only case where this might be revisited: if arrflix ever ships a
 first-party Go client SDK, that SDK would expose request types, and tests
 could share them with the SDK. No such consumer exists today.
 
+## Scope: integration vs unit tests
+
+Integration tests in this package are expensive — Postgres container,
+httptest server, fake TMDB, full service wiring — and slow. Each one earns
+its keep by catching a class of regression that only end-to-end execution
+can catch:
+
+- Route registration drift, auth middleware misconfiguration, huma binding
+  changes.
+- JSON wire-format changes: field renames, tag drift, omitempty behavior,
+  `[]` vs `null` for empty collections.
+- Real Postgres behavior: constraints firing, defaults, pgtype/UUID
+  translation, repo error → typed `apperrors` round-trip.
+- Cross-cutting concerns: problem-details shape, error rendering, status
+  code mapping, SSE wiring.
+
+Internal logic branches inside a service or handler — switch statements,
+map lookups, parsing helpers, transformation code — are **unit-test
+territory**, not integration-test territory. A unit test of
+`MediaService.Search` with a faked repo catches a broken `IsInLibrary`
+lookup faster, more precisely, and with no container ceremony. The
+integration suite proves *the wire works end-to-end*; the unit suite
+proves *the logic is correct*. Both layers are necessary; conflating them
+inflates the integration suite without improving coverage of the things
+only integration can catch.
+
+### The deciding question
+
+When considering a new integration test, ask: **can I drive every
+precondition through a public endpoint with the harness as it stands?**
+
+- **Yes** → the assertion is about the wire. Write the integration test.
+- **No, the missing state is a database row that's produced in production
+  by an internal pipeline with no HTTP surface** (a `media_item` row from
+  the import worker, a `download_job` row from a job kickoff that requires
+  a real downloader callback, etc.) → the assertion is probably about an
+  internal branch. Write a unit test against the relevant service with
+  faked dependencies.
+
+Reaching into `app.Repo.Create*` or raw-SQL-inserting fixtures to bypass
+the missing public flow is a smell, not a pattern. Both techniques work,
+but they signal one of two things:
+
+1. **The assertion is testing an internal logic branch.** Move it to a
+   unit test. The integration apparatus is overkill and the test ends up
+   coupled to either repo internals (`repo.CreateXParams`) or schema
+   internals (column names in raw SQL) — neither of which is the wire
+   contract this suite is supposed to be about.
+2. **There's a real gap in the public API or harness.** An endpoint that
+   ought to exist (e.g., an admin-only "register existing file" path) or
+   a harness option that ought to exist (e.g., `testapp.WithMediaItem` for
+   a state precondition that's common enough to need a seam). Add the
+   missing piece and let the test drive it naturally.
+
+Every test that papers over the gap with backdoor seeding makes the next
+test do the same, and the "public HTTP surface" framing of this suite
+stops being true.
+
+### Worked example
+
+`MediaService.Search` enriches each result with `IsInLibrary` by looking
+up TMDB IDs in `media_item`. An obvious integration test would:
+
+1. Insert a `media_item` row (repo call or raw SQL).
+2. Search for a matching query against a fake TMDB.
+3. Assert `IsInLibrary=true`.
+
+The branch under test is literally `result.IsInLibrary = movieInLibrary[r.ID]`.
+It cannot be exercised end-to-end through HTTP because `media_item` rows
+are produced by the import pipeline — there's no public endpoint that says
+"put this row in the table." Driving the full import flow (files on disk,
+downloader callbacks, scanner) is enormous setup for one map lookup.
+
+That mismatch is the signal: the branch belongs in
+`service/media_test.go` against a faked repo. The integration suite still
+covers the wire shape via `TestMedia_Search` (which exercises
+`IsInLibrary=false` via an empty library — that case needs no seeding).
+
 ## Other conventions
 
 - **Every test calls `t.Parallel()` as its first line.** The harness is
