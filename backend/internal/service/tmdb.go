@@ -42,6 +42,16 @@ func NewTmdbService(r *repo.Repository, l *logger.Logger, apiKey string) *TmdbSe
 	return s
 }
 
+// NewTmdbServiceWithClient constructs a TmdbService with a pre-built TMDB client.
+// Used by tests to inject a client configured against a fake httptest server.
+func NewTmdbServiceWithClient(r *repo.Repository, l *logger.Logger, client *tmdb.Client) *TmdbService {
+	return &TmdbService{
+		repo:   r,
+		logger: l,
+		client: client,
+	}
+}
+
 // InitClient creates or replaces the TMDB client with a new API key.
 func (s *TmdbService) InitClient(apiKey string) error {
 	client, err := tmdb.Init(apiKey)

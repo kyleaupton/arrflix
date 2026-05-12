@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/guessit"
@@ -54,7 +55,8 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	}
 
 	tmdb := NewTmdbService(r, l, tmdbKey)
-	indexer := NewIndexerService(r, l, c)
+	prowlarrURL := fmt.Sprintf("http://localhost:%s", c.ProwlarrPort)
+	indexer := NewIndexerService(r, l, prowlarrURL, c.ProwlarrAPIKey)
 	indexerSource := prowlarradapter.New(indexer.Client(), l)
 	media := NewMediaService(r, l, tmdb, settings)
 	policies := NewPoliciesService(r, l)

@@ -12,7 +12,6 @@ import (
 	"golift.io/starr"
 	"golift.io/starr/prowlarr"
 
-	"github.com/kyleaupton/arrflix/internal/config"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -32,12 +31,11 @@ func (s *IndexerService) Client() *prowlarr.Prowlarr {
 	return s.prowlarr
 }
 
-func NewIndexerService(r *repo.Repository, l *logger.Logger, c *config.Config) *IndexerService {
-	url := fmt.Sprintf("http://localhost:%s", c.ProwlarrPort)
-	cfg := starr.New(c.ProwlarrAPIKey, url, 60*time.Second)
+func NewIndexerService(r *repo.Repository, l *logger.Logger, baseURL, apiKey string) *IndexerService {
+	cfg := starr.New(apiKey, baseURL, 60*time.Second)
 	prowlarrClient := prowlarr.New(cfg)
 
-	return &IndexerService{repo: r, logger: l, prowlarrURL: url, prowlarrAPIKey: c.ProwlarrAPIKey, prowlarr: prowlarrClient}
+	return &IndexerService{repo: r, logger: l, prowlarrURL: baseURL, prowlarrAPIKey: apiKey, prowlarr: prowlarrClient}
 }
 
 // IndexersConfigured returns all configured indexers from Jackett
