@@ -112,36 +112,20 @@ func New(t *testing.T, pool *pgxpool.Pool, opts ...Option) *App {
 	qbittorrent.Register(registry)
 	dm := downloader.NewManager(registry, r, logg)
 
-	// 6. Build services. cfg.TmdbAPIKey is empty, so the TMDB client starts
-	//    nil; we'll either swap in a fake (step 7) or set the real key via
-	//    Settings.Set after Initialize (step 9).
-	//
-	//    Construction-order note: the brief offered pre-seeding tmdb.api_key
-	//    into the DB BEFORE service.New to avoid firing the OnChange hook.
-	//    That doesn't work safely: SetupService.Initialize runs an UPDATE
-	//    on app_setting that casts `value_json::bool` in its WHERE clause,
-	//    and Postgres doesn't guarantee short-circuit predicate evaluation
-	//    once a sibling row contains a non-bool JSON value. So we set the
-	//    TMDB key AFTER Initialize completes. The OnChange hook still fires
-	//    against the (already-swapped) services.Tmdb — harmless, because
-	//    we've already replaced the pointer that the rest of the test
-	//    sees.
-	services := service.New(ctx, r, logg, &cfg, broker, service.WithJWTSecret(jwtSecret))
-
-	// 7. Swap in the test TMDB client if provided. Note: this replaces the
-	//    Services.Tmdb pointer; other services constructed inside
-	//    service.New (Media, Scanner, etc.) still hold references to the
-	//    original TmdbService. Tests that exercise those services
-	//    indirectly will need a different seam — out of scope for this
-	//    harness right now.
+	// 6. Build services. The TMDB client (if provided) is injected via
+	//    service.WithTmdbClient so every downstream consumer — Media,
+	//    Scanner, Feed, Setup, Enrichment, UnmatchedFiles, plus Services.Tmdb
+	//    — sees the fake. When the option is set, service.New also skips
+	//    registering the OnChange hook for "tmdb.api_key", which means the
+	//    Settings.Set call below is a plain row write and won't clobber the
+	//    injected client by rebuilding it against a real key.
+	svcOpts := []service.Option{service.WithJWTSecret(jwtSecret)}
 	if o.tmdbClient != nil {
-		services.Tmdb = service.NewTmdbServiceWithClient(r, logg, o.tmdbClient)
+		svcOpts = append(svcOpts, service.WithTmdbClient(o.tmdbClient))
 	}
+	services := service.New(ctx, r, logg, &cfg, broker, svcOpts...)
 
-	// 8. Mark system initialized + create admin user (transactional). Runs
-	//    before any tmdb.api_key write so the SetSystemInitialized UPDATE
-	//    (which scans app_setting) only sees the pristine bool-typed
-	//    `system.initialized` row.
+	// 7. Mark system initialized + create admin user (transactional).
 	const (
 		adminEmail    = "admin@test.local"
 		adminUsername = "admin"
@@ -151,34 +135,31 @@ func New(t *testing.T, pool *pgxpool.Pool, opts ...Option) *App {
 		t.Fatalf("testapp: initialize: %v", err)
 	}
 
-	// 9. Now persist a non-empty tmdb.api_key so IsInitialized returns true.
-	//    This fires the OnChange hook registered inside service.New, which
-	//    rebuilds the *original* TmdbService's internal client against the
-	//    real TMDB API. That service is no longer referenced via
-	//    services.Tmdb (we swapped it in step 7 if WithTMDB was passed),
-	//    so the rebuild is inert from the test's perspective.
+	// 8. Persist a non-empty tmdb.api_key so IsInitialized returns true.
+	//    Safe to do unconditionally: with WithTmdbClient set the OnChange
+	//    hook isn't registered, so this is just a row write.
 	if err := services.Settings.Set(ctx, "tmdb.api_key", "test-key"); err != nil {
 		t.Fatalf("testapp: set tmdb.api_key: %v", err)
 	}
 
-	// 10. Look up the admin user to get their UUID. GetUserByLogin accepts
-	//     either email or username.
+	// 9. Look up the admin user to get their UUID. GetUserByLogin accepts
+	//    either email or username.
 	user, err := r.GetUserByLogin(ctx, adminUsername)
 	if err != nil {
 		t.Fatalf("testapp: lookup admin user: %v", err)
 	}
 
-	// 11. Issue an admin token.
+	// 10. Issue an admin token.
 	email := adminEmail
 	token, err := services.Auth.IssueToken(user.ID, &email, adminUsername)
 	if err != nil {
 		t.Fatalf("testapp: issue token: %v", err)
 	}
 
-	// 12. Build the HTTP server.
+	// 11. Build the HTTP server.
 	srv := internalhttp.NewServer(cfg, logg, pool, services, r, dm, broker)
 
-	// 13. Wrap in httptest. Closed automatically.
+	// 12. Wrap in httptest. Closed automatically.
 	httpSrv := httptest.NewServer(srv.Router)
 	t.Cleanup(httpSrv.Close)
 

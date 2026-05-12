@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	tmdb "github.com/cyruzin/golang-tmdb"
+
 	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/guessit"
 	prowlarradapter "github.com/kyleaupton/arrflix/internal/indexer/prowlarr"
@@ -54,7 +56,21 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		}
 	}
 
-	tmdb := NewTmdbService(r, l, tmdbKey)
+	var tmdb *TmdbService
+	if cfg.tmdbClient != nil {
+		// Test-only path: inject a pre-built TMDB client (e.g. one configured
+		// against a fake httptest server). We deliberately skip the OnChange
+		// hook below so a later `Settings.Set("tmdb.api_key", ...)` doesn't
+		// clobber the injected client by calling InitClient with a real key.
+		tmdb = NewTmdbServiceWithClient(r, l, cfg.tmdbClient)
+	} else {
+		tmdb = NewTmdbService(r, l, tmdbKey)
+		// Register onChange hook so TMDB key changes hot-reload the client.
+		settings.OnChange("tmdb.api_key", func(ctx context.Context, val any) error {
+			return tmdb.InitClient(val.(string))
+		})
+	}
+
 	prowlarrURL := fmt.Sprintf("http://localhost:%s", c.ProwlarrPort)
 	indexer := NewIndexerService(r, l, prowlarrURL, c.ProwlarrAPIKey)
 	indexerSource := prowlarradapter.New(indexer.Client(), l)
@@ -64,11 +80,6 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	users := NewUsersService(r)
 	invites := NewInvitesService(r)
 	enrichment := NewEnrichmentService(r, l, tmdb)
-
-	// Register onChange hook so TMDB key changes hot-reload the client
-	settings.OnChange("tmdb.api_key", func(ctx context.Context, val any) error {
-		return tmdb.InitClient(val.(string))
-	})
 
 	return &Services{
 		Auth:               NewAuthService(r, cfg, settings, invites),
@@ -97,7 +108,8 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 }
 
 type cfg struct {
-	jwtSecret string
+	jwtSecret  string
+	tmdbClient *tmdb.Client
 }
 
 type Option interface{ apply(*cfg) }
@@ -107,6 +119,17 @@ type withJWT string
 func (w withJWT) apply(c *cfg) { c.jwtSecret = string(w) }
 
 func WithJWTSecret(secret string) Option { return withJWT(secret) }
+
+type withTmdbClient struct{ c *tmdb.Client }
+
+func (w withTmdbClient) apply(c *cfg) { c.tmdbClient = w.c }
+
+// WithTmdbClient injects a pre-built TMDB client into service construction.
+// Intended for integration tests that point a real *tmdb.Client at a fake
+// httptest server. When set, the OnChange hook for "tmdb.api_key" is NOT
+// registered — so a subsequent settings write to that key won't replace the
+// injected client with a real one.
+func WithTmdbClient(c *tmdb.Client) Option { return withTmdbClient{c: c} }
 
 func coalesce(s *string, def string) string {
 	if s == nil {
