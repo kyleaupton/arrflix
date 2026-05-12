@@ -17,11 +17,33 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 )
+
+// rewriteTransport redirects every outbound request to the target host and
+// strips the "/3" API-version path prefix. It exists because cyruzin/golang-tmdb's
+// SetCustomBaseURL mutates a package-level global — fine for a single live
+// client, unsafe for parallel tests that each want their own fake server.
+// Installing this via Client.SetClientConfig keeps the rewrite per-client.
+type rewriteTransport struct {
+	target *url.URL
+	rt     http.RoundTripper
+}
+
+func (t *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.URL.Scheme = t.target.Scheme
+	req.URL.Host = t.target.Host
+	req.URL.Path = strings.TrimPrefix(req.URL.Path, "/3")
+	req.Host = t.target.Host
+	return t.rt.RoundTrip(req)
+}
 
 // Hit is a search-result builder. Implementations produce the per-result JSON
 // map that TMDB returns inside `results`.
@@ -73,7 +95,9 @@ type Server struct {
 }
 
 // New starts a fake TMDB server and returns it along with a real
-// *tmdb.Client wired to it via SetCustomBaseURL.
+// *tmdb.Client whose outbound requests are routed to that server via a
+// per-client http.Transport. The package-level tmdb.baseURL global is left
+// untouched, so multiple New calls from parallel tests stay isolated.
 //
 // A t.Cleanup is registered to shut the server down when the test ends.
 func New(t *testing.T) (*Server, *tmdb.Client) {
@@ -89,7 +113,15 @@ func New(t *testing.T) (*Server, *tmdb.Client) {
 	if err != nil {
 		t.Fatalf("tmdbtest: init tmdb client: %v", err)
 	}
-	client.SetCustomBaseURL(s.srv.URL)
+
+	target, err := url.Parse(s.srv.URL)
+	if err != nil {
+		t.Fatalf("tmdbtest: parse server url: %v", err)
+	}
+	client.SetClientConfig(http.Client{
+		Timeout:   10 * time.Second,
+		Transport: &rewriteTransport{target: target, rt: http.DefaultTransport},
+	})
 
 	return s, client
 }
