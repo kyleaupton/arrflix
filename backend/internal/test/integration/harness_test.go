@@ -16,6 +16,7 @@ import (
 //   - tmdbtest serves a fake TMDB and we round-trip a search through the
 //     real golang-tmdb client.
 func TestHarness_Smoke(t *testing.T) {
+	t.Parallel()
 	pool := dbtest.New(t)
 
 	var count int

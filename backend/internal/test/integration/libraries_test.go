@@ -87,6 +87,7 @@ func findFieldError(t *testing.T, body []byte, loc string) apperrors.FieldError 
 // TestLibraries_CreateThenGet drives a full create + get round-trip and
 // verifies the persisted fields exactly match the create payload.
 func TestLibraries_CreateThenGet(t *testing.T) {
+	t.Parallel()
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 
@@ -129,6 +130,7 @@ func TestLibraries_CreateThenGet(t *testing.T) {
 // TestLibraries_CreateThenList verifies the list endpoint returns the
 // just-created library. The handler returns a flat []model.Library array.
 func TestLibraries_CreateThenList(t *testing.T) {
+	t.Parallel()
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 
@@ -156,6 +158,7 @@ func TestLibraries_CreateThenList(t *testing.T) {
 // 422 response includes a body.name field error. The tag-level minLength:"1"
 // on the input struct is what catches this, before the service runs.
 func TestLibraries_CreateValidation_EmptyName(t *testing.T) {
+	t.Parallel()
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 
@@ -177,6 +180,7 @@ func TestLibraries_CreateValidation_EmptyName(t *testing.T) {
 // asserts the 422 response includes a body.type field error. The tag-level
 // enum:"movie,series" constraint catches this before the service runs.
 func TestLibraries_CreateValidation_BadType(t *testing.T) {
+	t.Parallel()
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 
@@ -197,6 +201,7 @@ func TestLibraries_CreateValidation_BadType(t *testing.T) {
 // TestLibraries_GetNotFound asks for a random UUID that doesn't exist and
 // asserts the 404 + problem-details NotFound shape.
 func TestLibraries_GetNotFound(t *testing.T) {
+	t.Parallel()
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 
@@ -221,6 +226,7 @@ func TestLibraries_GetNotFound(t *testing.T) {
 // TestLibraries_UpdateThenGet creates a library, PUTs an updated payload, and
 // verifies the changes were persisted by reading the row back.
 func TestLibraries_UpdateThenGet(t *testing.T) {
+	t.Parallel()
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 

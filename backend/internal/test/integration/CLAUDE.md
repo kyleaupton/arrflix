@@ -88,6 +88,13 @@ could share them with the SDK. No such consumer exists today.
 
 ## Other conventions
 
+- **Every test calls `t.Parallel()` as its first line.** The harness is
+  built for isolation (per-test cloned DB, per-test httptest server,
+  per-test services and JWT secret, per-test fake TMDB server), and
+  parallel mode acts as a passive regression detector — the day someone
+  introduces a process-level singleton or order dependency, parallel runs
+  will surface it. If a future test genuinely needs serialization, document
+  why in a comment above the missing `t.Parallel()`.
 - **One package**, `package integration`. All tests share a single
   `TestMain` (`main_test.go`) that boots the Postgres testcontainer once.
   Resist splitting into subpackages — each one would need its own

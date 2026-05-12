@@ -15,6 +15,7 @@ import (
 // httptest server is up, chi routing is wired, and setup-mode middleware
 // does not interfere with public routes.
 func TestApp_Health(t *testing.T) {
+	t.Parallel()
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 
@@ -25,6 +26,7 @@ func TestApp_Health(t *testing.T) {
 // and asserts the JWT middleware emits 401. We bypass app.GET because it
 // always sets the Bearer header.
 func TestApp_Unauthenticated(t *testing.T) {
+	t.Parallel()
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 
@@ -44,6 +46,7 @@ func TestApp_Unauthenticated(t *testing.T) {
 // auth middleware, setup-mode passthrough (system is initialized), handler
 // execution, and repo round-trip returning an empty list.
 func TestApp_AuthenticatedListLibraries(t *testing.T) {
+	t.Parallel()
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 
