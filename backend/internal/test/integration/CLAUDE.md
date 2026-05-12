@@ -112,7 +112,8 @@ could share them with the SDK. No such consumer exists today.
 - **Authenticated by default.** `app.GET` / `POST` / `PUT` / `DELETE` always
   set the admin Bearer token. For unauthenticated-path tests, build the
   request manually (see `testapp_smoke_test.go:TestApp_Unauthenticated`).
-- **Status mismatches fail the test.** `app.Do` asserts on the expected
-  status code; the `doRaw` helper in `libraries_test.go` is for cases where
-  the test wants the body bytes for `apperrors.ProblemDetails` decoding
-  regardless of status assertion order.
+- **Status mismatches fail the test.** `app.Do` (and the `GET`/`POST`/`PUT`/
+  `DELETE` wrappers) asserts on the expected status code and prints the
+  response body in the failure message. To decode a non-2xx response, pass
+  the target type (typically `*apperrors.ProblemDetails`) as `out` along
+  with the expected error status — no separate raw-bytes helper needed.
