@@ -3,9 +3,6 @@
 package integration
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
 	"net/http"
 	"testing"
 
@@ -31,56 +28,16 @@ func makeCreateBody(name, typ, rootPath string, enabled, isDefault bool) map[str
 	}
 }
 
-// doRaw is a thin wrapper around app.Do that does not assert status and
-// returns the (decoded) body bytes plus the actual status. Useful for
-// problem-details cases where we need to inspect the body regardless of
-// matched-or-not status; we still use this when we want both body inspection
-// and a specific expected status.
-func doRaw(t *testing.T, app *testapp.App, method, path string, body any) (int, []byte) {
+// findFieldError returns the first field error in pd matching loc. Fails the
+// test if no matching location is present.
+func findFieldError(t *testing.T, pd apperrors.ProblemDetails, loc string) apperrors.FieldError {
 	t.Helper()
-	var bodyReader io.Reader
-	if body != nil {
-		raw, err := json.Marshal(body)
-		if err != nil {
-			t.Fatalf("marshal body: %v", err)
-		}
-		bodyReader = bytes.NewReader(raw)
-	}
-	req, err := http.NewRequest(method, app.URL+path, bodyReader)
-	if err != nil {
-		t.Fatalf("new request: %v", err)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	req.Header.Set("Authorization", "Bearer "+app.Token)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("%s %s: %v", method, path, err)
-	}
-	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
-	return resp.StatusCode, respBody
-}
-
-// findFieldError decodes a problem-details body and returns the first field
-// error matching loc. Fails the test if the body is not problem-details JSON
-// or no matching location is present.
-func findFieldError(t *testing.T, body []byte, loc string) apperrors.FieldError {
-	t.Helper()
-	var pd apperrors.ProblemDetails
-	if err := json.Unmarshal(body, &pd); err != nil {
-		t.Fatalf("decode problem-details: %v; body: %s", err, body)
-	}
 	for _, e := range pd.Errors {
 		if e.Location == loc {
 			return e
 		}
 	}
-	t.Fatalf("no field error at location %q in body: %s", loc, body)
+	t.Fatalf("no field error at location %q in %+v", loc, pd)
 	return apperrors.FieldError{} // unreachable
 }
 
@@ -165,12 +122,10 @@ func TestLibraries_CreateValidation_EmptyName(t *testing.T) {
 	rootPath := t.TempDir()
 	body := makeCreateBody("", "movie", rootPath, true, false)
 
-	status, raw := doRaw(t, app, http.MethodPost, "/api/v1/libraries", body)
-	if status != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want %d; body: %s", status, http.StatusUnprocessableEntity, raw)
-	}
+	var pd apperrors.ProblemDetails
+	app.POST(t, "/api/v1/libraries", body, &pd, http.StatusUnprocessableEntity)
 
-	fe := findFieldError(t, raw, "body.name")
+	fe := findFieldError(t, pd, "body.name")
 	if fe.Message == "" {
 		t.Errorf("expected non-empty message for body.name field error: %+v", fe)
 	}
@@ -187,12 +142,10 @@ func TestLibraries_CreateValidation_BadType(t *testing.T) {
 	rootPath := t.TempDir()
 	body := makeCreateBody("Movies", "bogus", rootPath, true, false)
 
-	status, raw := doRaw(t, app, http.MethodPost, "/api/v1/libraries", body)
-	if status != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want %d; body: %s", status, http.StatusUnprocessableEntity, raw)
-	}
+	var pd apperrors.ProblemDetails
+	app.POST(t, "/api/v1/libraries", body, &pd, http.StatusUnprocessableEntity)
 
-	fe := findFieldError(t, raw, "body.type")
+	fe := findFieldError(t, pd, "body.type")
 	if fe.Message == "" {
 		t.Errorf("expected non-empty message for body.type field error: %+v", fe)
 	}
@@ -206,15 +159,9 @@ func TestLibraries_GetNotFound(t *testing.T) {
 	app := testapp.New(t, pool)
 
 	id := uuid.New().String()
-	status, raw := doRaw(t, app, http.MethodGet, "/api/v1/libraries/"+id, nil)
-	if status != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d; body: %s", status, http.StatusNotFound, raw)
-	}
-
 	var pd apperrors.ProblemDetails
-	if err := json.Unmarshal(raw, &pd); err != nil {
-		t.Fatalf("decode problem-details: %v; body: %s", err, raw)
-	}
+	app.GET(t, "/api/v1/libraries/"+id, &pd, http.StatusNotFound)
+
 	if pd.Status != http.StatusNotFound {
 		t.Errorf("problem.status = %d, want %d", pd.Status, http.StatusNotFound)
 	}
