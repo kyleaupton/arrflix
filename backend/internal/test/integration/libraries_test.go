@@ -11,41 +11,16 @@ import (
 
 	"github.com/google/uuid"
 
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/test/dbtest"
 	"github.com/kyleaupton/arrflix/internal/test/testapp"
 )
 
-// libraryResponse mirrors the JSON shape the libraries handler emits
-// (model.Library). Fields use camelCase to match the production wire format.
-type libraryResponse struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Type      string `json:"type"`
-	RootPath  string `json:"rootPath"`
-	Enabled   bool   `json:"enabled"`
-	Default   bool   `json:"default"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
-}
-
-// problemDetails matches the apperrors.ProblemDetails wire shape
-// (application/problem+json per RFC 9457).
-type problemDetails struct {
-	Type   string         `json:"type"`
-	Title  string         `json:"title"`
-	Status int            `json:"status"`
-	Detail string         `json:"detail"`
-	Errors []problemField `json:"errors"`
-}
-
-type problemField struct {
-	Location string `json:"location"`
-	Message  string `json:"message"`
-	Value    any    `json:"value,omitempty"`
-}
-
 // makeCreateBody builds a valid create/update body using the wire field names
-// (camelCase) the handler expects.
+// (camelCase) the handler expects. Request bodies stay as map[string]any so
+// tests can express shapes the handler's typed input struct couldn't — empty
+// fields, wrong types, extras. See CLAUDE.md in this package.
 func makeCreateBody(name, typ, rootPath string, enabled, isDefault bool) map[string]any {
 	return map[string]any{
 		"name":     name,
@@ -94,9 +69,9 @@ func doRaw(t *testing.T, app *testapp.App, method, path string, body any) (int, 
 // findFieldError decodes a problem-details body and returns the first field
 // error matching loc. Fails the test if the body is not problem-details JSON
 // or no matching location is present.
-func findFieldError(t *testing.T, body []byte, loc string) problemField {
+func findFieldError(t *testing.T, body []byte, loc string) apperrors.FieldError {
 	t.Helper()
-	var pd problemDetails
+	var pd apperrors.ProblemDetails
 	if err := json.Unmarshal(body, &pd); err != nil {
 		t.Fatalf("decode problem-details: %v; body: %s", err, body)
 	}
@@ -106,7 +81,7 @@ func findFieldError(t *testing.T, body []byte, loc string) problemField {
 		}
 	}
 	t.Fatalf("no field error at location %q in body: %s", loc, body)
-	return problemField{} // unreachable
+	return apperrors.FieldError{} // unreachable
 }
 
 // TestLibraries_CreateThenGet drives a full create + get round-trip and
@@ -118,24 +93,21 @@ func TestLibraries_CreateThenGet(t *testing.T) {
 	rootPath := t.TempDir()
 	body := makeCreateBody("Movies", "movie", rootPath, true, false)
 
-	var created libraryResponse
+	var created model.Library
 	app.POST(t, "/api/v1/libraries", body, &created, http.StatusCreated)
 
-	if created.ID == "" {
-		t.Fatalf("expected non-empty id, got: %+v", created)
-	}
-	if _, err := uuid.Parse(created.ID); err != nil {
-		t.Fatalf("id %q is not a valid uuid: %v", created.ID, err)
+	if created.ID == uuid.Nil {
+		t.Fatalf("expected non-nil id, got: %+v", created)
 	}
 	if created.Name != "Movies" {
 		t.Fatalf("Name = %q, want %q", created.Name, "Movies")
 	}
 
-	var fetched libraryResponse
-	app.GET(t, "/api/v1/libraries/"+created.ID, &fetched, http.StatusOK)
+	var fetched model.Library
+	app.GET(t, "/api/v1/libraries/"+created.ID.String(), &fetched, http.StatusOK)
 
 	if fetched.ID != created.ID {
-		t.Errorf("ID = %q, want %q", fetched.ID, created.ID)
+		t.Errorf("ID = %s, want %s", fetched.ID, created.ID)
 	}
 	if fetched.Name != "Movies" {
 		t.Errorf("Name = %q, want %q", fetched.Name, "Movies")
@@ -163,17 +135,17 @@ func TestLibraries_CreateThenList(t *testing.T) {
 	rootPath := t.TempDir()
 	body := makeCreateBody("Movies", "movie", rootPath, true, false)
 
-	var created libraryResponse
+	var created model.Library
 	app.POST(t, "/api/v1/libraries", body, &created, http.StatusCreated)
 
-	var list []libraryResponse
+	var list []model.Library
 	app.GET(t, "/api/v1/libraries", &list, http.StatusOK)
 
 	if len(list) != 1 {
 		t.Fatalf("expected 1 library in list, got %d: %+v", len(list), list)
 	}
 	if list[0].ID != created.ID {
-		t.Errorf("list[0].ID = %q, want %q", list[0].ID, created.ID)
+		t.Errorf("list[0].ID = %s, want %s", list[0].ID, created.ID)
 	}
 	if list[0].Name != "Movies" {
 		t.Errorf("list[0].Name = %q, want %q", list[0].Name, "Movies")
@@ -234,7 +206,7 @@ func TestLibraries_GetNotFound(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", status, http.StatusNotFound, raw)
 	}
 
-	var pd problemDetails
+	var pd apperrors.ProblemDetails
 	if err := json.Unmarshal(raw, &pd); err != nil {
 		t.Fatalf("decode problem-details: %v; body: %s", err, raw)
 	}
@@ -255,23 +227,23 @@ func TestLibraries_UpdateThenGet(t *testing.T) {
 	rootPath := t.TempDir()
 	body := makeCreateBody("Movies", "movie", rootPath, true, false)
 
-	var created libraryResponse
+	var created model.Library
 	app.POST(t, "/api/v1/libraries", body, &created, http.StatusCreated)
 
 	updateBody := makeCreateBody("Movies Updated", "movie", rootPath, true, false)
-	var updated libraryResponse
-	app.PUT(t, "/api/v1/libraries/"+created.ID, updateBody, &updated, http.StatusOK)
+	var updated model.Library
+	app.PUT(t, "/api/v1/libraries/"+created.ID.String(), updateBody, &updated, http.StatusOK)
 
 	if updated.Name != "Movies Updated" {
 		t.Errorf("after PUT, Name = %q, want %q", updated.Name, "Movies Updated")
 	}
 
-	var fetched libraryResponse
-	app.GET(t, "/api/v1/libraries/"+created.ID, &fetched, http.StatusOK)
+	var fetched model.Library
+	app.GET(t, "/api/v1/libraries/"+created.ID.String(), &fetched, http.StatusOK)
 	if fetched.Name != "Movies Updated" {
 		t.Errorf("after GET, Name = %q, want %q", fetched.Name, "Movies Updated")
 	}
 	if fetched.ID != created.ID {
-		t.Errorf("ID changed across update: got %q, want %q", fetched.ID, created.ID)
+		t.Errorf("ID changed across update: got %s, want %s", fetched.ID, created.ID)
 	}
 }
