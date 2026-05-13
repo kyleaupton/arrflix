@@ -350,79 +350,91 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 
 	// Ensure media_item exists for this series and link the job to it.
 	mi, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, seriesID, string(model.MediaTypeSeries))
-	if err != nil {
-		if apperrors.IsNotFound(err) {
-			series, err := s.media.GetSeries(ctx, seriesID)
-			if err != nil {
-				return trace, model.DownloadJob{}, err
+	needsCreateItem := apperrors.IsNotFound(err)
+	if err != nil && !needsCreateItem {
+		return trace, model.DownloadJob{}, err
+	}
+
+	var createItemParams repo.CreateMediaItemParams
+	if needsCreateItem {
+		series, gerr := s.media.GetSeries(ctx, seriesID)
+		if gerr != nil {
+			return trace, model.DownloadJob{}, gerr
+		}
+		var yearInt *int32
+		if len(series.FirstAirDate) >= 4 {
+			if y, perr := strconv.Atoi(series.FirstAirDate[:4]); perr == nil {
+				yy := int32(y)
+				yearInt = &yy
 			}
-			var yearInt *int32
-			if len(series.FirstAirDate) >= 4 {
-				if y, err := strconv.Atoi(series.FirstAirDate[:4]); err == nil {
-					yy := int32(y)
-					yearInt = &yy
+		}
+		tmdb := seriesID
+		createItemParams = repo.CreateMediaItemParams{
+			Type:   "series",
+			Title:  series.Title,
+			Year:   yearInt,
+			TmdbID: &tmdb,
+		}
+	}
+
+	// best-effort: empty title on TMDB failure
+	episodeTitle := ""
+	if seasonNumber != nil && episodeNumber != nil {
+		if tmdbEpisode, terr := s.media.tmdb.GetEpisodeDetails(ctx, seriesID, int64(*seasonNumber), int64(*episodeNumber)); terr == nil {
+			episodeTitle = tmdbEpisode.Name
+		}
+	}
+
+	var job model.DownloadJob
+	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
+		if needsCreateItem {
+			var cerr error
+			mi, cerr = r.CreateMediaItem(ctx, createItemParams)
+			if cerr != nil {
+				return cerr
+			}
+		}
+
+		var seasonID, episodeID uuid.UUID
+		if seasonNumber != nil {
+			season, serr := r.UpsertSeason(ctx, repo.UpsertSeasonParams{
+				MediaItemID:  mi.ID,
+				SeasonNumber: int32(*seasonNumber),
+			})
+			if serr != nil {
+				return serr
+			}
+			seasonID = season.ID
+
+			if episodeNumber != nil {
+				episode, eerr := r.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
+					SeasonID:      season.ID,
+					EpisodeNumber: int32(*episodeNumber),
+					Title:         &episodeTitle,
+				})
+				if eerr != nil {
+					return eerr
 				}
+				episodeID = episode.ID
 			}
-			tmdb := seriesID
-			mi, err = s.repo.CreateMediaItem(ctx, repo.CreateMediaItemParams{
-				Type:   "series",
-				Title:  series.Title,
-				Year:   yearInt,
-				TmdbID: &tmdb,
-			})
-			if err != nil {
-				return trace, model.DownloadJob{}, err
-			}
-		} else {
-			return trace, model.DownloadJob{}, err
 		}
-	}
 
-	var seasonID, episodeID uuid.UUID
-	if seasonNumber != nil {
-		// Ensure season exists
-		season, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
-			MediaItemID:  mi.ID,
-			SeasonNumber: int32(*seasonNumber),
+		var jerr error
+		job, jerr = r.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
+			Protocol:       candidate.Protocol,
+			MediaType:      "series",
+			MediaItemID:    mi.ID,
+			SeasonID:       seasonID,
+			EpisodeID:      episodeID,
+			IndexerID:      indexerID,
+			Guid:           guid,
+			CandidateTitle: candidate.Title,
+			CandidateLink:  candidate.Link,
+			DownloaderID:   downloaderID,
+			LibraryID:      libraryID,
+			NameTemplateID: nameTemplateID,
 		})
-		if err != nil {
-			return trace, model.DownloadJob{}, err
-		}
-		seasonID = season.ID
-
-		if episodeNumber != nil {
-			// Ensure episode exists
-			title := ""
-			tmdbEpisode, err := s.media.tmdb.GetEpisodeDetails(ctx, seriesID, int64(*seasonNumber), int64(*episodeNumber))
-			if err == nil {
-				title = tmdbEpisode.Name
-			}
-
-			episode, err := s.repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
-				SeasonID:      season.ID,
-				EpisodeNumber: int32(*episodeNumber),
-				Title:         &title,
-			})
-			if err != nil {
-				return trace, model.DownloadJob{}, err
-			}
-			episodeID = episode.ID
-		}
-	}
-
-	job, err := s.repo.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
-		Protocol:       candidate.Protocol,
-		MediaType:      "series",
-		MediaItemID:    mi.ID,
-		SeasonID:       seasonID,
-		EpisodeID:      episodeID,
-		IndexerID:      indexerID,
-		Guid:           guid,
-		CandidateTitle: candidate.Title,
-		CandidateLink:  candidate.Link,
-		DownloaderID:   downloaderID,
-		LibraryID:      libraryID,
-		NameTemplateID: nameTemplateID,
+		return jerr
 	})
 	if err != nil {
 		return trace, model.DownloadJob{}, err
