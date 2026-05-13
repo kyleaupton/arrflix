@@ -40,7 +40,7 @@ func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, servic
 	r.Use(middlewares.ChiSetupMode(services))
 	r.Use(middlewares.ChiJWT(cfg.JWTSecret))
 
-	api := humachi.New(r, huma.DefaultConfig("Arrflix API", "0.0.1"))
+	api := humachi.New(r, humaConfig(cfg))
 
 	deps := handlers.Deps{
 		Cfg:               cfg,
@@ -58,4 +58,23 @@ func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, servic
 	}
 
 	return &Server{Router: r, API: api}
+}
+
+// humaConfig builds the huma config and decides where (or whether) to serve
+// the OpenAPI spec, the docs UI, and the JSON Schema components. When
+// EnableAPIDocs is true the three are mounted under /api/* so they share the
+// existing reverse-proxy path in both dev (Vite/nginx) and prod (nginx); when
+// false all three routes are disabled.
+func humaConfig(cfg config.Config) huma.Config {
+	c := huma.DefaultConfig("Arrflix API", "0.0.1")
+	if cfg.EnableAPIDocs {
+		c.OpenAPIPath = "/api/openapi"
+		c.DocsPath = "/api/docs"
+		c.SchemasPath = "/api/schemas"
+	} else {
+		c.OpenAPIPath = ""
+		c.DocsPath = ""
+		c.SchemasPath = ""
+	}
+	return c
 }

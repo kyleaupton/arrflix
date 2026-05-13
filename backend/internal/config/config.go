@@ -16,6 +16,7 @@ type Config struct {
 	TmdbAPIKey     string // TMDB API key
 	ProwlarrPort   string // Prowlarr port, default 9696
 	ProwlarrAPIKey string // Prowlarr API key
+	EnableAPIDocs  bool   // serve /api/docs + /api/openapi.{json,yaml}; default on in dev, off in prod
 }
 
 func envOr(k, d string) string {
@@ -25,12 +26,24 @@ func envOr(k, d string) string {
 	return d
 }
 
+func envBoolOr(k string, d bool) bool {
+	v := os.Getenv(k)
+	switch v {
+	case "1", "true", "TRUE", "True", "yes", "on":
+		return true
+	case "0", "false", "FALSE", "False", "no", "off":
+		return false
+	}
+	return d
+}
+
 func Load(log *logger.Logger) Config {
 	// Best effort to load .env file
 	godotenv.Load()
 
+	env := envOr("APP_ENV", "prod")
 	config := Config{
-		Env:            envOr("APP_ENV", "prod"),
+		Env:            env,
 		Port:           envOr("PORT", "8080"),
 		DatabaseURL:    envOr("DATABASE_URL", "postgres://arrflix:arrflixpw@127.0.0.1:5432/arrflix?sslmode=disable"),
 		CORSOrigin:     envOr("SSE_ALLOW_ORIGIN", "*"),
@@ -38,6 +51,7 @@ func Load(log *logger.Logger) Config {
 		TmdbAPIKey:     envOr("TMDB_API_KEY", ""),
 		ProwlarrPort:   envOr("PROWLARR_PORT", "9696"),
 		ProwlarrAPIKey: envOr("PROWLARR_API_KEY", "prowlarr-api-key"),
+		EnableAPIDocs:  envBoolOr("ENABLE_API_DOCS", env == "dev"),
 	}
 
 	log.Debug().Interface("config", config).Msg("config")
