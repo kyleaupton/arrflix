@@ -160,46 +160,6 @@ func (s *ScannerService) publishEvent(eventType, scanID, libraryID string, extra
 	})
 }
 
-// ensureSeasonAndEpisode upserts the season and episode for a series media file.
-// Returns the episode ID if one was created, or nil for movies / missing season info.
-func (s *ScannerService) ensureSeasonAndEpisode(ctx context.Context, mediaItemID uuid.UUID, tmdbID int64, season, episode *int32, path string) (*uuid.UUID, error) {
-	if season == nil {
-		return nil, nil
-	}
-
-	seasonRow, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
-		MediaItemID:  mediaItemID,
-		SeasonNumber: *season,
-	})
-	if err != nil {
-		s.logger.Error().Err(err).Str("path", path).Msg("Error upserting season")
-		return nil, err
-	}
-
-	if episode == nil {
-		return nil, nil
-	}
-
-	ep, err := s.tmdb.GetEpisodeDetails(ctx, tmdbID, int64(*season), int64(*episode))
-	if err != nil {
-		s.logger.Error().Err(err).Str("path", path).Msg("Error getting episode details from TMDB")
-		return nil, err
-	}
-
-	episodeRow, err := s.repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
-		SeasonID:      seasonRow.ID,
-		EpisodeNumber: *episode,
-		Title:         &ep.Name,
-	})
-	if err != nil {
-		s.logger.Error().Err(err).Str("path", path).Msg("Error upserting episode")
-		return nil, err
-	}
-
-	episodeID := episodeRow.ID
-	return &episodeID, nil
-}
-
 // ---------------------------------------------------------------------------
 // Pipeline: executeScan
 // ---------------------------------------------------------------------------
@@ -446,122 +406,162 @@ func (s *ScannerService) resolveTmdbID(ctx context.Context, library model.Librar
 		Op("ScannerService.resolveTmdbID")
 }
 
-// ensureMediaItem looks up or creates a media item for the given TMDB ID.
-// Returns the media item ID and whether a new item was created.
-func (s *ScannerService) ensureMediaItem(ctx context.Context, library model.Library, tmdbID int64) (uuid.UUID, bool, error) {
-	existing, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, library.Type)
-	if err == nil {
-		return existing.ID, false, nil
-	}
-	if !apperrors.IsNotFound(err) {
-		return uuid.Nil, false, err
-	}
-
-	// Fetch details from TMDB
-	var title string
-	var year int32
-
+// fetchMediaItemMetadata fetches title and release year from TMDB for the
+// given library type. Returns BadGateway when the release date is missing
+// or unparseable.
+func (s *ScannerService) fetchMediaItemMetadata(ctx context.Context, library model.Library, tmdbID int64) (string, int32, error) {
 	switch library.Type {
 	case "movie":
-		movie, detErr := s.tmdb.GetMovieDetails(ctx, tmdbID)
-		if detErr != nil {
-			return uuid.Nil, false, detErr
+		movie, err := s.tmdb.GetMovieDetails(ctx, tmdbID)
+		if err != nil {
+			return "", 0, err
 		}
-		title = movie.Title
 		if movie.ReleaseDate == "" {
-			return uuid.Nil, false, apperrors.BadGatewayf("tmdb movie %d has empty release date", tmdbID).
-				Op("ScannerService.ensureMediaItem")
+			return "", 0, apperrors.BadGatewayf("tmdb movie %d has empty release date", tmdbID).
+				Op("ScannerService.fetchMediaItemMetadata")
 		}
-		yearStr := strings.Split(movie.ReleaseDate, "-")[0]
-		year64, parseErr := strconv.ParseInt(yearStr, 10, 32)
-		if parseErr != nil {
-			return uuid.Nil, false, apperrors.BadGatewayf("tmdb movie %d release date %q unparseable: %v", tmdbID, movie.ReleaseDate, parseErr).
-				Op("ScannerService.ensureMediaItem")
+		year64, err := strconv.ParseInt(strings.Split(movie.ReleaseDate, "-")[0], 10, 32)
+		if err != nil {
+			return "", 0, apperrors.BadGatewayf("tmdb movie %d release date %q unparseable: %v", tmdbID, movie.ReleaseDate, err).
+				Op("ScannerService.fetchMediaItemMetadata")
 		}
-		year = int32(year64)
+		return movie.Title, int32(year64), nil
 
 	case "series":
-		tv, detErr := s.tmdb.GetSeriesDetails(ctx, tmdbID)
-		if detErr != nil {
-			return uuid.Nil, false, detErr
+		tv, err := s.tmdb.GetSeriesDetails(ctx, tmdbID)
+		if err != nil {
+			return "", 0, err
 		}
-		title = tv.Name
 		if tv.FirstAirDate == "" {
-			return uuid.Nil, false, apperrors.BadGatewayf("tmdb series %d has empty first air date", tmdbID).
-				Op("ScannerService.ensureMediaItem")
+			return "", 0, apperrors.BadGatewayf("tmdb series %d has empty first air date", tmdbID).
+				Op("ScannerService.fetchMediaItemMetadata")
 		}
-		yearStr := strings.Split(tv.FirstAirDate, "-")[0]
-		year64, parseErr := strconv.ParseInt(yearStr, 10, 32)
-		if parseErr != nil {
-			return uuid.Nil, false, apperrors.BadGatewayf("tmdb series %d first air date %q unparseable: %v", tmdbID, tv.FirstAirDate, parseErr).
-				Op("ScannerService.ensureMediaItem")
+		year64, err := strconv.ParseInt(strings.Split(tv.FirstAirDate, "-")[0], 10, 32)
+		if err != nil {
+			return "", 0, apperrors.BadGatewayf("tmdb series %d first air date %q unparseable: %v", tmdbID, tv.FirstAirDate, err).
+				Op("ScannerService.fetchMediaItemMetadata")
 		}
-		year = int32(year64)
+		return tv.Name, int32(year64), nil
 	}
 
-	item, err := s.repo.CreateMediaItem(ctx, repo.CreateMediaItemParams{
-		Type:   library.Type,
-		Title:  title,
-		Year:   &year,
-		TmdbID: &tmdbID,
-	})
-	if err != nil {
-		return uuid.Nil, false, err
-	}
-
-	// Fire async enrichment so metadata is available quickly
-	if s.enrichment != nil {
-		go func() {
-			if err := s.enrichment.EnrichMediaItem(s.ctx, item); err != nil {
-				s.logger.Warn().Err(err).Str("title", item.Title).Msg("scan-time enrichment failed, worker will retry")
-			}
-		}()
-	}
-
-	return item.ID, true, nil
+	return "", 0, apperrors.Internalf("unknown library type %q", library.Type).
+		Op("ScannerService.fetchMediaItemMetadata").
+		NotRetryable()
 }
 
 // processIdentifiedFile creates all DB records for a single identified file.
 // Returns (mediaItemCreated, episodeLookupFailed, error).
 func (s *ScannerService) processIdentifiedFile(ctx context.Context, library model.Library, f identifiedFile) (bool, bool, error) {
-	mediaItemID, created, err := s.ensureMediaItem(ctx, library, f.TmdbID)
+	existing, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, f.TmdbID, library.Type)
+	needsCreateItem := apperrors.IsNotFound(err)
+	if err != nil && !needsCreateItem {
+		return false, false, err
+	}
+
+	var createItemParams repo.CreateMediaItemParams
+	if needsCreateItem {
+		title, year, perr := s.fetchMediaItemMetadata(ctx, library, f.TmdbID)
+		if perr != nil {
+			return false, false, perr
+		}
+		tmdb := f.TmdbID
+		createItemParams = repo.CreateMediaItemParams{
+			Type:   library.Type,
+			Title:  title,
+			Year:   &year,
+			TmdbID: &tmdb,
+		}
+	}
+
+	episodeTitle := ""
+	if f.Season != nil && f.Episode != nil {
+		ep, eerr := s.tmdb.GetEpisodeDetails(ctx, f.TmdbID, int64(*f.Season), int64(*f.Episode))
+		if eerr != nil {
+			s.logger.Error().Err(eerr).Str("path", f.AbsPath).Msg("Error getting episode details from TMDB")
+			return false, true, nil // skip file, continue
+		}
+		episodeTitle = ep.Name
+	}
+
+	var (
+		itemCreated bool
+		createdItem model.MediaItem
+	)
+	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
+		mediaItemID := existing.ID
+		if needsCreateItem {
+			item, cerr := r.CreateMediaItem(ctx, createItemParams)
+			if cerr != nil {
+				return cerr
+			}
+			mediaItemID = item.ID
+			createdItem = item
+			itemCreated = true
+		}
+
+		var episodeIDPtr *uuid.UUID
+		if f.Season != nil {
+			season, serr := r.UpsertSeason(ctx, repo.UpsertSeasonParams{
+				MediaItemID:  mediaItemID,
+				SeasonNumber: *f.Season,
+			})
+			if serr != nil {
+				return serr
+			}
+			if f.Episode != nil {
+				episode, eerr := r.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
+					SeasonID:      season.ID,
+					EpisodeNumber: *f.Episode,
+					Title:         &episodeTitle,
+				})
+				if eerr != nil {
+					return eerr
+				}
+				eid := episode.ID
+				episodeIDPtr = &eid
+			}
+		}
+
+		mf, ferr := r.CreateMediaFile(ctx, repo.CreateMediaFileParams{
+			LibraryID:   library.ID,
+			MediaItemID: mediaItemID,
+			EpisodeID:   episodeIDPtr,
+			Path:        f.RelPath,
+		})
+		if ferr != nil {
+			return ferr
+		}
+
+		if _, serr := r.UpsertMediaFileState(ctx, repo.UpsertMediaFileStateParams{
+			MediaFileID: mf.ID,
+			FileExists:  true,
+			FileSize:    f.FileSize,
+		}); serr != nil {
+			return serr
+		}
+
+		_, ierr := r.CreateMediaFileImport(ctx, repo.CreateMediaFileImportParams{
+			MediaFileID: mf.ID,
+			Method:      "scan",
+			DestPath:    f.AbsPath,
+			Success:     true,
+		})
+		return ierr
+	})
 	if err != nil {
 		return false, false, err
 	}
 
-	episodeID, err := s.ensureSeasonAndEpisode(ctx, mediaItemID, f.TmdbID, f.Season, f.Episode, f.AbsPath)
-	if err != nil {
-		return created, true, nil // skip file, continue
+	// Fire enrichment after commit so the goroutine reads a committed row.
+	if itemCreated && s.enrichment != nil {
+		go func() {
+			if err := s.enrichment.EnrichMediaItem(s.ctx, createdItem); err != nil {
+				s.logger.Warn().Err(err).Str("title", createdItem.Title).Msg("scan-time enrichment failed, worker will retry")
+			}
+		}()
 	}
 
-	mf, err := s.repo.CreateMediaFile(ctx, repo.CreateMediaFileParams{
-		LibraryID:   library.ID,
-		MediaItemID: mediaItemID,
-		EpisodeID:   episodeID,
-		Path:        f.RelPath,
-	})
-	if err != nil {
-		return created, false, err
-	}
-
-	if _, err := s.repo.UpsertMediaFileState(ctx, repo.UpsertMediaFileStateParams{
-		MediaFileID: mf.ID,
-		FileExists:  true,
-		FileSize:    f.FileSize,
-	}); err != nil {
-		s.logger.Warn().Err(err).Msg("Failed to create media file state")
-	}
-
-	if _, err := s.repo.CreateMediaFileImport(ctx, repo.CreateMediaFileImportParams{
-		MediaFileID: mf.ID,
-		Method:      "scan",
-		DestPath:    f.AbsPath,
-		Success:     true,
-	}); err != nil {
-		s.logger.Warn().Err(err).Msg("Failed to record import history")
-	}
-
-	return created, false, nil
+	return itemCreated, false, nil
 }
 
 // processWithGuessit handles files that couldn't be identified by embedded IDs.
