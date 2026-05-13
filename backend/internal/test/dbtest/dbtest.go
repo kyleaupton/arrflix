@@ -1,5 +1,6 @@
 // Package dbtest provides a Postgres testcontainer with template-DB-clone
-// isolation for integration tests.
+// isolation for integration tests. Each dbtest.New(t) returns a fresh
+// database cloned from a migrated template.
 //
 // Typical usage from TestMain:
 //
@@ -12,13 +13,6 @@
 //	    _ = dbtest.Stop(ctx)
 //	    os.Exit(code)
 //	}
-//
-// Per-test:
-//
-//	pool := dbtest.New(t)
-//
-// Each call to New creates a fresh database cloned from a migrated template,
-// so tests get an isolated, fully-migrated schema with no cross-test state.
 package dbtest
 
 import (
@@ -36,22 +30,18 @@ import (
 )
 
 const (
-	// templateDBName is the name of the migrated template database that
-	// per-test databases are cloned from.
 	templateDBName = "arrflix_template"
 
 	// adminDBName is the bootstrap database used to run CREATE/DROP DATABASE
-	// against. Cannot be the same as the template (you can't drop or use a
+	// against — must differ from the template (you can't drop or use a
 	// template DB while connected to it).
 	adminDBName = "postgres"
 )
 
-// harness holds the singleton testcontainer state shared by all tests in a
-// process. It is initialised by Start and consumed by New.
 type harness struct {
 	container   *tcpostgres.PostgresContainer
-	adminDSN    string // DSN pointing at the admin DB ("postgres")
-	templateDSN string // DSN pointing at arrflix_template (for reference only)
+	adminDSN    string
+	templateDSN string
 	counter     atomic.Uint64
 }
 
@@ -88,7 +78,6 @@ func Start(ctx context.Context) error {
 		return fmt.Errorf("dbtest: connection string: %w", err)
 	}
 
-	// Create the template database.
 	createStmt := fmt.Sprintf("CREATE DATABASE %s", quoteIdent(templateDBName))
 	if err := execAdmin(ctx, adminDSN, createStmt); err != nil {
 		_ = ctr.Terminate(ctx)
@@ -127,11 +116,9 @@ func Stop(ctx context.Context) error {
 	return err
 }
 
-// New creates a fresh per-test database by cloning the migrated template and
-// returns a connected pgxpool.Pool against it. A t.Cleanup is registered to
-// close the pool and drop the database when the test finishes.
-//
-// If Start has not been called, the test is failed immediately.
+// New creates a fresh per-test database by cloning the migrated template
+// and returns a connected pgxpool.Pool. Pool close + database drop are
+// registered via t.Cleanup.
 func New(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	hMu.Lock()

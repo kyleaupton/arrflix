@@ -11,9 +11,6 @@ import (
 	"github.com/kyleaupton/arrflix/internal/test/testapp"
 )
 
-// TestApp_Health exercises the /health public path. Validates that the
-// httptest server is up, chi routing is wired, and setup-mode middleware
-// does not interfere with public routes.
 func TestApp_Health(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -22,9 +19,8 @@ func TestApp_Health(t *testing.T) {
 	app.GET(t, "/health", nil, http.StatusOK)
 }
 
-// TestApp_Unauthenticated hits a protected route with no Authorization header
-// and asserts the JWT middleware emits 401. We bypass app.GET because it
-// always sets the Bearer header.
+// TestApp_Unauthenticated bypasses app.GET (which always sets the Bearer
+// header) to hit a protected route with no Authorization and assert 401.
 func TestApp_Unauthenticated(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -41,10 +37,6 @@ func TestApp_Unauthenticated(t *testing.T) {
 	}
 }
 
-// TestApp_AuthenticatedListLibraries hits a protected route with the
-// pre-issued admin token. Validates the full chain: route registration,
-// auth middleware, setup-mode passthrough (system is initialized), handler
-// execution, and repo round-trip returning an empty list.
 func TestApp_AuthenticatedListLibraries(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)

@@ -17,9 +17,7 @@ import (
 )
 
 // TestMedia_Search exercises GET /api/v1/search end-to-end against a fake
-// TMDB: route registration, auth, TMDB-client wiring through the injected
-// fake, and the model.SearchResponse wire shape on a single-movie hit
-// against an empty library (IsInLibrary=false).
+// TMDB with a single movie hit and an empty library (IsInLibrary=false).
 func TestMedia_Search(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -58,9 +56,9 @@ func TestMedia_Search(t *testing.T) {
 	}
 }
 
-// TestMedia_SearchValidation_EmptyQuery sends /api/v1/search without the
-// required `q` parameter. Huma's tag-level required:"true" + minLength:"1"
-// catches this before MediaService runs, so no TMDB wiring is needed.
+// TestMedia_SearchValidation_EmptyQuery asserts huma's tag-level
+// required:"true" + minLength:"1" rejects a missing `q` before the
+// service runs (no TMDB wiring needed).
 func TestMedia_SearchValidation_EmptyQuery(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -75,10 +73,8 @@ func TestMedia_SearchValidation_EmptyQuery(t *testing.T) {
 	}
 }
 
-// TestMedia_Search_NoResults proves the "TMDB returned no hits for this
-// query" path round-trips end-to-end: empty results array (not null), zero
-// total, query echoed back. Passing zero Hits to OnSearchMulti is the
-// explicit way to express this shape — see tmdbtest.OnSearchMulti's docs.
+// TestMedia_Search_NoResults asserts the empty-results wire shape: empty
+// array (not null), zero total, query echoed back.
 func TestMedia_Search_NoResults(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -104,27 +100,18 @@ func TestMedia_Search_NoResults(t *testing.T) {
 	}
 }
 
-// In-library enrichment (the IsInLibrary=true case in MediaService.Search)
-// is deliberately NOT covered here. That branch is a one-line map lookup
-// whose precondition — a media_item row — is produced in production by the
-// import pipeline, not by any public HTTP endpoint. Seeding the row via
-// app.Repo or raw SQL would bypass the wire contract this suite is meant
-// to exercise; faithfully driving the import flow would be enormous setup
-// for one map lookup. The branch belongs in a unit test of MediaService
-// with a faked repo. See CLAUDE.md "Scope: integration vs unit tests".
+// IsInLibrary=true is not covered here: its precondition (a media_item row)
+// is produced by the import pipeline, not any public HTTP endpoint. Belongs
+// in a unit test against MediaService. See CLAUDE.md "Scope".
 
-// TestMedia_Search_MixedTypes registers one movie, one series, and one
-// person hit and asserts the service correctly switches on media_type to
-// populate per-type fields:
+// TestMedia_Search_MixedTypes asserts the service switches on media_type
+// to populate per-type fields correctly:
 //   - Title: TMDB's `title` (movie) vs `name` (tv, person)
 //   - Year: parsed from `release_date` (movie) vs `first_air_date` (tv);
 //     persons have no year on the wire.
 //   - PosterPath: TMDB's `poster_path` (movie/tv) vs `profile_path` (person)
 //
-// One test catches the whole class of "I refactored the switch and broke
-// one of the branches" regression. Results are indexed by ID rather than
-// position so ordering — which is TMDB's, not ours — is intentionally not
-// part of the contract.
+// Results are indexed by ID — ordering is TMDB's, not part of the contract.
 func TestMedia_Search_MixedTypes(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -198,17 +185,10 @@ func TestMedia_Search_MixedTypes(t *testing.T) {
 	}
 }
 
-// TestMedia_GetMovie_Happy proves the /api/v1/movie/{id} route end-to-end:
-// path-param binding (TMDB id), TMDB-client wiring through the injected
-// fake, and the model.MovieDetail wire shape on a success response.
-//
-// GetMovieDetail calls four TMDB endpoints — main details plus credits,
-// videos, and recommendations. The latter three are "graceful" in the
-// service (errors are logged and swallowed), but tmdbtest's dispatch fails
-// loudly on any unregistered route, so the test registers all four. The
-// graceful endpoints get zero-value responses; this test is about the wire
-// for the main payload, not about credits/videos/recs transformation
-// (those are pure mapping logic and belong in a unit test).
+// TestMedia_GetMovie_Happy covers the wire shape of /api/v1/movie/{id}.
+// All four upstream TMDB endpoints are registered — credits/videos/recs are
+// "graceful" in the service but tmdbtest fails loudly on unregistered
+// routes. Sub-payload transformation is a unit-test concern.
 func TestMedia_GetMovie_Happy(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -252,14 +232,9 @@ func TestMedia_GetMovie_Happy(t *testing.T) {
 		t.Errorf("Files = nil, want empty slice (wire shape must be [], not null)")
 	}
 
-	// Empty-data wire shape for the three "graceful" sub-fetches. The
-	// asymmetry here is real and worth pinning: transformMovieCredits
-	// (media.go:224) always returns a non-nil *Credits, so Credits survives
-	// JSON encoding with an empty Cast. transformVideos and
-	// transformMovieRecommendations return empty slices, which omitempty
-	// elides on the wire, so Videos and Recommendations decode as nil. If
-	// the asymmetry is ever intentionally normalized (Credits also omitted
-	// when empty, or all three always emitted), update these assertions.
+	// Wire-shape asymmetry: transformMovieCredits always returns &Credits{},
+	// so Credits survives encoding empty. Videos/Recommendations are slices
+	// that omitempty elides to nil.
 	if resp.Credits == nil {
 		t.Errorf("Credits = nil, want non-nil (transformMovieCredits returns &Credits{} even for empty input)")
 	} else if len(resp.Credits.Cast) != 0 {
@@ -273,16 +248,9 @@ func TestMedia_GetMovie_Happy(t *testing.T) {
 	}
 }
 
-// TestMedia_GetSeries_Happy is the series analogue of GetMovie_Happy. The
-// main details return zero seasons on purpose — the per-season /tv/{id}/
-// season/{n} fetches loop over tmdbDetails.Seasons, so an empty Seasons
-// slice keeps this test from needing OnTVSeasonDetails registrations.
-// Season-detail wire coverage can come later if/when there's a reason to
-// exercise it end-to-end (vs. unit-testing the season mapping in service).
-//
-// Note on Title: the wire field is `title` for both movies and series, but
-// for series it's sourced from TMDB's `name`. The mapping happens in the
-// service (media.go:680).
+// TestMedia_GetSeries_Happy is the series analogue of GetMovie_Happy.
+// Returns zero seasons on purpose so no OnTVSeasonDetails registrations
+// are needed. Title is sourced from TMDB's `name` (mapped in the service).
 func TestMedia_GetSeries_Happy(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -323,9 +291,6 @@ func TestMedia_GetSeries_Happy(t *testing.T) {
 	}
 }
 
-// TestMedia_GetPerson_Happy proves /api/v1/person/{id} end-to-end. Simplest
-// of the detail endpoints — single TMDB call, no graceful sub-fetches, no
-// DB cross-reference.
 func TestMedia_GetPerson_Happy(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -357,13 +322,9 @@ func TestMedia_GetPerson_Happy(t *testing.T) {
 	}
 }
 
-// TestMedia_ListLibrary_Empty hits /api/v1/library against a fresh DB with
-// no media_item rows. Asserts the pagination envelope wire shape: empty
-// Data array (not null), Pagination metadata reflecting the params we sent
-// and a zero total. The populated case (media_item rows in the DB) is
-// deliberately not covered here — see CLAUDE.md "Scope: integration vs
-// unit tests" for why state preconditions produced by internal pipelines
-// belong in unit tests, not integration tests.
+// TestMedia_ListLibrary_Empty asserts the pagination envelope wire shape
+// against an empty library. The populated case belongs in a unit test —
+// see CLAUDE.md "Scope".
 func TestMedia_ListLibrary_Empty(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -392,14 +353,9 @@ func TestMedia_ListLibrary_Empty(t *testing.T) {
 	}
 }
 
-// TestMedia_GetMovie_BadPathID sends id=0 to /api/v1/movie/{id}, which the
-// handler's tag-level minimum:"1" rejects before MediaService runs. This
-// is huma's path-param binding doing its job — same wire shape as the
-// existing query-param validation test (TestMedia_SearchValidation_EmptyQuery),
-// at a different binding location (path.id). One test is enough: the same
-// minimum:"1" constraint applies on the series and person detail endpoints
-// too, and exercising it on one route proves huma's tag honoring works
-// for path params.
+// TestMedia_GetMovie_BadPathID asserts huma's tag-level minimum:"1"
+// rejects id=0 at the path-param binding (one test covers the constraint
+// across all detail endpoints).
 func TestMedia_GetMovie_BadPathID(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)

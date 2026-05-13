@@ -9,12 +9,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/test/tmdbtest"
 )
 
-// TestHarness_Smoke exercises both test harnesses end-to-end:
-//   - dbtest spins a Postgres container, runs migrations, and clones a fresh
-//     per-test database. We verify the schema is live by querying the
-//     `library` table from migration 0004.
-//   - tmdbtest serves a fake TMDB and we round-trip a search through the
-//     real golang-tmdb client.
+// TestHarness_Smoke exercises both dbtest and tmdbtest end-to-end.
 func TestHarness_Smoke(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)

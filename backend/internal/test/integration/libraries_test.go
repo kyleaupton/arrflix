@@ -14,10 +14,8 @@ import (
 	"github.com/kyleaupton/arrflix/internal/test/testapp"
 )
 
-// makeCreateBody builds a valid create/update body using the wire field names
-// (camelCase) the handler expects. Request bodies stay as map[string]any so
-// tests can express shapes the handler's typed input struct couldn't — empty
-// fields, wrong types, extras. See CLAUDE.md in this package.
+// makeCreateBody builds a valid create/update body. See CLAUDE.md for why
+// request bodies stay as map[string]any.
 func makeCreateBody(name, typ, rootPath string, enabled, isDefault bool) map[string]any {
 	return map[string]any{
 		"name":     name,
@@ -41,8 +39,6 @@ func findFieldError(t *testing.T, pd apperrors.ProblemDetails, loc string) apper
 	return apperrors.FieldError{} // unreachable
 }
 
-// TestLibraries_CreateThenGet drives a full create + get round-trip and
-// verifies the persisted fields exactly match the create payload.
 func TestLibraries_CreateThenGet(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -84,8 +80,6 @@ func TestLibraries_CreateThenGet(t *testing.T) {
 	}
 }
 
-// TestLibraries_CreateThenList verifies the list endpoint returns the
-// just-created library. The handler returns a flat []model.Library array.
 func TestLibraries_CreateThenList(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -111,9 +105,8 @@ func TestLibraries_CreateThenList(t *testing.T) {
 	}
 }
 
-// TestLibraries_CreateValidation_EmptyName posts an empty name and asserts the
-// 422 response includes a body.name field error. The tag-level minLength:"1"
-// on the input struct is what catches this, before the service runs.
+// TestLibraries_CreateValidation_EmptyName asserts huma's tag-level
+// minLength:"1" catches an empty name before the service runs.
 func TestLibraries_CreateValidation_EmptyName(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -131,9 +124,8 @@ func TestLibraries_CreateValidation_EmptyName(t *testing.T) {
 	}
 }
 
-// TestLibraries_CreateValidation_BadType posts an unrecognized type value and
-// asserts the 422 response includes a body.type field error. The tag-level
-// enum:"movie,series" constraint catches this before the service runs.
+// TestLibraries_CreateValidation_BadType asserts huma's tag-level
+// enum:"movie,series" catches a bogus type before the service runs.
 func TestLibraries_CreateValidation_BadType(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -151,8 +143,6 @@ func TestLibraries_CreateValidation_BadType(t *testing.T) {
 	}
 }
 
-// TestLibraries_GetNotFound asks for a random UUID that doesn't exist and
-// asserts the 404 + problem-details NotFound shape.
 func TestLibraries_GetNotFound(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -170,8 +160,6 @@ func TestLibraries_GetNotFound(t *testing.T) {
 	}
 }
 
-// TestLibraries_UpdateThenGet creates a library, PUTs an updated payload, and
-// verifies the changes were persisted by reading the row back.
 func TestLibraries_UpdateThenGet(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)

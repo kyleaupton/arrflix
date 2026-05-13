@@ -85,10 +85,7 @@ func (s Series) asSearchResult() map[string]any {
 	}
 }
 
-// Person builds a media_type="person" search hit. The Search service uses
-// `name` for the result Title and `profile_path` (not `poster_path`) for
-// the PosterPath, which is the only place that distinction matters on the
-// wire — a Person hit is the way to exercise that branch end-to-end.
+// Person builds a media_type="person" search hit.
 type Person struct {
 	ID          int64
 	Name        string
@@ -105,7 +102,10 @@ func (p Person) asSearchResult() map[string]any {
 }
 
 // Server is a fake TMDB HTTP server. Routes are registered through the On*
-// methods; unregistered calls fail the parent test.
+// methods; any unregistered call fails the parent test via t.Errorf and
+// returns HTTP 501. Service code that treats a sub-fetch as "graceful"
+// (logs and continues on error) still needs its route registered here —
+// a zero-value response is fine for those cases.
 type Server struct {
 	t      *testing.T
 	srv    *httptest.Server
@@ -115,10 +115,7 @@ type Server struct {
 
 // New starts a fake TMDB server and returns it along with a real
 // *tmdb.Client whose outbound requests are routed to that server via a
-// per-client http.Transport. The package-level tmdb.baseURL global is left
-// untouched, so multiple New calls from parallel tests stay isolated.
-//
-// A t.Cleanup is registered to shut the server down when the test ends.
+// per-client http.Transport. Cleanup is automatic via t.Cleanup.
 func New(t *testing.T) (*Server, *tmdb.Client) {
 	t.Helper()
 	s := &Server{
@@ -145,25 +142,15 @@ func New(t *testing.T) (*Server, *tmdb.Client) {
 	return s, client
 }
 
-// URL returns the base URL of the fake server for callers that want to wire
-// up a different TMDB client (e.g. a service constructed directly with
-// SetCustomBaseURL).
+// URL returns the base URL of the fake server.
 func (s *Server) URL() string {
 	return s.srv.URL
 }
 
 // OnSearchMulti registers a handler for GET /search/multi that responds with
 // the provided hits when the `query` URL parameter matches expectedQuery.
-// Passing zero hits is the explicit way to express "TMDB returned no results
-// for this query" — the handler still responds 200 with an empty results
-// array.
-//
-// A mismatched query fails the test loudly: either the test author registered
-// the wrong query or the production code is computing the query string
-// differently than expected, and both are bugs worth surfacing immediately.
-// To exercise multiple distinct queries in one test, this would need to grow
-// into a map[query][]Hit; today only one expectedQuery is supported and a
-// second OnSearchMulti call overwrites the first.
+// Passing zero hits expresses "TMDB returned no results"; a mismatched query
+// fails the test. Only one expectedQuery is supported per call.
 func (s *Server) OnSearchMulti(expectedQuery string, hits ...Hit) {
 	results := make([]map[string]any, 0, len(hits))
 	for _, h := range hits {
@@ -186,69 +173,48 @@ func (s *Server) OnSearchMulti(expectedQuery string, hits ...Hit) {
 	})
 }
 
-// OnMovieDetails registers a handler for GET /movie/<id>. Pass a zero-value
-// MovieDetails to satisfy MediaService.GetMovieDetail's main fetch without
-// asserting on the upstream payload — the appended sub-trees
-// (MovieReleaseDatesAppend, MovieWatchProvidersAppend) are nil by default,
-// which the service handles gracefully.
 func (s *Server) OnMovieDetails(id int64, details tmdb.MovieDetails) {
 	s.register(http.MethodGet, fmt.Sprintf("/movie/%d", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, details)
 	})
 }
 
-// OnMovieCredits registers a handler for GET /movie/<id>/credits. The
-// service treats credits as optional (logs + continues on error), but the
-// unregistered-route check in dispatch still fires loudly — every test that
-// exercises GetMovieDetail must register this even if it doesn't care
-// about credits. A zero-value MovieCredits is fine for that case.
 func (s *Server) OnMovieCredits(id int64, credits tmdb.MovieCredits) {
 	s.register(http.MethodGet, fmt.Sprintf("/movie/%d/credits", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, credits)
 	})
 }
 
-// OnMovieVideos registers a handler for GET /movie/<id>/videos. Same
-// graceful-but-must-register rule as OnMovieCredits.
 func (s *Server) OnMovieVideos(id int64, videos tmdb.VideoResults) {
 	s.register(http.MethodGet, fmt.Sprintf("/movie/%d/videos", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, videos)
 	})
 }
 
-// OnMovieRecommendations registers a handler for GET
-// /movie/<id>/recommendations. Same graceful-but-must-register rule as
-// OnMovieCredits.
 func (s *Server) OnMovieRecommendations(id int64, recs tmdb.MovieRecommendations) {
 	s.register(http.MethodGet, fmt.Sprintf("/movie/%d/recommendations", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, recs)
 	})
 }
 
-// OnTVDetails registers a handler for GET /tv/<id>.
 func (s *Server) OnTVDetails(id int64, details tmdb.TVDetails) {
 	s.register(http.MethodGet, fmt.Sprintf("/tv/%d", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, details)
 	})
 }
 
-// OnTVCredits registers a handler for GET /tv/<id>/credits. Same
-// graceful-but-must-register rule as OnMovieCredits.
 func (s *Server) OnTVCredits(id int64, credits tmdb.TVCredits) {
 	s.register(http.MethodGet, fmt.Sprintf("/tv/%d/credits", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, credits)
 	})
 }
 
-// OnTVVideos registers a handler for GET /tv/<id>/videos. Same
-// graceful-but-must-register rule as OnMovieCredits.
 func (s *Server) OnTVVideos(id int64, videos tmdb.VideoResults) {
 	s.register(http.MethodGet, fmt.Sprintf("/tv/%d/videos", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, videos)
 	})
 }
 
-// OnPersonDetails registers a handler for GET /person/<id>.
 func (s *Server) OnPersonDetails(id int64, details tmdb.PersonDetails) {
 	s.register(http.MethodGet, fmt.Sprintf("/person/%d", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, details)
