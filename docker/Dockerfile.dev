@@ -32,6 +32,10 @@ RUN curl -fsSL https://raw.githubusercontent.com/cosmtrek/air/master/install.sh 
 
 ENV PATH="/usr/local/go/bin:${PATH}"
 
+# Install Go dev tools. golangci-lint matches the version used in CI.
+RUN GOBIN=/usr/local/bin go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 && \
+    GOBIN=/usr/local/bin go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+
 # Install Node.js
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - && \
   apt-get update && \

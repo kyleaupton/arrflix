@@ -9,8 +9,8 @@ services:
       APP_ENV: dev
     ports:
       - "8484:8484" # Application (required)
-      - "9696:9696" # Prowlarr (for debugging)
-      - "5432:5432" # Postgres (for debugging)
+      # - "9696:9696" # Prowlarr (for debugging)
+      # - "5432:5432" # Postgres (for debugging)
     volumes:
       - ${MEDIA_LIBRARIES}:/data
       - arrflix_pg_data:/var/lib/postgresql/data
@@ -19,6 +19,10 @@ services:
       - ./web:/app/web
       - /app/web/node_modules # container manages its own Linux-native node_modules
       - ./backend:/app/backend
+
+      # Docker socket for testcontainers-go (integration tests spin up sibling
+      # postgres containers via the host docker daemon)
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   arrflix_pg_data:
