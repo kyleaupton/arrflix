@@ -1,0 +1,90 @@
+name: Frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'backend/internal/http/docs/**'
+      - '.github/workflows/frontend.yml'
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'backend/internal/http/docs/**'
+      - '.github/workflows/frontend.yml'
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: ESLint
+        run: npx eslint .
+
+      - name: Prettier
+        run: npx prettier --check src/
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  client-drift:
+    name: API client drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Regenerate API client
+        run: npm run openapi-ts
+
+      - name: Check for drift
+        run: |
+          if ! git diff --exit-code -- src/client/; then
+            echo "::error::Generated API client is out of date. Run 'npm run openapi-ts' from web/ and commit src/client/."
+            exit 1
+          fi
