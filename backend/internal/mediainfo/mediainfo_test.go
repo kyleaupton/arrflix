@@ -260,15 +260,15 @@ func TestExtractFields(t *testing.T) {
 					FileSize: "4294967296",
 				},
 				{
-					Type:       "Video",
-					Format:     "AVC",
-					Width:      "1920",
-					Height:     "1080",
-					BitDepth:   "10",
-					BitRate:    "8000000",
-					FrameRate:  "23.976",
-					ScanType:   "Progressive",
-					HDRFormat:  "HDR10",
+					Type:      "Video",
+					Format:    "AVC",
+					Width:     "1920",
+					Height:    "1080",
+					BitDepth:  "10",
+					BitRate:   "8000000",
+					FrameRate: "23.976",
+					ScanType:  "Progressive",
+					HDRFormat: "HDR10",
 				},
 				{
 					Type:     "Audio",
@@ -360,4 +360,3 @@ func TestExtractFields(t *testing.T) {
 		t.Errorf("Subtitles[0] = %q, want en", fields.Subtitles[0])
 	}
 }
-

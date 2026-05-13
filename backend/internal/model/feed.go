@@ -57,9 +57,9 @@ type RowDefinition struct {
 	Title          string          `json:"title"`
 	Subtitle       string          `json:"subtitle,omitempty"`
 	ContentKind    ContentKind     `json:"contentKind"`
-	Sources        []SourceConfig  `json:"sources"`     // can compose multiple sources
-	TargetSize     int             `json:"targetSize"`  // final items in row
-	FetchSize      int             `json:"fetchSize"`   // over-fetch for dedupe headroom
+	Sources        []SourceConfig  `json:"sources"`    // can compose multiple sources
+	TargetSize     int             `json:"targetSize"` // final items in row
+	FetchSize      int             `json:"fetchSize"`  // over-fetch for dedupe headroom
 	Ranking        RankingStrategy `json:"ranking"`
 	Diversity      *DiversityRules `json:"diversity,omitempty"`
 	RequiresSignal bool            `json:"requiresSignal"` // skip if no user signals

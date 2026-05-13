@@ -124,7 +124,7 @@ type PolicyEvaluation struct {
 // RuleInfo represents information about a rule
 type RuleInfo struct {
 	LeftOperand        string `json:"leftOperand"`
-	LeftResolvedValue  any    `json:"leftResolvedValue,omitempty"`  // Resolved value of left operand
+	LeftResolvedValue  any    `json:"leftResolvedValue,omitempty"` // Resolved value of left operand
 	Operator           string `json:"operator"`
 	RightOperand       string `json:"rightOperand"`
 	RightResolvedValue any    `json:"rightResolvedValue,omitempty"` // Resolved value of right operand

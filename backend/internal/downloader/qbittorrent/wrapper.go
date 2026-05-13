@@ -31,7 +31,7 @@ func NewQBittorrentClient(instanceID downloader.InstanceID, baseURL, username, p
 	}
 }
 
-func (c *qBittorrentClient) Type() downloader.Type       { return downloader.TypeQbittorrent }
+func (c *qBittorrentClient) Type() downloader.Type             { return downloader.TypeQbittorrent }
 func (c *qBittorrentClient) InstanceID() downloader.InstanceID { return c.instanceID }
 
 // Test tests the connection to qBittorrent.

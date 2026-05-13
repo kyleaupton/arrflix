@@ -46,8 +46,8 @@ type harness struct {
 }
 
 var (
-	h    *harness
-	hMu  sync.Mutex
+	h   *harness
+	hMu sync.Mutex
 )
 
 // Start spins up a postgres:16-alpine container, creates a template database

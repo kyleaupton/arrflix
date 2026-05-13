@@ -373,4 +373,3 @@ func (r *Repository) UpsertIdentity(ctx context.Context, params UpsertIdentityPa
 	}
 	return toModelIdentity(ident), nil
 }
-

@@ -149,10 +149,10 @@ func TestFromPgMapsConstraintCodes(t *testing.T) {
 		code     string
 		wantKind apperrors.Kind
 	}{
-		{"23505", apperrors.KindConflict},   // unique_violation
-		{"23503", apperrors.KindConflict},   // foreign_key_violation
-		{"23502", apperrors.KindValidation}, // not_null_violation
-		{"23514", apperrors.KindValidation}, // check_violation
+		{"23505", apperrors.KindConflict},    // unique_violation
+		{"23503", apperrors.KindConflict},    // foreign_key_violation
+		{"23502", apperrors.KindValidation},  // not_null_violation
+		{"23514", apperrors.KindValidation},  // check_violation
 		{"42P01", apperrors.KindUnspecified}, // undefined_table → falls through (500)
 	}
 	for _, c := range cases {

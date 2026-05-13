@@ -31,15 +31,15 @@ func NewDownloaders(s *service.Services, manager *downloader.Manager) *Downloade
 // ----- Shared body shape -----
 
 type downloaderWriteBody struct {
-	Name       string                 `json:"name" required:"true" minLength:"1" doc:"Display name"`
-	Type       string                 `json:"type" required:"true" minLength:"1" doc:"Downloader implementation type (e.g. qbittorrent, sabnzbd)"`
-	Protocol   string                 `json:"protocol" required:"true" enum:"torrent,usenet" doc:"Transport protocol"`
-	URL        string                 `json:"url" required:"true" minLength:"1" doc:"Base URL of the downloader"`
-	Username   *string                `json:"username,omitempty" doc:"Optional username"`
-	Password   *string                `json:"password,omitempty" doc:"Optional password; on Update, empty string preserves existing"`
+	Name       string         `json:"name" required:"true" minLength:"1" doc:"Display name"`
+	Type       string         `json:"type" required:"true" minLength:"1" doc:"Downloader implementation type (e.g. qbittorrent, sabnzbd)"`
+	Protocol   string         `json:"protocol" required:"true" enum:"torrent,usenet" doc:"Transport protocol"`
+	URL        string         `json:"url" required:"true" minLength:"1" doc:"Base URL of the downloader"`
+	Username   *string        `json:"username,omitempty" doc:"Optional username"`
+	Password   *string        `json:"password,omitempty" doc:"Optional password; on Update, empty string preserves existing"`
 	ConfigJSON map[string]any `json:"configJson,omitempty" doc:"Implementation-specific config blob"`
-	Enabled    bool                   `json:"enabled" doc:"Whether the downloader is active"`
-	Default    bool                   `json:"default" doc:"Whether this is the default for its protocol"`
+	Enabled    bool           `json:"enabled" doc:"Whether the downloader is active"`
+	Default    bool           `json:"default" doc:"Whether this is the default for its protocol"`
 }
 
 // ----- List -----
@@ -237,10 +237,10 @@ func (h *Downloaders) Test(ctx context.Context, input *DownloadersTestInput) (*D
 // ----- TestConfig -----
 
 type DownloadersTestConfigBody struct {
-	Type       string                 `json:"type" required:"true" minLength:"1" doc:"Downloader implementation type"`
-	URL        string                 `json:"url" required:"true" minLength:"1" doc:"Base URL"`
-	Username   *string                `json:"username,omitempty" doc:"Optional username"`
-	Password   *string                `json:"password,omitempty" doc:"Optional password"`
+	Type       string         `json:"type" required:"true" minLength:"1" doc:"Downloader implementation type"`
+	URL        string         `json:"url" required:"true" minLength:"1" doc:"Base URL"`
+	Username   *string        `json:"username,omitempty" doc:"Optional username"`
+	Password   *string        `json:"password,omitempty" doc:"Optional password"`
 	ConfigJSON map[string]any `json:"configJson,omitempty" doc:"Implementation-specific config blob"`
 }
 

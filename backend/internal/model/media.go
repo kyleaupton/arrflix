@@ -1,16 +1,16 @@
 package model
 
 type MovieRail struct {
-	TmdbID       int64   `json:"tmdbId"`
-	Title        string  `json:"title"`
-	Overview     string  `json:"overview"`
-	PosterPath   string  `json:"posterPath"`
-	ReleaseDate  string  `json:"releaseDate"`
-	Year         *int32  `json:"year,omitempty"`
-	Genres       []int64 `json:"genres,omitempty"`
-	Tagline      string  `json:"tagline,omitempty"`
-	IsInLibrary  bool    `json:"isInLibrary"`
-	IsDownloading bool   `json:"isDownloading"`
+	TmdbID        int64   `json:"tmdbId"`
+	Title         string  `json:"title"`
+	Overview      string  `json:"overview"`
+	PosterPath    string  `json:"posterPath"`
+	ReleaseDate   string  `json:"releaseDate"`
+	Year          *int32  `json:"year,omitempty"`
+	Genres        []int64 `json:"genres,omitempty"`
+	Tagline       string  `json:"tagline,omitempty"`
+	IsInLibrary   bool    `json:"isInLibrary"`
+	IsDownloading bool    `json:"isDownloading"`
 }
 
 type Movie struct {

@@ -64,5 +64,3 @@ func HardlinkOrCopy(src, dst string) (string, error) {
 	}
 	return "copy", nil
 }
-
-

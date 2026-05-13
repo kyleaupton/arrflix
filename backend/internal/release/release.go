@@ -289,9 +289,9 @@ func (qm QualityModel) Version() int {
 
 // FieldInfo represents metadata about an available quality field
 type FieldInfo struct {
-	Name        string                         // Field name (e.g., "Full", "Resolution")
-	Type        string                         // Field type: "string", "bool", "int"
-	Description string                         // Human-readable description
+	Name        string                 // Field name (e.g., "Full", "Resolution")
+	Type        string                 // Field type: "string", "bool", "int"
+	Description string                 // Human-readable description
 	Accessor    func(QualityModel) any // Function to get the field value
 }
 

@@ -32,4 +32,3 @@ type LibraryItem struct {
 	PosterPath string `json:"posterPath,omitempty"`
 	CreatedAt  string `json:"createdAt"`
 }
-

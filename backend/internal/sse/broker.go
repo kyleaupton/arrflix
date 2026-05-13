@@ -67,5 +67,3 @@ func (b *Broker) Publish(ev Event) {
 		}
 	}
 }
-
-

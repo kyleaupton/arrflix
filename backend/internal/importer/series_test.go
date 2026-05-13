@@ -45,4 +45,3 @@ func TestParseSeriesInfo(t *testing.T) {
 		})
 	}
 }
-

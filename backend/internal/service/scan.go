@@ -128,13 +128,13 @@ func (s *ScannerService) StartScan(ctx context.Context, libraryID uuid.UUID) (st
 		})
 
 		s.publishEvent("scan_completed", scanID, libKey, map[string]any{
-			"filesSeen":            stats.FilesSeen,
-			"identifiedByEmbed":    stats.IdentifiedByEmbed,
-			"identifiedByGuessit":  stats.IdentifiedByGuessit,
-			"mediaItemsCreated":    stats.MediaItemsCreated,
-			"unmatchedCount":       stats.UnmatchedCount,
-			"episodeLookupFailed":  stats.EpisodeLookupFailed,
-			"duration":             stats.Duration,
+			"filesSeen":           stats.FilesSeen,
+			"identifiedByEmbed":   stats.IdentifiedByEmbed,
+			"identifiedByGuessit": stats.IdentifiedByGuessit,
+			"mediaItemsCreated":   stats.MediaItemsCreated,
+			"unmatchedCount":      stats.UnmatchedCount,
+			"episodeLookupFailed": stats.EpisodeLookupFailed,
+			"duration":            stats.Duration,
 		})
 	}()
 
@@ -856,4 +856,3 @@ func isExtraFile(path string) bool {
 
 	return false
 }
-

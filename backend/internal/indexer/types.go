@@ -33,12 +33,12 @@ type SearchResult struct {
 	Protocol    string // "torrent" or "usenet"
 
 	// Metadata
-	Size        int64
-	Seeders     *int
-	Leechers    *int
-	Age         int64
-	AgeHours    float64
-	PublishDate time.Time
+	Size         int64
+	Seeders      *int
+	Leechers     *int
+	Age          int64
+	AgeHours     float64
+	PublishDate  time.Time
 	Categories   []string
 	Grabs        int
 	IndexerFlags []string
