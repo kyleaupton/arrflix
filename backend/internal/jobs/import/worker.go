@@ -208,54 +208,52 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 		Str("dest", fullDest).
 		Msg("file imported successfully")
 
-	// Create media file record.
 	var episodeIDPtr *uuid.UUID
 	if task.EpisodeID != uuid.Nil {
 		ep := task.EpisodeID
 		episodeIDPtr = &ep
 	}
 
-	mediaFile, err := w.repo.CreateMediaFile(ctx, repo.CreateMediaFileParams{
-		LibraryID:   task.LibraryID,
-		MediaItemID: task.MediaItemID,
-		EpisodeID:   episodeIDPtr,
-		Path:        destPath,
-	})
-	if err != nil {
-		// File was created but record failed - log but don't fail the task
-		w.log.Error().Err(err).
-			Str("task_id", task.ID.String()).
-			Str("dest", destPath).
-			Msg("failed to create media file record after successful import")
-	}
+	// On tx failure the hardlink is left as an orphan; a future scan picks it up.
+	err = w.repo.InTx(ctx, func(r *repo.Repository) error {
+		mediaFile, ferr := r.CreateMediaFile(ctx, repo.CreateMediaFileParams{
+			LibraryID:   task.LibraryID,
+			MediaItemID: task.MediaItemID,
+			EpisodeID:   episodeIDPtr,
+			Path:        destPath,
+		})
+		if ferr != nil {
+			return ferr
+		}
 
-	// Create file state
-	if mediaFile.ID != uuid.Nil {
 		fileSize := srcInfo.Size()
-		_, _ = w.repo.UpsertMediaFileState(ctx, repo.UpsertMediaFileStateParams{
+		if _, serr := r.UpsertMediaFileState(ctx, repo.UpsertMediaFileStateParams{
 			MediaFileID: mediaFile.ID,
 			FileExists:  true,
 			FileSize:    &fileSize,
+		}); serr != nil {
+			return serr
+		}
+
+		if _, ierr := r.CreateMediaFileImport(ctx, repo.CreateMediaFileImportParams{
+			MediaFileID:  mediaFile.ID,
+			ImportTaskID: task.ID,
+			Method:       method,
+			SourcePath:   &task.SourcePath,
+			DestPath:     destPath,
+			Success:      true,
+			ErrorMessage: nil,
+		}); ierr != nil {
+			return ierr
+		}
+
+		_, terr := r.SetImportTaskCompleted(ctx, repo.SetImportTaskCompletedParams{
+			ID:           task.ID,
+			DestPath:     destPath,
+			ImportMethod: method,
+			MediaFileID:  mediaFile.ID,
 		})
-	}
-
-	// Record import in media_file_import table.
-	_, _ = w.repo.CreateMediaFileImport(ctx, repo.CreateMediaFileImportParams{
-		MediaFileID:  mediaFile.ID,
-		ImportTaskID: task.ID,
-		Method:       method,
-		SourcePath:   &task.SourcePath,
-		DestPath:     destPath,
-		Success:      true,
-		ErrorMessage: nil,
-	})
-
-	// Mark task completed
-	_, err = w.repo.SetImportTaskCompleted(ctx, repo.SetImportTaskCompletedParams{
-		ID:           task.ID,
-		DestPath:     destPath,
-		ImportMethod: method,
-		MediaFileID:  mediaFile.ID,
+		return terr
 	})
 	if err != nil {
 		return err
