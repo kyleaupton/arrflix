@@ -2,8 +2,9 @@
 package state
 
 import (
-	"fmt"
 	"slices"
+
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 )
 
 // DownloadJobStatus represents the status of a download job.
@@ -73,7 +74,9 @@ func (m *DownloadJobMachine) CanTransitionStr(from, to string) bool {
 // MustTransition validates a transition and returns an error if invalid.
 func (m *DownloadJobMachine) MustTransition(from, to DownloadJobStatus) error {
 	if !m.CanTransition(from, to) {
-		return fmt.Errorf("invalid download job transition: %s -> %s", from, to)
+		return apperrors.Internalf("invalid download job transition: %s -> %s", from, to).
+			Op("DownloadJobMachine.MustTransition").
+			NotRetryable()
 	}
 	return nil
 }
@@ -129,7 +132,9 @@ func (m *ImportTaskMachine) CanTransitionStr(from, to string) bool {
 // MustTransition validates a transition and returns an error if invalid.
 func (m *ImportTaskMachine) MustTransition(from, to ImportTaskStatus) error {
 	if !m.CanTransition(from, to) {
-		return fmt.Errorf("invalid import task transition: %s -> %s", from, to)
+		return apperrors.Internalf("invalid import task transition: %s -> %s", from, to).
+			Op("ImportTaskMachine.MustTransition").
+			NotRetryable()
 	}
 	return nil
 }
