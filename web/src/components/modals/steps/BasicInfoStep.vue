@@ -11,7 +11,7 @@ interface Props {
   }
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 
 const emit = defineEmits<{
   'update:formData': [data: Partial<Props['formData']>]

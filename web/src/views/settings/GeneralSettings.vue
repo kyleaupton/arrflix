@@ -56,11 +56,6 @@ watch(siteTitleInput, (v) => {
   siteTitleTimer = setTimeout(() => saveSetting('site.title', v), 500)
 })
 
-const signupStrategy = computed({
-  get: () => String(settings.value['auth.signup_strategy'] ?? 'invite_only'),
-  set: (v: string) => saveSetting('auth.signup_strategy', v),
-})
-
 const tmdbKeyDisplay = computed(() => {
   const val = settings.value['tmdb.api_key']
   if (typeof val === 'string' && val !== '') return val

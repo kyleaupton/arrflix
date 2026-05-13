@@ -379,27 +379,6 @@ function isPartOfSeasonPack(seasonNumber: number): boolean {
   return !!getSeasonPackJob(seasonNumber)
 }
 
-type SeasonStatus = 'available' | 'partial' | 'downloading' | 'importing' | null
-
-function getSeasonStatus(season: SeasonDetail): SeasonStatus {
-  // Check for season pack download first
-  const packJob = getSeasonPackJob(season.seasonNumber)
-  if (packJob) {
-    if (['created', 'enqueued', 'downloading'].includes(packJob.status)) return 'downloading'
-    if (['awaiting_import', 'importing'].includes(packJob.importStatus)) return 'importing'
-  }
-
-  // Check for individual episode downloads
-  if (hasActiveEpisodeDownloads(season)) return 'downloading'
-
-  // Check availability
-  const available = season.episodes?.filter((e) => e.available).length ?? 0
-  const total = season.episodes?.length ?? 0
-  if (available === total && total > 0) return 'available'
-  if (available > 0) return 'partial'
-  return null
-}
-
 // Get progress state for season pack
 function getSeasonProgressState(seasonNumber: number): CircularProgressState {
   const job = getSeasonPackJob(seasonNumber)

@@ -13,7 +13,7 @@ export const movieFilesColumns: TableColumn<FileInfo>[] = [
     label: 'Path',
     sortable: true,
     filterable: true,
-    render: (value: string, row: FileInfo) => {
+    render: (value: string, _row: FileInfo) => {
       const isPredicted = value && value.includes('.{ext}')
 
       if (isPredicted) {
@@ -65,7 +65,7 @@ export const movieFilesColumns: TableColumn<FileInfo>[] = [
     sortable: true,
     filterable: true,
     width: '140px',
-    render: (value: string, row: FileInfo) => {
+    render: (value: string, _row: FileInfo) => {
       const statusColors: Record<string, string> = {
         available: 'bg-green-500 text-white',
         downloading: 'bg-blue-500 text-white',

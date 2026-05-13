@@ -26,6 +26,26 @@ export default defineConfigWithVueTs(
   {
     rules: {
       'vue/multi-word-component-names': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
+      'vue/no-unused-vars': ['error', { ignorePattern: '^_' }],
+    },
+  },
+
+  // shadcn-vue components are vendored templates — relax rules that don't
+  // match their idioms.
+  {
+    files: ['src/components/ui/**/*.{ts,vue}'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      'vue/no-unused-vars': 'off',
     },
   },
 )
