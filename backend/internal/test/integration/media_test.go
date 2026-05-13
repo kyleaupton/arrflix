@@ -17,10 +17,9 @@ import (
 )
 
 // TestMedia_Search exercises GET /api/v1/search end-to-end against a fake
-// TMDB. This is the first test that drives a TMDB call through MediaService
-// (the smoke test only round-trips through a raw *tmdb.Client), so a green
-// result here is the structural proof that service.WithTmdbClient reaches
-// the embedded reference inside MediaService rather than just Services.Tmdb.
+// TMDB: route registration, auth, TMDB-client wiring through the injected
+// fake, and the model.SearchResponse wire shape on a single-movie hit
+// against an empty library (IsInLibrary=false).
 func TestMedia_Search(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -114,11 +113,18 @@ func TestMedia_Search_NoResults(t *testing.T) {
 // for one map lookup. The branch belongs in a unit test of MediaService
 // with a faked repo. See CLAUDE.md "Scope: integration vs unit tests".
 
-// TestMedia_Search_MixedTypes registers one movie and one series hit and
-// asserts the service correctly switches on media_type to populate per-type
-// fields: Title from TMDB's `title` for movies vs `name` for tv, Year from
-// `release_date` vs `first_air_date`. A single test catches the whole class
-// of "I refactored the switch and broke the tv branch" regression.
+// TestMedia_Search_MixedTypes registers one movie, one series, and one
+// person hit and asserts the service correctly switches on media_type to
+// populate per-type fields:
+//   - Title: TMDB's `title` (movie) vs `name` (tv, person)
+//   - Year: parsed from `release_date` (movie) vs `first_air_date` (tv);
+//     persons have no year on the wire.
+//   - PosterPath: TMDB's `poster_path` (movie/tv) vs `profile_path` (person)
+//
+// One test catches the whole class of "I refactored the switch and broke
+// one of the branches" regression. Results are indexed by ID rather than
+// position so ordering — which is TMDB's, not ours — is intentionally not
+// part of the contract.
 func TestMedia_Search_MixedTypes(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -128,16 +134,17 @@ func TestMedia_Search_MixedTypes(t *testing.T) {
 	tmdbSrv.OnSearchMulti("inception",
 		tmdbtest.Movie{ID: 27205, Title: "Inception", ReleaseDate: "2010-07-15"},
 		tmdbtest.Series{ID: 1399, Name: "Game of Thrones", FirstAirDate: "2011-04-17"},
+		tmdbtest.Person{ID: 287, Name: "Brad Pitt", ProfilePath: "/brad.jpg"},
 	)
 
 	var resp model.SearchResponse
 	app.GET(t, "/api/v1/search?q=inception", &resp, http.StatusOK)
 
-	if resp.TotalResults != 2 {
-		t.Errorf("TotalResults = %d, want 2", resp.TotalResults)
+	if resp.TotalResults != 3 {
+		t.Errorf("TotalResults = %d, want 3", resp.TotalResults)
 	}
-	if len(resp.Results) != 2 {
-		t.Fatalf("len(Results) = %d, want 2: %+v", len(resp.Results), resp.Results)
+	if len(resp.Results) != 3 {
+		t.Fatalf("len(Results) = %d, want 3: %+v", len(resp.Results), resp.Results)
 	}
 
 	byID := map[int64]model.SearchResult{}
@@ -171,6 +178,23 @@ func TestMedia_Search_MixedTypes(t *testing.T) {
 	}
 	if series.Year == nil || *series.Year != 2011 {
 		t.Errorf("series.Year = %v, want 2011", series.Year)
+	}
+
+	person, ok := byID[287]
+	if !ok {
+		t.Fatalf("missing person result (id 287): %+v", resp.Results)
+	}
+	if person.MediaType != "person" {
+		t.Errorf("person.MediaType = %q, want %q", person.MediaType, "person")
+	}
+	if person.Title != "Brad Pitt" {
+		t.Errorf("person.Title = %q, want %q (sourced from TMDB Name)", person.Title, "Brad Pitt")
+	}
+	if person.Year != nil {
+		t.Errorf("person.Year = %v, want nil (persons have no year)", person.Year)
+	}
+	if person.PosterPath == nil || *person.PosterPath != "/brad.jpg" {
+		t.Errorf("person.PosterPath = %v, want %q (sourced from TMDB profile_path)", person.PosterPath, "/brad.jpg")
 	}
 }
 
@@ -227,6 +251,26 @@ func TestMedia_GetMovie_Happy(t *testing.T) {
 	if resp.Files == nil {
 		t.Errorf("Files = nil, want empty slice (wire shape must be [], not null)")
 	}
+
+	// Empty-data wire shape for the three "graceful" sub-fetches. The
+	// asymmetry here is real and worth pinning: transformMovieCredits
+	// (media.go:224) always returns a non-nil *Credits, so Credits survives
+	// JSON encoding with an empty Cast. transformVideos and
+	// transformMovieRecommendations return empty slices, which omitempty
+	// elides on the wire, so Videos and Recommendations decode as nil. If
+	// the asymmetry is ever intentionally normalized (Credits also omitted
+	// when empty, or all three always emitted), update these assertions.
+	if resp.Credits == nil {
+		t.Errorf("Credits = nil, want non-nil (transformMovieCredits returns &Credits{} even for empty input)")
+	} else if len(resp.Credits.Cast) != 0 {
+		t.Errorf("Credits.Cast len = %d, want 0", len(resp.Credits.Cast))
+	}
+	if resp.Videos != nil {
+		t.Errorf("Videos = %+v, want nil (omitempty elides empty slice)", resp.Videos)
+	}
+	if resp.Recommendations != nil {
+		t.Errorf("Recommendations = %+v, want nil (omitempty elides empty slice)", resp.Recommendations)
+	}
 }
 
 // TestMedia_GetSeries_Happy is the series analogue of GetMovie_Happy. The
@@ -235,6 +279,10 @@ func TestMedia_GetMovie_Happy(t *testing.T) {
 // slice keeps this test from needing OnTVSeasonDetails registrations.
 // Season-detail wire coverage can come later if/when there's a reason to
 // exercise it end-to-end (vs. unit-testing the season mapping in service).
+//
+// Note on Title: the wire field is `title` for both movies and series, but
+// for series it's sourced from TMDB's `name`. The mapping happens in the
+// service (media.go:680).
 func TestMedia_GetSeries_Happy(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -259,7 +307,7 @@ func TestMedia_GetSeries_Happy(t *testing.T) {
 		t.Errorf("TmdbID = %d, want %d", resp.TmdbID, tmdbID)
 	}
 	if resp.Title != "Game of Thrones" {
-		t.Errorf("Title = %q, want %q (note: wire field is Title, sourced from TMDB's Name)", resp.Title, "Game of Thrones")
+		t.Errorf("Title = %q, want %q", resp.Title, "Game of Thrones")
 	}
 	if resp.Status != "Ended" {
 		t.Errorf("Status = %q, want %q", resp.Status, "Ended")
@@ -341,5 +389,27 @@ func TestMedia_ListLibrary_Empty(t *testing.T) {
 	}
 	if resp.Pagination.TotalPages != 0 {
 		t.Errorf("Pagination.TotalPages = %d, want 0", resp.Pagination.TotalPages)
+	}
+}
+
+// TestMedia_GetMovie_BadPathID sends id=0 to /api/v1/movie/{id}, which the
+// handler's tag-level minimum:"1" rejects before MediaService runs. This
+// is huma's path-param binding doing its job — same wire shape as the
+// existing query-param validation test (TestMedia_SearchValidation_EmptyQuery),
+// at a different binding location (path.id). One test is enough: the same
+// minimum:"1" constraint applies on the series and person detail endpoints
+// too, and exercising it on one route proves huma's tag honoring works
+// for path params.
+func TestMedia_GetMovie_BadPathID(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	app := testapp.New(t, pool)
+
+	var pd apperrors.ProblemDetails
+	app.GET(t, "/api/v1/movie/0", &pd, http.StatusUnprocessableEntity)
+
+	fe := findFieldError(t, pd, "path.id")
+	if fe.Message == "" {
+		t.Errorf("expected non-empty message for path.id field error: %+v", pd)
 	}
 }

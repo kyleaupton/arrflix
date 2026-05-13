@@ -85,6 +85,25 @@ func (s Series) asSearchResult() map[string]any {
 	}
 }
 
+// Person builds a media_type="person" search hit. The Search service uses
+// `name` for the result Title and `profile_path` (not `poster_path`) for
+// the PosterPath, which is the only place that distinction matters on the
+// wire — a Person hit is the way to exercise that branch end-to-end.
+type Person struct {
+	ID          int64
+	Name        string
+	ProfilePath string
+}
+
+func (p Person) asSearchResult() map[string]any {
+	return map[string]any{
+		"id":           p.ID,
+		"media_type":   "person",
+		"name":         p.Name,
+		"profile_path": p.ProfilePath,
+	}
+}
+
 // Server is a fake TMDB HTTP server. Routes are registered through the On*
 // methods; unregistered calls fail the parent test.
 type Server struct {
