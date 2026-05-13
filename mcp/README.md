@@ -1,76 +1,45 @@
-# Arrflix MCP MCP Server
+# Arrflix MCP server
 
-Local MCP tools for Arrflix dev + ops
+Project-specific MCP tools that complement the `justfile` task runner. Build/lint/test/regenerate workflows live in the justfile; MCP is reserved for runtime introspection that benefits from structured I/O.
 
-This is a TypeScript-based MCP server that implements a simple notes system. It demonstrates core MCP concepts by providing:
+## Tools
 
-- Resources representing text notes with URIs and metadata
-- Tools for creating new notes
-- Prompts for generating summaries of notes
+| Tool | Purpose |
+|---|---|
+| `arrflix_db_query` | Run a READ-ONLY Postgres query (SELECT/CTE only) against `ARRFLIX_DATABASE_URL`. Returns JSON rows. Parameterized via `params`, bounded by `maxRows` (default 200, cap 500). |
+| `arrflix_docker_logs` | Tail recent docker compose logs for a service. Bounded by `lines` (default 200, cap 2000). |
 
-## Features
+## Configuration
 
-### Resources
+Create `mcp/.env` with at minimum:
 
-- List and access notes via `note://` URIs
-- Each note has a title, content and metadata
-- Plain text mime type for simple content access
+```
+ARRFLIX_DATABASE_URL=postgres://user:pass@host:port/dbname
+```
 
-### Tools
+The DB tool refuses to start a query if `ARRFLIX_DATABASE_URL` is unset.
 
-- `create_note` - Create new text notes
-  - Takes title and content as required parameters
-  - Stores note in server state
-
-### Prompts
-
-- `summarize_notes` - Generate a summary of all stored notes
-  - Includes all note contents as embedded resources
-  - Returns structured prompt for LLM summarization
-
-## Development
-
-Install dependencies:
+## Build & develop
 
 ```bash
 npm install
+npm run build      # tsc + chmod build/index.js
+npm run watch      # rebuild on save
+npm run inspector  # launch the MCP inspector against the built server
 ```
 
-Build the server:
+The compiled entry is `build/index.js` and is the executable referenced by client configs.
 
-```bash
-npm run build
-```
+## Installing in a client
 
-For development with auto-rebuild:
-
-```bash
-npm run watch
-```
-
-## Installation
-
-To use with Claude Desktop, add the server config:
-
-On MacOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
+Point your MCP-aware client (Claude Code, Claude Desktop, Cursor, etc.) at the built binary:
 
 ```json
 {
   "mcpServers": {
-    "Arrflix MCP": {
-      "command": "/path/to/Arrflix MCP/build/index.js"
+    "arrflix": {
+      "command": "/absolute/path/to/arrflix/mcp/build/index.js"
     }
   }
 }
 ```
-
-### Debugging
-
-Since MCP servers communicate over stdio, debugging can be challenging. We recommend using the [MCP Inspector](https://github.com/modelcontextprotocol/inspector), which is available as a package script:
-
-```bash
-npm run inspector
-```
-
-The Inspector will provide a URL to access debugging tools in your browser.

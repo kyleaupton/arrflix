@@ -14,13 +14,32 @@ Arrflix is a self-hosted media management platform that unifies the best parts o
 - **API**: RESTful with OpenAPI 3.1 spec generated from huma operation declarations; typed errors emitted as RFC 9457 problem-details
 - **Deployment**: Docker with s6-overlay process manager
 
+## Task Runner
+
+The repo has a `justfile` at the root with all common dev tasks. Recipes execute inside the dev container so the environment matches CI. **Prefer these over running tools directly** — they handle the container-exec wrapping, working directory, and tool versioning.
+
+```bash
+just                 # list all recipes, grouped by area
+just up              # start the dev container
+just check           # mirror CI: lint + type-check + unit tests (read-only, fast)
+just check-all       # check + integration tests (slow — spins up postgres testcontainer)
+just fix             # autofix everything: fmt, lint --fix, regen
+just preflight       # fix then check — single command before declaring work done
+```
+
+Per-tool recipes are namespaced: `backend-fmt`, `backend-lint`, `backend-test`, `backend-genspec`, `backend-sqlc`, `web-fmt`, `web-lint`, `web-type-check`, `web-build`, `web-genclient`. The aggregate `just gen` regenerates everything (sqlc → openapi spec → ts client) in the correct order.
+
+**Agent workflow:** when work is done, run `just preflight`. If it's green, changes are ready for human review (the user commits selectively — agents do not commit). If `just preflight` is too slow during iteration, `just check` is the fast read-only pass.
+
 ## Development Setup
 
 ### Starting Development Environment
 
 ```bash
-# Start all services (Postgres, API with hot reload, Vite dev server, Nginx)
-docker compose up -d arrflix
+# Start the dev container (Postgres, API w/ hot reload, Vite dev server, Nginx via s6-overlay)
+just up
+# or directly:
+docker compose up -d
 
 # Access the app
 # - Main app: http://localhost:8484
@@ -30,7 +49,6 @@ docker compose up -d arrflix
 **Environment Variables**: Create `.env` file with at minimum:
 
 ```
-TMDB_API_KEY=your_api_key_here
 MEDIA_LIBRARIES=/path/to/your/media
 ```
 
@@ -49,29 +67,18 @@ MEDIA_LIBRARIES=/path/to/your/media
 - `backend/internal/downloader/` - Downloader integrations (qBittorrent, etc.)
 - `backend/internal/jobs/` - Background workers (e.g., download job polling)
 
-**Key Commands:**
+**Key Commands:** prefer the `just backend-*` recipes (run in container, match CI tool versions). Underlying commands shown for reference.
 
-```bash
-cd backend
-
-# Run API with hot reload (using Air)
-air
-
-# Build API binary
-go build -o /tmp/main cmd/api/main.go
-
-# Run tests
-go test ./...
-
-# Database: Generate SQLC code after modifying queries or schema
-# (Do this after adding/modifying files in internal/db/queries/ or internal/db/migrations/)
-# Use MCP tool: arrflix_sqlc_generate
-sqlc generate
-
-# OpenAPI: Regenerate the spec after humachi handler changes
-# Use MCP tool: arrflix_gen_api (runs both genspec AND openapi-ts)
-go run ./cmd/genspec   # writes internal/http/docs/openapi.{json,yaml}
-```
+| Task                    | Just recipe                          | Direct equivalent                                                               |
+| ----------------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
+| Hot-reload API          | (always running via s6 in container) | `cd backend && air`                                                             |
+| Unit tests              | `just backend-test`                  | `cd backend && go test -race ./...`                                             |
+| Integration tests       | `just backend-test-integration`      | `cd backend && go test -race -tags=integration ./internal/test/integration/...` |
+| Format                  | `just backend-fmt`                   | `cd backend && gofmt -w .`                                                      |
+| Lint (autofix)          | `just backend-lint`                  | `cd backend && golangci-lint run --fix`                                         |
+| Vet                     | `just backend-vet`                   | `cd backend && go vet ./...`                                                    |
+| Regenerate sqlc         | `just backend-sqlc`                  | `cd backend && sqlc generate`                                                   |
+| Regenerate OpenAPI spec | `just backend-genspec`               | `cd backend && go run ./cmd/genspec`                                            |
 
 **Database Migrations**: Migrations run automatically on API startup via `db.ApplyMigrations()`. Add new migrations as sequentially numbered files in `backend/internal/db/migrations/`.
 
@@ -89,45 +96,28 @@ go run ./cmd/genspec   # writes internal/http/docs/openapi.{json,yaml}
 - `web/src/client/` - Auto-generated API client (from OpenAPI spec)
 - `web/src/router/` - Vue Router configuration with auth guards
 
-**Key Commands:**
+**Key Commands:** prefer the `just web-*` recipes (run in container against the Linux-native `node_modules` anon volume).
 
-```bash
-cd web
-
-# Start dev server (standalone, not in Docker)
-npm run dev
-
-# Build for production
-npm run build
-
-# Type checking
-npm run type-check
-
-# Linting
-npm run lint
-
-# Code formatting
-npm run format
-
-# Regenerate API client after backend OpenAPI changes
-# Use MCP tool: arrflix_gen_api (regenerates both spec and client)
-npm run openapi-ts
-```
+| Task                  | Just recipe                          | Direct equivalent              |
+| --------------------- | ------------------------------------ | ------------------------------ |
+| Vite dev server       | (always running via s6 in container) | `cd web && npm run dev`        |
+| Build                 | `just web-build`                     | `cd web && npm run build`      |
+| Type check            | `just web-type-check`                | `cd web && npm run type-check` |
+| Lint (autofix)        | `just web-lint`                      | `cd web && npm run lint`       |
+| Format                | `just web-fmt`                       | `cd web && npm run format`     |
+| Regenerate API client | `just web-genclient`                 | `cd web && npm run openapi-ts` |
 
 **API Client**: The frontend uses auto-generated TypeScript client with TanStack Query integration. Located in `web/src/client/`, generated from `backend/internal/http/docs/openapi.json`.
 
 ### Full API Spec & Client Regeneration
 
-When you modify backend API handlers, use the MCP tool `arrflix_gen_api` to regenerate both the OpenAPI spec and TypeScript client in one step.
+When you modify backend API handlers, regenerate both the OpenAPI spec and TypeScript client. Order matters — the TS client reads the spec produced by genspec.
 
-Manual equivalent:
 ```bash
-# 1. Regenerate the OpenAPI spec from humachi operation declarations
-cd backend && go run ./cmd/genspec
-
-# 2. Regenerate the TypeScript client from the spec
-cd ../web && npm run openapi-ts
+just gen   # runs sqlc generate + go run ./cmd/genspec + npm run openapi-ts in order
 ```
+
+Per-step recipes (`just backend-sqlc`, `just backend-genspec`, `just web-genclient`) are also available for one-off regeneration.
 
 ## Architecture Notes
 
@@ -163,29 +153,31 @@ All services are initialized in `service.New()` and injected into handlers. Key 
 
 ### MCP Integration
 
-The project includes a custom MCP server in `mcp/` for development and operations tooling. **Use these tools instead of manual commands when available:**
+The project includes a custom MCP server in `mcp/` for development and operations tooling. The justfile covers the build/lint/test/regenerate workflows; MCP tools complement it for runtime introspection that `just` doesn't cover.
 
-| Tool | Purpose |
-|------|---------|
-| `arrflix_sqlc_generate` | Regenerate Go database code after modifying SQL queries or migrations |
-| `arrflix_gen_api` | Regenerate OpenAPI spec AND TypeScript client after handler changes |
-| `arrflix_db_query` | Run read-only SQL queries against the database |
-| `arrflix_docker_logs` | Get recent logs from a docker compose service |
-| `arrflix_search_repo` | Search the codebase using ripgrep |
-| `arrflix_project_brief` | Get a high-level overview of the project |
+| Tool                  | Purpose                                              | Prefer over                   |
+| --------------------- | ---------------------------------------------------- | ----------------------------- |
+| `arrflix_db_query`    | Run read-only SQL queries against the running dev DB | shell into container + `psql` |
+| `arrflix_docker_logs` | Get recent logs from a docker compose service        | `docker compose logs ...`     |
 
 ## Testing
 
 ```bash
-# Backend tests
-cd backend && go test ./...
+# Fast: lint + type-check + unit tests (mirrors CI's per-PR checks)
+just check
 
-# Frontend tests (if configured)
-cd web && npm test
+# Slow: above + integration tests (spins up postgres testcontainer via host docker)
+just check-all
 
-# Quality testing utility
+# Per-suite
+just backend-test               # unit only
+just backend-test-integration   # integration only
+
+# Quality testing utility (one-off, not part of check)
 cd backend && go run cmd/quality-test/main.go
 ```
+
+Test layering: unit tests live alongside the code they cover (`backend/internal/service/scan_test.go`, etc.) and run without external dependencies. Integration tests live in `backend/internal/test/integration/` behind a `//go:build integration` tag — they spin up a postgres testcontainer per `TestMain` and clone a per-test database from a migrated template (`backend/internal/test/dbtest/`).
 
 ## Additional Utilities
 
@@ -199,6 +191,7 @@ cd backend && go run cmd/password/main.go
 Arrflix includes a built-in version tracking and update check system:
 
 **Build Metadata:**
+
 - Version information is injected at Docker build time via build args
 - Environment variables: `ARRFLIX_VERSION`, `ARRFLIX_COMMIT`, `ARRFLIX_BUILD_DATE`, `PROWLARR_VERSION`
 - Dev builds default to version `dev` with no update checks
@@ -206,9 +199,11 @@ Arrflix includes a built-in version tracking and update check system:
 - Stable releases use semantic versioning and compare against GitHub releases
 
 **API Endpoints:**
+
 - `GET /api/v1/version` - Returns build information and update status (cached 15 minutes)
 
 **Implementation:**
+
 - `backend/internal/versioninfo/` - Reads environment variables
 - `backend/internal/github/` - GitHub API client
 - `backend/internal/semver/` - Semantic version comparison
@@ -216,6 +211,7 @@ Arrflix includes a built-in version tracking and update check system:
 - `web/src/components/settings/VersionCard.vue` - UI component
 
 **Update Logic:**
+
 - Dev builds: Always show status "unknown"
 - Edge builds: Compare commit SHA with GitHub main HEAD
 - Stable releases: Compare semver with latest GitHub release, show release notes
