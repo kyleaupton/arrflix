@@ -13,10 +13,7 @@ function getOperatorLabel(op: string): string {
   return found ? found.label.toLowerCase() : op
 }
 
-function resolveRightOperand(
-  field: FieldDefinition | undefined,
-  value: string,
-): string {
+function resolveRightOperand(field: FieldDefinition | undefined, value: string): string {
   if (!field) return value
 
   if ((field.type === 'enum' || field.type === 'boolean') && field.enumValues) {

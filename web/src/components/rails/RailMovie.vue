@@ -1,14 +1,7 @@
 <template>
   <Rail :title="rail.title" :subtitle="rail.subtitle">
-    <div
-      v-for="movie in rail.movies"
-      :key="movie.tmdbId"
-      class="flex-shrink-0"
-    >
-      <Poster
-        :item="movie"
-        :to="{ path: `/movie/${movie.tmdbId}` }"
-      />
+    <div v-for="movie in rail.movies" :key="movie.tmdbId" class="flex-shrink-0">
+      <Poster :item="movie" :to="{ path: `/movie/${movie.tmdbId}` }" />
     </div>
   </Rail>
 </template>

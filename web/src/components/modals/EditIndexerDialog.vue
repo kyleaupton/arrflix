@@ -129,10 +129,7 @@ const canSave = computed(() => {
         </Button>
         <div class="flex justify-end gap-2">
           <Button variant="outline" @click="handleCancel">Cancel</Button>
-          <Button
-            :disabled="!canSave || updateIndexerMutation.isPending.value"
-            @click="handleSave"
-          >
+          <Button :disabled="!canSave || updateIndexerMutation.isPending.value" @click="handleSave">
             <Save class="mr-2 size-4" />
             Save Changes
           </Button>

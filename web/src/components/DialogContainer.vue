@@ -6,10 +6,5 @@ const { dialogs } = useDialogStore()
 </script>
 
 <template>
-  <DynamicDialog
-    v-for="dialog in dialogs"
-    :key="dialog.id"
-    :instance="dialog"
-  />
+  <DynamicDialog v-for="dialog in dialogs" :key="dialog.id" :instance="dialog" />
 </template>
-

@@ -4,74 +4,80 @@
       <div v-if="isLoading" key="loading" class="space-y-4">
         <Skeleton class="h-96 w-full rounded-lg" />
       </div>
-      <div v-else-if="isError" key="error" class="flex flex-col items-center justify-center py-12 text-center">
+      <div
+        v-else-if="isError"
+        key="error"
+        class="flex flex-col items-center justify-center py-12 text-center"
+      >
         <p class="text-destructive">Failed to load person</p>
         <p class="text-sm text-muted-foreground mt-2">Please try again later</p>
       </div>
       <div v-else-if="data" key="content" class="flex flex-col gap-6">
-      <MediaHero
-        class="mb-1"
-        :title="data.name"
-        :subtitle="personSubtitle"
-        :overview="data.biography"
-        :chips="personChips"
-        :full-bleed="isImmersive"
-      >
-        <template #poster>
-          <div class="relative w-64 aspect-[2/3] rounded-lg overflow-hidden bg-muted flex-shrink-0">
-            <img
-              v-if="profileImageUrl"
-              :src="profileImageUrl"
-              :alt="data.name"
-              class="w-full h-full object-cover"
-              loading="eager"
-            />
+        <MediaHero
+          class="mb-1"
+          :title="data.name"
+          :subtitle="personSubtitle"
+          :overview="data.biography"
+          :chips="personChips"
+          :full-bleed="isImmersive"
+        >
+          <template #poster>
             <div
-              v-else
-              class="w-full h-full flex items-center justify-center text-muted-foreground"
+              class="relative w-64 aspect-[2/3] rounded-lg overflow-hidden bg-muted flex-shrink-0"
             >
-              <User class="size-24" />
+              <img
+                v-if="profileImageUrl"
+                :src="profileImageUrl"
+                :alt="data.name"
+                class="w-full h-full object-cover"
+                loading="eager"
+              />
+              <div
+                v-else
+                class="w-full h-full flex items-center justify-center text-muted-foreground"
+              >
+                <User class="size-24" />
+              </div>
+            </div>
+          </template>
+        </MediaHero>
+
+        <div :class="isImmersive ? 'px-6' : ''">
+          <div v-if="hasAdditionalInfo" class="space-y-4">
+            <div v-if="data.alsoKnownAs?.length" class="space-y-2">
+              <h2 class="text-lg font-semibold">Also Known As</h2>
+              <div class="flex flex-wrap gap-2">
+                <Badge v-for="(name, index) in data.alsoKnownAs" :key="index" variant="secondary">
+                  {{ name }}
+                </Badge>
+              </div>
+            </div>
+
+            <div v-if="hasExternalLinks" class="space-y-2">
+              <h2 class="text-lg font-semibold">External Links</h2>
+              <div class="flex flex-wrap gap-2">
+                <Button
+                  v-if="data.homepage"
+                  variant="outline"
+                  size="sm"
+                  @click="openLink(data.homepage)"
+                >
+                  <ExternalLink class="mr-2 size-4" />
+                  Homepage
+                </Button>
+                <Button
+                  v-if="data.imdbId"
+                  variant="outline"
+                  size="sm"
+                  @click="openLink(`https://www.imdb.com/name/${data.imdbId}`)"
+                >
+                  <ExternalLink class="mr-2 size-4" />
+                  IMDb
+                </Button>
+              </div>
             </div>
           </div>
-        </template>
-      </MediaHero>
-
-      <div :class="isImmersive ? 'px-6' : ''">
-      <div v-if="hasAdditionalInfo" class="space-y-4">
-        <div v-if="data.alsoKnownAs?.length" class="space-y-2">
-          <h2 class="text-lg font-semibold">Also Known As</h2>
-          <div class="flex flex-wrap gap-2">
-            <Badge v-for="(name, index) in data.alsoKnownAs" :key="index" variant="secondary">
-              {{ name }}
-            </Badge>
-          </div>
         </div>
-
-        <div v-if="hasExternalLinks" class="space-y-2">
-          <h2 class="text-lg font-semibold">External Links</h2>
-          <div class="flex flex-wrap gap-2">
-            <Button
-              v-if="data.homepage"
-              variant="outline"
-              size="sm"
-              @click="openLink(data.homepage)"
-            >
-              <ExternalLink class="mr-2 size-4" />
-              Homepage
-            </Button>
-            <Button
-              v-if="data.imdbId"
-              variant="outline"
-              size="sm"
-              @click="openLink(`https://www.imdb.com/name/${data.imdbId}`)"
-            >
-              <ExternalLink class="mr-2 size-4" />
-              IMDb
-            </Button>
-          </div>
-        </div>
-      </div>
-      </div>
       </div>
     </Transition>
   </div>

@@ -11,7 +11,9 @@
     <div v-else-if="library" class="inline-flex items-center gap-2">
       <span class="font-semibold">{{ library.name }}</span>
       <Badge variant="secondary">
-        {{ library.type === 'movie' ? 'Movie' : library.type === 'series' ? 'Series' : library.type }}
+        {{
+          library.type === 'movie' ? 'Movie' : library.type === 'series' ? 'Series' : library.type
+        }}
       </Badge>
       <Badge v-if="library.default" variant="default">Default</Badge>
     </div>

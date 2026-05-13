@@ -23,11 +23,7 @@ import {
 } from '@/components/ui/empty'
 
 // Data queries
-const {
-  data: policies,
-  isLoading: policiesLoading,
-  refetch,
-} = useQuery(policiesListOptions())
+const { data: policies, isLoading: policiesLoading, refetch } = useQuery(policiesListOptions())
 const { data: fields, isLoading: fieldsLoading } = useQuery(policiesGetFieldsOptions())
 const { data: libraries } = useQuery(librariesListOptions())
 const { data: nameTemplates } = useQuery(nameTemplatesListOptions())
@@ -83,10 +79,7 @@ const removeNew = (index: number) => {
         </div>
 
         <template v-else>
-          <div
-            v-if="(!policies || policies.length === 0) && newPolicies.length === 0"
-            class="py-8"
-          >
+          <div v-if="(!policies || policies.length === 0) && newPolicies.length === 0" class="py-8">
             <Empty>
               <EmptyMedia variant="icon">
                 <Shield class="size-5" />

@@ -87,20 +87,17 @@ export const VariableMention = Node.create<VariableMentionOptions>({
       optional: {
         default: false,
         parseHTML: (element) => element.getAttribute('data-optional') === 'true',
-        renderHTML: (attributes) =>
-          attributes.optional ? { 'data-optional': 'true' } : {},
+        renderHTML: (attributes) => (attributes.optional ? { 'data-optional': 'true' } : {}),
       },
       prefix: {
         default: '',
         parseHTML: (element) => element.getAttribute('data-prefix') || '',
-        renderHTML: (attributes) =>
-          attributes.prefix ? { 'data-prefix': attributes.prefix } : {},
+        renderHTML: (attributes) => (attributes.prefix ? { 'data-prefix': attributes.prefix } : {}),
       },
       suffix: {
         default: '',
         parseHTML: (element) => element.getAttribute('data-suffix') || '',
-        renderHTML: (attributes) =>
-          attributes.suffix ? { 'data-suffix': attributes.suffix } : {},
+        renderHTML: (attributes) => (attributes.suffix ? { 'data-suffix': attributes.suffix } : {}),
       },
     }
   },
@@ -225,4 +222,3 @@ export const VariableMention = Node.create<VariableMentionOptions>({
     }
   },
 })
-

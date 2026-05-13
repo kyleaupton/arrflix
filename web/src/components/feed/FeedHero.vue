@@ -4,10 +4,7 @@
     :class="fullBleed ? 'h-[56vh] min-h-[400px] pt-14' : 'h-80 -mx-4 -mt-4 overflow-hidden'"
   >
     <div class="backdrop">
-      <img
-        :src="`https://image.tmdb.org/t/p/original${hero.backdropPath}`"
-        :alt="hero.title"
-      />
+      <img :src="`https://image.tmdb.org/t/p/original${hero.backdropPath}`" :alt="hero.title" />
       <div class="backdrop-overlay" />
     </div>
     <div class="absolute bottom-0 left-0 right-0 p-6 z-10">
@@ -32,9 +29,10 @@ const props = defineProps<{ hero: HeroItem; fullBleed?: boolean }>()
 const router = useRouter()
 
 const navigateToDetail = () => {
-  const path = props.hero.mediaType === 'movie'
-    ? `/movie/${props.hero.tmdbId}`
-    : `/series/${props.hero.tmdbId}`
+  const path =
+    props.hero.mediaType === 'movie'
+      ? `/movie/${props.hero.tmdbId}`
+      : `/series/${props.hero.tmdbId}`
   router.push(path)
 }
 

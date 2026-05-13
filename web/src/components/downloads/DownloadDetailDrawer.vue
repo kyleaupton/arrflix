@@ -27,7 +27,6 @@ const emit = defineEmits<{
   (e: 'retry', jobId: string): void
 }>()
 
-
 // Import task status config
 const taskStatusConfig: Record<string, { label: string; class: string }> = {
   pending: { label: 'Pending', class: 'bg-gray-500 text-white' },
@@ -83,9 +82,7 @@ const drawerSubtitle = computed(() => {
   if (job.value.mediaYear) parts.push(String(job.value.mediaYear))
   if (job.value.mediaCertification) parts.push(job.value.mediaCertification)
   if (job.value.mediaType === 'series' && job.value.seasonNumber) {
-    const ep = job.value.episodeNumber
-      ? `E${String(job.value.episodeNumber).padStart(2, '0')}`
-      : ''
+    const ep = job.value.episodeNumber ? `E${String(job.value.episodeNumber).padStart(2, '0')}` : ''
     parts.push(`S${String(job.value.seasonNumber).padStart(2, '0')}${ep}`)
   }
   return parts.join(' \u00B7 ')
@@ -196,7 +193,9 @@ function getTaskStatusConfig(status: string) {
               </span>
             </div>
             <div class="flex items-center gap-3 text-xs text-muted-foreground">
-              <span v-if="formatSpeed(job?.downloadSpeed)">{{ formatSpeed(job?.downloadSpeed) }}</span>
+              <span v-if="formatSpeed(job?.downloadSpeed)">{{
+                formatSpeed(job?.downloadSpeed)
+              }}</span>
               <span v-if="formatEta(job?.etaSeconds)">ETA: {{ formatEta(job?.etaSeconds) }}</span>
               <span v-if="formatBytes(job?.totalSize)">{{ formatBytes(job?.totalSize) }}</span>
             </div>

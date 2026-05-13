@@ -121,9 +121,7 @@ const handleCancel = () => {
 }
 
 const isLoading = computed(
-  () =>
-    updateUserMutation.isPending.value ||
-    updateRoleMutation.isPending.value,
+  () => updateUserMutation.isPending.value || updateRoleMutation.isPending.value,
 )
 </script>
 

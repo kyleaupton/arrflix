@@ -13,21 +13,87 @@ type MockMedia = {
 
 // Real TMDB poster paths for recognizable titles
 const MOCK_MEDIA: MockMedia[] = [
-  { title: 'Inception', year: 2010, type: 'movie', poster: '/edv5CZvWj09upOy2maq0Qs58RDI.jpg', cert: 'PG-13', candidate: 'Inception.2010.2160p.UHD.BluRay.x265-GROUP' },
-  { title: 'The Dark Knight', year: 2008, type: 'movie', poster: '/qJ2tW6WMUDux911BTUgMe1nREA.jpg', cert: 'PG-13', candidate: 'The.Dark.Knight.2008.1080p.BluRay.x264-GROUP' },
-  { title: 'Interstellar', year: 2014, type: 'movie', poster: '/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg', cert: 'PG-13', candidate: 'Interstellar.2014.2160p.UHD.BluRay.Remux.HDR.HEVC.DTS-HD.MA-GROUP' },
-  { title: 'Breaking Bad', year: 2008, type: 'series', poster: '/ztkUQFLlC19CCMYHW9o1zp7XMAK.jpg', cert: 'TV-MA', candidate: 'Breaking.Bad.S05E16.Felina.1080p.BluRay.x264-GROUP', season: 5, episode: 16 },
-  { title: 'Blade Runner 2049', year: 2017, type: 'movie', poster: '/gajva2L0rPYkEWjzgFlBXCAVBE5.jpg', cert: 'R', candidate: 'Blade.Runner.2049.2017.1080p.BluRay.x264-GROUP' },
-  { title: 'Dune', year: 2021, type: 'movie', poster: '/d5NXSklXo0qyIYkgV94XAgMIckC.jpg', cert: 'PG-13', candidate: 'Dune.2021.2160p.WEB-DL.DDP5.1.Atmos.HDR.H.265-GROUP' },
-  { title: 'Severance', year: 2022, type: 'series', poster: '/lFGgqFhRCoCjMlk1sVuIFDzflsu.jpg', cert: 'TV-MA', candidate: 'Severance.S01E09.The.We.We.Are.1080p.ATVP.WEB-DL.DDP5.1.H.264-GROUP', season: 1, episode: 9 },
-  { title: 'The Matrix', year: 1999, type: 'movie', poster: '/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg', cert: 'R', candidate: 'The.Matrix.1999.2160p.UHD.BluRay.Remux.HDR.HEVC.DTS-HD.MA-GROUP' },
-  { title: 'Chernobyl', year: 2019, type: 'series', poster: '/hlLXt2tOPT6RRnjiUmoxyG1LTFi.jpg', cert: 'TV-MA', candidate: 'Chernobyl.S01E05.Vichnaya.Pamyat.1080p.AMZN.WEB-DL.DDP5.1.H.264-GROUP', season: 1, episode: 5 },
+  {
+    title: 'Inception',
+    year: 2010,
+    type: 'movie',
+    poster: '/edv5CZvWj09upOy2maq0Qs58RDI.jpg',
+    cert: 'PG-13',
+    candidate: 'Inception.2010.2160p.UHD.BluRay.x265-GROUP',
+  },
+  {
+    title: 'The Dark Knight',
+    year: 2008,
+    type: 'movie',
+    poster: '/qJ2tW6WMUDux911BTUgMe1nREA.jpg',
+    cert: 'PG-13',
+    candidate: 'The.Dark.Knight.2008.1080p.BluRay.x264-GROUP',
+  },
+  {
+    title: 'Interstellar',
+    year: 2014,
+    type: 'movie',
+    poster: '/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg',
+    cert: 'PG-13',
+    candidate: 'Interstellar.2014.2160p.UHD.BluRay.Remux.HDR.HEVC.DTS-HD.MA-GROUP',
+  },
+  {
+    title: 'Breaking Bad',
+    year: 2008,
+    type: 'series',
+    poster: '/ztkUQFLlC19CCMYHW9o1zp7XMAK.jpg',
+    cert: 'TV-MA',
+    candidate: 'Breaking.Bad.S05E16.Felina.1080p.BluRay.x264-GROUP',
+    season: 5,
+    episode: 16,
+  },
+  {
+    title: 'Blade Runner 2049',
+    year: 2017,
+    type: 'movie',
+    poster: '/gajva2L0rPYkEWjzgFlBXCAVBE5.jpg',
+    cert: 'R',
+    candidate: 'Blade.Runner.2049.2017.1080p.BluRay.x264-GROUP',
+  },
+  {
+    title: 'Dune',
+    year: 2021,
+    type: 'movie',
+    poster: '/d5NXSklXo0qyIYkgV94XAgMIckC.jpg',
+    cert: 'PG-13',
+    candidate: 'Dune.2021.2160p.WEB-DL.DDP5.1.Atmos.HDR.H.265-GROUP',
+  },
+  {
+    title: 'Severance',
+    year: 2022,
+    type: 'series',
+    poster: '/lFGgqFhRCoCjMlk1sVuIFDzflsu.jpg',
+    cert: 'TV-MA',
+    candidate: 'Severance.S01E09.The.We.We.Are.1080p.ATVP.WEB-DL.DDP5.1.H.264-GROUP',
+    season: 1,
+    episode: 9,
+  },
+  {
+    title: 'The Matrix',
+    year: 1999,
+    type: 'movie',
+    poster: '/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg',
+    cert: 'R',
+    candidate: 'The.Matrix.1999.2160p.UHD.BluRay.Remux.HDR.HEVC.DTS-HD.MA-GROUP',
+  },
+  {
+    title: 'Chernobyl',
+    year: 2019,
+    type: 'series',
+    poster: '/hlLXt2tOPT6RRnjiUmoxyG1LTFi.jpg',
+    cert: 'TV-MA',
+    candidate: 'Chernobyl.S01E05.Vichnaya.Pamyat.1080p.AMZN.WEB-DL.DDP5.1.H.264-GROUP',
+    season: 1,
+    episode: 5,
+  },
 ]
 
-function makeMockJob(
-  index: number,
-  overrides: Partial<DownloadJob>,
-): DownloadJob {
+function makeMockJob(index: number, overrides: Partial<DownloadJob>): DownloadJob {
   const media = MOCK_MEDIA[index % MOCK_MEDIA.length]!
   const now = new Date()
   const updatedAt = new Date(now.getTime() - index * 60_000) // stagger by 1 min each

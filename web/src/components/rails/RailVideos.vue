@@ -18,7 +18,6 @@ withDefaults(
   }>(),
   {
     title: 'Videos',
-  }
+  },
 )
 </script>
-

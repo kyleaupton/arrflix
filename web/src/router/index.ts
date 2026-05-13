@@ -134,12 +134,16 @@ router.beforeEach(async (to) => {
   // so we block here until the app state is known.
   if (!appStore.isReady) {
     await new Promise<void>((resolve) => {
-      const unwatch = watch(() => appStore.isReady, (ready) => {
-        if (ready) {
-          unwatch()
-          resolve()
-        }
-      }, { immediate: true })
+      const unwatch = watch(
+        () => appStore.isReady,
+        (ready) => {
+          if (ready) {
+            unwatch()
+            resolve()
+          }
+        },
+        { immediate: true },
+      )
     })
   }
 

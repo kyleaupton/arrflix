@@ -44,9 +44,7 @@ const subtitle = computed(() => {
   if (props.job.mediaYear) parts.push(String(props.job.mediaYear))
   if (props.job.mediaCertification) parts.push(props.job.mediaCertification)
   if (props.job.mediaType === 'series' && props.job.seasonNumber) {
-    const ep = props.job.episodeNumber
-      ? `E${String(props.job.episodeNumber).padStart(2, '0')}`
-      : ''
+    const ep = props.job.episodeNumber ? `E${String(props.job.episodeNumber).padStart(2, '0')}` : ''
     parts.push(`S${String(props.job.seasonNumber).padStart(2, '0')}${ep}`)
   }
   return parts.join(' \u00B7 ')
@@ -126,10 +124,7 @@ const statsLine = computed(() => {
       </div>
 
       <!-- Error info -->
-      <p
-        v-if="isFailed && job.lastError"
-        class="text-xs text-destructive line-clamp-1"
-      >
+      <p v-if="isFailed && job.lastError" class="text-xs text-destructive line-clamp-1">
         {{ job.lastError }}
       </p>
 

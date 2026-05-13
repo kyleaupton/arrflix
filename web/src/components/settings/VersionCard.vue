@@ -5,9 +5,22 @@ import type { VersionInfo } from '@/client/types.gen'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { CheckCircle2, ArrowUpCircle, ExternalLink, RefreshCw, ChevronRight, Code2 } from 'lucide-vue-next'
+import {
+  CheckCircle2,
+  ArrowUpCircle,
+  ExternalLink,
+  RefreshCw,
+  ChevronRight,
+  Code2,
+} from 'lucide-vue-next'
 import { useVersionDebugStore, type VersionDebugState } from '@/stores/versionDebug'
 
 const debug = useVersionDebugStore()
@@ -157,10 +170,7 @@ const hasComponents = computed(() => {
                 v-else-if="isUpdateAvailable"
                 class="size-5 text-blue-600 dark:text-blue-400 shrink-0"
               />
-              <Code2
-                v-else-if="isDev"
-                class="size-5 text-muted-foreground shrink-0"
-              />
+              <Code2 v-else-if="isDev" class="size-5 text-muted-foreground shrink-0" />
               <span
                 class="text-lg font-medium"
                 :class="{
@@ -218,7 +228,9 @@ const hasComponents = computed(() => {
 
         <!-- Components -->
         <Collapsible v-if="hasComponents">
-          <CollapsibleTrigger class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors group">
+          <CollapsibleTrigger
+            class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors group"
+          >
             <ChevronRight class="size-3 transition-transform group-data-[state=open]:rotate-90" />
             Components
           </CollapsibleTrigger>

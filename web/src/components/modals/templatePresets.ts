@@ -34,8 +34,7 @@ export const presets: TemplatePreset[] = [
     label: 'TRaSH Recommended',
     description: 'Based on TRaSH Guides with full quality and media info',
     movie: {
-      movieDirTemplate:
-        '{{.Media.CleanTitle}} ({{.Media.Year}}) {tmdb-{{.Media.TmdbID}}}',
+      movieDirTemplate: '{{.Media.CleanTitle}} ({{.Media.Year}}) {tmdb-{{.Media.TmdbID}}}',
       template:
         '{{.Media.CleanTitle}} ({{.Media.Year}}){{if .Release.Edition}} {edition-{{.Release.Edition}}}{{end}} [{{.Quality.Full}}]{{if .MediaInfo.AudioCodec}}[{{.MediaInfo.AudioCodec}} {{.MediaInfo.AudioChannels}}]{{end}}{{if .MediaInfo.HDR}}[{{.MediaInfo.HDR}}]{{end}}{{if .MediaInfo.VideoCodec}}[{{.MediaInfo.VideoCodec}}]{{end}}{{if .Release.ReleaseGroup}}-{{.Release.ReleaseGroup}}{{end}}',
     },

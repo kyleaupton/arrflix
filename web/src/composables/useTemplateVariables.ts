@@ -43,19 +43,19 @@ export const TEMPLATE_FUNCTIONS: TemplateFunction[] = [
 function snakeToPascal(str: string): string {
   // Special compound words that need specific capitalization
   const specialWords: Record<string, string> = {
-    'mediainfo': 'MediaInfo',
-    'tmdb': 'Tmdb',
+    mediainfo: 'MediaInfo',
+    tmdb: 'Tmdb',
   }
-  
+
   // Common Go acronyms that should be all uppercase
   const acronyms = new Set(['id', 'guid', 'url', 'http', 'https', 'api', 'uri', 'uuid'])
-  
+
   // Check if the entire string is a special word
   const lower = str.toLowerCase()
   if (specialWords[lower]) {
     return specialWords[lower]
   }
-  
+
   return str
     .split('_')
     .map((part) => {
@@ -100,7 +100,7 @@ function extractNamespace(apiPath: string): string {
     mediainfo: 'MediaInfo',
     release: 'Release',
   }
-  
+
   const ns = apiPath.split('.')[0]
   if (!ns) return 'Unknown'
   return NAMESPACE_MAP[ns] || ns.charAt(0).toUpperCase() + ns.slice(1)
@@ -160,20 +160,20 @@ export function useTemplateVariables(options?: { mediaType?: 'movie' | 'series' 
     // Common fields for quick access
     const commonPaths = [
       '.Media.Title',
-      '.Media.CleanTitle', 
+      '.Media.CleanTitle',
       '.Media.Year',
       '.Quality.Resolution',
       '.Quality.Source',
       '.Quality.Full',
     ]
-    
+
     return allVariables.value.filter((v) => commonPaths.includes(v.path))
   })
 
   /** Search variables by label or path */
   const searchVariables = (query: string): TemplateVariable[] => {
     const q = query.toLowerCase()
-    
+
     return allVariables.value.filter(
       (v) => v.label.toLowerCase().includes(q) || v.path.toLowerCase().includes(q),
     )
@@ -196,5 +196,3 @@ export function useTemplateVariables(options?: { mediaType?: 'movie' | 'series' 
     error,
   }
 }
-
-

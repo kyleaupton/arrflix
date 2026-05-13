@@ -18,4 +18,3 @@ export type TableAction<T = any> = {
   visible?: (row: T) => boolean
   command: (row: T) => void
 }
-

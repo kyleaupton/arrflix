@@ -1,9 +1,8 @@
 <template>
-  <button
-    @click="openVideo"
-    class="video-card flex flex-col gap-2 w-64 sm:w-72 group"
-  >
-    <div class="video-thumbnail-wrapper relative w-full aspect-video rounded-lg overflow-hidden bg-muted">
+  <button @click="openVideo" class="video-card flex flex-col gap-2 w-64 sm:w-72 group">
+    <div
+      class="video-thumbnail-wrapper relative w-full aspect-video rounded-lg overflow-hidden bg-muted"
+    >
       <img
         v-if="thumbnailUrl"
         :src="thumbnailUrl"
@@ -52,7 +51,7 @@ const imageError = ref(false)
 
 const thumbnailUrl = computed(() => {
   if (imageError.value) return undefined
-  
+
   switch (props.video.site) {
     case 'YouTube':
       return `https://img.youtube.com/vi/${props.video.key}/mqdefault.jpg`
@@ -98,4 +97,3 @@ const openVideo = () => {
   transform: translateY(-2px);
 }
 </style>
-

@@ -4,7 +4,12 @@ import { client } from '@/client/client.gen'
 
 type EventCallback = (data: unknown) => void
 
-export type EventsConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error'
+export type EventsConnectionStatus =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'error'
 
 export const useEventsStore = defineStore('events', () => {
   const status = ref<EventsConnectionStatus>('disconnected')

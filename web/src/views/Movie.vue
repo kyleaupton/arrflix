@@ -4,84 +4,84 @@
       <div v-if="isLoading" key="loading" class="space-y-4">
         <Skeleton class="h-96 w-full rounded-lg" />
       </div>
-      <div v-else-if="isError" key="error" class="flex flex-col items-center justify-center py-12 text-center">
+      <div
+        v-else-if="isError"
+        key="error"
+        class="flex flex-col items-center justify-center py-12 text-center"
+      >
         <p class="text-destructive">Failed to load movie</p>
         <p class="text-sm text-muted-foreground mt-2">Please try again later</p>
       </div>
       <div v-else-if="data" key="content" class="flex flex-col gap-6">
-      <MediaHero
-        :title="data.title"
-        :tagline="data.tagline"
-        :subtitle="movieSubtitle"
-        :credits="directorCredits"
-        :overview="data.overview"
-        :backdrop-url="backdropUrl"
-        :chips="movieChips"
-        :trailer-url="trailerUrl"
-        :full-bleed="isImmersive"
-      >
-        <template #poster>
-          <Poster :item="data" size="large" :clickable="false" :is-downloading="isDownloading" />
-        </template>
-        <template v-if="data.voteAverage" #ratings>
-          <RatingBadge
-            source="tmdb"
-            :score="data.voteAverage"
-            :vote-count="data.voteCount"
-          />
-        </template>
-        <template #actions>
-          <Button @click="searchForDownloadCandidates">
-            <Download class="mr-2 size-4" />
-              Download
-          </Button>
-        </template>
-      </MediaHero>
-
-      <div :class="isImmersive ? 'px-6 space-y-10' : 'space-y-10'">
-        <div v-if="data.files?.length" class="bg-card rounded-lg border p-4 sm:p-6 space-y-4">
-          <h2 class="text-xl font-semibold">Local Files</h2>
-          <DataTable
-            :data="filesWithProgress"
-            :columns="movieFilesColumns"
-            :loading="false"
-            empty-message="No files found"
-            :searchable="false"
-            search-placeholder="Search files..."
-            paginator
-            :rows="10"
-          >
-            <template #empty-icon>
-              <File class="size-5" />
-            </template>
-          </DataTable>
-        </div>
-
-        <FeaturedTrailer v-if="officialTrailer" :video="officialTrailer" />
-
-        <RailVideos v-if="nonTrailerVideos.length" title="Videos" :videos="nonTrailerVideos" />
-
-        <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
-
-        <RailMovie
-          v-if="data.recommendations?.length"
-          :rail="{
-            id: 'related-movies',
-            title: 'Related Movies',
-            type: 'movie',
-            movies: data.recommendations,
-            series: [],
-          }"
-        />
-
-        <div
-          v-if="data.watchProviders"
-          class="py-6 bg-muted/30 rounded-lg"
-          :class="isImmersive ? '-mx-6 px-6' : ''"
+        <MediaHero
+          :title="data.title"
+          :tagline="data.tagline"
+          :subtitle="movieSubtitle"
+          :credits="directorCredits"
+          :overview="data.overview"
+          :backdrop-url="backdropUrl"
+          :chips="movieChips"
+          :trailer-url="trailerUrl"
+          :full-bleed="isImmersive"
         >
-          <WatchProviders :providers="data.watchProviders" />
+          <template #poster>
+            <Poster :item="data" size="large" :clickable="false" :is-downloading="isDownloading" />
+          </template>
+          <template v-if="data.voteAverage" #ratings>
+            <RatingBadge source="tmdb" :score="data.voteAverage" :vote-count="data.voteCount" />
+          </template>
+          <template #actions>
+            <Button @click="searchForDownloadCandidates">
+              <Download class="mr-2 size-4" />
+              Download
+            </Button>
+          </template>
+        </MediaHero>
+
+        <div :class="isImmersive ? 'px-6 space-y-10' : 'space-y-10'">
+          <div v-if="data.files?.length" class="bg-card rounded-lg border p-4 sm:p-6 space-y-4">
+            <h2 class="text-xl font-semibold">Local Files</h2>
+            <DataTable
+              :data="filesWithProgress"
+              :columns="movieFilesColumns"
+              :loading="false"
+              empty-message="No files found"
+              :searchable="false"
+              search-placeholder="Search files..."
+              paginator
+              :rows="10"
+            >
+              <template #empty-icon>
+                <File class="size-5" />
+              </template>
+            </DataTable>
+          </div>
+
+          <FeaturedTrailer v-if="officialTrailer" :video="officialTrailer" />
+
+          <RailVideos v-if="nonTrailerVideos.length" title="Videos" :videos="nonTrailerVideos" />
+
+          <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
+
+          <RailMovie
+            v-if="data.recommendations?.length"
+            :rail="{
+              id: 'related-movies',
+              title: 'Related Movies',
+              type: 'movie',
+              movies: data.recommendations,
+              series: [],
+            }"
+          />
+
+          <div
+            v-if="data.watchProviders"
+            class="py-6 bg-muted/30 rounded-lg"
+            :class="isImmersive ? '-mx-6 px-6' : ''"
+          >
+            <WatchProviders :providers="data.watchProviders" />
+          </div>
         </div>
-      </div>
       </div>
     </Transition>
   </div>
@@ -155,9 +155,7 @@ const nonTrailerVideos = computed(() => {
 
 const movieSubtitle = computed(() => {
   if (!data.value) return ''
-  const year = data.value.releaseDate
-    ? new Date(data.value.releaseDate).getFullYear()
-    : undefined
+  const year = data.value.releaseDate ? new Date(data.value.releaseDate).getFullYear() : undefined
   return buildMetadataSubtitle({
     mediaType: 'movie',
     year,

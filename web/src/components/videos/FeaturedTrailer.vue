@@ -20,7 +20,9 @@
           <Play class="size-10 text-white" />
         </div>
       </div>
-      <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-4 pt-10">
+      <div
+        class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-4 pt-10"
+      >
         <div class="flex items-center gap-2">
           <p class="text-white text-sm font-medium truncate">{{ video.name }}</p>
           <Badge variant="default" class="text-xs shrink-0">Official Trailer</Badge>

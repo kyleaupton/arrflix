@@ -1,15 +1,7 @@
 <template>
   <Rail :title="row.title" :subtitle="row.subtitle">
-    <div
-      v-for="item in row.items"
-      :key="`${item.mediaType}-${item.tmdbId}`"
-      class="flex-shrink-0"
-    >
-      <Poster
-        :item="item"
-        :to="{ path: getItemPath(item) }"
-        :is-downloading="item.isDownloading"
-      />
+    <div v-for="item in row.items" :key="`${item.mediaType}-${item.tmdbId}`" class="flex-shrink-0">
+      <Poster :item="item" :to="{ path: getItemPath(item) }" :is-downloading="item.isDownloading" />
     </div>
   </Rail>
 </template>

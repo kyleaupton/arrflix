@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { ref, inject, watch, computed } from 'vue'
 import { useMutation } from '@tanstack/vue-query'
-import {
-  librariesCreateMutation,
-  librariesUpdateMutation,
-} from '@/client/@tanstack/vue-query.gen'
+import { librariesCreateMutation, librariesUpdateMutation } from '@/client/@tanstack/vue-query.gen'
 import { type Library } from '@/client/types.gen'
 import BaseDialog from './BaseDialog.vue'
 import DirectoryBrowserDialog from './DirectoryBrowserDialog.vue'

@@ -47,4 +47,3 @@ const buttonVariant = computed(() => {
     </template>
   </BaseDialog>
 </template>
-

@@ -15,7 +15,7 @@ export const movieFilesColumns: TableColumn<FileInfo>[] = [
     filterable: true,
     render: (value: string, row: FileInfo) => {
       const isPredicted = value && value.includes('.{ext}')
-      
+
       if (isPredicted) {
         return h(
           Tooltip,
@@ -26,25 +26,26 @@ export const movieFilesColumns: TableColumn<FileInfo>[] = [
                 TooltipTrigger,
                 { asChild: true },
                 {
-                  default: () => h(
-                    'span',
-                    { class: 'font-mono text-sm text-muted-foreground cursor-help' },
-                    value || '',
-                  ),
+                  default: () =>
+                    h(
+                      'span',
+                      { class: 'font-mono text-sm text-muted-foreground cursor-help' },
+                      value || '',
+                    ),
                 },
               ),
               h(
                 TooltipContent,
                 {},
                 {
-                  default: () => 'File doesn\'t exist yet. This is the predicted path.',
+                  default: () => "File doesn't exist yet. This is the predicted path.",
                 },
               ),
             ],
           },
         )
       }
-      
+
       return h('span', { class: 'font-mono text-sm' }, value || '')
     },
   },
@@ -74,19 +75,16 @@ export const movieFilesColumns: TableColumn<FileInfo>[] = [
         deleted: 'bg-gray-600 text-white',
       }
       const colorClass = statusColors[value] || 'bg-gray-500 text-white'
-      
+
       // Show spinner for downloading/importing status
       const showSpinner = value === 'downloading' || value === 'importing'
-      
+
       return h(
         Badge,
         {
           class: `${colorClass} capitalize border-transparent flex items-center gap-1.5`,
         },
-        () => [
-          showSpinner ? h(Loader2, { class: 'size-3 animate-spin' }) : null,
-          value,
-        ],
+        () => [showSpinner ? h(Loader2, { class: 'size-3 animate-spin' }) : null, value],
       )
     },
   },
@@ -108,4 +106,3 @@ export const movieFilesColumns: TableColumn<FileInfo>[] = [
     },
   },
 ]
-

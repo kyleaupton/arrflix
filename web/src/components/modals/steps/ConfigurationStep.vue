@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import {
-  type IndexerOutput,
-  type IndexerInput,
-  type FieldOutput,
-} from '@/client/types.gen'
+import { type IndexerOutput, type IndexerInput, type FieldOutput } from '@/client/types.gen'
 import { cloneDeep } from '@/utils'
 import ConfigurationStepField from './ConfigurationStepField.vue'
 import {

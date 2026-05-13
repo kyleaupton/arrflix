@@ -88,7 +88,8 @@ export const downloadCandidateColumns: TableColumn<DownloadCandidate>[] = [
     width: '100px',
     align: 'center',
     render: (value: number) => {
-      const colorClass = value > 10 ? 'text-green-600' : value > 0 ? 'text-yellow-600' : 'text-red-600'
+      const colorClass =
+        value > 10 ? 'text-green-600' : value > 0 ? 'text-yellow-600' : 'text-red-600'
       return `<span class="font-semibold ${colorClass}">${value}</span>`
     },
   },
@@ -127,4 +128,3 @@ export const createDownloadCandidateActions = (
     command: onEnqueue,
   },
 ]
-

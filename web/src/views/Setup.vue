@@ -4,19 +4,8 @@ import { useRouter } from 'vue-router'
 import { Popcorn, UserPlus, Key } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from '@/components/ui/field'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   Stepper,
@@ -198,9 +187,7 @@ function handleContinue() {
               <p class="text-muted-foreground text-sm text-center">
                 Admin account has already been created.
               </p>
-              <Button class="w-full" @click="currentStep = 1">
-                Continue
-              </Button>
+              <Button class="w-full" @click="currentStep = 1"> Continue </Button>
             </div>
 
             <form v-else @submit="handleAdminSubmit">
@@ -268,9 +255,7 @@ function handleContinue() {
         <Card v-if="currentStep === 1">
           <CardHeader class="text-center">
             <CardTitle class="text-xl">Connect TMDB</CardTitle>
-            <CardDescription>
-              An API key is required for media metadata
-            </CardDescription>
+            <CardDescription> An API key is required for media metadata </CardDescription>
           </CardHeader>
           <CardContent>
             <!-- Already completed -->
@@ -278,9 +263,7 @@ function handleContinue() {
               <p class="text-muted-foreground text-sm text-center">
                 TMDB API key has already been configured.
               </p>
-              <Button class="w-full" @click="handleContinue">
-                Continue to Login
-              </Button>
+              <Button class="w-full" @click="handleContinue"> Continue to Login </Button>
             </div>
 
             <form v-else @submit="handleTmdbSubmit">
@@ -307,7 +290,8 @@ function handleContinue() {
                       target="_blank"
                       rel="noopener noreferrer"
                       class="underline"
-                    >themoviedb.org</a>
+                      >themoviedb.org</a
+                    >
                   </FieldDescription>
                 </Field>
                 <Field>

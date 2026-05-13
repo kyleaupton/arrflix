@@ -20,7 +20,9 @@
             {{ title }}
           </h1>
           <p v-if="tagline" class="text-sm italic opacity-70 mt-1">"{{ tagline }}"</p>
-          <p v-if="subtitle" class="subtitle text-sm md:text-base opacity-80 mt-1">{{ subtitle }}</p>
+          <p v-if="subtitle" class="subtitle text-sm md:text-base opacity-80 mt-1">
+            {{ subtitle }}
+          </p>
           <p v-if="credits" class="text-sm md:text-base opacity-70 mt-0.5">{{ credits }}</p>
 
           <div v-if="$slots.ratings" class="mt-2 flex flex-wrap items-center gap-2">
@@ -102,9 +104,9 @@ const openTrailerModal = () => {
   background:
     linear-gradient(to top, oklch(0.145 0 0) 0%, oklch(0.145 0 0 / 0.9) 18%, transparent 65%),
     /* Lateral gradient — subtle left-side darkening for text legibility */
-    linear-gradient(to right, rgba(0, 0, 0, 0.45) 0%, transparent 70%),
+      linear-gradient(to right, rgba(0, 0, 0, 0.45) 0%, transparent 70%),
     /* Top vignette — subtle top edge for navbar blending */
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.3) 0%, transparent 20%);
+      linear-gradient(to bottom, rgba(0, 0, 0, 0.3) 0%, transparent 20%);
 }
 
 .poster {

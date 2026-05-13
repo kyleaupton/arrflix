@@ -2,11 +2,7 @@
 import { watch, ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, ArrowRight } from 'lucide-vue-next'
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import Input from '@/components/ui/input/Input.vue'
 import { Skeleton } from '@/components/ui/skeleton'
 import SearchResultItem from './SearchResultItem.vue'
@@ -106,7 +102,10 @@ const seeAll = () => {
         </div>
 
         <!-- Empty -->
-        <div v-else-if="query.length >= 2 && !isLoading" class="p-4 text-center text-muted-foreground">
+        <div
+          v-else-if="query.length >= 2 && !isLoading"
+          class="p-4 text-center text-muted-foreground"
+        >
           <p>No results found for "{{ query }}"</p>
         </div>
 

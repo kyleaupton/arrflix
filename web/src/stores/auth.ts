@@ -73,7 +73,11 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /** Set user state directly from bootstrap response data. */
-  function setUserFromBootstrap(u: { id: string; email?: string | null; username?: string | null }) {
+  function setUserFromBootstrap(u: {
+    id: string
+    email?: string | null
+    username?: string | null
+  }) {
     user.value = {
       sub: u.id,
       email: u.email,

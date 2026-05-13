@@ -37,20 +37,32 @@
       </div>
 
       <!-- Error State -->
-      <div v-else-if="isError" key="error" class="flex flex-col items-center justify-center py-12 text-center">
+      <div
+        v-else-if="isError"
+        key="error"
+        class="flex flex-col items-center justify-center py-12 text-center"
+      >
         <p class="text-destructive">Failed to load library</p>
-        <p class="text-sm text-muted-foreground mt-2">{{ error?.message || 'Please try again later' }}</p>
-        <Button variant="outline" class="mt-4" @click="() => refetch()">
-          Try Again
-        </Button>
+        <p class="text-sm text-muted-foreground mt-2">
+          {{ error?.message || 'Please try again later' }}
+        </p>
+        <Button variant="outline" class="mt-4" @click="() => refetch()"> Try Again </Button>
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="items.length === 0" key="empty" class="flex flex-col items-center justify-center py-12 text-center">
+      <div
+        v-else-if="items.length === 0"
+        key="empty"
+        class="flex flex-col items-center justify-center py-12 text-center"
+      >
         <Film class="h-12 w-12 text-muted-foreground mb-4" />
         <p class="text-lg font-medium">No media found</p>
         <p class="text-sm text-muted-foreground mt-1">
-          {{ searchQuery ? 'Try adjusting your search or filters' : 'Your library is empty. Add some media to get started!' }}
+          {{
+            searchQuery
+              ? 'Try adjusting your search or filters'
+              : 'Your library is empty. Add some media to get started!'
+          }}
         </p>
       </div>
 
@@ -70,12 +82,19 @@
 
           <!-- Loading skeletons for next page -->
           <template v-if="isFetchingNextPage">
-            <Skeleton v-for="i in pageSize" :key="`skeleton-${i}`" class="aspect-[2/3] rounded-lg" />
+            <Skeleton
+              v-for="i in pageSize"
+              :key="`skeleton-${i}`"
+              class="aspect-[2/3] rounded-lg"
+            />
           </template>
         </div>
 
         <!-- End of list indicator -->
-        <p v-if="!hasNextPage && items.length > 0" class="text-center text-sm text-muted-foreground py-4">
+        <p
+          v-if="!hasNextPage && items.length > 0"
+          class="text-center text-sm text-muted-foreground py-4"
+        >
           End of library
         </p>
       </div>
@@ -119,34 +138,29 @@ const onTypeFilterChange = () => {
 }
 
 // Infinite Query
-const {
-  data,
-  fetchNextPage,
-  hasNextPage,
-  isFetchingNextPage,
-  isLoading,
-  isError,
-  error,
-  refetch,
-} = useInfiniteQuery({
-  queryKey: computed(() => ['library', { type: typeFilter.value, search: searchQuery.value, pageSize: pageSize.value }]),
-  queryFn: async ({ pageParam = 1 }) => {
-    const { data } = await libraryList({
-      query: {
-        page: pageParam,
-        pageSize: pageSize.value,
-        type: typeFilter.value || undefined,
-        search: searchQuery.value || undefined,
-      },
-    })
-    return data!
-  },
-  getNextPageParam: (lastPage) => {
-    const { page, totalPages } = lastPage.pagination
-    return page < totalPages ? page + 1 : undefined
-  },
-  initialPageParam: 1,
-})
+const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, error, refetch } =
+  useInfiniteQuery({
+    queryKey: computed(() => [
+      'library',
+      { type: typeFilter.value, search: searchQuery.value, pageSize: pageSize.value },
+    ]),
+    queryFn: async ({ pageParam = 1 }) => {
+      const { data } = await libraryList({
+        query: {
+          page: pageParam,
+          pageSize: pageSize.value,
+          type: typeFilter.value || undefined,
+          search: searchQuery.value || undefined,
+        },
+      })
+      return data!
+    },
+    getNextPageParam: (lastPage) => {
+      const { page, totalPages } = lastPage.pagination
+      return page < totalPages ? page + 1 : undefined
+    },
+    initialPageParam: 1,
+  })
 
 // Flatten pages into single array
 const items = computed(() => data.value?.pages.flatMap((p) => p.data ?? []) ?? [])
@@ -159,7 +173,7 @@ useInfiniteScroll(
       fetchNextPage()
     }
   },
-  { distance: 200 }
+  { distance: 200 },
 )
 
 // Navigation

@@ -83,7 +83,9 @@ const handleTestDownloader = async (downloader: Downloader) => {
   if (!downloader.id) return
   testingId.value = downloader.id
   try {
-    const result = (await testDownloaderMutation.mutateAsync({ path: { id: downloader.id } })) as TestResult
+    const result = (await testDownloaderMutation.mutateAsync({
+      path: { id: downloader.id },
+    })) as TestResult
     if (result.success) {
       downloaderError.value = null
       await modal.alert({

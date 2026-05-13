@@ -4,206 +4,206 @@
       <div v-if="isLoading" key="loading" class="space-y-4">
         <Skeleton class="h-96 w-full rounded-lg" />
       </div>
-      <div v-else-if="isError" key="error" class="flex flex-col items-center justify-center py-12 text-center">
+      <div
+        v-else-if="isError"
+        key="error"
+        class="flex flex-col items-center justify-center py-12 text-center"
+      >
         <p class="text-destructive">Failed to load series</p>
         <p class="text-sm text-muted-foreground mt-2">Please try again later</p>
       </div>
       <div v-else-if="data" key="content" class="flex flex-col gap-6">
-      <MediaHero
-        :title="data.title"
-        :tagline="data.tagline"
-        :subtitle="seriesSubTitle"
-        :credits="creatorCredits"
-        :overview="data.overview"
-        :backdrop-url="backdropUrl"
-        :chips="seriesChips"
-        :full-bleed="isImmersive"
-      >
-        <template #poster>
-          <Poster :item="data" size="large" :clickable="false" :is-downloading="isDownloading" />
-        </template>
-        <template v-if="data.voteAverage" #ratings>
-          <RatingBadge
-            source="tmdb"
-            :score="data.voteAverage"
-            :vote-count="data.voteCount"
-          />
-        </template>
-      </MediaHero>
+        <MediaHero
+          :title="data.title"
+          :tagline="data.tagline"
+          :subtitle="seriesSubTitle"
+          :credits="creatorCredits"
+          :overview="data.overview"
+          :backdrop-url="backdropUrl"
+          :chips="seriesChips"
+          :full-bleed="isImmersive"
+        >
+          <template #poster>
+            <Poster :item="data" size="large" :clickable="false" :is-downloading="isDownloading" />
+          </template>
+          <template v-if="data.voteAverage" #ratings>
+            <RatingBadge source="tmdb" :score="data.voteAverage" :vote-count="data.voteCount" />
+          </template>
+        </MediaHero>
 
-      <div :class="isImmersive ? 'px-6 space-y-6' : 'space-y-6'">
-      <NextEpisodeBanner
-        v-if="data.nextEpisodeToAir"
-        :episode="data.nextEpisodeToAir"
-      />
-      <div v-if="data.seasons?.length" class="space-y-4">
-        <h2 class="text-xl font-semibold">Seasons</h2>
+        <div :class="isImmersive ? 'px-6 space-y-6' : 'space-y-6'">
+          <NextEpisodeBanner v-if="data.nextEpisodeToAir" :episode="data.nextEpisodeToAir" />
+          <div v-if="data.seasons?.length" class="space-y-4">
+            <h2 class="text-xl font-semibold">Seasons</h2>
 
-        <!-- Season pill tabs + episode card grid -->
-        <Tabs v-model="selectedSeason">
-          <div class="flex items-center gap-3">
-            <ScrollArea class="min-w-0">
-              <TabsList class="inline-flex w-max">
-                <TabsTrigger
-                  v-for="season in sortedSeasons"
-                  :key="season.seasonNumber"
-                  :value="String(season.seasonNumber)"
-                >
-                  S{{ season.seasonNumber }}
-                </TabsTrigger>
-              </TabsList>
-              <ScrollBar orientation="horizontal" />
-            </ScrollArea>
+            <!-- Season pill tabs + episode card grid -->
+            <Tabs v-model="selectedSeason">
+              <div class="flex items-center gap-3">
+                <ScrollArea class="min-w-0">
+                  <TabsList class="inline-flex w-max">
+                    <TabsTrigger
+                      v-for="season in sortedSeasons"
+                      :key="season.seasonNumber"
+                      :value="String(season.seasonNumber)"
+                    >
+                      S{{ season.seasonNumber }}
+                    </TabsTrigger>
+                  </TabsList>
+                  <ScrollBar orientation="horizontal" />
+                </ScrollArea>
 
-            <!-- Season-level action: download / progress -->
-            <div v-if="currentSeason" class="shrink-0">
-              <template v-if="getSeasonPackJob(currentSeason.seasonNumber)">
-                <CircularProgress
-                  :state="getSeasonProgressState(currentSeason.seasonNumber)"
-                  :value="getSeasonProgressValue(currentSeason.seasonNumber)"
-                  size="sm"
-                />
-              </template>
-              <template v-else-if="hasActiveEpisodeDownloads(currentSeason)">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger as-child>
-                      <span class="flex items-center">
-                        <CircularProgress state="indeterminate" size="sm" />
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {{ getActiveEpisodeCount(currentSeason) }} episode(s) downloading
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </template>
-              <template v-else>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  @click="searchForSeasonCandidates(currentSeason.seasonNumber)"
-                >
-                  <Download class="size-4 mr-2" />
-                  Download S{{ currentSeason.seasonNumber }}
-                </Button>
-              </template>
-            </div>
-          </div>
+                <!-- Season-level action: download / progress -->
+                <div v-if="currentSeason" class="shrink-0">
+                  <template v-if="getSeasonPackJob(currentSeason.seasonNumber)">
+                    <CircularProgress
+                      :state="getSeasonProgressState(currentSeason.seasonNumber)"
+                      :value="getSeasonProgressValue(currentSeason.seasonNumber)"
+                      size="sm"
+                    />
+                  </template>
+                  <template v-else-if="hasActiveEpisodeDownloads(currentSeason)">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger as-child>
+                          <span class="flex items-center">
+                            <CircularProgress state="indeterminate" size="sm" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {{ getActiveEpisodeCount(currentSeason) }} episode(s) downloading
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </template>
+                  <template v-else>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      @click="searchForSeasonCandidates(currentSeason.seasonNumber)"
+                    >
+                      <Download class="size-4 mr-2" />
+                      Download S{{ currentSeason.seasonNumber }}
+                    </Button>
+                  </template>
+                </div>
+              </div>
 
-          <TabsContent
-            v-for="season in sortedSeasons"
-            :key="season.seasonNumber"
-            :value="String(season.seasonNumber)"
-            class="mt-4 space-y-4"
-          >
-            <p v-if="season.overview" class="text-sm text-muted-foreground">
-              {{ season.overview }}
-            </p>
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              <div
-                v-for="episode in season.episodes"
-                :key="episode.episodeNumber"
-                class="rounded-lg border bg-card overflow-hidden"
+              <TabsContent
+                v-for="season in sortedSeasons"
+                :key="season.seasonNumber"
+                :value="String(season.seasonNumber)"
+                class="mt-4 space-y-4"
               >
-                <!-- Episode still image -->
-                <img
-                  v-if="episode.stillPath"
-                  :src="`https://image.tmdb.org/t/p/w500${episode.stillPath}`"
-                  :alt="episode.title"
-                  class="w-full aspect-video object-cover bg-muted"
-                />
-                <div v-else class="w-full aspect-video bg-muted" />
+                <p v-if="season.overview" class="text-sm text-muted-foreground">
+                  {{ season.overview }}
+                </p>
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  <div
+                    v-for="episode in season.episodes"
+                    :key="episode.episodeNumber"
+                    class="rounded-lg border bg-card overflow-hidden"
+                  >
+                    <!-- Episode still image -->
+                    <img
+                      v-if="episode.stillPath"
+                      :src="`https://image.tmdb.org/t/p/w500${episode.stillPath}`"
+                      :alt="episode.title"
+                      class="w-full aspect-video object-cover bg-muted"
+                    />
+                    <div v-else class="w-full aspect-video bg-muted" />
 
-                <!-- Episode info -->
-                <div class="p-3 space-y-2">
-                  <div class="flex items-start justify-between gap-2">
-                    <div class="min-w-0">
-                      <div class="flex items-center gap-2 mb-0.5">
-                        <span class="text-xs font-mono text-muted-foreground">
-                          E{{ episode.episodeNumber.toString().padStart(2, '0') }}
-                        </span>
-                        <h4 class="font-medium text-sm truncate">
-                          {{ episode.title || 'Episode ' + episode.episodeNumber }}
-                        </h4>
+                    <!-- Episode info -->
+                    <div class="p-3 space-y-2">
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                          <div class="flex items-center gap-2 mb-0.5">
+                            <span class="text-xs font-mono text-muted-foreground">
+                              E{{ episode.episodeNumber.toString().padStart(2, '0') }}
+                            </span>
+                            <h4 class="font-medium text-sm truncate">
+                              {{ episode.title || 'Episode ' + episode.episodeNumber }}
+                            </h4>
+                          </div>
+                          <p v-if="episode.airDate" class="text-xs text-muted-foreground">
+                            {{ episode.airDate }}
+                          </p>
+                        </div>
+                        <!-- Episode action/status area -->
+                        <div class="shrink-0">
+                          <!-- Episode is available and not downloading -->
+                          <template
+                            v-if="
+                              episode.available &&
+                              !getEpisodeJob(season.seasonNumber, episode.episodeNumber) &&
+                              !isPartOfSeasonPack(season.seasonNumber)
+                            "
+                          >
+                            <Badge
+                              variant="secondary"
+                              class="h-7 flex items-center gap-1 text-xs px-2"
+                            >
+                              <Check class="size-3" />
+                              Available
+                            </Badge>
+                          </template>
+                          <!-- Episode is downloading individually -->
+                          <template
+                            v-else-if="getEpisodeJob(season.seasonNumber, episode.episodeNumber)"
+                          >
+                            <CircularProgress
+                              :state="
+                                getEpisodeProgressState(season.seasonNumber, episode.episodeNumber)
+                              "
+                              :value="
+                                getEpisodeProgressValue(season.seasonNumber, episode.episodeNumber)
+                              "
+                              size="sm"
+                            />
+                          </template>
+                          <!-- Episode is part of an active season pack download -->
+                          <template v-else-if="isPartOfSeasonPack(season.seasonNumber)">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger as-child>
+                                  <span class="flex items-center">
+                                    <CircularProgress state="indeterminate" size="sm" />
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent> Downloading as season pack </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </template>
+                          <!-- Not available: show Snag button -->
+                          <template v-else>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              class="h-7 text-xs"
+                              @click="
+                                searchForEpisodeCandidates(
+                                  season.seasonNumber,
+                                  episode.episodeNumber,
+                                )
+                              "
+                            >
+                              <Download class="size-3 mr-1.5" />
+                              Download
+                            </Button>
+                          </template>
+                        </div>
                       </div>
-                      <p v-if="episode.airDate" class="text-xs text-muted-foreground">
-                        {{ episode.airDate }}
-                      </p>
-                    </div>
-                    <!-- Episode action/status area -->
-                    <div class="shrink-0">
-                      <!-- Episode is available and not downloading -->
-                      <template
-                        v-if="
-                          episode.available &&
-                          !getEpisodeJob(season.seasonNumber, episode.episodeNumber) &&
-                          !isPartOfSeasonPack(season.seasonNumber)
-                        "
-                      >
-                        <Badge
-                          variant="secondary"
-                          class="h-7 flex items-center gap-1 text-xs px-2"
-                        >
-                          <Check class="size-3" />
-                          Available
-                        </Badge>
-                      </template>
-                      <!-- Episode is downloading individually -->
-                      <template
-                        v-else-if="getEpisodeJob(season.seasonNumber, episode.episodeNumber)"
-                      >
-                        <CircularProgress
-                          :state="
-                            getEpisodeProgressState(season.seasonNumber, episode.episodeNumber)
-                          "
-                          :value="
-                            getEpisodeProgressValue(season.seasonNumber, episode.episodeNumber)
-                          "
-                          size="sm"
-                        />
-                      </template>
-                      <!-- Episode is part of an active season pack download -->
-                      <template v-else-if="isPartOfSeasonPack(season.seasonNumber)">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger as-child>
-                              <span class="flex items-center">
-                                <CircularProgress state="indeterminate" size="sm" />
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent> Downloading as season pack </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </template>
-                      <!-- Not available: show Snag button -->
-                      <template v-else>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          class="h-7 text-xs"
-                          @click="
-                            searchForEpisodeCandidates(season.seasonNumber, episode.episodeNumber)
-                          "
-                        >
-                          <Download class="size-3 mr-1.5" />
-                          Download
-                        </Button>
-                      </template>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          </TabsContent>
-        </Tabs>
-      </div>
+              </TabsContent>
+            </Tabs>
+          </div>
 
-      <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
-      <RailVideos v-if="data.videos?.length" title="Videos" :videos="data.videos" />
+          <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
+          <RailVideos v-if="data.videos?.length" title="Videos" :videos="data.videos" />
 
-      <WatchProviders :providers="data.watchProviders" />
-      </div>
+          <WatchProviders :providers="data.watchProviders" />
+        </div>
       </div>
     </Transition>
   </div>
@@ -221,12 +221,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import CircularProgress from '@/components/ui/progress/CircularProgress.vue'
 import type { CircularProgressState } from '@/components/ui/progress/CircularProgress.vue'
 import MediaHero from '@/components/media/MediaHero.vue'
@@ -316,12 +311,16 @@ const sortedSeasons = computed(() => {
 })
 
 // Default-select the latest season when data loads
-watch(sortedSeasons, (seasons) => {
-  const first = seasons[0]
-  if (first && !selectedSeason.value) {
-    selectedSeason.value = String(first.seasonNumber)
-  }
-}, { immediate: true })
+watch(
+  sortedSeasons,
+  (seasons) => {
+    const first = seasons[0]
+    if (first && !selectedSeason.value) {
+      selectedSeason.value = String(first.seasonNumber)
+    }
+  },
+  { immediate: true },
+)
 
 const currentSeason = computed(() =>
   sortedSeasons.value.find((s) => String(s.seasonNumber) === selectedSeason.value),
@@ -331,10 +330,7 @@ const currentSeason = computed(() =>
 const activeJobsForSeries = computed(() => {
   if (!data.value?.tmdbId) return []
   return Object.values(downloadJobs.jobsById).filter(
-    (job) =>
-      job.mediaType === 'series' &&
-      job.tmdbId === data.value?.tmdbId &&
-      isJobActive(job),
+    (job) => job.mediaType === 'series' && job.tmdbId === data.value?.tmdbId && isJobActive(job),
   )
 })
 

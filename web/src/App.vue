@@ -33,13 +33,13 @@ const onPageAfterLeave = () => {
   <TooltipProvider>
     <Toaster position="top-center" />
     <DialogContainer />
-    <div
-      v-if="!appStore.isReady"
-      class="flex min-h-svh items-center justify-center"
-    >
+    <div v-if="!appStore.isReady" class="flex min-h-svh items-center justify-center">
       <div class="text-muted-foreground">Loading...</div>
     </div>
-    <router-view v-else-if="route.meta.public" v-slot="{ Component: publicComponent, route: publicRoute }">
+    <router-view
+      v-else-if="route.meta.public"
+      v-slot="{ Component: publicComponent, route: publicRoute }"
+    >
       <Transition name="page" mode="out-in">
         <component :is="publicComponent" :key="publicRoute.path" />
       </Transition>

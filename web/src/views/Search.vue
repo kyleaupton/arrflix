@@ -29,13 +29,21 @@
       </div>
 
       <!-- Error State -->
-      <div v-else-if="isError" key="error" class="flex flex-col items-center justify-center py-12 text-center">
+      <div
+        v-else-if="isError"
+        key="error"
+        class="flex flex-col items-center justify-center py-12 text-center"
+      >
         <p class="text-destructive">Search failed</p>
         <p class="text-sm text-muted-foreground mt-2">{{ error?.message || 'Please try again' }}</p>
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="!searchQuery" key="no-query" class="flex flex-col items-center justify-center py-12 text-center">
+      <div
+        v-else-if="!searchQuery"
+        key="no-query"
+        class="flex flex-col items-center justify-center py-12 text-center"
+      >
         <Search class="h-12 w-12 text-muted-foreground mb-4" />
         <p class="text-lg font-medium">Enter a search query</p>
         <p class="text-sm text-muted-foreground mt-1">
@@ -44,12 +52,14 @@
       </div>
 
       <!-- No Results -->
-      <div v-else-if="filteredResults.length === 0" key="no-results" class="flex flex-col items-center justify-center py-12 text-center">
+      <div
+        v-else-if="filteredResults.length === 0"
+        key="no-results"
+        class="flex flex-col items-center justify-center py-12 text-center"
+      >
         <Search class="h-12 w-12 text-muted-foreground mb-4" />
         <p class="text-lg font-medium">No results found</p>
-        <p class="text-sm text-muted-foreground mt-1">
-          Try adjusting your search or filters
-        </p>
+        <p class="text-sm text-muted-foreground mt-1">Try adjusting your search or filters</p>
       </div>
 
       <!-- Results Grid -->
@@ -76,7 +86,10 @@
             </div>
 
             <!-- Library badge -->
-            <div v-if="result.isInLibrary" class="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/70 text-xs text-emerald-400">
+            <div
+              v-if="result.isInLibrary"
+              class="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/70 text-xs text-emerald-400"
+            >
               <CheckCircle2 class="h-3 w-3" />
               <span>In Library</span>
             </div>
@@ -143,7 +156,7 @@ const totalResults = computed(() => data.value?.totalResults ?? 0)
 
 const filteredResults = computed(() => {
   if (!typeFilter.value) return results.value
-  return results.value.filter(r => r.mediaType === typeFilter.value)
+  return results.value.filter((r) => r.mediaType === typeFilter.value)
 })
 
 const getItemRoute = (result: SearchResult) => {

@@ -19,12 +19,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Star } from 'lucide-vue-next'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 export type RatingSource = 'tmdb' | 'rt-critics' | 'rt-audience' | 'imdb'
 

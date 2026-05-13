@@ -85,7 +85,7 @@ type PosterSize = keyof typeof POSTER_SIZES
 
 const props = withDefaults(
   defineProps<{
-    item: MovieDetail | SeriesDetail | HydratedTitle | MovieRail |  LibraryItem
+    item: MovieDetail | SeriesDetail | HydratedTitle | MovieRail | LibraryItem
     size?: PosterSize
     to?: { path: string } | string
     clickable?: boolean
@@ -160,7 +160,9 @@ const onError = () => {
   border-radius: 8px;
   overflow: hidden;
   background-color: #111827;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .poster-outer.is-clickable:hover .poster-inner {
@@ -243,9 +245,16 @@ const onError = () => {
   position: absolute;
   inset: 0;
   border-radius: 8px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.4) 40%, transparent 100%);
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.8) 0%,
+    rgba(0, 0, 0, 0.4) 40%,
+    transparent 100%
+  );
   opacity: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
   pointer-events: none;
   display: flex;
   flex-direction: column;

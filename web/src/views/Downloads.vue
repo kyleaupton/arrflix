@@ -21,10 +21,14 @@ const filters: { key: DownloadFilter; label: string }[] = [
 
 function filterCount(key: DownloadFilter): number {
   switch (key) {
-    case 'active': return jobs.activeJobs.length
-    case 'attention': return jobs.needsAttentionJobs.length
-    case 'completed': return jobs.completedJobs.length
-    default: return jobs.jobsSorted.length
+    case 'active':
+      return jobs.activeJobs.length
+    case 'attention':
+      return jobs.needsAttentionJobs.length
+    case 'completed':
+      return jobs.completedJobs.length
+    default:
+      return jobs.jobsSorted.length
   }
 }
 
@@ -132,7 +136,13 @@ onMounted(async () => {
             class="size-2 rounded-full"
             :class="events.isConnected ? 'bg-green-500' : 'bg-red-500'"
           />
-          {{ events.isConnected ? 'Live' : events.status === 'reconnecting' ? 'Reconnecting' : 'Disconnected' }}
+          {{
+            events.isConnected
+              ? 'Live'
+              : events.status === 'reconnecting'
+                ? 'Reconnecting'
+                : 'Disconnected'
+          }}
         </div>
       </div>
 
@@ -144,8 +154,10 @@ onMounted(async () => {
         <AlertTriangle class="size-4 text-destructive shrink-0" />
         <span class="text-sm text-destructive">
           {{ jobs.needsAttentionJobs.length }}
-          download{{ jobs.needsAttentionJobs.length > 1 ? 's' : '' }}
-          need{{ jobs.needsAttentionJobs.length === 1 ? 's' : '' }} attention
+          download{{ jobs.needsAttentionJobs.length > 1 ? 's' : '' }} need{{
+            jobs.needsAttentionJobs.length === 1 ? 's' : ''
+          }}
+          attention
         </span>
         <button
           class="ml-auto text-xs font-medium text-destructive hover:underline"
@@ -192,14 +204,16 @@ onMounted(async () => {
         />
 
         <div v-if="jobs.hasMore" class="flex justify-center pt-2">
-          <Button variant="ghost" size="sm" @click="jobs.showMore()">
-            Show more
-          </Button>
+          <Button variant="ghost" size="sm" @click="jobs.showMore()"> Show more </Button>
         </div>
       </div>
     </div>
 
     <!-- Detail Drawer -->
-    <DownloadDetailDrawer @reimport="handleDrawerReimport" @cancel="handleDrawerCancel" @retry="handleDrawerRetry" />
+    <DownloadDetailDrawer
+      @reimport="handleDrawerReimport"
+      @cancel="handleDrawerCancel"
+      @retry="handleDrawerRetry"
+    />
   </div>
 </template>

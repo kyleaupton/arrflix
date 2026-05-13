@@ -2,7 +2,14 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type { VersionInfo } from '@/client/types.gen'
 
-export type VersionDebugState = 'off' | 'loading' | 'error' | 'up_to_date' | 'update_available' | 'dev' | 'unknown'
+export type VersionDebugState =
+  | 'off'
+  | 'loading'
+  | 'error'
+  | 'up_to_date'
+  | 'update_available'
+  | 'dev'
+  | 'unknown'
 
 const presets: Record<Exclude<VersionDebugState, 'off' | 'loading' | 'error'>, VersionInfo> = {
   up_to_date: {
@@ -23,7 +30,8 @@ const presets: Record<Exclude<VersionDebugState, 'off' | 'loading' | 'error'>, V
         version: 'v1.2.0',
         tag: 'v1.2.0',
         url: 'https://github.com/example/arrflix/releases/tag/v1.2.0',
-        notes: 'Bug fixes and performance improvements.\n- Fixed media scanning issue\n- Improved download speed detection',
+        notes:
+          'Bug fixes and performance improvements.\n- Fixed media scanning issue\n- Improved download speed detection',
         publishedAt: '2026-03-05T12:00:00Z',
       },
     },

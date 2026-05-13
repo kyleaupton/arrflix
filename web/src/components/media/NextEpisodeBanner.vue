@@ -4,7 +4,9 @@
     <div class="min-w-0">
       <p class="text-xs font-medium text-muted-foreground">Next Episode</p>
       <p class="text-sm font-medium truncate">
-        S{{ String(episode.seasonNumber).padStart(2, '0') }}E{{ String(episode.episodeNumber).padStart(2, '0') }}
+        S{{ String(episode.seasonNumber).padStart(2, '0') }}E{{
+          String(episode.episodeNumber).padStart(2, '0')
+        }}
         <template v-if="episode.title"> &ldquo;{{ episode.title }}&rdquo;</template>
         <template v-if="formattedDate">
           <span class="text-muted-foreground font-normal"> · Airs {{ formattedDate }}</span>

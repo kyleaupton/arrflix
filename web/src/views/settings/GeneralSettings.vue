@@ -130,11 +130,7 @@ async function saveTmdbKey() {
         <CardContent>
           <div class="flex flex-col gap-2">
             <Label for="site-title" class="text-sm text-muted-foreground">Site title</Label>
-            <Input
-              id="site-title"
-              v-model="siteTitleInput"
-              :disabled="isSaving"
-            />
+            <Input id="site-title" v-model="siteTitleInput" :disabled="isSaving" />
           </div>
         </CardContent>
       </Card>
@@ -162,12 +158,7 @@ async function saveTmdbKey() {
                   />
                   {{ tmdbKeyDisplay ? 'Connected' : 'Not configured' }}
                 </span>
-                <Button
-                  v-if="!tmdbEditing"
-                  size="sm"
-                  variant="outline"
-                  @click="startTmdbEdit"
-                >
+                <Button v-if="!tmdbEditing" size="sm" variant="outline" @click="startTmdbEdit">
                   {{ tmdbKeyDisplay ? 'Change' : 'Configure' }}
                 </Button>
               </div>
@@ -206,9 +197,7 @@ async function saveTmdbKey() {
                   <span class="size-1.5 rounded-full bg-muted-foreground" />
                   Not configured
                 </span>
-                <Button size="sm" variant="outline" disabled>
-                  Configure
-                </Button>
+                <Button size="sm" variant="outline" disabled> Configure </Button>
               </div>
             </div>
           </div>

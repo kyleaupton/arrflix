@@ -5,7 +5,9 @@
         <!-- Hero skeleton -->
         <div class="relative h-[56vh] min-h-[400px] w-full rounded-lg overflow-hidden">
           <Skeleton class="absolute inset-0 !rounded-none" />
-          <div class="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-background to-transparent" />
+          <div
+            class="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-background to-transparent"
+          />
         </div>
         <!-- Rail skeletons -->
         <div v-for="i in 3" :key="i" class="space-y-2" :class="isImmersive ? 'px-6' : ''">
@@ -16,7 +18,11 @@
         </div>
       </div>
 
-      <div v-else-if="isError" key="error" class="flex flex-col items-center justify-center py-12 text-center">
+      <div
+        v-else-if="isError"
+        key="error"
+        class="flex flex-col items-center justify-center py-12 text-center"
+      >
         <p class="text-destructive">Failed to load content</p>
         <p class="text-sm text-muted-foreground mt-2">Please try again later</p>
       </div>

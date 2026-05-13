@@ -85,8 +85,8 @@ const isIndeterminate = computed(() => props.state === 'indeterminate')
         transformOrigin: `${center}px ${center}px`,
         transition: !isIndeterminate ? 'stroke-dashoffset 0.3s ease-in-out' : undefined,
       }"
-      :stroke-dasharray="isIndeterminate ? '25 75' : (showFullRing ? undefined : '100')"
-      :stroke-dashoffset="isIndeterminate ? 0 : (showFullRing ? 0 : 100 - clampedValue)"
+      :stroke-dasharray="isIndeterminate ? '25 75' : showFullRing ? undefined : '100'"
+      :stroke-dashoffset="isIndeterminate ? 0 : showFullRing ? 0 : 100 - clampedValue"
     />
 
     <!-- Center icon for terminal states -->
@@ -100,7 +100,11 @@ const isIndeterminate = computed(() => props.state === 'indeterminate')
       <div class="flex items-center justify-center w-full h-full">
         <Check v-if="state === 'success'" :size="config.icon" class="text-green-500" />
         <X v-else-if="state === 'error'" :size="config.icon" class="text-destructive" />
-        <Minus v-else-if="state === 'cancelled'" :size="config.icon" class="text-muted-foreground" />
+        <Minus
+          v-else-if="state === 'cancelled'"
+          :size="config.icon"
+          class="text-muted-foreground"
+        />
       </div>
     </foreignObject>
   </svg>

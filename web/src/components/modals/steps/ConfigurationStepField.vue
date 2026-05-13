@@ -15,10 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Eye, EyeOff } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
-import {
-  type IndexerOutput,
-  type FieldOutput,
-} from '@/client/types.gen'
+import { type IndexerOutput, type FieldOutput } from '@/client/types.gen'
 import { indexersActionMutation } from '@/client/@tanstack/vue-query.gen'
 import { cn } from '@/lib/utils'
 
@@ -40,11 +37,13 @@ const props = defineProps<{
 
 const options = computed(() => {
   if (props.field.selectOptions) {
-    return props.field.selectOptions.map((option: { name: string; value: number; hint: string }) => ({
-      label: option.name,
-      value: option.value,
-      hint: option.hint,
-    }))
+    return props.field.selectOptions.map(
+      (option: { name: string; value: number; hint: string }) => ({
+        label: option.name,
+        value: option.value,
+        hint: option.hint,
+      }),
+    )
   } else if (isAsyncAction.value && actionMutation.data?.value) {
     // @ts-expect-error shit ain't got types
     return actionMutation.data.value.options || []

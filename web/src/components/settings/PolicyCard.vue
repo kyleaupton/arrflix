@@ -11,13 +11,7 @@ import {
   policiesCreateActionMutation,
   policiesDeleteActionMutation,
 } from '@/client/@tanstack/vue-query.gen'
-import type {
-  Policy,
-  FieldDefinition,
-  Downloader,
-  Library,
-  NameTemplate,
-} from '@/client/types.gen'
+import type { Policy, FieldDefinition, Downloader, Library, NameTemplate } from '@/client/types.gen'
 import { usePolicyFields } from '@/composables/usePolicyFields'
 import { buildPolicySummary } from '@/composables/usePolicySummary'
 import { useModal } from '@/composables/useModal'
@@ -161,9 +155,7 @@ const summary = computed(() =>
 )
 
 // Rule field logic
-const fieldOptions = computed(() =>
-  props.fields.map((f) => ({ label: f.label, value: f.path })),
-)
+const fieldOptions = computed(() => props.fields.map((f) => ({ label: f.label, value: f.path })))
 
 const selectedField = computed(() => {
   if (!ruleForm.value.left_operand) return undefined
@@ -222,7 +214,9 @@ const getActionValueOptions = (actionType: string) => {
 }
 
 // Handlers
-const handleLeftOperandChange = (value: string | number | bigint | Record<string, unknown> | null) => {
+const handleLeftOperandChange = (
+  value: string | number | bigint | Record<string, unknown> | null,
+) => {
   ruleForm.value.left_operand = String(value ?? '')
   ruleForm.value.operator = ''
   ruleForm.value.right_operand = ''
@@ -409,10 +403,7 @@ const handleDelete = async () => {
 <template>
   <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
     <!-- Collapsed header -->
-    <div
-      class="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
-      @click="toggleExpand"
-    >
+    <div class="flex items-center gap-3 px-4 py-3 cursor-pointer select-none" @click="toggleExpand">
       <Switch
         v-model="policyForm.enabled"
         @click.stop
@@ -422,10 +413,7 @@ const handleDelete = async () => {
       <span class="font-medium truncate" :class="{ 'text-muted-foreground': !policyForm.enabled }">
         {{ policyForm.name || (isNew ? 'New Policy' : 'Unnamed Policy') }}
       </span>
-      <span
-        v-if="!isExpanded"
-        class="text-sm text-muted-foreground truncate ml-2 hidden sm:inline"
-      >
+      <span v-if="!isExpanded" class="text-sm text-muted-foreground truncate ml-2 hidden sm:inline">
         {{ summary }}
       </span>
       <div class="ml-auto shrink-0">
@@ -460,12 +448,7 @@ const handleDelete = async () => {
       <div class="mb-6">
         <div class="flex items-center justify-between mb-3">
           <span class="text-sm font-medium">Rule</span>
-          <Button
-            v-if="!showRuleEditor"
-            size="sm"
-            variant="outline"
-            @click="handleAddRule"
-          >
+          <Button v-if="!showRuleEditor" size="sm" variant="outline" @click="handleAddRule">
             <Plus class="size-3 mr-1" />
             Add Rule
           </Button>
@@ -567,11 +550,7 @@ const handleDelete = async () => {
         </div>
 
         <div v-else class="space-y-2">
-          <div
-            v-for="(action, index) in actionsForm"
-            :key="index"
-            class="flex items-start gap-2"
-          >
+          <div v-for="(action, index) in actionsForm" :key="index" class="flex items-start gap-2">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1">
               <!-- Action type -->
               <Select
@@ -610,16 +589,8 @@ const handleDelete = async () => {
                   </SelectItem>
                 </SelectContent>
               </Select>
-              <Input
-                v-else-if="action.type === 'stop_processing'"
-                model-value="N/A"
-                disabled
-              />
-              <Input
-                v-else
-                v-model="action.value"
-                placeholder="Enter value"
-              />
+              <Input v-else-if="action.type === 'stop_processing'" model-value="N/A" disabled />
+              <Input v-else v-model="action.value" placeholder="Enter value" />
             </div>
 
             <Button
@@ -637,12 +608,7 @@ const handleDelete = async () => {
       <!-- Footer buttons -->
       <Separator class="mb-4" />
       <div class="flex items-center justify-between">
-        <Button
-          v-if="!isNew"
-          variant="destructive"
-          size="sm"
-          @click="handleDelete"
-        >
+        <Button v-if="!isNew" variant="destructive" size="sm" @click="handleDelete">
           <Trash2 class="size-3 mr-1" />
           Delete
         </Button>

@@ -12,7 +12,11 @@
       <span class="font-semibold">{{ nameTemplate.name }}</span>
       <Badge
         :value="
-          nameTemplate.type === 'movie' ? 'Movie' : nameTemplate.type === 'series' ? 'Series' : nameTemplate.type
+          nameTemplate.type === 'movie'
+            ? 'Movie'
+            : nameTemplate.type === 'series'
+              ? 'Series'
+              : nameTemplate.type
         "
         severity="secondary"
         size="small"
@@ -53,4 +57,3 @@ const {
   align-items: center;
 }
 </style>
-

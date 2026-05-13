@@ -10,10 +10,7 @@ import {
 } from '@/client/@tanstack/vue-query.gen'
 import type { User } from '@/components/tables/configs/userTableConfig'
 import DataTable from '@/components/tables/DataTable.vue'
-import {
-  userColumns,
-  createUserActions,
-} from '@/components/tables/configs/userTableConfig'
+import { userColumns, createUserActions } from '@/components/tables/configs/userTableConfig'
 import { useModal } from '@/composables/useModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -23,7 +20,11 @@ import InviteDialog from '@/components/modals/InviteDialog.vue'
 
 // Data queries
 const { data: users, isLoading, refetch } = useQuery(usersListOptions())
-const { data: invites, isLoading: invitesLoading, refetch: refetchInvites } = useQuery(invitesListOptions())
+const {
+  data: invites,
+  isLoading: invitesLoading,
+  refetch: refetchInvites,
+} = useQuery(invitesListOptions())
 const modal = useModal()
 
 // Mutations
@@ -99,9 +100,7 @@ function formatDate(dateStr: string) {
         <div class="flex items-center justify-between">
           <div>
             <CardTitle class="text-xl font-semibold mb-2">Invites</CardTitle>
-            <p class="text-sm text-muted-foreground">
-              Pending and claimed invitations.
-            </p>
+            <p class="text-sm text-muted-foreground">Pending and claimed invitations.</p>
           </div>
           <Button @click="handleInviteUser">
             <Plus class="mr-2 size-4" />
@@ -158,9 +157,7 @@ function formatDate(dateStr: string) {
         <div class="flex items-center justify-between">
           <div>
             <CardTitle class="text-xl font-semibold mb-2">User Management</CardTitle>
-            <p class="text-sm text-muted-foreground">
-              Manage application users and their roles.
-            </p>
+            <p class="text-sm text-muted-foreground">Manage application users and their roles.</p>
           </div>
           <Button v-if="!invites || invites.length === 0" @click="handleInviteUser">
             <Plus class="mr-2 size-4" />

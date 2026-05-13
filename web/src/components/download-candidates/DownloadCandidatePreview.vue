@@ -173,7 +173,10 @@
                       </code>
                     </div>
 
-                    <div v-if="policy.matched && (policy.actionsApplied?.length ?? 0) > 0" class="mt-3">
+                    <div
+                      v-if="policy.matched && (policy.actionsApplied?.length ?? 0) > 0"
+                      class="mt-3"
+                    >
                       <div class="text-sm font-medium mb-2">Actions Applied:</div>
                       <ul class="list-disc list-inside space-y-1 text-sm text-foreground">
                         <li v-for="action in policy.actionsApplied" :key="action.order">
@@ -191,7 +194,10 @@
               </CardContent>
             </Card>
 
-            <div v-if="(trace.policies?.length ?? 0) === 0" class="text-center py-8 text-muted-foreground">
+            <div
+              v-if="(trace.policies?.length ?? 0) === 0"
+              class="text-center py-8 text-muted-foreground"
+            >
               No policies evaluated
             </div>
           </div>

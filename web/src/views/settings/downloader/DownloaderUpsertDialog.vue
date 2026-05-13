@@ -7,10 +7,7 @@ import {
   downloadersUpdateMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import { client } from '@/client/client.gen'
-import {
-  type Downloader,
-  type DownloaderWriteBody,
-} from '@/client/types.gen'
+import { type Downloader, type DownloaderWriteBody } from '@/client/types.gen'
 import BaseDialog from '@/components/modals/BaseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'

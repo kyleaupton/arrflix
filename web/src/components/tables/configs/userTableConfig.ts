@@ -45,8 +45,7 @@ export const userColumns: TableColumn<User>[] = [
 
       const colorMap: Record<string, string> = {
         admin: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-        manager:
-          'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+        manager: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
         user: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
         guest: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
       }

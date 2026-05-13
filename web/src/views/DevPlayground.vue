@@ -1,10 +1,19 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import CircularProgress from '@/components/ui/progress/CircularProgress.vue'
-import type { CircularProgressState, CircularProgressSize } from '@/components/ui/progress/CircularProgress.vue'
+import type {
+  CircularProgressState,
+  CircularProgressSize,
+} from '@/components/ui/progress/CircularProgress.vue'
 
 const progressValue = ref(45)
-const states: CircularProgressState[] = ['progress', 'indeterminate', 'success', 'error', 'cancelled']
+const states: CircularProgressState[] = [
+  'progress',
+  'indeterminate',
+  'success',
+  'error',
+  'cancelled',
+]
 const sizes: CircularProgressSize[] = ['sm', 'md', 'lg']
 </script>
 
@@ -32,7 +41,11 @@ const sizes: CircularProgressSize[] = ['sm', 'md', 'lg']
           <thead>
             <tr>
               <th class="text-left text-sm text-muted-foreground pb-3">State</th>
-              <th v-for="size in sizes" :key="size" class="text-center text-sm text-muted-foreground pb-3">
+              <th
+                v-for="size in sizes"
+                :key="size"
+                class="text-center text-sm text-muted-foreground pb-3"
+              >
                 {{ size }}
               </th>
             </tr>
@@ -42,11 +55,7 @@ const sizes: CircularProgressSize[] = ['sm', 'md', 'lg']
               <td class="py-3 text-sm font-mono">{{ state }}</td>
               <td v-for="size in sizes" :key="size" class="py-3 text-center">
                 <div class="flex justify-center">
-                  <CircularProgress
-                    :state="state"
-                    :value="progressValue"
-                    :size="size"
-                  />
+                  <CircularProgress :state="state" :value="progressValue" :size="size" />
                 </div>
               </td>
             </tr>

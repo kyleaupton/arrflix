@@ -54,7 +54,9 @@ const isLinkActive = (to: string) => {
   >
     <!-- Logo -->
     <RouterLink to="/" class="flex items-center gap-2 mr-8">
-      <div class="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+      <div
+        class="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+      >
         <Popcorn class="size-5" />
       </div>
       <span class="font-medium text-sm text-foreground">Arrflix</span>
