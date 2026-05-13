@@ -53,8 +53,9 @@ async function handleSubmit(e: Event) {
     })
     // Success - redirect to login
     router.push('/login')
-  } catch (err: any) {
-    errorMessage.value = err.response?.data?.error || err.message || 'Signup failed'
+  } catch (err) {
+    const e = err as { response?: { data?: { error?: string } }; message?: string }
+    errorMessage.value = e.response?.data?.error || e.message || 'Signup failed'
   } finally {
     isLoading.value = false
   }

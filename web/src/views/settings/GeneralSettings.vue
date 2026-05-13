@@ -86,8 +86,10 @@ async function saveTmdbKey() {
     settings.value = { ...settings.value, 'tmdb.api_key': '********' }
     tmdbEditing.value = false
     tmdbKeyInput.value = ''
-  } catch (err: any) {
-    tmdbError.value = err.response?.data?.error || 'Failed to save TMDB key'
+  } catch (err) {
+    tmdbError.value =
+      (err as { response?: { data?: { error?: string } } }).response?.data?.error ||
+      'Failed to save TMDB key'
   } finally {
     tmdbSaving.value = false
   }

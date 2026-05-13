@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import DOMPurify from 'dompurify'
 import { InfoIcon } from 'lucide-vue-next'
 import { useMutation } from '@tanstack/vue-query'
 import { Input } from '@/components/ui/input'
@@ -34,6 +35,13 @@ const props = defineProps<{
   selectedIndexer: IndexerOutput
   field: FieldOutput
 }>()
+
+// Sanitize HTML for info-type fields. Prowlarr's indexer definitions
+// (especially cardigann YAMLs) ship raw HTML in info field values; DOMPurify
+// strips scripts, event handlers, and javascript: URLs before injection.
+const safeInfoHtml = computed(() =>
+  props.field.type === 'info' ? DOMPurify.sanitize(String(props.field.value ?? '')) : '',
+)
 
 const options = computed(() => {
   if (props.field.selectOptions) {
@@ -280,7 +288,9 @@ onMounted(() => {
       <Alert :id="fieldId">
         <InfoIcon />
         <AlertTitle>{{ field.label }}</AlertTitle>
-        <AlertDescription v-html="field.value as string" />
+        <AlertDescription>
+          <div v-html="safeInfoHtml" />
+        </AlertDescription>
       </Alert>
     </template>
 

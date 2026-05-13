@@ -23,8 +23,8 @@ const handleSave = async () => {
       body: { email: email.value },
     })
     dialogRef.value.close({ saved: true })
-  } catch (err: any) {
-    error.value = err.message || 'Failed to create invite'
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Failed to create invite'
   }
 }
 

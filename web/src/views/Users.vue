@@ -8,6 +8,7 @@ import {
   invitesListOptions,
   invitesDeleteMutation,
 } from '@/client/@tanstack/vue-query.gen'
+import type { Invite } from '@/client/types.gen'
 import type { User } from '@/components/tables/configs/userTableConfig'
 import DataTable from '@/components/tables/DataTable.vue'
 import { userColumns, createUserActions } from '@/components/tables/configs/userTableConfig'
@@ -70,7 +71,7 @@ const handleDeleteUser = async (user: User) => {
   }
 }
 
-const handleDeleteInvite = async (invite: any) => {
+const handleDeleteInvite = async (invite: Invite) => {
   const confirmed = await modal.confirm({
     title: 'Revoke Invite',
     message: `Are you sure you want to revoke the invite for "${invite.email}"?`,

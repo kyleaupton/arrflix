@@ -32,6 +32,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dnd-kit-vue": "^0.0.2",
+    "dompurify": "^3.4.3",
     "embla-carousel-vue": "^8.6.0",
     "lucide-vue-next": "^0.562.0",
     "pinia": "^3.0.3",

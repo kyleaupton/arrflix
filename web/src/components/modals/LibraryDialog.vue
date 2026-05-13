@@ -111,8 +111,8 @@ const handleSave = async () => {
     }
     libraryError.value = null
     dialogRef.value.close({ saved: true })
-  } catch (err: any) {
-    libraryError.value = err.message || 'Failed to save library'
+  } catch (err) {
+    libraryError.value = err instanceof Error ? err.message : 'Failed to save library'
   }
 }
 

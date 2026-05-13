@@ -42,6 +42,17 @@ interface ScanProgress {
   mediaItemsCreated: number
 }
 
+// SSE event payload shape — the events store types `data` as unknown
+// (the OpenAPI spec doesn't carry per-event payload schemas), so we narrow
+// here. Fields are optional because each event type carries a subset.
+interface ScanEventData {
+  scanId?: string
+  libraryId: string
+  filesSeen?: number
+  mediaItemsCreated?: number
+  error?: string
+}
+
 const activeScans = reactive(new Map<string, ScanProgress>())
 
 // SSE scan event listeners
@@ -51,36 +62,40 @@ onMounted(() => {
   events.connect(['scan_started', 'scan_progress', 'scan_completed', 'scan_failed'])
 
   unsubscribers.push(
-    events.on('scan_started', (data: any) => {
-      const lib = libraries.value?.find((l) => l.id === data.libraryId)
-      activeScans.set(data.libraryId, {
-        scanId: data.scanId,
-        libraryId: data.libraryId,
+    events.on('scan_started', (data) => {
+      const d = data as ScanEventData
+      const lib = libraries.value?.find((l) => l.id === d.libraryId)
+      activeScans.set(d.libraryId, {
+        scanId: d.scanId ?? '',
+        libraryId: d.libraryId,
         libraryName: lib?.name ?? 'Unknown',
         filesSeen: 0,
         mediaItemsCreated: 0,
       })
     }),
-    events.on('scan_progress', (data: any) => {
-      const scan = activeScans.get(data.libraryId)
+    events.on('scan_progress', (data) => {
+      const d = data as ScanEventData
+      const scan = activeScans.get(d.libraryId)
       if (scan) {
-        scan.filesSeen = data.filesSeen
-        scan.mediaItemsCreated = data.mediaItemsCreated
+        scan.filesSeen = d.filesSeen ?? scan.filesSeen
+        scan.mediaItemsCreated = d.mediaItemsCreated ?? scan.mediaItemsCreated
       }
     }),
-    events.on('scan_completed', (data: any) => {
-      activeScans.delete(data.libraryId)
-      const lib = libraries.value?.find((l) => l.id === data.libraryId)
+    events.on('scan_completed', (data) => {
+      const d = data as ScanEventData
+      activeScans.delete(d.libraryId)
+      const lib = libraries.value?.find((l) => l.id === d.libraryId)
       toast.success(`Scan complete: ${lib?.name ?? 'Library'}`, {
-        description: `${data.filesSeen} files seen, ${data.mediaItemsCreated} new items`,
+        description: `${d.filesSeen ?? 0} files seen, ${d.mediaItemsCreated ?? 0} new items`,
       })
       refetch()
     }),
-    events.on('scan_failed', (data: any) => {
-      activeScans.delete(data.libraryId)
-      const lib = libraries.value?.find((l) => l.id === data.libraryId)
+    events.on('scan_failed', (data) => {
+      const d = data as ScanEventData
+      activeScans.delete(d.libraryId)
+      const lib = libraries.value?.find((l) => l.id === d.libraryId)
       toast.error(`Scan failed: ${lib?.name ?? 'Library'}`, {
-        description: data.error,
+        description: d.error,
       })
     }),
   )

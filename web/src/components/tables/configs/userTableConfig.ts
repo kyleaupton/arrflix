@@ -6,7 +6,7 @@ export interface User {
   email: string | null
   username: string | null
   isActive: boolean
-  roles?: any // JSONB from database
+  roles?: unknown // JSONB from database; runtime-narrowed in render below
   createdAt: string
   updatedAt: string
 }
@@ -29,14 +29,14 @@ export const userColumns: TableColumn<User>[] = [
     label: 'Role',
     sortable: false,
     width: '150px',
-    render: (value: any) => {
+    render: (value: unknown) => {
       // Parse roles from JSONB array
       let roleName = 'none'
       if (value) {
         try {
           const roles = typeof value === 'string' ? JSON.parse(value) : value
           if (Array.isArray(roles) && roles.length > 0) {
-            roleName = roles[0].name || 'none'
+            roleName = (roles[0] as { name?: string }).name || 'none'
           }
         } catch {
           roleName = 'none'

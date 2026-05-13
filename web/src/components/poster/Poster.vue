@@ -102,7 +102,7 @@ const props = withDefaults(
 
 const isInLibrary = computed(() => {
   if ('files' in props.item && props.item.files) {
-    return props.item.files.some((file: any) => file.status === 'available')
+    return props.item.files.some((file: { status: string }) => file.status === 'available')
   } else if ('isInLibrary' in props.item) {
     return props.item.isInLibrary
   }

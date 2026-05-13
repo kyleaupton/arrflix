@@ -95,11 +95,12 @@ async function handleAdminSubmit(e: Event) {
     })
     await refreshBootstrap()
     currentStep.value = 1
-  } catch (err: any) {
-    if (err?.status === 409) {
+  } catch (err) {
+    const e = err as { status?: number; detail?: string }
+    if (e?.status === 409) {
       adminError.value = 'System already initialized'
     } else {
-      adminError.value = err?.detail || 'Setup failed'
+      adminError.value = e?.detail || 'Setup failed'
     }
   } finally {
     isLoadingAdmin.value = false
@@ -127,8 +128,8 @@ async function handleTmdbSubmit(e: Event) {
     if (!appStore.needsSetup) {
       router.push('/login')
     }
-  } catch (err: any) {
-    tmdbError.value = err?.detail || 'Failed to validate TMDB key'
+  } catch (err) {
+    tmdbError.value = (err as { detail?: string })?.detail || 'Failed to validate TMDB key'
   } finally {
     isLoadingTmdb.value = false
   }

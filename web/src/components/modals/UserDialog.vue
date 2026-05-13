@@ -111,8 +111,8 @@ const handleSave = async () => {
 
     userError.value = null
     dialogRef.value.close({ saved: true })
-  } catch (err: any) {
-    userError.value = err.message || 'Failed to save user'
+  } catch (err) {
+    userError.value = err instanceof Error ? err.message : 'Failed to save user'
   }
 }
 

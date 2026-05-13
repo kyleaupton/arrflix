@@ -18,7 +18,7 @@ defineProps<{
     subtitle?: string
     type: string
     movies: MovieRail[]
-    series: any[]
+    series: unknown[]
   }
 }>()
 </script>
