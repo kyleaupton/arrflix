@@ -184,3 +184,32 @@ Nothing. If you find yourself reaching for them in service or worker code, ask:
 - **Is it a programmer error / "this should never happen"?** → `apperrors.Internalf`. Logged, hidden from the wire.
 
 If none of those fit, the answer is probably to read the spec — there might be a kind missing, or there might be a layering question to think about.
+
+## Tests
+
+Unit tests in this package cover internal logic that doesn't need the full HTTP/DB stack to exercise. Today that means pure helpers, parsers, and transformation code — see `scan_test.go` for the worked examples (`TestIsMediaFile`, `TestGuessitInput`, `TestBuildSearchKey`, `TestEvaluateSearchResults`). The integration suite (`internal/test/integration/`) owns the wire contract; this layer owns correctness of the code behind it. The full split is in [`../test/integration/CLAUDE.md`](../test/integration/CLAUDE.md) — read it before adding a test that would need DB rows or a real external API to set up its precondition.
+
+Service-method tests against faked dependencies are an intended future addition but **don't currently exist in this package**. They require introducing internal interface seams in the production code (the service's repo and external-client fields typed as interfaces rather than concrete `*repo.Repository` / `*TmdbService` pointers). Adding seams is a per-service design decision, not a default — do it when there's enough untested internal logic in a service to justify the production-side change. The pattern to follow when you do is at the bottom of this section.
+
+### Scope rule
+
+A test belongs here if the assertion is about an internal branch — a switch arm, a map lookup, a parse helper, a transformation, an error path inside a service method. Restated from the integration CLAUDE.md's deciding question, from this side: if driving the precondition through a public endpoint would require seeding rows through a non-existent admin path or running the full import/scan pipeline just to materialize state, write the unit test. The integration suite proves the wire works end-to-end; this layer proves the logic is correct. Conflating them inflates one suite without improving coverage of what only the other can catch.
+
+### Conventions
+
+- **Co-located.** Test for `scan.go` lives in `scan_test.go`, same directory. No separate test packages.
+- **Same package** (`package service`, not `service_test`). Unit tests need access to unexported types and helpers (e.g., `tmdbSearchKey`, `evaluateSearchResults`, `buildSearchKey`, `guessitInput` in `scan.go`) — that's the whole point. Don't export something just to test it; put the test next to the thing.
+- **`t.Parallel()` as the first line of every test and every subtest.** Parallel runs surface accidental shared state. If a test genuinely needs serialization (a process-level singleton, a global counter), document why in a comment above the missing `t.Parallel()`.
+- **Hand-rolled fakes, no mocking framework.** When test doubles are needed, write a struct with `xxxFn func(...)` fields rather than pulling in `testify/mock` or generated mocks.
+- **`t.TempDir()` for filesystem fixtures.** Auto-cleaned, isolated per test, parallel-safe.
+- **`httptest.NewServer` for in-process HTTP sidecars.** Useful when the code under test wraps an HTTP client (guessit, TMDB) and you want to exercise the marshaling alongside the logic without a container.
+- **Naming.** `TestFunction` for free helpers (`TestIsMediaFile`, `TestBuildSearchKey`); `TestType_Case` for service-method tests when those land. Table tests for pure-function fan-out; named subtests (`t.Run("happy path", ...)`) for behavior cases.
+- **Assert on typed errors via `apperrors.IsX` predicates.** Bind to the kind, not the string. Sentinels are banned (Rule 5) so `errors.Is(err, ErrFoo)` isn't an option anyway.
+
+### Fakes for service-method tests (for when seams land)
+
+No service in this package currently exposes the internal interface seams this section assumes; the guidance is here so the pattern is consistent when someone introduces them.
+
+The shape: one fake struct per service-internal interface, with an `xxxFn func(...)` field for each method and a sensible zero-value default. Tests override only the methods they care about. Counters that test code reads while a service goroutine writes need a mutex — the race detector will trip otherwise under `t.Parallel()`.
+
+A `newTestX(...)` helper that builds the service struct directly (not via the production constructor) is the natural companion — tests want to control which fakes are wired in and skip the rest. Co-location and same-package are what let that work.
