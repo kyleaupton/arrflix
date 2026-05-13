@@ -26,8 +26,7 @@ import {
   StepperTitle,
   StepperSeparator,
 } from '@/components/ui/stepper'
-import { client } from '@/client/client.gen'
-import { bootstrapGet } from '@/client/sdk.gen'
+import { bootstrapGet, setupInitialize, setupTmdb } from '@/client/sdk.gen'
 import { useAppStore } from '@/stores/app'
 
 const props = defineProps<{
@@ -97,21 +96,21 @@ async function handleAdminSubmit(e: Event) {
 
   isLoadingAdmin.value = true
   try {
-    await client.post({
-      url: '/v1/setup/initialize',
+    await setupInitialize<true>({
       body: {
         email: email.value,
         username: username.value,
         password: password.value,
       },
+      throwOnError: true,
     })
     await refreshBootstrap()
     currentStep.value = 1
   } catch (err: any) {
-    if (err.response?.status === 409) {
+    if (err?.status === 409) {
       adminError.value = 'System already initialized'
     } else {
-      adminError.value = err.response?.data?.error || 'Setup failed'
+      adminError.value = err?.detail || 'Setup failed'
     }
   } finally {
     isLoadingAdmin.value = false
@@ -129,9 +128,9 @@ async function handleTmdbSubmit(e: Event) {
 
   isLoadingTmdb.value = true
   try {
-    await client.post({
-      url: '/v1/setup/tmdb',
+    await setupTmdb<true>({
       body: { api_key: tmdbKey.value },
+      throwOnError: true,
     })
     await refreshBootstrap()
     // After both steps complete, bootstrap returns initialized=true
@@ -140,7 +139,7 @@ async function handleTmdbSubmit(e: Event) {
       router.push('/login')
     }
   } catch (err: any) {
-    tmdbError.value = err.response?.data?.error || 'Failed to validate TMDB key'
+    tmdbError.value = err?.detail || 'Failed to validate TMDB key'
   } finally {
     isLoadingTmdb.value = false
   }
