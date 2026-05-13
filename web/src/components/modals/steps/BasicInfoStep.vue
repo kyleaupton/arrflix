@@ -17,10 +17,7 @@ const emit = defineEmits<{
   'update:formData': [data: Partial<Props['formData']>]
 }>()
 
-const updateField = <K extends keyof Props['formData']>(
-  field: K,
-  value: Props['formData'][K],
-) => {
+const updateField = <K extends keyof Props['formData']>(field: K, value: Props['formData'][K]) => {
   emit('update:formData', { [field]: value })
 }
 </script>

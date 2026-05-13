@@ -130,7 +130,7 @@ export const VariableMention = Node.create<VariableMentionOptions>({
   addNodeView() {
     // VueNodeViewRenderer's Vue Component generic is too strict for our
     // setup-based component; cast to any to bypass.
-     
+
     return VueNodeViewRenderer(VariableMentionView as any)
   },
 
