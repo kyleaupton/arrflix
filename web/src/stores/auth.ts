@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { client } from '@/client/client.gen'
-import { authLogin, authPlexExchange } from '@/client/sdk.gen'
+import { authLogin, authMe, authPlexExchange } from '@/client/sdk.gen'
 
 type Nullable<T> = T | null
 
@@ -51,10 +51,12 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchMe(): Promise<void> {
     if (!token.value) return
     try {
-      const res = await client.get<MeResponseMinimal>({
-        url: '/v1/auth/me',
-      })
-      user.value = (res as { data: MeResponseMinimal }).data
+      const res = await authMe<true>({ throwOnError: true })
+      user.value = {
+        sub: res.data.sub,
+        email: res.data.email ?? null,
+        name: res.data.name ?? null,
+      }
     } catch {
       // Token likely invalid
       user.value = null

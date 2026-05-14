@@ -6,7 +6,9 @@ import {
   indexersListConfiguredOptions,
   indexersDeleteMutation,
 } from '@/client/@tanstack/vue-query.gen'
+import { indexersTestSaved, indexersTestAll, indexersToggle } from '@/client/sdk.gen'
 import { type IndexerOutput } from '@/client/types.gen'
+import { problemMessage } from '@/lib/api'
 import {
   indexerColumns,
   createIndexerActions,
@@ -19,7 +21,6 @@ import { useModal } from '@/composables/useModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { client } from '@/client/client.gen'
 
 const { data: indexers, isLoading, error, refetch } = useQuery(indexersListConfiguredOptions())
 const modal = useModal()
@@ -43,12 +44,12 @@ const handleEdit = (indexer: IndexerOutput) => {
 }
 
 const handleTest = async (indexer: IndexerOutput) => {
+  if (!indexer.id) return
   try {
-    const response = await client.post({
-      url: `/v1/indexer/${indexer.id}/test`,
+    const { data: result } = await indexersTestSaved<true>({
+      throwOnError: true,
+      path: { id: indexer.id },
     })
-
-    const result = response.data as { success: boolean; message?: string; error?: string }
 
     if (result.success) {
       await modal.alert({
@@ -64,10 +65,9 @@ const handleTest = async (indexer: IndexerOutput) => {
       })
     }
   } catch (err) {
-    const error = err as { message?: string; data?: { error?: string } }
     await modal.alert({
       title: 'Test Failed',
-      message: error.data?.error || error.message || 'Test failed',
+      message: problemMessage(err, 'Test failed'),
       severity: 'error',
     })
   }
@@ -76,15 +76,15 @@ const handleTest = async (indexer: IndexerOutput) => {
 const handleToggle = async (indexer: IndexerOutput) => {
   if (!indexer.id) return
   try {
-    await client.put({
-      url: `/v1/indexer/${indexer.id}/toggle`,
+    await indexersToggle<true>({
+      throwOnError: true,
+      path: { id: indexer.id },
     })
     refetch()
   } catch (err) {
-    const error = err as { message?: string }
     await modal.alert({
       title: 'Toggle Failed',
-      message: error.message || 'Failed to toggle indexer',
+      message: problemMessage(err, 'Failed to toggle indexer'),
       severity: 'error',
     })
   }
@@ -114,29 +114,18 @@ const handleDelete = async (indexer: IndexerOutput) => {
 const handleTestAll = async () => {
   isTestingAll.value = true
   try {
-    const response = await client.post({
-      url: '/v1/indexers/testall',
-    })
-
-    const results = response.data as Array<{
-      indexer_id: number
-      indexer_name: string
-      success: boolean
-      message?: string
-      error?: string
-    }>
+    const { data: results } = await indexersTestAll<true>({ throwOnError: true })
 
     modal.open(IndexerTestResultsDialog, {
       props: {
-        results,
+        results: results ?? [],
         class: 'max-w-[90vw] sm:max-w-2xl lg:max-w-4xl',
       },
     })
   } catch (err) {
-    const error = err as { message?: string }
     await modal.alert({
       title: 'Test All Failed',
-      message: error.message || 'Failed to test indexers',
+      message: problemMessage(err, 'Failed to test indexers'),
       severity: 'error',
     })
   } finally {

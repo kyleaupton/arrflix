@@ -6,8 +6,9 @@ import {
   downloadersCreateMutation,
   downloadersUpdateMutation,
 } from '@/client/@tanstack/vue-query.gen'
-import { client } from '@/client/client.gen'
+import { downloadersTestConfig } from '@/client/sdk.gen'
 import { type Downloader, type DownloaderWriteBody } from '@/client/types.gen'
+import { problemMessage } from '@/lib/api'
 import BaseDialog from '@/components/modals/BaseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -140,8 +141,8 @@ const handleTestDownloader = async () => {
   isTestingConfig.value = true
   downloaderError.value = null
   try {
-    const response = await client.post({
-      url: '/v1/downloaders/test',
+    const { data: result } = await downloadersTestConfig<true>({
+      throwOnError: true,
       body: {
         type: downloaderForm.value.type,
         url: downloaderForm.value.url,
@@ -150,10 +151,6 @@ const handleTestDownloader = async () => {
         configJson: downloaderForm.value.configJson,
       },
     })
-
-    const result = (
-      response as { data: { success: boolean; message?: string; version?: string; error?: string } }
-    ).data
 
     if (result.success) {
       downloaderError.value = null
@@ -167,8 +164,7 @@ const handleTestDownloader = async () => {
       downloaderError.value = result.error || 'Connection test failed'
     }
   } catch (err) {
-    const error = err as { message?: string; data?: { error?: string } }
-    downloaderError.value = error.data?.error || error.message || 'Connection test failed'
+    downloaderError.value = problemMessage(err, 'Connection test failed')
   } finally {
     isTestingConfig.value = false
   }

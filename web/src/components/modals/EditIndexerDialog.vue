@@ -4,10 +4,11 @@ import { useMutation } from '@tanstack/vue-query'
 import { Save, Check } from 'lucide-vue-next'
 import { type IndexerOutput, type IndexerInput } from '@/client/types.gen'
 import { indexersSaveMutation } from '@/client/@tanstack/vue-query.gen'
+import { indexersTestSaved } from '@/client/sdk.gen'
 import { Button } from '@/components/ui/button'
 import ConfigurationStep from './steps/ConfigurationStep.vue'
 import BaseDialog from './BaseDialog.vue'
-import { client } from '@/client/client.gen'
+import { problemMessage } from '@/lib/api'
 import { useModal } from '@/composables/useModal'
 
 interface Props {
@@ -56,11 +57,10 @@ const handleTestIndexer = async () => {
   indexerError.value = null
 
   try {
-    const response = await client.post({
-      url: `/v1/indexer/${props.indexer.id}/test`,
+    const { data: result } = await indexersTestSaved<true>({
+      throwOnError: true,
+      path: { id: props.indexer.id },
     })
-
-    const result = response.data as { success: boolean; message?: string; error?: string }
 
     if (result.success) {
       indexerError.value = null
@@ -73,8 +73,7 @@ const handleTestIndexer = async () => {
       indexerError.value = result.error || 'Test failed'
     }
   } catch (err) {
-    const error = err as { message?: string; data?: { error?: string } }
-    indexerError.value = error.data?.error || error.message || 'Test failed'
+    indexerError.value = problemMessage(err, 'Test failed')
   } finally {
     isTestingConfig.value = false
   }

@@ -12,6 +12,7 @@ import {
 } from 'lucide-vue-next'
 import { type IndexerOutput, type IndexerInput } from '@/client/types.gen'
 import { indexersSaveMutation } from '@/client/@tanstack/vue-query.gen'
+import { indexersTestUnsaved } from '@/client/sdk.gen'
 import { Button } from '@/components/ui/button'
 import {
   Stepper,
@@ -26,7 +27,7 @@ import SelectIndexerTypeStep from './steps/SelectIndexerTypeStep.vue'
 import ConfigurationStep from './steps/ConfigurationStep.vue'
 import ReviewStep from './steps/ReviewStep.vue'
 import BaseDialog from './BaseDialog.vue'
-import { client } from '@/client/client.gen'
+import { problemMessage } from '@/lib/api'
 import { useModal } from '@/composables/useModal'
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
@@ -112,12 +113,10 @@ const handleTestIndexer = async () => {
   isTestingConfig.value = true
 
   try {
-    const response = await client.post({
-      url: '/v1/indexer/test',
+    const { data: result } = await indexersTestUnsaved<true>({
+      throwOnError: true,
       body: saveData.value,
     })
-
-    const result = response.data as { success: boolean; message?: string; error?: string }
 
     if (result.success) {
       await modal.alert({
@@ -133,10 +132,9 @@ const handleTestIndexer = async () => {
       })
     }
   } catch (err) {
-    const error = err as { message?: string; data?: { error?: string } }
     await modal.alert({
       title: 'Test Failed',
-      message: error.data?.error || error.message || 'Test failed',
+      message: problemMessage(err, 'Test failed'),
       severity: 'error',
     })
   } finally {

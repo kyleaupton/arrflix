@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { client } from '@/client/client.gen'
+import { authSignup } from '@/client/sdk.gen'
+import { problemMessage } from '@/lib/api'
 
 const props = defineProps<{
   class?: HTMLAttributes['class']
@@ -43,8 +44,8 @@ async function handleSubmit(e: Event) {
   isLoading.value = true
 
   try {
-    await client.post({
-      url: '/v1/auth/signup',
+    await authSignup<true>({
+      throwOnError: true,
       body: {
         email: email.value,
         username: username.value,
@@ -54,8 +55,7 @@ async function handleSubmit(e: Event) {
     // Success - redirect to login
     router.push('/login')
   } catch (err) {
-    const e = err as { response?: { data?: { error?: string } }; message?: string }
-    errorMessage.value = e.response?.data?.error || e.message || 'Signup failed'
+    errorMessage.value = problemMessage(err, 'Signup failed')
   } finally {
     isLoading.value = false
   }

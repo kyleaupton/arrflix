@@ -4,17 +4,10 @@ import { Button } from '@/components/ui/button'
 import BaseDialog from './BaseDialog.vue'
 import DataTable, { type TableColumn } from '@/components/tables/DataTable.vue'
 import { CheckCircle, XCircle, FlaskConical } from 'lucide-vue-next'
-
-interface TestResult {
-  indexer_id: number
-  indexer_name: string
-  success: boolean
-  message?: string
-  error?: string
-}
+import type { IndexerBatchTestResult } from '@/client/types.gen'
 
 interface Props {
-  results: TestResult[]
+  results: IndexerBatchTestResult[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -30,7 +23,7 @@ const handleClose = () => {
 const successCount = computed(() => props.results.filter((r) => r.success).length)
 const failureCount = computed(() => props.results.filter((r) => !r.success).length)
 
-const columns: TableColumn<TestResult>[] = [
+const columns: TableColumn<IndexerBatchTestResult>[] = [
   {
     key: 'success',
     label: 'Status',
@@ -47,7 +40,7 @@ const columns: TableColumn<TestResult>[] = [
     },
   },
   {
-    key: 'indexer_name',
+    key: 'indexerName',
     label: 'Indexer',
     sortable: true,
     filterable: true,
@@ -56,7 +49,7 @@ const columns: TableColumn<TestResult>[] = [
     key: 'message',
     label: 'Result',
     sortable: false,
-    render: (_value: string, row: TestResult) => {
+    render: (_value: string, row: IndexerBatchTestResult) => {
       return row.success ? row.message || 'Test passed' : row.error || 'Test failed'
     },
   },
