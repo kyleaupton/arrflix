@@ -75,7 +75,7 @@ func doRequest[T any](ctx context.Context, client *http.Client, url string) (*T,
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

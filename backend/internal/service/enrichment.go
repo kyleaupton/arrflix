@@ -120,7 +120,7 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 	// Extract IMDB ID from appended external IDs
 	var imdbID string
 	if details.TVExternalIDsAppend != nil && details.TVExternalIDs != nil {
-		imdbID = details.TVExternalIDs.IMDbID
+		imdbID = details.IMDbID
 	}
 
 	firstAirDate := parseDateToTimePtr(details.FirstAirDate)

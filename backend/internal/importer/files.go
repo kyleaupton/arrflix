@@ -41,7 +41,7 @@ func HardlinkOrCopy(src, dst string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open src: %w", err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	tmp := dst + ".tmp"
 	out, err := os.Create(tmp)

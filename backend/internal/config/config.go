@@ -39,7 +39,7 @@ func envBoolOr(k string, d bool) bool {
 
 func Load(log *logger.Logger) Config {
 	// Best effort to load .env file
-	godotenv.Load()
+	_ = godotenv.Load()
 
 	env := envOr("APP_ENV", "prod")
 	config := Config{

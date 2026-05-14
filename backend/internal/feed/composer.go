@@ -242,7 +242,8 @@ func (c *Composer) hasActiveDownloads(ctx context.Context, tmdbID int64, mediaTy
 		"importing":   true,
 	}
 
-	if mediaType == model.MediaTypeMovie {
+	switch mediaType {
+	case model.MediaTypeMovie:
 		jobs, err := c.repo.ListDownloadJobsByTmdbMovieID(ctx, tmdbID)
 		if err != nil {
 			return false
@@ -252,7 +253,7 @@ func (c *Composer) hasActiveDownloads(ctx context.Context, tmdbID int64, mediaTy
 				return true
 			}
 		}
-	} else if mediaType == model.MediaTypeSeries {
+	case model.MediaTypeSeries:
 		jobs, err := c.repo.ListDownloadJobsByTmdbSeriesID(ctx, tmdbID)
 		if err != nil {
 			return false

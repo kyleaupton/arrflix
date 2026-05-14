@@ -61,7 +61,7 @@ func (c *Client) CreatePin() (*PinResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("plex create pin: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -87,7 +87,7 @@ func (c *Client) CheckPin(pinID int) (*PinResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("plex check pin: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -114,7 +114,7 @@ func (c *Client) GetUser(authToken string) (*UserResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("plex get user: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)

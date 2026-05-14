@@ -339,7 +339,7 @@ func (c *qBittorrentClient) fetchTorrentFile(ctx context.Context, torrentURL str
 	if err != nil {
 		return nil, "", fmt.Errorf("fetch torrent: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -385,7 +385,9 @@ func buildTorrentUploadForm(torrentBytes []byte, filename string, opts map[strin
 	}
 
 	for k, v := range opts {
-		writer.WriteField(k, v)
+		if err := writer.WriteField(k, v); err != nil {
+			return nil, "", fmt.Errorf("write form field %q: %w", k, err)
+		}
 	}
 
 	if err := writer.Close(); err != nil {

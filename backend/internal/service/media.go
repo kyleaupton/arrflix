@@ -290,7 +290,7 @@ func transformVideos(tmdbVideos tmdb.VideoResults) []model.Video {
 			Type:              v.Type,
 			Size:              v.Size,
 			PublishedAt:       v.PublishedAt,
-			IsOfficialTrailer: v.Type == "Trailer" && v.Official == true,
+			IsOfficialTrailer: v.Type == "Trailer" && v.Official,
 		})
 	}
 	return videos

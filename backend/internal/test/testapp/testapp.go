@@ -192,7 +192,7 @@ func (a *App) Do(t *testing.T, method, path string, body any, out any, wantStatu
 	if err != nil {
 		t.Fatalf("testapp: %s %s: %v", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != wantStatus {
 		respBody, _ := io.ReadAll(resp.Body)

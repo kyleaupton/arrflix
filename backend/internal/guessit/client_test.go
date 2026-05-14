@@ -11,7 +11,7 @@ import (
 func TestHealthy_Up(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer srv.Close()
 
@@ -46,7 +46,7 @@ func TestParseBatch_Success(t *testing.T) {
 			{Title: &title1, Season: &season1, Episode: &episode1},
 			{Title: &title2, Year: &year2},
 		}
-		json.NewEncoder(w).Encode(results)
+		_ = json.NewEncoder(w).Encode(results)
 	}))
 	defer srv.Close()
 
@@ -75,7 +75,7 @@ func TestParseBatch_Success(t *testing.T) {
 func TestParseBatch_HTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("internal error"))
+		_, _ = w.Write([]byte("internal error"))
 	}))
 	defer srv.Close()
 
@@ -90,7 +90,7 @@ func TestParseBatch_CountMismatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Return 1 result for 2 inputs
 		results := []ParseResult{{}}
-		json.NewEncoder(w).Encode(results)
+		_ = json.NewEncoder(w).Encode(results)
 	}))
 	defer srv.Close()
 

@@ -48,7 +48,7 @@ func (r *Repository) InitializeSystem(ctx context.Context, email, username, pass
 	if err != nil {
 		return apperrors.FromPg(err, "begin setup tx")
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	q := r.Q.WithTx(tx)
 

@@ -228,9 +228,10 @@ func LoadJSONTemp(t *testing.T, path string) (string, Library) {
 // Style is one of "scene", "clean", "embedded-id".
 func ByTypeAndStyle(typ, style string) (Library, error) {
 	want := style + "-" + typ
-	if typ == "movie" {
+	switch typ {
+	case "movie":
 		want = style + "-movies"
-	} else if typ == "series" {
+	case "series":
 		want = style + "-series"
 	}
 	return Lookup(want)

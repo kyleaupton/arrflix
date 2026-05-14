@@ -61,8 +61,8 @@ func (c *Client) loginLocked(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("login request: %w", err)
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode == http.StatusForbidden {
 		c.sid = ""
@@ -155,7 +155,7 @@ func (c *Client) doOnce(ctx context.Context, method, path string, body []byte, c
 	if err != nil {
 		return nil, fmt.Errorf("request %s %s: %w", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

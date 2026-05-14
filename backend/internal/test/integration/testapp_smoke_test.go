@@ -30,7 +30,7 @@ func TestApp_Unauthenticated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/v1/libraries: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", resp.StatusCode)

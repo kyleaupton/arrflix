@@ -55,7 +55,7 @@ func (c *Client) Healthy(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode == http.StatusOK
 }
 
@@ -76,7 +76,7 @@ func (c *Client) ParseBatch(ctx context.Context, filenames []string) ([]ParseRes
 	if err != nil {
 		return nil, fmt.Errorf("guessit: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)

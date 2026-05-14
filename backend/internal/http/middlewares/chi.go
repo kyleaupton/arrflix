@@ -95,10 +95,7 @@ func isPublicPath(path string) bool {
 			return true
 		}
 	}
-	if !strings.HasPrefix(path, "/api/v1/") {
-		return true
-	}
-	return false
+	return !strings.HasPrefix(path, "/api/v1/")
 }
 
 // ChiJWT is the chi-shaped JWT auth middleware. Validates the Bearer

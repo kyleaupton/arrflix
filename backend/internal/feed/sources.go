@@ -49,9 +49,10 @@ func (f *TMDBSourceFactory) GetProvider(config model.SourceConfig) (SourceProvid
 
 	switch config.Endpoint {
 	case "trending":
-		if mediaType == "movie" {
+		switch mediaType {
+		case "movie":
 			return &trendingMoviesProvider{tmdb: f.tmdb}, nil
-		} else if mediaType == "tv" {
+		case "tv":
 			return &trendingSeriesProvider{tmdb: f.tmdb}, nil
 		}
 		return nil, fmt.Errorf("trending endpoint requires media_type param (movie or tv)")

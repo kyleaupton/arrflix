@@ -200,7 +200,7 @@ func (ctx *EvaluationContext) GetField(path string) (any, error) {
 // getFieldByPath uses reflection to find a struct field by its path tag
 func getFieldByPath(obj any, path string) (any, error) {
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Struct {
@@ -213,7 +213,7 @@ func getFieldByPath(obj any, path string) (any, error) {
 		if tag := field.Tag.Get("path"); tag == path {
 			fieldVal := v.Field(i)
 			// Handle pointer fields
-			if fieldVal.Kind() == reflect.Ptr {
+			if fieldVal.Kind() == reflect.Pointer {
 				if fieldVal.IsNil() {
 					return nil, nil
 				}
@@ -302,7 +302,7 @@ func goTypeToValueType(t reflect.Type) string {
 			return "[]string"
 		}
 		return "[]any"
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return goTypeToValueType(t.Elem())
 	default:
 		return "any"

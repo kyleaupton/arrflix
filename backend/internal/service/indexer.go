@@ -383,7 +383,7 @@ func httpRequest(method, url string, headers map[string]string, body io.Reader) 
 	if err != nil {
 		return nil, apperrors.BadGatewayf("perform request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)

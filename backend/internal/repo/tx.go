@@ -29,7 +29,7 @@ func (r *Repository) InTx(ctx context.Context, fn func(*Repository) error) error
 	if err != nil {
 		return apperrors.FromPg(err, "begin tx")
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	txRepo := &Repository{
 		Pool: r.Pool,

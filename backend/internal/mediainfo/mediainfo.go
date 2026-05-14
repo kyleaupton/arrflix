@@ -286,9 +286,8 @@ func parseFloat(s string) (float64, error) {
 }
 
 // FormatVideoCodec maps raw video codec names to friendly names
-func FormatVideoCodec(format, profile, codecID string) string {
+func FormatVideoCodec(format, _, codecID string) string {
 	format = strings.ToLower(strings.TrimSpace(format))
-	profile = strings.ToLower(strings.TrimSpace(profile))
 
 	switch {
 	case strings.Contains(format, "avc") || format == "h264" || strings.Contains(codecID, "avc"):
