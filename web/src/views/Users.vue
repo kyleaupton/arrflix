@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useQuery, useMutation } from '@tanstack/vue-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Plus, X, Users as UsersIcon } from 'lucide-vue-next'
 import {
   usersListOptions,
+  usersListQueryKey,
   usersDeleteMutation,
   invitesListOptions,
+  invitesListQueryKey,
   invitesDeleteMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import type { Invite } from '@/client/types.gen'
@@ -21,13 +23,18 @@ import InviteDialog from '@/components/modals/InviteDialog.vue'
 import { problemMessage } from '@/lib/api'
 
 // Data queries
-const { data: users, isLoading, refetch } = useQuery(usersListOptions())
-const {
-  data: invites,
-  isLoading: invitesLoading,
-  refetch: refetchInvites,
-} = useQuery(invitesListOptions())
+const { data: users, isLoading } = useQuery(usersListOptions())
+const { data: invites, isLoading: invitesLoading } = useQuery(invitesListOptions())
+const queryClient = useQueryClient()
 const modal = useModal()
+
+function invalidateUsers() {
+  queryClient.invalidateQueries({ queryKey: usersListQueryKey() })
+}
+
+function invalidateInvites() {
+  queryClient.invalidateQueries({ queryKey: invitesListQueryKey() })
+}
 
 // State
 const userError = ref<string | null>(null)
@@ -35,14 +42,14 @@ const userError = ref<string | null>(null)
 // Mutations
 const deleteUserMutation = useMutation({
   ...usersDeleteMutation(),
-  onSuccess: () => refetch(),
+  onSuccess: invalidateUsers,
   onError: (err) => {
     userError.value = problemMessage(err, 'Failed to delete user')
   },
 })
 const deleteInviteMutation = useMutation({
   ...invitesDeleteMutation(),
-  onSuccess: () => refetchInvites(),
+  onSuccess: invalidateInvites,
   onError: (err) => {
     userError.value = problemMessage(err, 'Failed to revoke invite')
   },
@@ -51,9 +58,7 @@ const deleteInviteMutation = useMutation({
 // Handlers
 const handleInviteUser = () => {
   modal.open(InviteDialog, {
-    onClose: () => {
-      refetchInvites()
-    },
+    onClose: invalidateInvites,
   })
 }
 
@@ -62,9 +67,7 @@ const handleEditUser = (user: User) => {
     props: {
       user,
     },
-    onClose: () => {
-      refetch()
-    },
+    onClose: invalidateUsers,
   })
 }
 

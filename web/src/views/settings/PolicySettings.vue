@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useQuery } from '@tanstack/vue-query'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Plus, Shield } from 'lucide-vue-next'
 import {
   policiesListOptions,
+  policiesListQueryKey,
   policiesGetFieldsOptions,
   librariesListOptions,
   nameTemplatesListOptions,
@@ -23,11 +24,16 @@ import {
 } from '@/components/ui/empty'
 
 // Data queries
-const { data: policies, isLoading: policiesLoading, refetch } = useQuery(policiesListOptions())
+const { data: policies, isLoading: policiesLoading } = useQuery(policiesListOptions())
 const { data: fields, isLoading: fieldsLoading } = useQuery(policiesGetFieldsOptions())
 const { data: libraries } = useQuery(librariesListOptions())
 const { data: nameTemplates } = useQuery(nameTemplatesListOptions())
 const { data: downloaders } = useQuery(downloadersListOptions())
+const queryClient = useQueryClient()
+
+function invalidatePolicies() {
+  queryClient.invalidateQueries({ queryKey: policiesListQueryKey() })
+}
 
 // New policy cards
 const newPolicies = ref<null[]>([])
@@ -37,16 +43,16 @@ const handleAddPolicy = () => {
 }
 
 const handleSaved = () => {
-  refetch()
+  invalidatePolicies()
 }
 
 const handleNewSaved = (index: number) => {
   newPolicies.value.splice(index, 1)
-  refetch()
+  invalidatePolicies()
 }
 
 const handleDeleted = () => {
-  refetch()
+  invalidatePolicies()
 }
 
 const removeNew = (index: number) => {

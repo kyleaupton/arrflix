@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { useQuery, useMutation } from '@tanstack/vue-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Plus, FileText } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
   nameTemplatesListOptions,
+  nameTemplatesListQueryKey,
   nameTemplatesDeleteMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import { type NameTemplate } from '@/client/types.gen'
@@ -20,16 +21,21 @@ import NameTemplateDialog from '@/components/modals/NameTemplateDialog.vue'
 import { problemMessage } from '@/lib/api'
 
 const modal = useModal()
+const queryClient = useQueryClient()
 
 // Data queries
-const { data: templates, isLoading, refetch } = useQuery(nameTemplatesListOptions())
+const { data: templates, isLoading } = useQuery(nameTemplatesListOptions())
+
+function invalidateTemplates() {
+  queryClient.invalidateQueries({ queryKey: nameTemplatesListQueryKey() })
+}
 
 // Mutations
 const deleteTemplateMutation = useMutation({
   ...nameTemplatesDeleteMutation(),
   onSuccess: () => {
     toast.success('Template deleted successfully')
-    refetch()
+    invalidateTemplates()
   },
   onError: (err) => {
     toast.error(problemMessage(err, 'Failed to delete template'))
@@ -42,9 +48,7 @@ const handleAddTemplate = () => {
     props: {
       template: null,
     },
-    onClose: () => {
-      refetch()
-    },
+    onClose: invalidateTemplates,
   })
 }
 
@@ -53,9 +57,7 @@ const handleEditTemplate = (template: NameTemplate) => {
     props: {
       template,
     },
-    onClose: () => {
-      refetch()
-    },
+    onClose: invalidateTemplates,
   })
 }
 

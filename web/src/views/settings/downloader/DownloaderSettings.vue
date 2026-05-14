@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useQuery, useMutation } from '@tanstack/vue-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Plus, HardDrive } from 'lucide-vue-next'
 import {
   downloadersListOptions,
+  downloadersListQueryKey,
   downloadersDeleteMutation,
   downloadersTestMutation,
 } from '@/client/@tanstack/vue-query.gen'
@@ -21,8 +22,13 @@ import DownloaderUpsertDialog from './DownloaderUpsertDialog.vue'
 import { problemMessage } from '@/lib/api'
 
 // Data queries
-const { data: downloaders, isLoading, refetch } = useQuery(downloadersListOptions())
+const { data: downloaders, isLoading } = useQuery(downloadersListOptions())
+const queryClient = useQueryClient()
 const modal = useModal()
+
+function invalidateDownloaders() {
+  queryClient.invalidateQueries({ queryKey: downloadersListQueryKey() })
+}
 
 // Error state for table-level errors
 const downloaderError = ref<string | null>(null)
@@ -31,7 +37,7 @@ const testingId = ref<string | null>(null)
 // Mutations
 const deleteDownloaderMutation = useMutation({
   ...downloadersDeleteMutation(),
-  onSuccess: () => refetch(),
+  onSuccess: invalidateDownloaders,
   onError: (err) => {
     downloaderError.value = problemMessage(err, 'Failed to delete downloader')
   },
@@ -48,7 +54,7 @@ const handleAddDownloader = () => {
     onClose: (result) => {
       const data = result?.data as { saved?: boolean } | undefined
       if (data?.saved) {
-        refetch()
+        invalidateDownloaders()
       }
     },
   })
@@ -63,7 +69,7 @@ const handleEditDownloader = (downloader: Downloader) => {
     onClose: (result) => {
       const data = result?.data as { saved?: boolean } | undefined
       if (data?.saved) {
-        refetch()
+        invalidateDownloaders()
       }
     },
   })

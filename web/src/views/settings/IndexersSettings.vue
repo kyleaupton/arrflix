@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useQuery, useMutation } from '@tanstack/vue-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Plus, Check, Search } from 'lucide-vue-next'
 import {
   indexersListConfiguredOptions,
+  indexersListConfiguredQueryKey,
   indexersDeleteMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import { indexersTestSaved, indexersTestAll, indexersToggle } from '@/client/sdk.gen'
@@ -22,14 +23,19 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
-const { data: indexers, isLoading, error, refetch } = useQuery(indexersListConfiguredOptions())
+const { data: indexers, isLoading, error } = useQuery(indexersListConfiguredOptions())
+const queryClient = useQueryClient()
 const modal = useModal()
 const isTestingAll = ref(false)
+
+function invalidateIndexers() {
+  queryClient.invalidateQueries({ queryKey: indexersListConfiguredQueryKey() })
+}
 
 // Mutations
 const deleteIndexerMutation = useMutation({
   ...indexersDeleteMutation(),
-  onSuccess: () => refetch(),
+  onSuccess: invalidateIndexers,
   onError: async (err) => {
     await modal.alert({
       title: 'Delete Failed',
@@ -47,7 +53,7 @@ const handleEdit = (indexer: IndexerOutput) => {
     },
     onClose: (result) => {
       if ((result?.data as { indexerUpdated?: boolean })?.indexerUpdated) {
-        refetch()
+        invalidateIndexers()
       }
     },
   })
@@ -90,7 +96,7 @@ const handleToggle = async (indexer: IndexerOutput) => {
       throwOnError: true,
       path: { id: indexer.id },
     })
-    refetch()
+    invalidateIndexers()
   } catch (err) {
     await modal.alert({
       title: 'Toggle Failed',
@@ -140,7 +146,7 @@ const handleAddIndexer = () => {
     },
     onClose: (result) => {
       if ((result?.data as { indexerAdded?: boolean })?.indexerAdded) {
-        refetch()
+        invalidateIndexers()
       }
     },
   })

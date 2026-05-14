@@ -27,6 +27,9 @@ The backend emits RFC 9457 problem-details errors. The generated client types ea
 7. **401 is handled globally — don't catch it per-call.**
    `src/main.ts` registers a response interceptor on the client that logs out and redirects to `/login` on any 401. Per-call code should treat 401 as "already handled, the user is being redirected" and not branch on it. The same goes for the response error parser inside `client.gen.ts` — it already parses JSON bodies into `ProblemDetails`, so catches receive the parsed object, not a raw `Response`.
 
+8. **After a mutation, invalidate dependent queries via `queryClient.invalidateQueries`, keyed by the generated `*QueryKey()` helper. Do not use `refetch()` for cache coherence.**
+   `invalidateQueries` marks data stale across every observer of that key — mounted queries refetch immediately, unmounted ones refetch on next mount. It works identically when one component reads the query and correctly when many do, so we always use it regardless of current readers. `refetch()` is reserved for **user-driven** "redo this fetch" actions (a "Try Again" button after an error). `Library.vue:49` is the canonical example. Don't reach for `refetch()` just because the query handle exposes it.
+
 ## Patterns
 
 ### The `problemMessage` helper
@@ -184,14 +187,52 @@ async function handleSaveAndScan() {
 
 Use this shape only when steps actually depend on each other. If both mutations are independent, give them their own `onError` callbacks.
 
+### Invalidation after mutation
+
+```ts
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { librariesListQueryKey, librariesDeleteMutation } from '@/client/@tanstack/vue-query.gen'
+import { problemMessage } from '@/lib/api'
+
+const queryClient = useQueryClient()
+
+function invalidateLibraries() {
+  queryClient.invalidateQueries({ queryKey: librariesListQueryKey() })
+}
+
+const deleteLibrary = useMutation({
+  ...librariesDeleteMutation(),
+  onSuccess: invalidateLibraries,
+  onError: (err) => {
+    error.value = problemMessage(err, 'Failed to delete library')
+  },
+})
+```
+
+The local helper is optional but pays off when the same invalidation fires from multiple sites (mutation success, modal close, SSE event). For a single call site, inline it:
+
+```ts
+onSuccess: () => queryClient.invalidateQueries({ queryKey: librariesListQueryKey() }),
+```
+
+For invalidating across all variants of a parameterized query (e.g. all `mediaGet({ path: { id } })` regardless of `id`), use the partial-match form against the operation ID:
+
+```ts
+queryClient.invalidateQueries({ queryKey: [{ _id: 'mediaGet' }] })
+```
+
+The generated key shape is `[{ _id: '<operationId>', baseUrl, path?, query?, body?, headers? }]`, so a queryKey containing only `_id` partial-matches all variants.
+
 ## Anti-patterns
 
-| Don't                                                    | Why                                                                    | Use instead                                                             |
-| -------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `client.post({ url: '/v1/indexer/test', body })`         | Bypasses generated types; URL drifts on backend rename                 | The generated SDK function (`indexersTestUnsaved`, etc.)                |
-| `const { data } = await sdkFn({ ... })` then `data!`     | Silently drops the error channel; runtime null-deref on server failure | `await sdkFn<true>({ throwOnError: true, ... })`, or wrap in `useQuery` |
-| `err instanceof Error ? err.message : 'fallback'`        | Thrown ProblemDetails isn't an `Error` — fallback always fires         | `problemMessage(err, 'fallback')`                                       |
-| `err as { message?: string; data?: { error?: string } }` | Invented shape; fields don't exist on the thrown value                 | `problemMessage(err, ...)` or `isProblem(err)` for branching            |
-| `err as { response?: { data?: ... } }` (Axios-style)     | We don't use Axios; the field doesn't exist                            | `problemMessage(err, ...)`                                              |
-| Catching 401 per-call                                    | Already handled globally in `main.ts`                                  | Let it propagate; the interceptor logs out and redirects                |
-| Manually tracking `isSaving` next to a mutation          | Duplicates `mutation.isPending.value`                                  | Bind buttons/spinners to `mutation.isPending.value`                     |
+| Don't                                                    | Why                                                                                                   | Use instead                                                                    |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `client.post({ url: '/v1/indexer/test', body })`         | Bypasses generated types; URL drifts on backend rename                                                | The generated SDK function (`indexersTestUnsaved`, etc.)                       |
+| `const { data } = await sdkFn({ ... })` then `data!`     | Silently drops the error channel; runtime null-deref on server failure                                | `await sdkFn<true>({ throwOnError: true, ... })`, or wrap in `useQuery`        |
+| `err instanceof Error ? err.message : 'fallback'`        | Thrown ProblemDetails isn't an `Error` — fallback always fires                                        | `problemMessage(err, 'fallback')`                                              |
+| `err as { message?: string; data?: { error?: string } }` | Invented shape; fields don't exist on the thrown value                                                | `problemMessage(err, ...)` or `isProblem(err)` for branching                   |
+| `err as { response?: { data?: ... } }` (Axios-style)     | We don't use Axios; the field doesn't exist                                                           | `problemMessage(err, ...)`                                                     |
+| Catching 401 per-call                                    | Already handled globally in `main.ts`                                                                 | Let it propagate; the interceptor logs out and redirects                       |
+| Manually tracking `isSaving` next to a mutation          | Duplicates `mutation.isPending.value`                                                                 | Bind buttons/spinners to `mutation.isPending.value`                            |
+| `onSuccess: () => refetch()` after a mutation            | Only updates the one query the component holds a handle to; misses every other reader of the same key | `queryClient.invalidateQueries({ queryKey: xQueryKey() })` (Rule 8)            |
+| Hand-rolling query keys like `['libraries']`             | Drifts from the generated key shape; partial matches break                                            | Use the generated `*QueryKey()` helper from `@/client/@tanstack/vue-query.gen` |

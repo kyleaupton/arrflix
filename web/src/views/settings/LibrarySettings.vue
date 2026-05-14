@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { reactive, onMounted, onUnmounted, ref } from 'vue'
-import { useQuery, useMutation } from '@tanstack/vue-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Loader2, Plus, FolderOpen } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
   librariesListOptions,
+  librariesListQueryKey,
   librariesDeleteMutation,
   librariesScanMutation,
 } from '@/client/@tanstack/vue-query.gen'
@@ -24,9 +25,14 @@ import LibraryDialog from '@/components/modals/LibraryDialog.vue'
 import { problemMessage } from '@/lib/api'
 
 // Data queries
-const { data: libraries, isLoading, refetch } = useQuery(librariesListOptions())
+const { data: libraries, isLoading } = useQuery(librariesListOptions())
+const queryClient = useQueryClient()
 const modal = useModal()
 const events = useEventsStore()
+
+function invalidateLibraries() {
+  queryClient.invalidateQueries({ queryKey: librariesListQueryKey() })
+}
 
 // State
 const libraryError = ref<string | null>(null)
@@ -34,7 +40,7 @@ const libraryError = ref<string | null>(null)
 // Mutations
 const deleteLibraryMutation = useMutation({
   ...librariesDeleteMutation(),
-  onSuccess: () => refetch(),
+  onSuccess: invalidateLibraries,
   onError: (err) => {
     libraryError.value = problemMessage(err, 'Failed to delete library')
   },
@@ -103,7 +109,7 @@ onMounted(() => {
       toast.success(`Scan complete: ${lib?.name ?? 'Library'}`, {
         description: `${d.filesSeen ?? 0} files seen, ${d.mediaItemsCreated ?? 0} new items`,
       })
-      refetch()
+      invalidateLibraries()
     }),
     events.on('scan_failed', (data) => {
       const d = data as ScanEventData
@@ -126,9 +132,7 @@ const handleAddLibrary = () => {
     props: {
       library: null,
     },
-    onClose: () => {
-      refetch()
-    },
+    onClose: invalidateLibraries,
   })
 }
 
@@ -137,9 +141,7 @@ const handleEditLibrary = (library: Library) => {
     props: {
       library,
     },
-    onClose: () => {
-      refetch()
-    },
+    onClose: invalidateLibraries,
   })
 }
 
