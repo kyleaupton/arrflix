@@ -29,12 +29,24 @@ const {
 } = useQuery(invitesListOptions())
 const modal = useModal()
 
-// Mutations
-const deleteUserMutation = useMutation(usersDeleteMutation())
-const deleteInviteMutation = useMutation(invitesDeleteMutation())
-
 // State
 const userError = ref<string | null>(null)
+
+// Mutations
+const deleteUserMutation = useMutation({
+  ...usersDeleteMutation(),
+  onSuccess: () => refetch(),
+  onError: (err) => {
+    userError.value = problemMessage(err, 'Failed to delete user')
+  },
+})
+const deleteInviteMutation = useMutation({
+  ...invitesDeleteMutation(),
+  onSuccess: () => refetchInvites(),
+  onError: (err) => {
+    userError.value = problemMessage(err, 'Failed to revoke invite')
+  },
+})
 
 // Handlers
 const handleInviteUser = () => {
@@ -64,12 +76,7 @@ const handleDeleteUser = async (user: User) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteUserMutation.mutateAsync({ path: { id: user.id } })
-    refetch()
-  } catch (err) {
-    userError.value = problemMessage(err, 'Failed to delete user')
-  }
+  deleteUserMutation.mutate({ path: { id: user.id } })
 }
 
 const handleDeleteInvite = async (invite: Invite) => {
@@ -79,12 +86,7 @@ const handleDeleteInvite = async (invite: Invite) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteInviteMutation.mutateAsync({ path: { id: invite.id } })
-    refetchInvites()
-  } catch (err) {
-    userError.value = problemMessage(err, 'Failed to revoke invite')
-  }
+  deleteInviteMutation.mutate({ path: { id: invite.id } })
 }
 
 const userActions = createUserActions(handleEditUser, handleDeleteUser)

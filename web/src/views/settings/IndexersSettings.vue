@@ -27,7 +27,17 @@ const modal = useModal()
 const isTestingAll = ref(false)
 
 // Mutations
-const deleteIndexerMutation = useMutation(indexersDeleteMutation())
+const deleteIndexerMutation = useMutation({
+  ...indexersDeleteMutation(),
+  onSuccess: () => refetch(),
+  onError: async (err) => {
+    await modal.alert({
+      title: 'Delete Failed',
+      message: problemMessage(err, 'Failed to delete indexer'),
+      severity: 'error',
+    })
+  },
+})
 
 const handleEdit = (indexer: IndexerOutput) => {
   modal.open(EditIndexerDialog, {
@@ -98,16 +108,7 @@ const handleDelete = async (indexer: IndexerOutput) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteIndexerMutation.mutateAsync({ path: { id: indexer.id } })
-    refetch()
-  } catch (err) {
-    await modal.alert({
-      title: 'Delete Failed',
-      message: problemMessage(err, 'Failed to delete indexer'),
-      severity: 'error',
-    })
-  }
+  deleteIndexerMutation.mutate({ path: { id: indexer.id } })
 }
 
 const handleTestAll = async () => {

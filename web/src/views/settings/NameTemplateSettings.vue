@@ -25,7 +25,16 @@ const modal = useModal()
 const { data: templates, isLoading, refetch } = useQuery(nameTemplatesListOptions())
 
 // Mutations
-const deleteTemplateMutation = useMutation(nameTemplatesDeleteMutation())
+const deleteTemplateMutation = useMutation({
+  ...nameTemplatesDeleteMutation(),
+  onSuccess: () => {
+    toast.success('Template deleted successfully')
+    refetch()
+  },
+  onError: (err) => {
+    toast.error(problemMessage(err, 'Failed to delete template'))
+  },
+})
 
 // Handlers
 const handleAddTemplate = () => {
@@ -58,13 +67,7 @@ const handleDeleteTemplate = async (template: NameTemplate) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteTemplateMutation.mutateAsync({ path: { id: template.id } })
-    toast.success('Template deleted successfully')
-    refetch()
-  } catch (err) {
-    toast.error(problemMessage(err, 'Failed to delete template'))
-  }
+  deleteTemplateMutation.mutate({ path: { id: template.id } })
 }
 
 const templateActions = createNameTemplateActions(handleEditTemplate, handleDeleteTemplate)

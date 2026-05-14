@@ -24,13 +24,19 @@ import { problemMessage } from '@/lib/api'
 const { data: downloaders, isLoading, refetch } = useQuery(downloadersListOptions())
 const modal = useModal()
 
-// Mutations
-const deleteDownloaderMutation = useMutation(downloadersDeleteMutation())
-const testDownloaderMutation = useMutation(downloadersTestMutation())
-
 // Error state for table-level errors
 const downloaderError = ref<string | null>(null)
 const testingId = ref<string | null>(null)
+
+// Mutations
+const deleteDownloaderMutation = useMutation({
+  ...downloadersDeleteMutation(),
+  onSuccess: () => refetch(),
+  onError: (err) => {
+    downloaderError.value = problemMessage(err, 'Failed to delete downloader')
+  },
+})
+const testDownloaderMutation = useMutation(downloadersTestMutation())
 
 // Handlers
 const handleAddDownloader = () => {
@@ -71,12 +77,7 @@ const handleDeleteDownloader = async (downloader: Downloader) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteDownloaderMutation.mutateAsync({ path: { id: downloader.id } })
-    refetch()
-  } catch (err) {
-    downloaderError.value = problemMessage(err, 'Failed to delete downloader')
-  }
+  deleteDownloaderMutation.mutate({ path: { id: downloader.id } })
 }
 
 const handleTestDownloader = async (downloader: Downloader) => {

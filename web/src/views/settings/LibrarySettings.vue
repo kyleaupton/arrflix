@@ -28,12 +28,26 @@ const { data: libraries, isLoading, refetch } = useQuery(librariesListOptions())
 const modal = useModal()
 const events = useEventsStore()
 
-// Mutations
-const deleteLibraryMutation = useMutation(librariesDeleteMutation())
-const scanLibraryMutation = useMutation(librariesScanMutation())
-
 // State
 const libraryError = ref<string | null>(null)
+
+// Mutations
+const deleteLibraryMutation = useMutation({
+  ...librariesDeleteMutation(),
+  onSuccess: () => refetch(),
+  onError: (err) => {
+    libraryError.value = problemMessage(err, 'Failed to delete library')
+  },
+})
+const scanLibraryMutation = useMutation({
+  ...librariesScanMutation(),
+  onSuccess: () => {
+    libraryError.value = null
+  },
+  onError: (err) => {
+    libraryError.value = problemMessage(err, 'Failed to start scan')
+  },
+})
 
 interface ScanProgress {
   scanId: string
@@ -137,22 +151,12 @@ const handleDeleteLibrary = async (library: Library) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteLibraryMutation.mutateAsync({ path: { id: library.id } })
-    refetch()
-  } catch (err) {
-    libraryError.value = problemMessage(err, 'Failed to delete library')
-  }
+  deleteLibraryMutation.mutate({ path: { id: library.id } })
 }
 
-const handleScanLibrary = async (library: Library) => {
+const handleScanLibrary = (library: Library) => {
   if (!library.id) return
-  try {
-    await scanLibraryMutation.mutateAsync({ path: { id: library.id } })
-    libraryError.value = null
-  } catch (err) {
-    libraryError.value = problemMessage(err, 'Failed to start scan')
-  }
+  scanLibraryMutation.mutate({ path: { id: library.id } })
 }
 
 const libraryActions = createLibraryActions(
