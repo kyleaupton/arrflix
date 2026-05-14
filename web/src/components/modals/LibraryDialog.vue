@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { ref, inject, watch, computed } from 'vue'
-import { useMutation } from '@tanstack/vue-query'
-import { librariesCreateMutation, librariesUpdateMutation } from '@/client/@tanstack/vue-query.gen'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import {
+  librariesCreateMutation,
+  librariesUpdateMutation,
+  librariesListQueryKey,
+} from '@/client/@tanstack/vue-query.gen'
 import { type Library } from '@/client/types.gen'
 import BaseDialog from './BaseDialog.vue'
 import DirectoryBrowserDialog from './DirectoryBrowserDialog.vue'
@@ -28,9 +32,7 @@ const props = defineProps<Props>()
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
 const modal = useModal()
-
-const createLibraryMutation = useMutation(librariesCreateMutation())
-const updateLibraryMutation = useMutation(librariesUpdateMutation())
+const queryClient = useQueryClient()
 
 const libraryForm = ref({
   name: '',
@@ -41,6 +43,26 @@ const libraryForm = ref({
 })
 
 const libraryError = ref<string | null>(null)
+
+const onSaveSuccess = () => {
+  queryClient.invalidateQueries({ queryKey: librariesListQueryKey() })
+  libraryError.value = null
+  dialogRef.value.close({ saved: true })
+}
+const onSaveError = (err: unknown) => {
+  libraryError.value = problemMessage(err, 'Failed to save library')
+}
+
+const createLibraryMutation = useMutation({
+  ...librariesCreateMutation(),
+  onSuccess: onSaveSuccess,
+  onError: onSaveError,
+})
+const updateLibraryMutation = useMutation({
+  ...librariesUpdateMutation(),
+  onSuccess: onSaveSuccess,
+  onError: onSaveError,
+})
 
 const typeOptions = [
   { label: 'Movies', value: 'movie' },
@@ -81,39 +103,24 @@ const handleBrowse = () => {
   })
 }
 
-const handleSave = async () => {
+const handleSave = () => {
   if (!libraryForm.value.name || !libraryForm.value.rootPath) {
     libraryError.value = 'Name and root path are required'
     return
   }
 
-  try {
-    if (props.library?.id) {
-      await updateLibraryMutation.mutateAsync({
-        path: { id: props.library.id },
-        body: {
-          name: libraryForm.value.name,
-          type: libraryForm.value.type,
-          rootPath: libraryForm.value.rootPath,
-          enabled: libraryForm.value.enabled,
-          default: libraryForm.value.default,
-        },
-      })
-    } else {
-      await createLibraryMutation.mutateAsync({
-        body: {
-          name: libraryForm.value.name,
-          type: libraryForm.value.type,
-          rootPath: libraryForm.value.rootPath,
-          enabled: libraryForm.value.enabled,
-          default: libraryForm.value.default,
-        },
-      })
-    }
-    libraryError.value = null
-    dialogRef.value.close({ saved: true })
-  } catch (err) {
-    libraryError.value = problemMessage(err, 'Failed to save library')
+  const body = {
+    name: libraryForm.value.name,
+    type: libraryForm.value.type,
+    rootPath: libraryForm.value.rootPath,
+    enabled: libraryForm.value.enabled,
+    default: libraryForm.value.default,
+  }
+
+  if (props.library?.id) {
+    updateLibraryMutation.mutate({ path: { id: props.library.id }, body })
+  } else {
+    createLibraryMutation.mutate({ body })
   }
 }
 

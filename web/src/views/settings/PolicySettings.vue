@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useQuery } from '@tanstack/vue-query'
 import { Plus, Shield } from 'lucide-vue-next'
 import {
   policiesListOptions,
-  policiesListQueryKey,
   policiesGetFieldsOptions,
   librariesListOptions,
   nameTemplatesListOptions,
@@ -29,30 +28,17 @@ const { data: fields, isLoading: fieldsLoading } = useQuery(policiesGetFieldsOpt
 const { data: libraries } = useQuery(librariesListOptions())
 const { data: nameTemplates } = useQuery(nameTemplatesListOptions())
 const { data: downloaders } = useQuery(downloadersListOptions())
-const queryClient = useQueryClient()
 
-function invalidatePolicies() {
-  queryClient.invalidateQueries({ queryKey: policiesListQueryKey() })
-}
-
-// New policy cards
+// New policy cards — PolicyCard self-invalidates on save/delete; parent only
+// tracks the "new" cards array so it can close them on save/cancel.
 const newPolicies = ref<null[]>([])
 
 const handleAddPolicy = () => {
   newPolicies.value.push(null)
 }
 
-const handleSaved = () => {
-  invalidatePolicies()
-}
-
 const handleNewSaved = (index: number) => {
   newPolicies.value.splice(index, 1)
-  invalidatePolicies()
-}
-
-const handleDeleted = () => {
-  invalidatePolicies()
 }
 
 const removeNew = (index: number) => {
@@ -102,7 +88,7 @@ const removeNew = (index: number) => {
           </div>
 
           <div v-else class="space-y-3">
-            <!-- Existing policies -->
+            <!-- Existing policies — PolicyCard self-invalidates on save/delete -->
             <PolicyCard
               v-for="policy in policies"
               :key="policy.id"
@@ -111,11 +97,9 @@ const removeNew = (index: number) => {
               :libraries="libraries || []"
               :name-templates="nameTemplates || []"
               :downloaders="downloaders || []"
-              @saved="handleSaved"
-              @deleted="handleDeleted"
             />
 
-            <!-- New policy cards -->
+            <!-- New policy cards — parent removes the slot on save/cancel/delete -->
             <PolicyCard
               v-for="(_, idx) in newPolicies"
               :key="`new-${idx}`"

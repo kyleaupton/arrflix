@@ -57,9 +57,7 @@ const deleteInviteMutation = useMutation({
 
 // Handlers
 const handleInviteUser = () => {
-  modal.open(InviteDialog, {
-    onClose: invalidateInvites,
-  })
+  modal.open(InviteDialog)
 }
 
 const handleEditUser = (user: User) => {
@@ -67,7 +65,6 @@ const handleEditUser = (user: User) => {
     props: {
       user,
     },
-    onClose: invalidateUsers,
   })
 }
 

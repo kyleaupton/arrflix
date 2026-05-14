@@ -48,7 +48,6 @@ const handleAddTemplate = () => {
     props: {
       template: null,
     },
-    onClose: invalidateTemplates,
   })
 }
 
@@ -57,7 +56,6 @@ const handleEditTemplate = (template: NameTemplate) => {
     props: {
       template,
     },
-    onClose: invalidateTemplates,
   })
 }
 

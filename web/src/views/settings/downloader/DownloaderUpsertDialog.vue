@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, inject, computed, watch } from 'vue'
-import { useMutation } from '@tanstack/vue-query'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Check, Eye, EyeOff } from 'lucide-vue-next'
 import {
   downloadersCreateMutation,
   downloadersUpdateMutation,
+  downloadersTestConfigMutation,
+  downloadersListQueryKey,
 } from '@/client/@tanstack/vue-query.gen'
-import { downloadersTestConfig } from '@/client/sdk.gen'
 import { type Downloader, type DownloaderWriteBody } from '@/client/types.gen'
 import { problemMessage } from '@/lib/api'
 import BaseDialog from '@/components/modals/BaseDialog.vue'
@@ -31,10 +32,7 @@ const props = defineProps<Props>()
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
 const modal = useModal()
-
-// Mutations
-const createDownloaderMutation = useMutation(downloadersCreateMutation())
-const updateDownloaderMutation = useMutation(downloadersUpdateMutation())
+const queryClient = useQueryClient()
 
 // Form state
 const downloaderForm = ref({
@@ -50,8 +48,47 @@ const downloaderForm = ref({
 })
 
 const downloaderError = ref<string | null>(null)
-const isTestingConfig = ref(false)
 const showPassword = ref(false)
+
+const onSaveSuccess = () => {
+  queryClient.invalidateQueries({ queryKey: downloadersListQueryKey() })
+  downloaderError.value = null
+  dialogRef.value.close({ saved: true })
+}
+const onSaveError = (err: unknown) => {
+  downloaderError.value = problemMessage(err, 'Failed to save downloader')
+}
+
+// Mutations
+const createDownloaderMutation = useMutation({
+  ...downloadersCreateMutation(),
+  onSuccess: onSaveSuccess,
+  onError: onSaveError,
+})
+const updateDownloaderMutation = useMutation({
+  ...downloadersUpdateMutation(),
+  onSuccess: onSaveSuccess,
+  onError: onSaveError,
+})
+const testDownloaderMutation = useMutation({
+  ...downloadersTestConfigMutation(),
+  onSuccess: async (result) => {
+    if (result.success) {
+      downloaderError.value = null
+      await modal.alert({
+        title: 'Connection Test Successful',
+        message:
+          result.message || `Connection test passed. Version: ${result.version || 'unknown'}`,
+        severity: 'success',
+      })
+    } else {
+      downloaderError.value = result.error || 'Connection test failed'
+    }
+  },
+  onError: (err) => {
+    downloaderError.value = problemMessage(err, 'Connection test failed')
+  },
+})
 
 // Initialize form when downloader changes
 watch(
@@ -89,84 +126,49 @@ watch(
   { immediate: true },
 )
 
-const handleSaveDownloader = async () => {
+const handleSaveDownloader = () => {
   if (!downloaderForm.value.name || !downloaderForm.value.url) {
     downloaderError.value = 'Name and URL are required'
     return
   }
 
-  try {
-    const body: DownloaderWriteBody = {
-      name: downloaderForm.value.name,
-      type: downloaderForm.value.type,
-      protocol: downloaderForm.value.protocol,
-      url: downloaderForm.value.url,
-      username: downloaderForm.value.username || '',
-      configJson: downloaderForm.value.configJson,
-      enabled: downloaderForm.value.enabled,
-      default: downloaderForm.value.default,
-    }
+  const body: DownloaderWriteBody = {
+    name: downloaderForm.value.name,
+    type: downloaderForm.value.type,
+    protocol: downloaderForm.value.protocol,
+    url: downloaderForm.value.url,
+    username: downloaderForm.value.username || '',
+    configJson: downloaderForm.value.configJson,
+    enabled: downloaderForm.value.enabled,
+    default: downloaderForm.value.default,
+  }
 
-    if (downloaderForm.value.password !== '') {
-      body.password = downloaderForm.value.password
-    }
+  if (downloaderForm.value.password !== '') {
+    body.password = downloaderForm.value.password
+  }
 
-    if (props.downloader?.id) {
-      await updateDownloaderMutation.mutateAsync({
-        path: { id: props.downloader.id },
-        body,
-      })
-    } else {
-      await createDownloaderMutation.mutateAsync({
-        body,
-      })
-    }
-
-    downloaderError.value = null
-    dialogRef.value.close({ saved: true })
-  } catch (err) {
-    downloaderError.value = problemMessage(err, 'Failed to save downloader')
+  if (props.downloader?.id) {
+    updateDownloaderMutation.mutate({ path: { id: props.downloader.id }, body })
+  } else {
+    createDownloaderMutation.mutate({ body })
   }
 }
 
-const handleTestDownloader = async () => {
-  // Validate required fields
+const handleTestDownloader = () => {
   if (!downloaderForm.value.url) {
     downloaderError.value = 'URL is required to test connection'
     return
   }
-
-  // Always test using form values (not saved config)
-  isTestingConfig.value = true
   downloaderError.value = null
-  try {
-    const { data: result } = await downloadersTestConfig<true>({
-      throwOnError: true,
-      body: {
-        type: downloaderForm.value.type,
-        url: downloaderForm.value.url,
-        username: downloaderForm.value.username || undefined,
-        password: downloaderForm.value.password || undefined,
-        configJson: downloaderForm.value.configJson,
-      },
-    })
-
-    if (result.success) {
-      downloaderError.value = null
-      await modal.alert({
-        title: 'Connection Test Successful',
-        message:
-          result.message || `Connection test passed. Version: ${result.version || 'unknown'}`,
-        severity: 'success',
-      })
-    } else {
-      downloaderError.value = result.error || 'Connection test failed'
-    }
-  } catch (err) {
-    downloaderError.value = problemMessage(err, 'Connection test failed')
-  } finally {
-    isTestingConfig.value = false
-  }
+  testDownloaderMutation.mutate({
+    body: {
+      type: downloaderForm.value.type,
+      url: downloaderForm.value.url,
+      username: downloaderForm.value.username || undefined,
+      password: downloaderForm.value.password || undefined,
+      configJson: downloaderForm.value.configJson,
+    },
+  })
 }
 
 const handleCancel = () => {
@@ -277,7 +279,11 @@ const protocolOptions = [
 
     <template #footer>
       <div class="flex items-center justify-between w-full">
-        <Button variant="outline" :disabled="isTestingConfig" @click="handleTestDownloader">
+        <Button
+          variant="outline"
+          :disabled="testDownloaderMutation.isPending.value"
+          @click="handleTestDownloader"
+        >
           <Check class="mr-2 size-4" />
           Test Connection
         </Button>

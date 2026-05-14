@@ -132,7 +132,6 @@ const handleAddLibrary = () => {
     props: {
       library: null,
     },
-    onClose: invalidateLibraries,
   })
 }
 
@@ -141,7 +140,6 @@ const handleEditLibrary = (library: Library) => {
     props: {
       library,
     },
-    onClose: invalidateLibraries,
   })
 }
 

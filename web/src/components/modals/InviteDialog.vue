@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, inject } from 'vue'
-import { useMutation } from '@tanstack/vue-query'
-import { invitesCreateMutation } from '@/client/@tanstack/vue-query.gen'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { invitesCreateMutation, invitesListQueryKey } from '@/client/@tanstack/vue-query.gen'
 import BaseDialog from './BaseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { problemMessage } from '@/lib/api'
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
+const queryClient = useQueryClient()
 
 const email = ref('')
 const error = ref<string | null>(null)
@@ -16,6 +17,7 @@ const error = ref<string | null>(null)
 const createInviteMutation = useMutation({
   ...invitesCreateMutation(),
   onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: invitesListQueryKey() })
     dialogRef.value.close({ saved: true })
   },
   onError: (err) => {

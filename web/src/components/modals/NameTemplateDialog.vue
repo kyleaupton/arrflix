@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, inject, watch, computed } from 'vue'
-import { useMutation } from '@tanstack/vue-query'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { toast } from 'vue-sonner'
 import {
   nameTemplatesCreateMutation,
   nameTemplatesUpdateMutation,
+  nameTemplatesListQueryKey,
 } from '@/client/@tanstack/vue-query.gen'
 import { type NameTemplate } from '@/client/types.gen'
 import BaseDialog from './BaseDialog.vue'
@@ -30,9 +31,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
-
-const createTemplateMutation = useMutation(nameTemplatesCreateMutation())
-const updateTemplateMutation = useMutation(nameTemplatesUpdateMutation())
+const queryClient = useQueryClient()
 
 const templateForm = ref({
   name: '',
@@ -48,6 +47,31 @@ const templateError = ref<string | null>(null)
 const selectedPresetId = ref<string | null>(null)
 
 const isCreateMode = computed(() => !props.template?.id)
+
+const createTemplateMutation = useMutation({
+  ...nameTemplatesCreateMutation(),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: nameTemplatesListQueryKey() })
+    toast.success('Template created successfully')
+    templateError.value = null
+    dialogRef.value.close({ saved: true })
+  },
+  onError: (err) => {
+    templateError.value = problemMessage(err, 'Failed to save template')
+  },
+})
+const updateTemplateMutation = useMutation({
+  ...nameTemplatesUpdateMutation(),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: nameTemplatesListQueryKey() })
+    toast.success('Template updated successfully')
+    templateError.value = null
+    dialogRef.value.close({ saved: true })
+  },
+  onError: (err) => {
+    templateError.value = problemMessage(err, 'Failed to save template')
+  },
+})
 
 const typeOptions = [
   { label: 'Movies', value: 'movie' },
@@ -122,7 +146,7 @@ watch(
   },
 )
 
-const handleSave = async () => {
+const handleSave = () => {
   if (!templateForm.value.name || !templateForm.value.template) {
     templateError.value = 'Name and template are required'
     return
@@ -132,36 +156,23 @@ const handleSave = async () => {
     return
   }
 
-  try {
-    const body = {
-      name: templateForm.value.name,
-      type: templateForm.value.type,
-      template: templateForm.value.template,
-      seriesShowTemplate:
-        templateForm.value.type === 'series' ? templateForm.value.seriesShowTemplate : '',
-      seriesSeasonTemplate:
-        templateForm.value.type === 'series' ? templateForm.value.seriesSeasonTemplate : '',
-      movieDirTemplate:
-        templateForm.value.type === 'movie' ? templateForm.value.movieDirTemplate : '',
-      default: templateForm.value.default,
-    }
+  const body = {
+    name: templateForm.value.name,
+    type: templateForm.value.type,
+    template: templateForm.value.template,
+    seriesShowTemplate:
+      templateForm.value.type === 'series' ? templateForm.value.seriesShowTemplate : '',
+    seriesSeasonTemplate:
+      templateForm.value.type === 'series' ? templateForm.value.seriesSeasonTemplate : '',
+    movieDirTemplate:
+      templateForm.value.type === 'movie' ? templateForm.value.movieDirTemplate : '',
+    default: templateForm.value.default,
+  }
 
-    if (props.template?.id) {
-      await updateTemplateMutation.mutateAsync({
-        path: { id: props.template.id },
-        body,
-      })
-      toast.success('Template updated successfully')
-    } else {
-      await createTemplateMutation.mutateAsync({
-        body,
-      })
-      toast.success('Template created successfully')
-    }
-    templateError.value = null
-    dialogRef.value.close({ saved: true })
-  } catch (err) {
-    templateError.value = problemMessage(err, 'Failed to save template')
+  if (props.template?.id) {
+    updateTemplateMutation.mutate({ path: { id: props.template.id }, body })
+  } else {
+    createTemplateMutation.mutate({ body })
   }
 }
 
