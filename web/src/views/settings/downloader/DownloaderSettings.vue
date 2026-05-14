@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import DownloaderUpsertDialog from './DownloaderUpsertDialog.vue'
+import { problemMessage } from '@/lib/api'
 
 // Data queries
 const { data: downloaders, isLoading, refetch } = useQuery(downloadersListOptions())
@@ -74,8 +75,7 @@ const handleDeleteDownloader = async (downloader: Downloader) => {
     await deleteDownloaderMutation.mutateAsync({ path: { id: downloader.id } })
     refetch()
   } catch (err) {
-    const error = err as { message?: string }
-    downloaderError.value = error.message || 'Failed to delete downloader'
+    downloaderError.value = problemMessage(err, 'Failed to delete downloader')
   }
 }
 
@@ -98,8 +98,7 @@ const handleTestDownloader = async (downloader: Downloader) => {
       downloaderError.value = result.error || 'Connection test failed'
     }
   } catch (err) {
-    const error = err as { message?: string }
-    downloaderError.value = error.message || 'Connection test failed'
+    downloaderError.value = problemMessage(err, 'Connection test failed')
   } finally {
     testingId.value = null
   }

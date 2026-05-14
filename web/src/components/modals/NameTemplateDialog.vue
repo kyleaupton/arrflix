@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select'
 import { TemplateTokenEditor } from '@/components/ui/template-editor'
 import { presets, type TemplatePreset } from './templatePresets'
+import { problemMessage } from '@/lib/api'
 
 interface Props {
   template?: NameTemplate | null
@@ -160,8 +161,7 @@ const handleSave = async () => {
     templateError.value = null
     dialogRef.value.close({ saved: true })
   } catch (err) {
-    const error = err as { message?: string }
-    templateError.value = error.message || 'Failed to save template'
+    templateError.value = problemMessage(err, 'Failed to save template')
   }
 }
 

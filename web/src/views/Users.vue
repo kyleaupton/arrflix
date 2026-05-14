@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import UserDialog from '@/components/modals/UserDialog.vue'
 import InviteDialog from '@/components/modals/InviteDialog.vue'
+import { problemMessage } from '@/lib/api'
 
 // Data queries
 const { data: users, isLoading, refetch } = useQuery(usersListOptions())
@@ -67,7 +68,7 @@ const handleDeleteUser = async (user: User) => {
     await deleteUserMutation.mutateAsync({ path: { id: user.id } })
     refetch()
   } catch (err) {
-    userError.value = err instanceof Error ? err.message : 'Failed to delete user'
+    userError.value = problemMessage(err, 'Failed to delete user')
   }
 }
 
@@ -82,7 +83,7 @@ const handleDeleteInvite = async (invite: Invite) => {
     await deleteInviteMutation.mutateAsync({ path: { id: invite.id } })
     refetchInvites()
   } catch (err) {
-    userError.value = err instanceof Error ? err.message : 'Failed to revoke invite'
+    userError.value = problemMessage(err, 'Failed to revoke invite')
   }
 }
 

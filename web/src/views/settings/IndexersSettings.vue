@@ -102,10 +102,9 @@ const handleDelete = async (indexer: IndexerOutput) => {
     await deleteIndexerMutation.mutateAsync({ path: { id: indexer.id } })
     refetch()
   } catch (err) {
-    const error = err as { message?: string }
     await modal.alert({
       title: 'Delete Failed',
-      message: error.message || 'Failed to delete indexer',
+      message: problemMessage(err, 'Failed to delete indexer'),
       severity: 'error',
     })
   }

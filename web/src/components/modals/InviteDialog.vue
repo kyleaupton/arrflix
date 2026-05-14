@@ -6,6 +6,7 @@ import BaseDialog from './BaseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { problemMessage } from '@/lib/api'
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
 const createInviteMutation = useMutation(invitesCreateMutation())
@@ -24,7 +25,7 @@ const handleSave = async () => {
     })
     dialogRef.value.close({ saved: true })
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to create invite'
+    error.value = problemMessage(err, 'Failed to create invite')
   }
 }
 

@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import VersionCard from '@/components/settings/VersionCard.vue'
+import { problemMessage } from '@/lib/api'
 
 type SettingsMap = Record<string, unknown>
 
@@ -87,9 +88,7 @@ async function saveTmdbKey() {
     tmdbEditing.value = false
     tmdbKeyInput.value = ''
   } catch (err) {
-    tmdbError.value =
-      (err as { response?: { data?: { error?: string } } }).response?.data?.error ||
-      'Failed to save TMDB key'
+    tmdbError.value = problemMessage(err, 'Failed to save TMDB key')
   } finally {
     tmdbSaving.value = false
   }

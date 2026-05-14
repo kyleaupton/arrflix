@@ -21,6 +21,7 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import LibraryDialog from '@/components/modals/LibraryDialog.vue'
+import { problemMessage } from '@/lib/api'
 
 // Data queries
 const { data: libraries, isLoading, refetch } = useQuery(librariesListOptions())
@@ -140,7 +141,7 @@ const handleDeleteLibrary = async (library: Library) => {
     await deleteLibraryMutation.mutateAsync({ path: { id: library.id } })
     refetch()
   } catch (err) {
-    libraryError.value = err instanceof Error ? err.message : 'Failed to delete library'
+    libraryError.value = problemMessage(err, 'Failed to delete library')
   }
 }
 
@@ -150,7 +151,7 @@ const handleScanLibrary = async (library: Library) => {
     await scanLibraryMutation.mutateAsync({ path: { id: library.id } })
     libraryError.value = null
   } catch (err) {
-    libraryError.value = err instanceof Error ? err.message : 'Failed to start scan'
+    libraryError.value = problemMessage(err, 'Failed to start scan')
   }
 }
 

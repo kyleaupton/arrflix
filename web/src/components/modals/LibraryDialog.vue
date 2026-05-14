@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { FolderOpen } from 'lucide-vue-next'
 import { useModal } from '@/composables/useModal'
+import { problemMessage } from '@/lib/api'
 
 interface Props {
   library?: Library | null
@@ -112,7 +113,7 @@ const handleSave = async () => {
     libraryError.value = null
     dialogRef.value.close({ saved: true })
   } catch (err) {
-    libraryError.value = err instanceof Error ? err.message : 'Failed to save library'
+    libraryError.value = problemMessage(err, 'Failed to save library')
   }
 }
 

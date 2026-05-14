@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import NameTemplateDialog from '@/components/modals/NameTemplateDialog.vue'
+import { problemMessage } from '@/lib/api'
 
 const modal = useModal()
 
@@ -62,8 +63,7 @@ const handleDeleteTemplate = async (template: NameTemplate) => {
     toast.success('Template deleted successfully')
     refetch()
   } catch (err) {
-    const error = err as { message?: string }
-    toast.error(error.message || 'Failed to delete template')
+    toast.error(problemMessage(err, 'Failed to delete template'))
   }
 }
 

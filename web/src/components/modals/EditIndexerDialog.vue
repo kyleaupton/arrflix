@@ -33,8 +33,7 @@ const updateIndexerMutation = useMutation({
   },
   onError: (error) => {
     console.error('Failed to update indexer:', error)
-    const err = error as { message?: string }
-    indexerError.value = err.message || 'Failed to update indexer'
+    indexerError.value = problemMessage(error, 'Failed to update indexer')
   },
 })
 

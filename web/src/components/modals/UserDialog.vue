@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { problemMessage } from '@/lib/api'
 
 interface Props {
   user: User
@@ -112,7 +113,7 @@ const handleSave = async () => {
     userError.value = null
     dialogRef.value.close({ saved: true })
   } catch (err) {
-    userError.value = err instanceof Error ? err.message : 'Failed to save user'
+    userError.value = problemMessage(err, 'Failed to save user')
   }
 }
 

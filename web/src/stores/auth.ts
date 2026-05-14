@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { client } from '@/client/client.gen'
 import { authLogin, authMe, authPlexExchange } from '@/client/sdk.gen'
+import { problemMessage } from '@/lib/api'
 
 type Nullable<T> = T | null
 
@@ -147,9 +148,8 @@ export const useAuthStore = defineStore('auth', () => {
           await fetchMe()
           return true
         }
-      } catch (err: unknown) {
-        const error = err as { body?: { error?: string } }
-        errorMessage.value = error?.body?.error || 'Plex login failed'
+      } catch (err) {
+        errorMessage.value = problemMessage(err, 'Plex login failed')
       }
       return false
     }

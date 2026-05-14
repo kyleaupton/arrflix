@@ -125,8 +125,7 @@ const handleSaveDownloader = async () => {
     downloaderError.value = null
     dialogRef.value.close({ saved: true })
   } catch (err) {
-    const error = err as { message?: string }
-    downloaderError.value = error.message || 'Failed to save downloader'
+    downloaderError.value = problemMessage(err, 'Failed to save downloader')
   }
 }
 
