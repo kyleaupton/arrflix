@@ -44,7 +44,7 @@
       >
         <p class="text-destructive">Failed to load library</p>
         <p class="text-sm text-muted-foreground mt-2">
-          {{ error?.message || 'Please try again later' }}
+          {{ errorMessage }}
         </p>
         <Button variant="outline" class="mt-4" @click="() => refetch()"> Try Again </Button>
       </div>
@@ -107,8 +107,9 @@ import { ref, computed } from 'vue'
 import { useInfiniteQuery } from '@tanstack/vue-query'
 import { useDebounceFn, useInfiniteScroll } from '@vueuse/core'
 import { Search, Film } from 'lucide-vue-next'
-import { libraryList } from '@/client/sdk.gen'
+import { libraryListInfiniteOptions } from '@/client/@tanstack/vue-query.gen'
 import type { LibraryItem } from '@/client/types.gen'
+import { problemMessage } from '@/lib/api'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -139,31 +140,27 @@ const onTypeFilterChange = () => {
 
 // Infinite Query
 const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, error, refetch } =
-  useInfiniteQuery({
-    queryKey: computed(() => [
-      'library',
-      { type: typeFilter.value, search: searchQuery.value, pageSize: pageSize.value },
-    ]),
-    queryFn: async ({ pageParam = 1 }) => {
-      const { data } = await libraryList({
+  useInfiniteQuery(
+    computed(() => ({
+      ...libraryListInfiniteOptions({
         query: {
-          page: pageParam,
-          pageSize: pageSize.value,
           type: typeFilter.value || undefined,
           search: searchQuery.value || undefined,
+          pageSize: pageSize.value,
         },
-      })
-      return data!
-    },
-    getNextPageParam: (lastPage) => {
-      const { page, totalPages } = lastPage.pagination
-      return page < totalPages ? page + 1 : undefined
-    },
-    initialPageParam: 1,
-  })
+      }),
+      getNextPageParam: (lastPage: { pagination: { page: number; totalPages: number } }) => {
+        const { page, totalPages } = lastPage.pagination
+        return page < totalPages ? page + 1 : undefined
+      },
+      initialPageParam: 1,
+    })),
+  )
 
 // Flatten pages into single array
 const items = computed(() => data.value?.pages.flatMap((p) => p.data ?? []) ?? [])
+
+const errorMessage = computed(() => problemMessage(error.value, 'Please try again later'))
 
 // Infinite scroll - use window as scroll container
 useInfiniteScroll(

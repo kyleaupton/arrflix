@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { reactive, onMounted, onUnmounted, ref } from 'vue'
-import { useQuery, useMutation } from '@tanstack/vue-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Loader2, Plus, FolderOpen } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
   librariesListOptions,
+  librariesListQueryKey,
   librariesDeleteMutation,
   librariesScanMutation,
 } from '@/client/@tanstack/vue-query.gen'
@@ -21,18 +22,38 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import LibraryDialog from '@/components/modals/LibraryDialog.vue'
+import { problemMessage } from '@/lib/api'
 
 // Data queries
-const { data: libraries, isLoading, refetch } = useQuery(librariesListOptions())
+const { data: libraries, isLoading } = useQuery(librariesListOptions())
+const queryClient = useQueryClient()
 const modal = useModal()
 const events = useEventsStore()
 
-// Mutations
-const deleteLibraryMutation = useMutation(librariesDeleteMutation())
-const scanLibraryMutation = useMutation(librariesScanMutation())
+function invalidateLibraries() {
+  queryClient.invalidateQueries({ queryKey: librariesListQueryKey() })
+}
 
 // State
 const libraryError = ref<string | null>(null)
+
+// Mutations
+const deleteLibraryMutation = useMutation({
+  ...librariesDeleteMutation(),
+  onSuccess: invalidateLibraries,
+  onError: (err) => {
+    libraryError.value = problemMessage(err, 'Failed to delete library')
+  },
+})
+const scanLibraryMutation = useMutation({
+  ...librariesScanMutation(),
+  onSuccess: () => {
+    libraryError.value = null
+  },
+  onError: (err) => {
+    libraryError.value = problemMessage(err, 'Failed to start scan')
+  },
+})
 
 interface ScanProgress {
   scanId: string
@@ -88,7 +109,7 @@ onMounted(() => {
       toast.success(`Scan complete: ${lib?.name ?? 'Library'}`, {
         description: `${d.filesSeen ?? 0} files seen, ${d.mediaItemsCreated ?? 0} new items`,
       })
-      refetch()
+      invalidateLibraries()
     }),
     events.on('scan_failed', (data) => {
       const d = data as ScanEventData
@@ -111,9 +132,6 @@ const handleAddLibrary = () => {
     props: {
       library: null,
     },
-    onClose: () => {
-      refetch()
-    },
   })
 }
 
@@ -121,9 +139,6 @@ const handleEditLibrary = (library: Library) => {
   modal.open(LibraryDialog, {
     props: {
       library,
-    },
-    onClose: () => {
-      refetch()
     },
   })
 }
@@ -136,22 +151,12 @@ const handleDeleteLibrary = async (library: Library) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteLibraryMutation.mutateAsync({ path: { id: library.id } })
-    refetch()
-  } catch (err) {
-    libraryError.value = err instanceof Error ? err.message : 'Failed to delete library'
-  }
+  deleteLibraryMutation.mutate({ path: { id: library.id } })
 }
 
-const handleScanLibrary = async (library: Library) => {
+const handleScanLibrary = (library: Library) => {
   if (!library.id) return
-  try {
-    await scanLibraryMutation.mutateAsync({ path: { id: library.id } })
-    libraryError.value = null
-  } catch (err) {
-    libraryError.value = err instanceof Error ? err.message : 'Failed to start scan'
-  }
+  scanLibraryMutation.mutate({ path: { id: library.id } })
 }
 
 const libraryActions = createLibraryActions(

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { useQuery, useMutation } from '@tanstack/vue-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Plus, FileText } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
   nameTemplatesListOptions,
+  nameTemplatesListQueryKey,
   nameTemplatesDeleteMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import { type NameTemplate } from '@/client/types.gen'
@@ -17,23 +18,35 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import NameTemplateDialog from '@/components/modals/NameTemplateDialog.vue'
+import { problemMessage } from '@/lib/api'
 
 const modal = useModal()
+const queryClient = useQueryClient()
 
 // Data queries
-const { data: templates, isLoading, refetch } = useQuery(nameTemplatesListOptions())
+const { data: templates, isLoading } = useQuery(nameTemplatesListOptions())
+
+function invalidateTemplates() {
+  queryClient.invalidateQueries({ queryKey: nameTemplatesListQueryKey() })
+}
 
 // Mutations
-const deleteTemplateMutation = useMutation(nameTemplatesDeleteMutation())
+const deleteTemplateMutation = useMutation({
+  ...nameTemplatesDeleteMutation(),
+  onSuccess: () => {
+    toast.success('Template deleted successfully')
+    invalidateTemplates()
+  },
+  onError: (err) => {
+    toast.error(problemMessage(err, 'Failed to delete template'))
+  },
+})
 
 // Handlers
 const handleAddTemplate = () => {
   modal.open(NameTemplateDialog, {
     props: {
       template: null,
-    },
-    onClose: () => {
-      refetch()
     },
   })
 }
@@ -42,9 +55,6 @@ const handleEditTemplate = (template: NameTemplate) => {
   modal.open(NameTemplateDialog, {
     props: {
       template,
-    },
-    onClose: () => {
-      refetch()
     },
   })
 }
@@ -57,14 +67,7 @@ const handleDeleteTemplate = async (template: NameTemplate) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteTemplateMutation.mutateAsync({ path: { id: template.id } })
-    toast.success('Template deleted successfully')
-    refetch()
-  } catch (err) {
-    const error = err as { message?: string }
-    toast.error(error.message || 'Failed to delete template')
-  }
+  deleteTemplateMutation.mutate({ path: { id: template.id } })
 }
 
 const templateActions = createNameTemplateActions(handleEditTemplate, handleDeleteTemplate)

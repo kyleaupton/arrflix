@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useQuery, useMutation } from '@tanstack/vue-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Plus, Check, Search } from 'lucide-vue-next'
 import {
   indexersListConfiguredOptions,
+  indexersListConfiguredQueryKey,
   indexersDeleteMutation,
+  indexersTestSavedMutation,
+  indexersTestAllMutation,
+  indexersToggleMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import { type IndexerOutput } from '@/client/types.gen'
+import { problemMessage } from '@/lib/api'
 import {
   indexerColumns,
   createIndexerActions,
@@ -19,14 +23,86 @@ import { useModal } from '@/composables/useModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { client } from '@/client/client.gen'
 
-const { data: indexers, isLoading, error, refetch } = useQuery(indexersListConfiguredOptions())
+const { data: indexers, isLoading, error } = useQuery(indexersListConfiguredOptions())
+const queryClient = useQueryClient()
 const modal = useModal()
-const isTestingAll = ref(false)
+
+function invalidateIndexers() {
+  queryClient.invalidateQueries({ queryKey: indexersListConfiguredQueryKey() })
+}
 
 // Mutations
-const deleteIndexerMutation = useMutation(indexersDeleteMutation())
+const deleteIndexerMutation = useMutation({
+  ...indexersDeleteMutation(),
+  onSuccess: invalidateIndexers,
+  onError: async (err) => {
+    await modal.alert({
+      title: 'Delete Failed',
+      message: problemMessage(err, 'Failed to delete indexer'),
+      severity: 'error',
+    })
+  },
+})
+
+const toggleIndexerMutation = useMutation({
+  ...indexersToggleMutation(),
+  onSuccess: invalidateIndexers,
+  onError: async (err) => {
+    await modal.alert({
+      title: 'Toggle Failed',
+      message: problemMessage(err, 'Failed to toggle indexer'),
+      severity: 'error',
+    })
+  },
+})
+
+const testIndexerMutation = useMutation({
+  ...indexersTestSavedMutation(),
+  onSuccess: async (result, variables) => {
+    const indexer = indexers.value?.find((i) => i.id === variables.path.id)
+    const name = indexer?.name ?? 'Indexer'
+    if (result.success) {
+      await modal.alert({
+        title: 'Test Successful',
+        message: `${name}: ${result.message || 'Connection test passed'}`,
+        severity: 'success',
+      })
+    } else {
+      await modal.alert({
+        title: 'Test Failed',
+        message: `${name}: ${result.error || 'Connection test failed'}`,
+        severity: 'error',
+      })
+    }
+  },
+  onError: async (err) => {
+    await modal.alert({
+      title: 'Test Failed',
+      message: problemMessage(err, 'Test failed'),
+      severity: 'error',
+    })
+  },
+})
+
+const testAllIndexersMutation = useMutation({
+  ...indexersTestAllMutation(),
+  onSuccess: (results) => {
+    modal.open(IndexerTestResultsDialog, {
+      props: {
+        results: results ?? [],
+        class: 'max-w-[90vw] sm:max-w-2xl lg:max-w-4xl',
+      },
+    })
+  },
+  onError: async (err) => {
+    await modal.alert({
+      title: 'Test All Failed',
+      message: problemMessage(err, 'Failed to test indexers'),
+      severity: 'error',
+    })
+  },
+})
 
 const handleEdit = (indexer: IndexerOutput) => {
   modal.open(EditIndexerDialog, {
@@ -34,60 +110,17 @@ const handleEdit = (indexer: IndexerOutput) => {
       indexer,
       class: 'max-w-[90vw] sm:max-w-2xl lg:max-w-4xl',
     },
-    onClose: (result) => {
-      if ((result?.data as { indexerUpdated?: boolean })?.indexerUpdated) {
-        refetch()
-      }
-    },
   })
 }
 
-const handleTest = async (indexer: IndexerOutput) => {
-  try {
-    const response = await client.post({
-      url: `/v1/indexer/${indexer.id}/test`,
-    })
-
-    const result = response.data as { success: boolean; message?: string; error?: string }
-
-    if (result.success) {
-      await modal.alert({
-        title: 'Test Successful',
-        message: `${indexer.name}: ${result.message || 'Connection test passed'}`,
-        severity: 'success',
-      })
-    } else {
-      await modal.alert({
-        title: 'Test Failed',
-        message: `${indexer.name}: ${result.error || 'Connection test failed'}`,
-        severity: 'error',
-      })
-    }
-  } catch (err) {
-    const error = err as { message?: string; data?: { error?: string } }
-    await modal.alert({
-      title: 'Test Failed',
-      message: error.data?.error || error.message || 'Test failed',
-      severity: 'error',
-    })
-  }
+const handleTest = (indexer: IndexerOutput) => {
+  if (!indexer.id) return
+  testIndexerMutation.mutate({ path: { id: indexer.id } })
 }
 
-const handleToggle = async (indexer: IndexerOutput) => {
+const handleToggle = (indexer: IndexerOutput) => {
   if (!indexer.id) return
-  try {
-    await client.put({
-      url: `/v1/indexer/${indexer.id}/toggle`,
-    })
-    refetch()
-  } catch (err) {
-    const error = err as { message?: string }
-    await modal.alert({
-      title: 'Toggle Failed',
-      message: error.message || 'Failed to toggle indexer',
-      severity: 'error',
-    })
-  }
+  toggleIndexerMutation.mutate({ path: { id: indexer.id } })
 }
 
 const handleDelete = async (indexer: IndexerOutput) => {
@@ -98,61 +131,17 @@ const handleDelete = async (indexer: IndexerOutput) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteIndexerMutation.mutateAsync({ path: { id: indexer.id } })
-    refetch()
-  } catch (err) {
-    const error = err as { message?: string }
-    await modal.alert({
-      title: 'Delete Failed',
-      message: error.message || 'Failed to delete indexer',
-      severity: 'error',
-    })
-  }
+  deleteIndexerMutation.mutate({ path: { id: indexer.id } })
 }
 
-const handleTestAll = async () => {
-  isTestingAll.value = true
-  try {
-    const response = await client.post({
-      url: '/v1/indexers/testall',
-    })
-
-    const results = response.data as Array<{
-      indexer_id: number
-      indexer_name: string
-      success: boolean
-      message?: string
-      error?: string
-    }>
-
-    modal.open(IndexerTestResultsDialog, {
-      props: {
-        results,
-        class: 'max-w-[90vw] sm:max-w-2xl lg:max-w-4xl',
-      },
-    })
-  } catch (err) {
-    const error = err as { message?: string }
-    await modal.alert({
-      title: 'Test All Failed',
-      message: error.message || 'Failed to test indexers',
-      severity: 'error',
-    })
-  } finally {
-    isTestingAll.value = false
-  }
+const handleTestAll = () => {
+  testAllIndexersMutation.mutate({})
 }
 
 const handleAddIndexer = () => {
   modal.open(AddIndexerDialog, {
     props: {
       class: 'max-w-[90vw] sm:max-w-4xl lg:max-w-6xl',
-    },
-    onClose: (result) => {
-      if ((result?.data as { indexerAdded?: boolean })?.indexerAdded) {
-        refetch()
-      }
     },
   })
 }
@@ -174,7 +163,7 @@ const indexerActions = createIndexerActions(handleEdit, handleTest, handleToggle
           <div class="flex gap-2">
             <Button
               variant="outline"
-              :disabled="isTestingAll || !indexers?.length"
+              :disabled="testAllIndexersMutation.isPending.value || !indexers?.length"
               @click="handleTestAll"
             >
               <Check class="mr-2 size-4" />

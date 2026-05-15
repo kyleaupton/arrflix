@@ -23,30 +23,22 @@ import {
 } from '@/components/ui/empty'
 
 // Data queries
-const { data: policies, isLoading: policiesLoading, refetch } = useQuery(policiesListOptions())
+const { data: policies, isLoading: policiesLoading } = useQuery(policiesListOptions())
 const { data: fields, isLoading: fieldsLoading } = useQuery(policiesGetFieldsOptions())
 const { data: libraries } = useQuery(librariesListOptions())
 const { data: nameTemplates } = useQuery(nameTemplatesListOptions())
 const { data: downloaders } = useQuery(downloadersListOptions())
 
-// New policy cards
+// New policy cards — PolicyCard self-invalidates on save/delete; parent only
+// tracks the "new" cards array so it can close them on save/cancel.
 const newPolicies = ref<null[]>([])
 
 const handleAddPolicy = () => {
   newPolicies.value.push(null)
 }
 
-const handleSaved = () => {
-  refetch()
-}
-
 const handleNewSaved = (index: number) => {
   newPolicies.value.splice(index, 1)
-  refetch()
-}
-
-const handleDeleted = () => {
-  refetch()
 }
 
 const removeNew = (index: number) => {
@@ -96,7 +88,7 @@ const removeNew = (index: number) => {
           </div>
 
           <div v-else class="space-y-3">
-            <!-- Existing policies -->
+            <!-- Existing policies — PolicyCard self-invalidates on save/delete -->
             <PolicyCard
               v-for="policy in policies"
               :key="policy.id"
@@ -105,11 +97,9 @@ const removeNew = (index: number) => {
               :libraries="libraries || []"
               :name-templates="nameTemplates || []"
               :downloaders="downloaders || []"
-              @saved="handleSaved"
-              @deleted="handleDeleted"
             />
 
-            <!-- New policy cards -->
+            <!-- New policy cards — parent removes the slot on save/cancel/delete -->
             <PolicyCard
               v-for="(_, idx) in newPolicies"
               :key="`new-${idx}`"

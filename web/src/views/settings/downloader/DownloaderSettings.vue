@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useQuery, useMutation } from '@tanstack/vue-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Plus, HardDrive } from 'lucide-vue-next'
 import {
   downloadersListOptions,
+  downloadersListQueryKey,
   downloadersDeleteMutation,
   downloadersTestMutation,
 } from '@/client/@tanstack/vue-query.gen'
-import { type Downloader, type TestResult } from '@/client/types.gen'
+import { type Downloader } from '@/client/types.gen'
 import DataTable from '@/components/tables/DataTable.vue'
 import {
   downloaderColumns,
@@ -18,18 +19,47 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import DownloaderUpsertDialog from './DownloaderUpsertDialog.vue'
+import { problemMessage } from '@/lib/api'
 
 // Data queries
-const { data: downloaders, isLoading, refetch } = useQuery(downloadersListOptions())
+const { data: downloaders, isLoading } = useQuery(downloadersListOptions())
+const queryClient = useQueryClient()
 const modal = useModal()
 
-// Mutations
-const deleteDownloaderMutation = useMutation(downloadersDeleteMutation())
-const testDownloaderMutation = useMutation(downloadersTestMutation())
+function invalidateDownloaders() {
+  queryClient.invalidateQueries({ queryKey: downloadersListQueryKey() })
+}
 
 // Error state for table-level errors
 const downloaderError = ref<string | null>(null)
-const testingId = ref<string | null>(null)
+
+// Mutations
+const deleteDownloaderMutation = useMutation({
+  ...downloadersDeleteMutation(),
+  onSuccess: invalidateDownloaders,
+  onError: (err) => {
+    downloaderError.value = problemMessage(err, 'Failed to delete downloader')
+  },
+})
+const testDownloaderMutation = useMutation({
+  ...downloadersTestMutation(),
+  onSuccess: async (result) => {
+    if (result.success) {
+      downloaderError.value = null
+      await modal.alert({
+        title: 'Connection Test Successful',
+        message:
+          result.message || `Connection test passed. Version: ${result.version || 'unknown'}`,
+        severity: 'success',
+      })
+    } else {
+      downloaderError.value = result.error || 'Connection test failed'
+    }
+  },
+  onError: (err) => {
+    downloaderError.value = problemMessage(err, 'Connection test failed')
+  },
+})
 
 // Handlers
 const handleAddDownloader = () => {
@@ -37,12 +67,6 @@ const handleAddDownloader = () => {
     props: {
       class: 'max-w-[90vw] sm:max-w-lg lg:max-w-2xl',
       downloader: null,
-    },
-    onClose: (result) => {
-      const data = result?.data as { saved?: boolean } | undefined
-      if (data?.saved) {
-        refetch()
-      }
     },
   })
 }
@@ -52,12 +76,6 @@ const handleEditDownloader = (downloader: Downloader) => {
     props: {
       class: 'max-w-[90vw] sm:max-w-lg lg:max-w-2xl',
       downloader,
-    },
-    onClose: (result) => {
-      const data = result?.data as { saved?: boolean } | undefined
-      if (data?.saved) {
-        refetch()
-      }
     },
   })
 }
@@ -70,39 +88,12 @@ const handleDeleteDownloader = async (downloader: Downloader) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteDownloaderMutation.mutateAsync({ path: { id: downloader.id } })
-    refetch()
-  } catch (err) {
-    const error = err as { message?: string }
-    downloaderError.value = error.message || 'Failed to delete downloader'
-  }
+  deleteDownloaderMutation.mutate({ path: { id: downloader.id } })
 }
 
-const handleTestDownloader = async (downloader: Downloader) => {
+const handleTestDownloader = (downloader: Downloader) => {
   if (!downloader.id) return
-  testingId.value = downloader.id
-  try {
-    const result = (await testDownloaderMutation.mutateAsync({
-      path: { id: downloader.id },
-    })) as TestResult
-    if (result.success) {
-      downloaderError.value = null
-      await modal.alert({
-        title: 'Connection Test Successful',
-        message:
-          result.message || `Connection test passed. Version: ${result.version || 'unknown'}`,
-        severity: 'success',
-      })
-    } else {
-      downloaderError.value = result.error || 'Connection test failed'
-    }
-  } catch (err) {
-    const error = err as { message?: string }
-    downloaderError.value = error.message || 'Connection test failed'
-  } finally {
-    testingId.value = null
-  }
+  testDownloaderMutation.mutate({ path: { id: downloader.id } })
 }
 
 const downloaderActions = createDownloaderActions(

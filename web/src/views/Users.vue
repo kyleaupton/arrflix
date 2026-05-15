@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useQuery, useMutation } from '@tanstack/vue-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Plus, X, Users as UsersIcon } from 'lucide-vue-next'
 import {
   usersListOptions,
+  usersListQueryKey,
   usersDeleteMutation,
   invitesListOptions,
+  invitesListQueryKey,
   invitesDeleteMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import type { Invite } from '@/client/types.gen'
@@ -18,39 +20,50 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import UserDialog from '@/components/modals/UserDialog.vue'
 import InviteDialog from '@/components/modals/InviteDialog.vue'
+import { problemMessage } from '@/lib/api'
 
 // Data queries
-const { data: users, isLoading, refetch } = useQuery(usersListOptions())
-const {
-  data: invites,
-  isLoading: invitesLoading,
-  refetch: refetchInvites,
-} = useQuery(invitesListOptions())
+const { data: users, isLoading } = useQuery(usersListOptions())
+const { data: invites, isLoading: invitesLoading } = useQuery(invitesListOptions())
+const queryClient = useQueryClient()
 const modal = useModal()
 
-// Mutations
-const deleteUserMutation = useMutation(usersDeleteMutation())
-const deleteInviteMutation = useMutation(invitesDeleteMutation())
+function invalidateUsers() {
+  queryClient.invalidateQueries({ queryKey: usersListQueryKey() })
+}
+
+function invalidateInvites() {
+  queryClient.invalidateQueries({ queryKey: invitesListQueryKey() })
+}
 
 // State
 const userError = ref<string | null>(null)
 
+// Mutations
+const deleteUserMutation = useMutation({
+  ...usersDeleteMutation(),
+  onSuccess: invalidateUsers,
+  onError: (err) => {
+    userError.value = problemMessage(err, 'Failed to delete user')
+  },
+})
+const deleteInviteMutation = useMutation({
+  ...invitesDeleteMutation(),
+  onSuccess: invalidateInvites,
+  onError: (err) => {
+    userError.value = problemMessage(err, 'Failed to revoke invite')
+  },
+})
+
 // Handlers
 const handleInviteUser = () => {
-  modal.open(InviteDialog, {
-    onClose: () => {
-      refetchInvites()
-    },
-  })
+  modal.open(InviteDialog)
 }
 
 const handleEditUser = (user: User) => {
   modal.open(UserDialog, {
     props: {
       user,
-    },
-    onClose: () => {
-      refetch()
     },
   })
 }
@@ -63,12 +76,7 @@ const handleDeleteUser = async (user: User) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteUserMutation.mutateAsync({ path: { id: user.id } })
-    refetch()
-  } catch (err) {
-    userError.value = err instanceof Error ? err.message : 'Failed to delete user'
-  }
+  deleteUserMutation.mutate({ path: { id: user.id } })
 }
 
 const handleDeleteInvite = async (invite: Invite) => {
@@ -78,12 +86,7 @@ const handleDeleteInvite = async (invite: Invite) => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deleteInviteMutation.mutateAsync({ path: { id: invite.id } })
-    refetchInvites()
-  } catch (err) {
-    userError.value = err instanceof Error ? err.message : 'Failed to revoke invite'
-  }
+  deleteInviteMutation.mutate({ path: { id: invite.id } })
 }
 
 const userActions = createUserActions(handleEditUser, handleDeleteUser)

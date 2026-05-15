@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, inject, watch, computed } from 'vue'
-import { useMutation, useQuery } from '@tanstack/vue-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import {
   usersUpdateMutation,
   usersAssignRoleMutation,
   rolesListOptions,
+  usersListQueryKey,
 } from '@/client/@tanstack/vue-query.gen'
 import type { User } from '@/components/tables/configs/userTableConfig'
 import BaseDialog from './BaseDialog.vue'
@@ -19,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { problemMessage } from '@/lib/api'
 
 interface Props {
   user: User
@@ -27,6 +29,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
+const queryClient = useQueryClient()
 
 const updateUserMutation = useMutation(usersUpdateMutation())
 const updateRoleMutation = useMutation(usersAssignRoleMutation())
@@ -109,10 +112,11 @@ const handleSave = async () => {
       })
     }
 
+    queryClient.invalidateQueries({ queryKey: usersListQueryKey() })
     userError.value = null
     dialogRef.value.close({ saved: true })
   } catch (err) {
-    userError.value = err instanceof Error ? err.message : 'Failed to save user'
+    userError.value = problemMessage(err, 'Failed to save user')
   }
 }
 

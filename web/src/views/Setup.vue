@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/stepper'
 import { bootstrapGet, setupInitialize, setupTmdb } from '@/client/sdk.gen'
 import { useAppStore } from '@/stores/app'
+import { isProblem, problemMessage } from '@/lib/api'
 
 const props = defineProps<{
   class?: HTMLAttributes['class']
@@ -96,11 +97,10 @@ async function handleAdminSubmit(e: Event) {
     await refreshBootstrap()
     currentStep.value = 1
   } catch (err) {
-    const e = err as { status?: number; detail?: string }
-    if (e?.status === 409) {
+    if (isProblem(err) && err.status === 409) {
       adminError.value = 'System already initialized'
     } else {
-      adminError.value = e?.detail || 'Setup failed'
+      adminError.value = problemMessage(err, 'Setup failed')
     }
   } finally {
     isLoadingAdmin.value = false
@@ -129,7 +129,7 @@ async function handleTmdbSubmit(e: Event) {
       router.push('/login')
     }
   } catch (err) {
-    tmdbError.value = (err as { detail?: string })?.detail || 'Failed to validate TMDB key'
+    tmdbError.value = problemMessage(err, 'Failed to validate TMDB key')
   } finally {
     isLoadingTmdb.value = false
   }

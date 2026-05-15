@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, inject } from 'vue'
-import { useMutation } from '@tanstack/vue-query'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import {
   ChevronLeft,
   ChevronRight,
@@ -11,7 +11,11 @@ import {
   TableOfContents,
 } from 'lucide-vue-next'
 import { type IndexerOutput, type IndexerInput } from '@/client/types.gen'
-import { indexersSaveMutation } from '@/client/@tanstack/vue-query.gen'
+import {
+  indexersSaveMutation,
+  indexersTestUnsavedMutation,
+  indexersListConfiguredQueryKey,
+} from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
 import {
   Stepper,
@@ -26,25 +30,52 @@ import SelectIndexerTypeStep from './steps/SelectIndexerTypeStep.vue'
 import ConfigurationStep from './steps/ConfigurationStep.vue'
 import ReviewStep from './steps/ReviewStep.vue'
 import BaseDialog from './BaseDialog.vue'
-import { client } from '@/client/client.gen'
+import { problemMessage } from '@/lib/api'
 import { useModal } from '@/composables/useModal'
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
 const modal = useModal()
+const queryClient = useQueryClient()
 
 // Form state
 const currentStep = ref(0)
 const selectedIndexerType = ref<IndexerOutput | null>(null)
 const saveData = ref<IndexerInput | undefined>(undefined)
-const isTestingConfig = ref(false)
 
 const createIndexerMutation = useMutation({
   ...indexersSaveMutation(),
   onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: indexersListConfiguredQueryKey() })
     dialogRef.value.close({ indexerAdded: true })
   },
   onError: (error) => {
     console.error('Failed to create indexer:', error)
+  },
+})
+
+const testIndexerMutation = useMutation({
+  ...indexersTestUnsavedMutation(),
+  onSuccess: async (result) => {
+    if (result.success) {
+      await modal.alert({
+        title: 'Test Successful',
+        message: result.message || 'Indexer connection test passed',
+        severity: 'success',
+      })
+    } else {
+      await modal.alert({
+        title: 'Test Failed',
+        message: result.error || 'Connection test failed',
+        severity: 'error',
+      })
+    }
+  },
+  onError: async (err) => {
+    await modal.alert({
+      title: 'Test Failed',
+      message: problemMessage(err, 'Test failed'),
+      severity: 'error',
+    })
   },
 })
 
@@ -103,45 +134,12 @@ const selectIndexerType = (indexer: IndexerOutput | null) => {
   selectedIndexerType.value = indexer
 }
 
-const handleTestIndexer = async () => {
+const handleTestIndexer = () => {
   if (!saveData.value) {
     console.error('No configuration data to test')
     return
   }
-
-  isTestingConfig.value = true
-
-  try {
-    const response = await client.post({
-      url: '/v1/indexer/test',
-      body: saveData.value,
-    })
-
-    const result = response.data as { success: boolean; message?: string; error?: string }
-
-    if (result.success) {
-      await modal.alert({
-        title: 'Test Successful',
-        message: result.message || 'Indexer connection test passed',
-        severity: 'success',
-      })
-    } else {
-      await modal.alert({
-        title: 'Test Failed',
-        message: result.error || 'Connection test failed',
-        severity: 'error',
-      })
-    }
-  } catch (err) {
-    const error = err as { message?: string; data?: { error?: string } }
-    await modal.alert({
-      title: 'Test Failed',
-      message: error.data?.error || error.message || 'Test failed',
-      severity: 'error',
-    })
-  } finally {
-    isTestingConfig.value = false
-  }
+  testIndexerMutation.mutate({ body: saveData.value })
 }
 
 const createIndexer = () => {
@@ -226,7 +224,7 @@ const closeModal = () => {
           <Button
             v-if="currentStep === 1"
             variant="outline"
-            :disabled="isTestingConfig || !saveData"
+            :disabled="testIndexerMutation.isPending.value || !saveData"
             @click="handleTestIndexer"
           >
             <Check class="mr-2 size-4" />

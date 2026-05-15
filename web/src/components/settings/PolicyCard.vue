@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useMutation } from '@tanstack/vue-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import {
   policiesCreateMutation,
   policiesUpdateMutation,
@@ -10,14 +10,15 @@ import {
   policiesDeleteRuleMutation,
   policiesCreateActionMutation,
   policiesDeleteActionMutation,
+  policiesListQueryKey,
+  indexersListConfiguredOptions,
 } from '@/client/@tanstack/vue-query.gen'
 import type { Policy, FieldDefinition, Downloader, Library, NameTemplate } from '@/client/types.gen'
 import { usePolicyFields } from '@/composables/usePolicyFields'
 import { buildPolicySummary } from '@/composables/usePolicySummary'
 import { useModal } from '@/composables/useModal'
 import policyOptions from '@/config/policyOptions.json'
-import { indexersListConfiguredOptions } from '@/client/@tanstack/vue-query.gen'
-import { useQuery } from '@tanstack/vue-query'
+import { problemMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -52,13 +53,34 @@ const emit = defineEmits<{
 }>()
 
 const modal = useModal()
+const queryClient = useQueryClient()
 const { getFieldByPath, getValidOperators } = usePolicyFields()
 const { data: indexers } = useQuery(indexersListConfiguredOptions())
 
-// Mutations
-const createPolicyMutation = useMutation(policiesCreateMutation())
-const updatePolicyMutation = useMutation(policiesUpdateMutation())
-const deletePolicyMutation = useMutation(policiesDeleteMutation())
+function invalidatePolicies() {
+  queryClient.invalidateQueries({ queryKey: policiesListQueryKey() })
+}
+
+// Policy-level mutations (called directly from toggle/delete handlers)
+const updatePolicyMutation = useMutation({
+  ...policiesUpdateMutation(),
+  onSuccess: invalidatePolicies,
+})
+const createPolicyMutation = useMutation({
+  ...policiesCreateMutation(),
+  onSuccess: invalidatePolicies,
+})
+const deletePolicyMutation = useMutation({
+  ...policiesDeleteMutation(),
+  onSuccess: () => {
+    invalidatePolicies()
+    emit('deleted')
+  },
+  onError: (err) => console.error('Failed to delete policy:', problemMessage(err)),
+})
+
+// Sub-mutations: called only inside handleSave's mutateAsync sequence (Rule 5).
+// Their effects are captured by the surrounding sequence's invalidate at the end.
 const createRuleMutation = useMutation(policiesCreateRuleMutation())
 const updateRuleMutation = useMutation(policiesUpdateRuleMutation())
 const deleteRuleMutation = useMutation(policiesDeleteRuleMutation())
@@ -261,10 +283,10 @@ const toggleExpand = () => {
   isExpanded.value = !isExpanded.value
 }
 
-const handleToggleEnabled = async (newEnabled: boolean) => {
+const handleToggleEnabled = (newEnabled: boolean) => {
   if (!props.policy?.id) return
-  try {
-    await updatePolicyMutation.mutateAsync({
+  updatePolicyMutation.mutate(
+    {
       path: { id: props.policy.id },
       body: {
         name: policyForm.value.name,
@@ -272,12 +294,15 @@ const handleToggleEnabled = async (newEnabled: boolean) => {
         enabled: newEnabled,
         priority: policyForm.value.priority,
       },
-    })
-    emit('saved')
-  } catch (error) {
-    console.error('Failed to toggle policy:', error)
-    policyForm.value.enabled = !newEnabled
-  }
+    },
+    {
+      onSuccess: () => emit('saved'),
+      onError: (err) => {
+        console.error('Failed to toggle policy:', problemMessage(err))
+        policyForm.value.enabled = !newEnabled
+      },
+    },
+  )
 }
 
 const handleSave = async () => {
@@ -391,12 +416,7 @@ const handleDelete = async () => {
     severity: 'danger',
   })
   if (!confirmed) return
-  try {
-    await deletePolicyMutation.mutateAsync({ path: { id: props.policy.id } })
-    emit('deleted')
-  } catch (error) {
-    console.error('Failed to delete policy:', error)
-  }
+  deletePolicyMutation.mutate({ path: { id: props.policy.id } })
 }
 </script>
 
