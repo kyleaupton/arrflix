@@ -1,4 +1,4 @@
-# Quality profiles — the auto-select decision model
+# Quality profiles — which release do we grab
 
 **Status:** Draft, iteration 1
 
@@ -14,7 +14,7 @@ This doc is the companion to [tracking](../tracking/README.md). Tracking decides
 - Three admin-UX tiers: **preset** (90% of users), **profile editor** (power), **custom formats** (advanced). Defaults must be great; advanced surfaces stay hidden.
 - Selection algorithm: filter by hard gates → pick best allowed quality bin with a release → pick highest-scored release in that bin → deterministic tie-break.
 - **Hard gates remove**, **soft scores order**. Mixing them is the TRaSH-guides trap.
-- Interactive search is always one click away and bypasses auto-select, but still logs to the decision log.
+- Interactive search is always one click away and bypasses automated selection, but still writes audit rows.
 - Requesters get zero in-tier control. Admins get all the knobs.
 
 ## Why "tier + profile" and not one knob
@@ -73,11 +73,11 @@ Initial tier set:
 
 Tier registry is extensible (admins may want SD, 8K, "Source" eventually), but iteration 1 keeps it to HD and 4K. Adding tiers later doesn't break existing requests because tier is a forward-compatible enum, not a freeform string.
 
-Requesters select tier at request time, gated by their permissions (`can_request_movie_hd`, `can_request_4k`, etc. — see [Story 1](../stories/01-happy-path-auto-approve.md)).
+Requesters select tier at request time, gated by their permissions (`can_request_movie_hd`, `can_request_4k`, etc. — see [Story 1](../../stories/01-happy-path-auto-approve.md)).
 
 ## The selection algorithm
 
-Given a list of indexer search results for one want, the policy engine runs:
+Given a list of indexer search results for one want, the quality engine runs:
 
 1. **Hard-gate filter.** Each release is checked against the profile's hard gates (seeders, size, blocklist, indexer eligibility). Any failure → reject, log reason.
 2. **Quality detection.** Each surviving release is parsed (release title → quality bin). Releases that don't match any allowed quality bin → reject.
@@ -141,11 +141,11 @@ Properties:
 - A user-picked release still flows through the same download → import pipeline.
 - The choice is logged in the decision log as a manual override, with the user ID.
 
-Interactive search bypasses the auto-select algorithm; it does not bypass the system. Hardlinks, name templates, library logic all still apply.
+Interactive search bypasses the automated selection algorithm; it does not bypass the system. Hardlinks, name templates, library logic all still apply.
 
 ## Decision log
 
-Every release considered by the policy engine produces a decision log entry. This is what powers the "why didn't this download?" debugger.
+Every release considered by the quality engine produces an audit row, written by [acquisition](../acquisition/README.md) as part of the system-wide [decision-artifact pattern](../../patterns/audit/README.md). This is what powers the "why didn't this download?" debugger.
 
 Fields (conceptual — not data shape):
 
@@ -163,7 +163,7 @@ The decision log is **append-only**, retained for some bounded window (TBD — l
 
 To keep scope tight, these adjacent concerns live elsewhere:
 
-- **Search execution** — the search scheduler reads tracking config, runs searches, and hands results to the policy engine. The profile is consulted; it doesn't run.
+- **Search execution** — the search scheduler reads tracking config, runs searches, and hands results to the quality engine. The profile is consulted; it doesn't run.
 - **Tracking lifecycle** — tracking owns `active / paused / archived / canceled`.
 - **Upgrade behavior strategy** — tracking decides `auto / propose / none`.
 - **Notification routing** — when an upgrade is proposed or a grab happens, the notification service routes the event. Profile just provides the data ("here's the proposed release").
@@ -201,7 +201,7 @@ User-facing UI: requesters see "**Quality**" with options "HD" / "4K"; admins se
 6. **Indexer health and tier interaction.** What if all indexers for the 4K tier are unhealthy? Pause 4K tier searches? Notify admin? Or just keep retrying with back-off? Cross-cutting concern with indexer-health subsystem.
 7. **Upgrade anti-flapping delta.** "Better by N score" — what's N? Configurable per profile? Single global? Likely a sane default (e.g., +50 score on a 100-point scale) with opt-in override. Pin in iteration 2.
 8. **Tracking-specific scoring overrides.** Could a tracking record override scoring rules for a specific series? "For this anime, prefer x265 +500 even though the global profile prefers x264." Maybe later; iteration 1 says no — profile is the unit.
-9. **Decision log retention.** 30 days? 90? Forever for grabbed, short for rejected? Cost vs debuggability trade-off. Punt to a retention-policy iteration once we see actual log volume.
+9. **Decision log retention.** Owned centrally by the [audit pattern](../../patterns/audit/README.md). The trade-off (forever for grabbed, short for rejected) is captured there; nothing for quality-profiles to decide.
 10. **Tier mismatch UX (Story 3).** When a user requests 4K but only HD is permitted, do we: (a) hide the 4K option entirely, (b) show it disabled with a "why?", or (c) show it enabled but route to admin approval? This is exactly Story 3's job to resolve — flagging it here as a quality-profile-adjacent question.
 
 ## What we're explicitly not deciding here

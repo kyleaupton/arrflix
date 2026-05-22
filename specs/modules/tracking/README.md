@@ -8,7 +8,7 @@ This doc defines **tracking**: how Arrflix models the ongoing intent to keep a s
 
 - Three distinct primitives — **request**, **tracking**, **want** — with separate lifecycles and responsibilities.
 - **Tracking** is per-series, holds the ongoing config (scope, quality, upgrade behavior, schedule). It is the _producer_ of wants.
-- **Wants** are the leaf-level work items (one per movie file, one per episode file). They flow through the pipeline defined in [Story 1](../stories/01-happy-path-auto-approve.md).
+- **Wants** are the leaf-level work items (one per movie file, one per episode file). They flow through the pipeline defined in [Story 1](../../stories/01-happy-path-auto-approve.md).
 - **Requests** are the (optional) user-facing approval layer. A request may spawn tracking (for series) or a direct want (for movies).
 - Multi-user safe: one tracking record per series, requesters union their scopes, scope narrows on departure only if no one else needs it.
 - Smart scheduling is the differentiator — search frequency is biased by time-since-air, not a fixed RSS interval.
@@ -162,8 +162,8 @@ Both are real but uncommon. We design tracking to support them but don't require
 To keep scope tight, these adjacent concerns live elsewhere:
 
 - **Search execution** — the search scheduler reads tracking config and runs searches. Tracking itself runs no code.
-- **Quality scoring** — defined by the [quality profile / policy engine](../../docs/guide/roadmap.md#auto-selection) spec, not tracking. Tracking just references a profile by ID.
-- **Decision log** — every accept/reject from the policy engine is logged. Tracking is _not_ the home for that data, though tracking-generated wants link to it.
+- **Quality scoring** — defined by [quality profiles](../quality-profiles/README.md), not tracking. Tracking just references a profile by ID.
+- **Decision log** — every accept/reject the [acquisition](../acquisition/README.md) pipeline makes is logged via the [decision-artifact pattern](../../patterns/audit/README.md). Tracking is _not_ the home for that data, though tracking-generated wants link to it.
 - **Notification routing** — when a tracking event matters to the user (new episode imported, upgrade available, tracking auto-archived), the notification service decides how to deliver it. Tracking emits the event; it doesn't route.
 - **Exact data shapes** — column types, indexes, foreign keys, API contracts. Deliberately deferred to a later iteration.
 

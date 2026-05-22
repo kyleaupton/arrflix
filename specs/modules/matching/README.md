@@ -206,7 +206,7 @@ match_decision(
 
 **Current match** for a file = the latest non-superseded `match_decision` row. Re-matches insert a new row and set the prior's `superseded_by`. Un-matches insert a new row with `outcome: no_match` and `decided_by: user:<id>`.
 
-This is the same persisted-artifact pattern as the [decision log](../auto-select/README.md#components) in auto-select. We're not building two log systems — same concept, parallel implementation under different tables for now.
+This follows the system-wide [decision-artifact pattern](../../patterns/audit/README.md): each producer owns its own table (shape diverges) but the principle, retention, and Activity-view aggregation are shared.
 
 ## Re-match, un-match, detach
 
@@ -314,7 +314,7 @@ Since we have zero users besides Kyle, the migration is "drop the old code, run 
 | **[Metadata](../metadata/README.md)**                 | Matching writes external IDs via the metadata layer's interface. Cross-provider resolution (IMDb→TMDB) goes through metadata.       |
 | **[Hygiene](../hygiene/README.md)**                   | `identity/unmatched-file` and `identity/wrong-match-suspect` are findings over matcher state. Hygiene is rollup; matcher is drill-down. |
 | **[Tracking / wants](../tracking/README.md)**         | Drop-in match satisfying an open want closes the want. Reverse: when a want fulfills via grab, the matcher gets a pre-confirmed identity. |
-| **[Auto-select](../auto-select/README.md)**           | Grab decisions and match decisions share the decision-log pattern. Parallel tables today; possibly unifiable later.                  |
+| **[Acquisition](../acquisition/README.md)**           | Grab/route decisions and match decisions are sibling producers under the [decision-artifact pattern](../../patterns/audit/README.md). Separate tables (shapes differ), shared retention + Activity view. |
 | **Import**                                            | Matched files flow through import (hardlink, rename via templates). Re-matches trigger re-import for the destination change.        |
 | **Name templates**                                    | Matcher writes identity; templates consume it. Wrong match → wrong location → re-match cascades the rename.                          |
 | **OpenSubtitles (v2)**                                | The `osdb-hash` resolver is the integration point. Hash computed and stored in v1; lookup deferred to v2 when integration ships.    |

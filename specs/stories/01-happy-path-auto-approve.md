@@ -76,7 +76,7 @@ This story is also the **template** for stories 2–4. The shape (Cast → Preco
 
 - Auto-select worker picks up the want **event-driven** (no polling delay).
 - Calls indexer service → Prowlarr → results.
-- [[decision-log]]: policy engine scores every result, rejects ineligible ones with reasons.
+- [[decision-log]]: quality engine scores every result, rejects ineligible ones with reasons.
 - Picks the top scorer, creates a `download_job` linked to the want.
 - Want status: `pending` → `searching` → `grabbed` → `downloading`
 - Downloader service hands the magnet/torrent to qBittorrent.
@@ -125,7 +125,7 @@ This story is also the **template** for stories 2–4. The shape (Cast → Preco
 - One `want` row, status `available`
 - One `media_item`, one `media_file`, one `media_file_state`
 - One `download_job`, status `completed`
-- One or more `decision_log` rows (every release considered by policy)
+- One or more decision_log rows (every release considered by quality + the routing decision)
 - Friend's "my requests" page shows the request as fulfilled with a Plex link
 
 ## What must be true (foundation requirements)
@@ -145,8 +145,8 @@ These are the things this story assumes exist. Each is a foundation requirement 
 ### Services / workers
 
 - **Request service** — validates permissions, evaluates approval policy, creates the want on approve.
-- **Want auto-select worker** — event-driven trigger on `want.created`; searches indexers, scores via policy, grabs.
-- **Policy engine with decision log** — every accept/reject persisted with reason (powers the "why didn't this download?" debugger from the broader roadmap).
+- **AcquisitionWorker** — event-driven trigger on `want.created`; searches indexers, scores via the quality profile, evaluates routing rules, grabs.
+- **Decision logging** — every accept/reject persisted with reason via the system-wide [decision-artifact pattern](../patterns/audit/README.md) (powers the "why didn't this download?" debugger).
 - **Plex integration** — outbound partial-refresh after import; inbound `library.new` webhook receiver that correlates to our `media_file`.
 - **Notification service** — per-user, per-event-type routing across channels.
 - **Web Push delivery** — VAPID-signed push to registered subscriptions.
@@ -161,7 +161,7 @@ These are the things this story assumes exist. Each is a foundation requirement 
 ### Realtime / messaging
 
 - SSE channel scoped per user, filtered to events relevant to their requests/wants.
-- An internal event bus so the auto-select worker reacts to `want.created` immediately rather than polling.
+- An internal event bus so the AcquisitionWorker reacts to `want.created` immediately rather than polling.
 
 ### Time targets (UX commitments)
 

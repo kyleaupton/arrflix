@@ -4,7 +4,7 @@
 
 This doc defines **library hygiene**: the system for detecting, surfacing, and remediating the slow accumulation of disorder in a media library — broken hardlinks, phantom files, duplicates, naming drift, quality drift. It captures _what hygiene means in Arrflix_, _what the catalog of findings looks like_, _how findings are computed and configured_, and _how the health score works_. It does **not** pin down table names, columns, or wire formats — those come in a later iteration.
 
-This doc complements [auto-select](../auto-select/README.md) (which gets files _into_ the library) and [metadata](../metadata/README.md) (which keeps identity correct). Hygiene is the retrospective view: what's wrong in the library _right now_, and how do we fix it.
+This doc complements [acquisition](../acquisition/README.md) (which gets files _into_ the library) and [metadata](../metadata/README.md) (which keeps identity correct). Hygiene is the retrospective view: what's wrong in the library _right now_, and how do we fix it.
 
 ## TL;DR
 
@@ -144,7 +144,7 @@ This unlocks:
 - **Per-finding lifecycle** — resolve (problem fixed) / dismiss (problem isn't really a problem) / snooze (revisit later)
 - **Audit trail** — *"you dismissed these 3 findings on 2026-05-01. Why?"*
 
-Same persisted-artifact pattern as the [decision log](../auto-select/README.md#components) in auto-select. Findings ARE the dashboard; the dashboard is a rollup over findings.
+Same persisted-artifact pattern as everything else that writes audit rows — see the system-wide [decision-artifact pattern](../../patterns/audit/README.md). Findings ARE the dashboard; the dashboard is a rollup over findings.
 
 ## Computation model
 
@@ -235,7 +235,7 @@ Janitor screens are useful. These are what make the dashboard *cool*:
 | Neighbor                                              | How hygiene interacts                                                                                                              |
 | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | **[Scan](../../docs/guide/roadmap.md) (existing)**    | Source of integrity findings; opportunistically populates `hygiene_finding` during walks. Hygiene rules' detection logic _runs in scan_ for free updates. |
-| **[Decision log](../auto-select/README.md)**          | `identity/wrong-match-suspect` findings link back to the import decision that placed the file. Closes the loop between auto-select and post-hoc review.    |
+| **[Decision log](../../patterns/audit/README.md)**    | `identity/wrong-match-suspect` findings link back to the import decision that placed the file. Closes the loop between acquisition and post-hoc review.    |
 | **[Quality profiles](../quality-profiles/README.md)** | `quality/upgrade-candidate` re-uses the upgrade-detection logic defined there. Hygiene surfaces the count; quality-profiles owns the definition.            |
 | **[Tracking](../tracking/README.md)**                 | Tracking states ("active subscription, last episode aired 21d ago, no file") inform a future `identity/missing-aired-episode` rule. Cross-references want-debugger view. |
 | **[Metadata](../metadata/README.md)**                 | `identity/wrong-match-suspect` uses parsed-title-vs-stored-title comparison; depends on metadata freshness.                       |

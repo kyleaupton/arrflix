@@ -41,7 +41,7 @@ Today, `media_item` has `tmdb_id` and `imdb_id` as columns, and `media_episode` 
 
 The canonical-source designation is a **configuration choice, not a code assumption** — see [Provider abstraction](#provider-abstraction).
 
-**Cross-source resolution:** the auto-select pipeline may need a TVDB ID at indexer-search time (some indexers index series by TVDB). This is a single SELECT against `media_item_external_id` for `(media_item_id, source: tvdb)`. The TMDBSeriesSyncWorker is responsible for populating TVDB and IMDB IDs from TMDB's `external_ids` endpoint as part of series sync.
+**Cross-source resolution:** the [acquisition](../acquisition/README.md) pipeline may need a TVDB ID at indexer-search time (some indexers index series by TVDB). This is a single SELECT against `media_item_external_id` for `(media_item_id, source: tvdb)`. The TMDBSeriesSyncWorker is responsible for populating TVDB and IMDB IDs from TMDB's `external_ids` endpoint as part of series sync.
 
 **Migration path:** add the `external_id` tables, backfill from the existing `tmdb_id` / `imdb_id` columns, then drop those columns in a later migration once all reads have been moved.
 
@@ -187,7 +187,7 @@ Provider raw payloads are stored as-is in `media_metadata_source`. The provider 
 - TMDB's `genres` array → our genre objects with provider-tagged IDs.
 - TMDB's relative `poster_path` → our `poster_path` value (composition to a fetchable URL happens at render time via the provider's image URL function).
 
-If a future provider uses a different vocabulary or shape, the translation lives inside its implementation — consumer code (UI, auto-select pipeline, tracking) never sees the provider's native shape.
+If a future provider uses a different vocabulary or shape, the translation lives inside its implementation — consumer code (UI, acquisition pipeline, tracking) never sees the provider's native shape.
 
 ### Canonical-source designation
 
@@ -339,7 +339,7 @@ Adjacent concerns that live elsewhere:
 ## Doc neighbors
 
 - [Tracking](../tracking/README.md) — the primary consumer of series-structure data
-- [Auto-select](../auto-select/README.md) — consumes external_ids for indexer search
+- [Acquisition](../acquisition/README.md) — consumes external_ids for indexer search
 - [Quality profiles](../quality-profiles/README.md) — orthogonal; quality decisions don't read metadata directly
-- [Story 1](../stories/01-happy-path-auto-approve.md) — exercises the metadata flow from request to availability
-- [Errors](../errors/README.md) — TMDB / upstream failures use `KindBadGateway`
+- [Story 1](../../stories/01-happy-path-auto-approve.md) — exercises the metadata flow from request to availability
+- [Errors](../../patterns/errors/README.md) — TMDB / upstream failures use `KindBadGateway`
