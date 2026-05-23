@@ -11,7 +11,7 @@ The library model is one of the simplest and most stable in the system. This spe
 - A library is `(name, type, root_path)` plus a few flags (`enabled`, `default`). One row per library, one root path per row.
 - Two media types today: `movie` and `series`. Each can have one library marked `default`, used when nothing else picks a destination.
 - CRUD via the existing REST surface; scan is a per-library verb.
-- v1 adds **runtime health checks**: a background poll confirms the root path is reachable and writable, surfaces a status field, and gates routing / scan / import on it.
+- v1 adds runtime health checks via the [connectivity-health pattern](../../patterns/connectivity-health/README.md): the library spec just declares the probe + extended statuses + consumer-behavior mapping.
 - Multi-root paths and library grouping are deliberately deferred — see [open questions](#open-questions).
 
 ## What a library owns
@@ -100,31 +100,37 @@ At create / update time the service validates:
 
 Validation does **not** cover ongoing health — see next section.
 
-## Runtime health check
+## Runtime health
 
-**New in v1.** Today, a library's root path is only checked at create / update. If the underlying drive goes offline, the path becomes unwritable, or permissions flip, the system silently breaks — scans fail with cryptic errors, imports stall, routing dispatches into a black hole.
+Libraries are a producer of the [connectivity-health pattern](../../patterns/connectivity-health/README.md). The pattern owns the worker shape, status persistence (three columns on the row), transition emission via SSE, hysteresis, and cadence. This section covers only the library-specific contract: what the probe checks, the extended statuses, and how each consumer reacts.
 
-V1 adds a background **library health worker**:
+**Today**, a library's root path is only checked at create / update. If the underlying drive goes offline, the path becomes unwritable, or permissions flip, the system silently breaks — scans fail with cryptic errors, imports stall, routing dispatches into a black hole. The runtime-health worker closes that gap.
 
-- Polls every enabled library at a configurable interval (default ~60s; not user-tunable per library).
-- Per-library checks:
-  - Path exists (`os.Stat` succeeds)
-  - Path is a directory
-  - Path is writable (probe-and-cleanup, not a mount-flag check — mount flags lie)
-  - Optional: free-space threshold (warn below, fail below floor)
-- Persists a **status field** on the library row: `healthy` / `unreachable` / `read_only` / `low_space` / `unknown` (transient on startup).
-- Status is emitted on the SSE bus so the UI reflects it live.
+**Probe.** Per enabled library, on the pattern's recommended cadence:
 
-**Health-gated behavior:**
+- Path exists (`os.Stat` succeeds)
+- Path is a directory
+- Path is writable (probe-and-cleanup test file, not a mount-flag check — mount flags lie)
+- Optional: free-space threshold (advisory; no hard floor in v1)
 
-- **Routing** treats `unreachable` and `read_only` libraries as ineligible — rules that match still fire, but the resulting `download_job` lands in a "blocked: library unhealthy" state and emits a notification.
-- **Scan** can still be triggered manually against an unhealthy library (operators sometimes need to scan-after-recovery), but the worker won't auto-scan an unhealthy library.
-- **Import** holds tasks pointed at unhealthy libraries in a `paused` substate, retrying on next health-poll success rather than failing outright.
-- **`low_space`** is advisory-only by default — surfaced in the UI, used by routing as a tiebreaker if rules express `prefer_most_free`, but does not block. Hard floor is opt-in.
+**Extended statuses** beyond the pattern's base (`healthy` / `unreachable` / `unknown`):
 
-Health checks are **stateless** in the sense that a transient blip doesn't poison the library — the next successful poll restores `healthy`. Notifications fire on transitions, not on every failed poll.
+| Value         | Meaning                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| `read_only`   | Path exists and is a directory, but not writable.                                             |
+| `low_space`   | Writable, but free space is below a configured advisory threshold.                            |
 
-The implementation lives in `internal/service/library_health` (or similar — exact placement is iteration-2). Schema cost is one column on `library` (`status`, plus a timestamp of last check); no new tables required for v1.
+**Consumer-behavior mapping** (per the [pattern's vocabulary](../../patterns/connectivity-health/README.md#consumer-gating)):
+
+| Status        | [Routing](../routing/README.md) | [Scan](../scan/README.md)               | Import     | [Acquisition](../acquisition/README.md) (planned grabs) |
+| ------------- | ------------------------------- | --------------------------------------- | ---------- | -------------------------------------------------------- |
+| `healthy`     | `proceed`                       | `proceed`                               | `proceed`  | `proceed`                                                |
+| `unreachable` | `blocked`                       | `degraded` (manual scan still allowed)  | `blocked`  | `blocked`                                                |
+| `read_only`   | `blocked`                       | `proceed` (read-only operation)         | `blocked`  | `blocked`                                                |
+| `low_space`   | `degraded` (tiebreaker)         | `proceed`                               | `proceed`  | `proceed`                                                |
+| `unknown`     | `degraded`                      | `degraded`                              | `degraded` | `degraded`                                               |
+
+Hard free-space floors are not in v1; routing rules can express their own minimums as conditions. See [open questions](#open-questions).
 
 ## Integration points
 
@@ -167,18 +173,16 @@ The implementation lives in `internal/service/library_health` (or similar — ex
 
 6. **Free-space hard floor.** Should every library have a "stop accepting writes below N GB free" setting, or is that a routing-rule concern? Lean: routing-rule, because the right floor depends on what's being placed (don't accept a 4K remux when the floor is 50 GB, but accept a TV episode). Library exposes the current number; routing decides.
 
-7. **Health-check interval.** Fixed default vs per-library override vs admin-configurable global? Lean: single global, configurable; per-library is overkill until a real case appears.
+7. **Read-only libraries as a first-class concept.** Some operators want a "this library is archival, scan it but never import to it" library — distinct from the runtime `read_only` health status, which is a probe outcome, not an admin choice. Today, `enabled=false` covers the use case crudely (no imports, no scan-auto, but also invisible to routing). Worth a separate flag? Lean: defer.
 
-8. **Read-only libraries as a first-class concept.** Some operators want a "this library is archival, scan it but never import to it" library. Today, `enabled=false` covers that crudely (no imports, no scan-auto, but also invisible to routing). Worth a separate `read_only` flag? Lean: defer.
+8. **Move-between-libraries.** "Move this movie from Movies-HD to Movies-4K" is a real operator action that today requires manual filesystem work + re-scan. Worth a first-class operation? Probably yes eventually, but it spans hygiene + import + scan and doesn't have a clear home. Defer.
 
-9. **Move-between-libraries.** "Move this movie from Movies-HD to Movies-4K" is a real operator action that today requires manual filesystem work + re-scan. Worth a first-class operation? Probably yes eventually, but it spans hygiene + import + scan and doesn't have a clear home. Defer.
-
-10. **Per-library permissions.** `libraries.read:<id>` — can a user have CRUD access to one library but not another? Lean: not in v1; lift via `resource_id` on permission grants if real demand emerges (the [users](../users/README.md) spec already supports per-resource scoping in the grant table).
+9. **Per-library permissions.** `libraries.read:<id>` — can a user have CRUD access to one library but not another? Lean: not in v1; lift via `resource_id` on permission grants if real demand emerges (the [users](../users/README.md) spec already supports per-resource scoping in the grant table).
 
 ## What we're explicitly not deciding here
 
-- Exact health-check probe implementation (test-file create/delete vs `unix.Access` vs something more clever)
-- Schema for the `status` / `status_checked_at` columns on `library`
+- Exact probe implementation (test-file create/delete vs `unix.Access` vs something more clever)
+- Health worker scheduling, persistence shape, transition mechanics — all owned by the [connectivity-health pattern](../../patterns/connectivity-health/README.md)
 - Notification routing for health transitions (lives in the future notifications spec)
 - The grouping data model, if/when we add it
 - The multi-root data model, if/when we add it
@@ -192,6 +196,7 @@ The implementation lives in `internal/service/library_health` (or similar — ex
 - [Acquisition](../acquisition/README.md) — gates planned grabs on library health
 - [Matching](../matching/README.md) — operates within library scope
 - [Hygiene](../hygiene/README.md) — cleanup eligibility scoped per library
+- [Connectivity-health pattern](../../patterns/connectivity-health/README.md) — owns the runtime-health shape libraries implement
 - [Users](../users/README.md) — `libraries.*` permissions
-- Name templates (existing, spec pending) — picked by routing, applied during import alongside the library destination
-- Downloaders (spec pending) — sibling routing-action; same shape as libraries (named ID, referenced by rules)
+- [Name templates](../name-templates/README.md) — picked by routing, applied during import alongside the library destination
+- [Downloaders](../downloaders/README.md) — sibling routing-action; same shape (named ID, referenced by rules, also a connectivity-health producer)

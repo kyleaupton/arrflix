@@ -13,7 +13,7 @@ The model has a well-designed **provider interface** with qBittorrent as the sol
 - One default per **protocol** (not per type) — a torrent default and a usenet default, picked when routing doesn't specify.
 - All providers conform to a single **`Client` interface**: `Test`, `Add`, `Get`, `List`, `ListFiles`, `Pause`, `Resume`, `Remove`. Providers register via a builder registry; the `Manager` instantiates and caches one client per downloader row.
 - v0 has **provider extensibility built-in** but only qBittorrent shipped. Adding a provider is: implement the interface, register a builder, declare type-specific `config_json` shape.
-- v1 adds **background health checks** (parallel to libraries), **credential redaction on the wire**, and a path toward **encrypted-at-rest credentials** (open question).
+- v1 adds runtime health via the [connectivity-health pattern](../../patterns/connectivity-health/README.md), **credential redaction on the wire**, and a path toward **encrypted-at-rest credentials** (open question).
 - The download-job state machine lives **with the acquisition pipeline**, not here. This spec covers downloader configuration, provider abstraction, and runtime health — not job orchestration.
 
 ## What a downloader owns
@@ -157,28 +157,34 @@ Validation does **not** include a live connection check at save time — that's 
 
 ## Runtime health
 
-**New in v1.** Today, health is checked at three points only:
+Downloaders are a producer of the [connectivity-health pattern](../../patterns/connectivity-health/README.md). The pattern owns the worker shape, status persistence, transition emission, hysteresis, and cadence. This section covers only the downloader-specific contract.
+
+**Today**, health is checked at three points only:
 
 1. **Manager init** at process startup.
 2. **Best-effort init** after a successful create.
 3. **Explicit `POST /test`** when the operator clicks the button.
 
-Between those, the system has no idea whether a downloader is reachable. A qBit instance whose container is down silently breaks every dispatched job until someone notices the pile-up.
+Between those, the system has no idea whether a downloader is reachable. A qBit instance whose container is down silently breaks every dispatched job until someone notices the pile-up. The runtime-health worker closes that gap.
 
-V1 adds a **background downloader-health worker** (parallel to the libraries health worker):
+**Probe.** Per enabled, initialized downloader: `Client.Test()` succeeds (authenticates + fetches version). On `auth_failed`, the cached session is invalidated so the next probe re-attempts login.
 
-- Polls every enabled, initialized downloader at a configurable interval (default ~60s).
-- Per-downloader check: `Client.Test()` succeeds.
-- Persists a **status field** on the row: `healthy` / `unreachable` / `auth_failed` / `unknown` (transient).
-- Status emitted on the SSE bus for live UI updates.
+**Extended status** beyond the pattern's base (`healthy` / `unreachable` / `unknown`):
 
-**Health-gated behavior:**
+| Value         | Meaning                                                                                                          |
+| ------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `auth_failed` | Connection succeeds but auth is rejected. Distinguished from `unreachable` because re-trying alone won't help.  |
 
-- **Routing** — rules referencing an `unreachable` or `auth_failed` downloader still match, but the resulting `download_job` lands in a `blocked: downloader unhealthy` substate and emits a notification. (Mirrors the libraries pattern.)
-- **Acquisition** — planned dispatches are held, not enqueued, when the target downloader is unhealthy. The download-job worker retries from `created` on next health-poll success rather than failing.
-- **In-flight jobs** — not aborted on a health transition. A downloader that flips to `unreachable` mid-job lets the existing worker retry-loop catch the failure naturally; the worker already wraps Add/Get failures as `BadGateway` (retryable).
+**Consumer-behavior mapping** (per the [pattern's vocabulary](../../patterns/connectivity-health/README.md#consumer-gating)):
 
-Health flips on transition (with hysteresis to avoid flapping notifications), not on every failed poll. Same shape as libraries health.
+| Status        | [Routing](../routing/README.md) | [Acquisition](../acquisition/README.md) (planned grabs) | Acquisition (in-flight jobs)                            |
+| ------------- | ------------------------------- | -------------------------------------------------------- | ------------------------------------------------------- |
+| `healthy`     | `proceed`                       | `proceed`                                                | `proceed`                                               |
+| `unreachable` | `blocked`                       | `blocked`                                                | retry loop catches naturally (`BadGateway`, retryable)  |
+| `auth_failed` | `failed`                        | `failed`                                                 | `failed` — admin must fix credentials                   |
+| `unknown`     | `degraded`                      | `degraded`                                               | `proceed`                                               |
+
+In-flight jobs are **not aborted** on a health transition. A downloader that flips to `unreachable` mid-job lets the existing worker retry-loop catch the failure naturally. `auth_failed` is the loud case because retrying alone can't recover — the admin-action audit row + notification are the operator's signal to intervene.
 
 ## Categories and tags
 
@@ -239,7 +245,6 @@ The system is already multi-downloader-aware. Documented for completeness:
 9. **Removing `placeholder` types from the schema.** `sabnzbd` / `nzbget` are in the type CHECK constraint but have no provider. Either keep as "scaffolded, planned" or remove and re-add when the implementation lands. Lean: keep — the placeholder cost is nothing and removing-then-adding has a migration churn cost.
 10. **Tags as a first-class field.** Today `AddRequest.Tags` is passed through but the schema doesn't surface tag config anywhere. Worth modeling per-downloader tag policy (auto-tag with `arrflix`, `quality:4k`, etc.)? Lean: small win, low priority.
 11. **`config_json` schema versioning.** Once `config_json` carries real keys (categories, etc.), we'll want a versioning story for migrations. Probably a `schema_version` field inside the JSON, validated by the provider builder. Iteration 2.
-12. **Health-check cadence.** Single global vs per-downloader? Same question as libraries; same lean — single global, configurable.
 
 ## What we're explicitly not deciding here
 
@@ -255,8 +260,9 @@ The system is already multi-downloader-aware. Documented for completeness:
 
 - [Routing](../routing/README.md) — picks the downloader a release is dispatched to
 - [Acquisition](../acquisition/README.md) — owns the download-job state machine and the worker that drives downloaders
-- [Libraries](../libraries/README.md) — sibling routing-action; same shape (CRUD + health + default)
+- [Libraries](../libraries/README.md) — sibling routing-action; same shape (CRUD + connectivity-health + default)
+- [Connectivity-health pattern](../../patterns/connectivity-health/README.md) — owns the runtime-health shape downloaders implement
 - [Users](../users/README.md) — `downloaders.*` permissions
-- [Audit pattern](../../patterns/audit/README.md) — health transitions, test invocations, credential changes
-- Name templates (existing, spec pending) — sibling routing-action; picked alongside the downloader
-- Indexers (spec pending) — different role (release discovery), but similar shape (typed external connections with health)
+- [Audit pattern](../../patterns/audit/README.md) — sibling pattern; test invocations and credential changes are admin-action audit events
+- [Name templates](../name-templates/README.md) — sibling routing-action; picked alongside the downloader
+- Indexers (spec pending) — different role (release discovery), but similar shape (typed external connections, also a connectivity-health producer)
