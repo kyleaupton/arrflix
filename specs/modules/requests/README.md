@@ -323,7 +323,7 @@ Overseerr's UX makes you guess. Ours shows the math. The data is all derivable; 
 - The quality-profile catalog and tier registry ([quality profiles](../quality-profiles/README.md))
 - The decision-artifact schema ([audit pattern](../../patterns/audit/README.md))
 - Cleanup execution and storage-pressure heuristics ([hygiene](../hygiene/README.md))
-- Notification delivery (future notifications spec)
+- Notification delivery (lives in [notifications](../notifications/README.md))
 - Library state ("is this in the library?") and want state ("has it downloaded?") — both joined for UI but not owned here
 - Watchlist semantics ("I might want this someday") — separate concept, deliberately not in this spec
 
@@ -339,7 +339,7 @@ Overseerr's UX makes you guess. Ours shows the math. The data is all derivable; 
 | **[Errors](../../patterns/errors/README.md)**         | Submission and approval errors use the typed-error model (forbidden, conflict, quota-exceeded, validation).                          |
 | **[Metadata](../metadata/README.md)**                 | Subject resolution at submit time goes through the media-item / TMDB sync surfaces.                                                  |
 | **[Hygiene](../hygiene/README.md)**                   | Reads request retention flags + watch state when deciding cleanup eligibility. Hardlink-aware multi-retention is enforced here.      |
-| **Notifications** (pending spec)                      | Emits events on pending-needs-review, decision-made, request-fulfilled.                                                              |
+| **[Notifications](../notifications/README.md)**       | Emits events on pending-needs-review, decision-made, request-fulfilled.                                                              |
 
 ## Open questions
 
@@ -364,7 +364,7 @@ Overseerr's UX makes you guess. Ours shows the math. The data is all derivable; 
 - API endpoint shapes, request/response formats, status code matrices
 - The quota schema on `user_policy` (lives in users spec)
 - The cleanup worker's implementation, scheduling, and storage-pressure heuristics (lives in hygiene)
-- Notification routing rules and delivery channels
+- Notification routing rules and delivery channels (lives in [notifications](../notifications/README.md))
 - UI component layouts, preset copy, error wording
 - Backfill / migration ordering relative to the users spec rollout
 - Relative ordering of pre-flight checks (permission → quota → duplicate → submit) — the spec mandates all of them, not their order
@@ -379,4 +379,4 @@ Overseerr's UX makes you guess. Ours shows the math. The data is all derivable; 
 - [Audit pattern](../../patterns/audit/README.md) — decision-artifact stream this spec writes into
 - [Errors](../../patterns/errors/README.md) — typed error model for submission/approval failures
 - [Story 1](../../stories/01-happy-path-auto-approve.md) — pressure-tests this spec end-to-end
-- Notifications (pending spec) — surfaces request events to users
+- [Notifications](../notifications/README.md) — surfaces request events to users

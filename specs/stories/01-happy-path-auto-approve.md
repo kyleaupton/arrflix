@@ -60,7 +60,7 @@ This story is also the **template** for stories 2–4. The shape (Cast → Preco
   2. Evaluates approval policy: `auto_approve_movie_hd` is true → auto-approve
   3. Creates a **request** row: `{ id, requested_by, tmdb_id, type, tier, status: approved, approved_by: system, auto_approved: true }`
   4. Creates a **want** row: `{ id, request_id, tmdb_id, type: movie, quality_tier: HD, status: pending }`
-  5. Emits a `want.created` event (event bus + SSE)
+  5. Emits a `want.created` event (event bus + [realtime](../modules/realtime/README.md))
 
 **Notifications:** none pushed — the in-app pill is sufficient when the user is here.
 
@@ -68,7 +68,7 @@ This story is also the **template** for stories 2–4. The shape (Cast → Preco
 
 **User-visible (PWA still open):**
 
-- Status pill updates via SSE:
+- Status pill updates via [realtime](../modules/realtime/README.md):
   `Searching for HD release...` → `Grabbed release • Queued` → `Downloading 12% • ~7 min`
 - ETA is honest: derived from the downloader's reported speed/size.
 
@@ -80,7 +80,7 @@ This story is also the **template** for stories 2–4. The shape (Cast → Preco
 - Picks the top scorer, creates a `download_job` linked to the want.
 - Want status: `pending` → `searching` → `grabbed` → `downloading`
 - Downloader service hands the magnet/torrent to qBittorrent.
-- Download worker polls qBit; broadcasts progress on SSE.
+- Download worker polls qBit; broadcasts progress via [realtime](../modules/realtime/README.md).
 
 ### Phase 4 — Download → Import (T+~7 min)
 
@@ -106,7 +106,7 @@ This story is also the **template** for stories 2–4. The shape (Cast → Preco
 - Plex finishes scanning, fires `library.new` webhook.
 - Webhook handler correlates the new Plex item back to our `media_file` (path or rating key — see [Open questions](#open-questions)).
 - Want status: `imported` → `available`
-- Notification service fires the `available` event.
+- [Notifications](../modules/notifications/README.md) fires the `available` event.
 
 **Notifications:**
 
@@ -139,8 +139,8 @@ These are the things this story assumes exist. Each is a foundation requirement 
 - **`want` entity**: `{ id, request_id (nullable — admins can want without requesting), tmdb_id, type, quality_tier, status, created_at }`. Lifecycle: `pending → searching → grabbed → downloading → imported → available` plus terminals `failed`, `canceled`.
 - **`decision_log` entity** per `(want, search_run)`: every considered release with score, accept/reject + reason.
 - **`media_file` ↔ Plex correlation** — store Plex `rating_key` on `media_file` once known.
-- **`push_subscription`** per user (VAPID endpoint, keys, ua/device label).
-- **`notification_preference`** per user, per event-type, per channel (push, in-app, future email).
+- **`push_subscription`** per user (VAPID endpoint, keys, ua/device label) — see [notifications](../modules/notifications/README.md).
+- **`notification_preference`** per user, per event-type, per channel (push, in-app, future email) — see [notifications](../modules/notifications/README.md).
 
 ### Services / workers
 
@@ -148,19 +148,19 @@ These are the things this story assumes exist. Each is a foundation requirement 
 - **AcquisitionWorker** — event-driven trigger on `want.created`; searches indexers, scores via the quality profile, evaluates routing rules, grabs.
 - **Decision logging** — every accept/reject persisted with reason via the system-wide [decision-artifact pattern](../patterns/audit/README.md) (powers the "why didn't this download?" debugger).
 - **Plex integration** — outbound partial-refresh after import; inbound `library.new` webhook receiver that correlates to our `media_file`.
-- **Notification service** — per-user, per-event-type routing across channels.
+- **[Notifications](../modules/notifications/README.md)** — per-user, per-event-type routing across channels.
 - **Web Push delivery** — VAPID-signed push to registered subscriptions.
 
 ### UI surfaces
 
 - Movie focus page aware of viewer tier; shows the right CTA.
-- "Request" button that morphs into a status pill, fed by SSE.
+- "Request" button that morphs into a status pill, fed by [realtime](../modules/realtime/README.md).
 - "My requests" page (in-flight + historical).
 - Push permission flow at the right moment (see open questions).
 
 ### Realtime / messaging
 
-- SSE channel scoped per user, filtered to events relevant to their requests/wants.
+- [Realtime](../modules/realtime/README.md) channel scoped per user, filtered to events relevant to their requests/wants.
 - An internal event bus so the AcquisitionWorker reacts to `want.created` immediately rather than polling.
 
 ### Time targets (UX commitments)

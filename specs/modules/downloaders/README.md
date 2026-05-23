@@ -184,7 +184,7 @@ Between those, the system has no idea whether a downloader is reachable. A qBit 
 | `auth_failed` | `failed`                        | `failed`                                                 | `failed` — admin must fix credentials                   |
 | `unknown`     | `degraded`                      | `degraded`                                               | `proceed`                                               |
 
-In-flight jobs are **not aborted** on a health transition. A downloader that flips to `unreachable` mid-job lets the existing worker retry-loop catch the failure naturally. `auth_failed` is the loud case because retrying alone can't recover — the admin-action audit row + notification are the operator's signal to intervene.
+In-flight jobs are **not aborted** on a health transition. A downloader that flips to `unreachable` mid-job lets the existing worker retry-loop catch the failure naturally. `auth_failed` is the loud case because retrying alone can't recover — the admin-action audit row + [notification](../notifications/README.md) are the operator's signal to intervene.
 
 ## Categories and tags
 
@@ -229,7 +229,7 @@ The system is already multi-downloader-aware. Documented for completeness:
 - Indexer / Prowlarr connections — those are separate (indexers spec, pending)
 - Import / hardlink mechanics (import, lives near scan)
 - The "what to grab" decision ([quality profiles](../quality-profiles/README.md))
-- Notification delivery (future notifications spec)
+- Notification delivery (lives in [notifications](../notifications/README.md))
 - The job-worker's concurrency model and tick cadence (acquisition's concern)
 
 ## Open questions

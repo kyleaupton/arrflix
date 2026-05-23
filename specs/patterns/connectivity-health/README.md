@@ -11,7 +11,7 @@ This pattern captures **that contract**, the same way [audit](../audit/README.md
 - **Distinct from hygiene.** Hygiene asks "what's wrong inside my library?" Connectivity health asks "is the system I depend on actually reachable?" Different cadence, different output, different consumers.
 - **Common shape**: every probed resource carries a `status` + `status_checked_at` + `status_last_transitioned_at` triple on its row. Same three columns, same three names, every resource type.
 - **Base status enum**: `healthy` / `unreachable` / `unknown` is mandatory across all resources. Each resource type extends with values appropriate to its domain (`auth_failed`, `read_only`, `low_space`, `rate_limited`, …).
-- **Transitions emit SSE events** on a standardized channel shape (`<resource_type>.health`). Persistent state changes only — flap suppression via hysteresis is mandatory.
+- **Transitions emit [realtime](../../modules/realtime/README.md) events** on a standardized channel shape (`<resource_type>.health`). Persistent state changes only — flap suppression via hysteresis is mandatory.
 - **Cadence guidance**: ~60s default for hot infrastructure (libraries, downloaders), 1-5min for indexers, longer for upstream metadata APIs. Configurable; the pattern recommends ranges, not hard values.
 - **Consumer gating vocabulary**: a small set of recommended behaviors (`proceed`, `degraded`, `blocked`, `failed`) that consumer specs map their reactions onto. Standardizing the vocabulary keeps cross-spec behavior coherent.
 - **Audit hook**: health transitions are admin-action-audit events ([users spec](../../modules/users/README.md#admin-action-audit)), not decision-artifact events.
@@ -84,7 +84,7 @@ The probe is owned by the module's spec. The pattern doesn't prescribe what "hea
 
 ### Transition emission
 
-Status changes are signalled via SSE on a per-resource-type channel: `<resource_type>.health` (e.g., `library.health`, `downloader.health`). The event payload includes:
+Status changes are signalled via [realtime](../../modules/realtime/README.md) on a per-resource-type channel: `<resource_type>.health` (e.g., `library.health`, `downloader.health`). The event payload includes:
 
 | Field             | Meaning                                                |
 | ----------------- | ------------------------------------------------------ |
@@ -192,7 +192,7 @@ The audit row gives operators "when did this start going wrong?" queryability wi
 | [Audit](../audit/README.md)                             | Sibling cross-cutting pattern. Audit covers decisions Arrflix makes; connectivity-health covers state of things Arrflix depends on. Complementary, non-overlapping. |
 | [Errors](../errors/README.md)                           | Sibling pattern. A probe failure produces a typed error ([`BadGateway`](../errors/README.md#kind-axis) for upstream, `Internal` for invariants); the worker maps it to a status. |
 | [Users](../../modules/users/README.md#admin-action-audit) | Owner of the admin-action audit stream where health transitions land.                                                 |
-| Notifications (pending spec)                            | Subscribes to `*.health` SSE channels for operator alerts on `failed`-tier transitions.                                 |
+| [Notifications](../../modules/notifications/README.md)  | Subscribes to `*.health` [realtime](../../modules/realtime/README.md) channels for operator alerts on `failed`-tier transitions.                                 |
 
 ## Open questions
 
@@ -211,8 +211,8 @@ The audit row gives operators "when did this start going wrong?" queryability wi
 
 - The probe implementation for any specific resource (lives with each module spec)
 - Exact threshold values (failure-count for hysteresis, low-space floor, etc.) — module-level
-- The SSE channel registration mechanism in code
-- Notification routing rules for `failed`-tier transitions (lives with notifications spec)
+- The [realtime](../../modules/realtime/README.md) channel registration mechanism in code
+- Notification routing rules for `failed`-tier transitions (lives in [notifications](../../modules/notifications/README.md))
 - A shared Go `Prober` interface (deferred until 3+ implementers exist)
 - The exact admin-action audit row shape for health transitions (lives with users spec)
 - UI presentation of status (per-module setting screens own their own badges)
@@ -229,4 +229,4 @@ The audit row gives operators "when did this start going wrong?" queryability wi
 - [Scan](../../modules/scan/README.md) — consumer (skips blocked libraries)
 - [Hygiene](../../modules/hygiene/README.md) — visual neighbor; presentation overlap, no data overlap
 - [Users](../../modules/users/README.md#admin-action-audit) — owns the audit stream this pattern writes into
-- Notifications (pending spec) — subscribes to transition events
+- [Notifications](../../modules/notifications/README.md) — subscribes to transition events

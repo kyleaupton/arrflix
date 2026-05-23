@@ -263,8 +263,8 @@ New tables (owned by sibling specs unless noted):
 - `download_job_want` (M:N linkage) — **owned here**
 - `indexer_search_cache` — **owned here**
 - (Optional iteration-2) `episode_release_pattern` for per-series search-timing learning — **owned here**
-- `push_subscription` — see notifications (pending spec)
-- `notification_preference` — see notifications (pending spec)
+- `push_subscription` — see [notifications](../notifications/README.md)
+- `notification_preference` — see [notifications](../notifications/README.md)
 
 New services (owned by sibling specs unless noted):
 
@@ -273,7 +273,7 @@ New services (owned by sibling specs unless noted):
 - `WantService`
 - `QualityProfileService`
 - `PlexIntegrationService` (outbound refresh + inbound webhook receiver)
-- `NotificationService` (with push channel)
+- `NotificationService` (with push channel) — see [notifications](../notifications/README.md)
 
 New workers — **owned here**:
 
@@ -286,7 +286,7 @@ Dependency, owned by [metadata](../metadata/README.md):
 
 ## Event bus / messaging
 
-The pipeline relies on events flowing between components. The existing SSE broker handles user-facing realtime updates well; we likely need an **internal event bus** in addition for worker-to-worker signaling. Concretely:
+The pipeline relies on events flowing between components. The [realtime](../realtime/README.md) module handles user-facing server-to-client updates well; we likely need an **internal event bus** in addition for worker-to-worker signaling. Concretely:
 
 | Event                | Producer                                     | Consumers                                |
 | -------------------- | -------------------------------------------- | ---------------------------------------- |

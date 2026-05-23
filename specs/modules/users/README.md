@@ -12,7 +12,7 @@ This doc defines how Arrflix models users, how they get into the system, and wha
 - **Roles are bundles of grants, not magic.** Built-in roles are pre-seeded; custom roles work identically. `built_in=true` just prevents deletion. Effective permission set = union of role grants ⊕ direct user grants, with deny overriding allow.
 - **Three onboarding strategies**: `invite_only` (default — admin pre-creates email; user signs up; invite is claimed), `open` (anyone with an email), and `plex_friends` (auto-onboard anyone on the admin's Plex friends list). Strategy is a system setting.
 - **`auth_audit` is the home for admin-action history** — who promoted whom, who approved which request, who changed strategy. Different shape from the [decision-artifact pattern](../../patterns/audit/README.md): that's automated decisions; this is humans-touching-other-humans.
-- This spec **does not own the request entity, the approval flow, or notification delivery.** It defines the permission keys those things consult.
+- This spec **does not own the request entity, the approval flow, or notification delivery** (see [notifications](../notifications/README.md)). It defines the permission keys those things consult.
 
 ## Why this is its own spec
 
@@ -162,7 +162,7 @@ What deliberately **isn't** here:
 
 - **Auto-approve toggles** — those are permissions.
 - **Tier eligibility** — that's a permission.
-- **Notification preferences** — separate concern (pending notifications spec).
+- **Notification preferences** — separate concern (see [notifications](../notifications/README.md)).
 - **Push subscriptions** — same.
 
 Future quota-shaped fields (monthly request count, monthly bytes) fit the same pattern and don't require schema redesign.
@@ -233,7 +233,7 @@ Retention follows the same configurable cadence as the [decision-artifact retent
 
 - **The request entity and its lifecycle** — [requests spec](../requests/README.md).
 - **Approval-policy evaluation** at request time — same (consults permissions defined here).
-- **Notification preferences, delivery, and push subscriptions** — pending notifications spec.
+- **Notification preferences, delivery, and push subscriptions** — see [notifications](../notifications/README.md).
 - **The tier registry** — [quality profiles](../quality-profiles/README.md). The permission-key qualifier `<tier>` references that registry by name.
 - **Per-decision audit rows** — [audit pattern](../../patterns/audit/README.md).
 - **Watch state** — future Plex/Jellyfin integration.
@@ -249,7 +249,7 @@ Retention follows the same configurable cadence as the [decision-artifact retent
 | **[Routing](../routing/README.md)**                   | Open Q5 (per-user routing rules) reads user context — role IDs, user ID — from this spec's identity primitives. |
 | **[Audit pattern](../../patterns/audit/README.md)**   | Activity-view scoping predicate defined here. Retention configuration lives there.                           |
 | **[Acquisition](../acquisition/README.md)**           | `manual_override` audit rows carry the picking user's ID. No other coupling.                                 |
-| **Notifications (pending spec)**                      | Per-user notification preferences and push subscriptions will live there but reference user IDs from here.   |
+| **[Notifications](../notifications/README.md)**       | Per-user notification preferences and push subscriptions will live there but reference user IDs from here.   |
 
 ## Open questions
 

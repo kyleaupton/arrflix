@@ -228,7 +228,7 @@ Janitor screens are useful. These are what make the dashboard *cool*:
 4. **"What changed" mode.** Diff since last audit: *"+5 broken hardlinks, +12 phantom files, −8 resolved."* Find the moment things broke.
 5. **Finding stories.** Each finding has a narrative pane: *"Imported 2024-03-12 from torrent abc123. Hardlink broke 2026-04-12 when the torrent was removed from qBittorrent. The original download is no longer in cache."* Debuggable history, not a mystery error.
 6. **Pre-flight diffs before destructive batches.** Already covered above — non-negotiable for trust.
-7. **Hygiene digest as notification.** Don't make users *check* the dashboard. Push: weekly digest of warnings, immediate push for newly-detected `error`s. Connects to the (future) notifications subsystem.
+7. **Hygiene digest as notification.** Don't make users *check* the dashboard. Push: weekly digest of warnings, immediate push for newly-detected `error`s. Connects to the [notifications](../notifications/README.md) subsystem.
 
 ## Interactions
 
@@ -241,7 +241,7 @@ Janitor screens are useful. These are what make the dashboard *cool*:
 | **[Metadata](../metadata/README.md)**                 | `identity/wrong-match-suspect` uses parsed-title-vs-stored-title comparison; depends on metadata freshness.                       |
 | **Name templates (existing)**                         | Template changes regenerate `layout/naming-drift` findings against existing files.                                                |
 | **Import (existing)**                                 | Hooks into import-error pathways: failed imports can surface as `identity/unmatched-file` findings instead of being lost in logs. |
-| **Notifications (future)**                            | Critical findings push immediately; warnings batched into digest. Per-user preferences.                                            |
+| **[Notifications](../notifications/README.md)**       | Critical findings push immediately; warnings batched into digest. Per-user preferences.                                            |
 | **Storage intelligence (future)**                     | Free-space + hygiene combined: *"You'd free 47 GB by resolving these 12 broken hardlinks."*                                       |
 
 ## Audit cadence and lifecycle
@@ -293,14 +293,14 @@ A third surface — **the finding story view** — is reached by drill-down from
 
 1. **Config persistence shape.** JSON blob in a single settings row, or relational `hygiene_rule_config` table? JSON blob is simpler (it's pure config, no joins needed) and matches ESLint's "file, not database" feel. Lean blob; revisit if querying needs it.
 2. **Reactive recompute on config change.** Flipping a rule from `error` to `warn` should update the score immediately — findings exist, just re-roll up. Flipping from `off` to `error` requires running detection. Either kick off a partial audit, or accept "score updates at next audit (tonight at 3am, or click here)."
-3. **Per-user vs per-installation config.** Hygiene is about the shared library, so single config per installation feels right. Compare to notifications, which are per-user. Revisit if multi-tenancy use cases (separate kid libraries with different rules?) emerge.
+3. **Per-user vs per-installation config.** Hygiene is about the shared library, so single config per installation feels right. Compare to [notifications](../notifications/README.md), which are per-user. Revisit if multi-tenancy use cases (separate kid libraries with different rules?) emerge.
 4. **`identity/wrong-match-suspect` heuristic.** False positives here are bad UX ("you said it's wrong but it's right"). What's the right similarity threshold? Probably user-tunable via rule options, with a generous default.
 5. **`integrity/empty-folder` default fix: `auto` vs `propose`.** Auto-delete is convenient but spooky. Propose with batch-confirm is safer. Lean auto with a one-line audit-log entry per deletion.
 6. **Health score weights.** Exact penalty per finding by severity. Needs experimentation against real libraries — too aggressive and Strict preset can't break 80%; too loose and the score is meaningless.
 7. **TTL for stale-finding auto-resolution.** 3 cycles (3 nights) is a guess. Could be configurable, or rule-specific (broken hardlinks should auto-resolve quickly once fixed; quality findings should persist longer in case they're flaky).
 8. **Subtitle / audio findings — own or punt?** Subtitle gaps probably belong to a future Bazarr-style integration. Audio language mismatch is cheap to detect via ffprobe and useful — propose owning. Out of v1, in v2.
 9. **Permission / ownership findings.** Plex can't read because of UID mismatch. Real, but out of scope for v1. Revisit if support load demands.
-10. **Notification routing for hygiene.** Per-rule, per-severity, per-user? Or just "send me a digest"? Should align with whatever the notification subsystem ends up looking like — defer to that spec.
+10. **Notification routing for hygiene.** Per-rule, per-severity, per-user? Or just "send me a digest"? Should align with the [notifications](../notifications/README.md) subsystem — defer to that spec.
 11. **Multi-library scoping.** Per-library audit view, all-libraries view, or both? Multi-library users will want both. Probably defaults to all-libraries with a filter.
 
 ## What we're explicitly not deciding here
@@ -309,7 +309,7 @@ A third surface — **the finding story view** — is reached by drill-down from
 - API endpoint shapes
 - The audit worker's exact scheduling implementation
 - The remediation handlers' implementation (each rule needs its own; defer per-rule)
-- Notification routing rules
+- Notification routing rules (lives in [notifications](../notifications/README.md))
 - Bazarr / subtitle integration details
 - Storage-intelligence cross-cutting concerns
 - Final preset contents (the catalog table shows current intent, but real values tune in iteration 2)

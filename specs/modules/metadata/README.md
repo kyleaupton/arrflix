@@ -106,7 +106,7 @@ TMDB occasionally renumbers — moves an episode from `S01E13` to `S02E01`, etc.
 
 - The unique constraint on `media_episode` is on the TMDB episode external ID (via `media_episode_external_id`), not on `(season_id, episode_number)`.
 - When sync sees a known TMDB episode ID with new `(season, episode)` numbers, **update the row** rather than insert a duplicate.
-- Surfaced to the user via a notification: "*Show X* renumbered episodes; review your overrides." (Tracking's per-episode overrides keyed on the same TMDB ID survive the renumber automatically — see [tracking open question #4](../tracking/README.md#open-questions).)
+- Surfaced to the user via a [notification](../notifications/README.md): "*Show X* renumbered episodes; review your overrides." (Tracking's per-episode overrides keyed on the same TMDB ID survive the renumber automatically — see [tracking open question #4](../tracking/README.md#open-questions).)
 
 ### Episode removal
 
@@ -309,7 +309,7 @@ Adjacent concerns that live elsewhere:
 
 1. **Confidence on external_id mappings.** Needed for low-confidence auto-matches (e.g., unmatched_file picks a suggested match with 70% confidence). Probably add as an optional column; pin in iteration 2.
 2. **Override granularity for episodes.** Do we extend `media_item_local_override` pattern to a per-episode override table now, or defer until there's demand? Leaning defer; episode-level overrides are rare in practice.
-3. **Renumber notification UX.** When TMDB renumbers, how loud should the system be? Silent migration with a log entry vs. a one-off notification vs. blocking the sync for admin approval. Probably notification + auto-migrate.
+3. **Renumber notification UX.** When TMDB renumbers, how loud should the system be? Silent migration with a log entry vs. a one-off [notification](../notifications/README.md) vs. blocking the sync for admin approval. Probably notification + auto-migrate.
 4. **Deprecated episode visibility.** Where in the UI do we show `deprecated: true` episodes? Probably hidden by default, with an admin toggle to surface. Important for not silently losing user-imported files.
 5. **TMDB ID merges.** When TMDB merges two records (rare but real), how do we follow? Probably: detect via the redirect TMDB returns, log a warning, leave the data alone, surface to admin for review.
 6. **Re-match flow data preservation.** When a user corrects a wrong TMDB match for a media_item (Fix Match flow), the episode tree needs to be wiped and re-synced. What happens to media_files associated with the old match — re-link or orphan? Probably re-link via the scan/match logic, fall back to unmatched on failure.

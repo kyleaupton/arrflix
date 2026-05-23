@@ -102,7 +102,7 @@ Validation does **not** cover ongoing health — see next section.
 
 ## Runtime health
 
-Libraries are a producer of the [connectivity-health pattern](../../patterns/connectivity-health/README.md). The pattern owns the worker shape, status persistence (three columns on the row), transition emission via SSE, hysteresis, and cadence. This section covers only the library-specific contract: what the probe checks, the extended statuses, and how each consumer reacts.
+Libraries are a producer of the [connectivity-health pattern](../../patterns/connectivity-health/README.md). The pattern owns the worker shape, status persistence (three columns on the row), transition emission via [realtime](../realtime/README.md), hysteresis, and cadence. This section covers only the library-specific contract: what the probe checks, the extended statuses, and how each consumer reacts.
 
 **Today**, a library's root path is only checked at create / update. If the underlying drive goes offline, the path becomes unwritable, or permissions flip, the system silently breaks — scans fail with cryptic errors, imports stall, routing dispatches into a black hole. The runtime-health worker closes that gap.
 
@@ -183,7 +183,7 @@ Hard free-space floors are not in v1; routing rules can express their own minimu
 
 - Exact probe implementation (test-file create/delete vs `unix.Access` vs something more clever)
 - Health worker scheduling, persistence shape, transition mechanics — all owned by the [connectivity-health pattern](../../patterns/connectivity-health/README.md)
-- Notification routing for health transitions (lives in the future notifications spec)
+- Notification routing for health transitions (lives in [notifications](../notifications/README.md))
 - The grouping data model, if/when we add it
 - The multi-root data model, if/when we add it
 - Migration plan for the `import_task.library_root_path` → `library_id` rework

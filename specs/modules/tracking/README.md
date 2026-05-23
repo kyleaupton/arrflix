@@ -42,7 +42,7 @@ A tracking record encodes five concerns:
 1. **What is being tracked** — a reference to the media item (a series). Tracking for movies is the rare exception, see [Movies under this model](#movies-under-this-model).
 2. **Scope** — which episodes count as "wanted." See [Scope: rule + overrides](#scope-rule--overrides).
 3. **Quality profile** — which profile applies. See [the quality system](#interactions) for how this resolves to actual releases.
-4. **Upgrade behavior** — `auto` (replace existing files when a better release appears), `propose` (queue an upgrade as a notification for one-tap approval), or `none`.
+4. **Upgrade behavior** — `auto` (replace existing files when a better release appears), `propose` (queue an upgrade as a [notification](../notifications/README.md) for one-tap approval), or `none`.
 5. **Schedule strategy** — `smart` (time-since-air bias, default) or `fixed` (poll every N minutes regardless).
 6. **Requesters** — the set of users who have asked for this. Drives both lifecycle (zero requesters → paused) and scope (union of requested scopes). Admin-initiated tracking lists the admin as the sole requester.
 7. **State** — `active / paused / archived / canceled`, plus a reason + timestamp on the last transition for auditability.
@@ -164,7 +164,7 @@ To keep scope tight, these adjacent concerns live elsewhere:
 - **Search execution** — the search scheduler reads tracking config and runs searches. Tracking itself runs no code.
 - **Quality scoring** — defined by [quality profiles](../quality-profiles/README.md), not tracking. Tracking just references a profile by ID.
 - **Decision log** — every accept/reject the [acquisition](../acquisition/README.md) pipeline makes is logged via the [decision-artifact pattern](../../patterns/audit/README.md). Tracking is _not_ the home for that data, though tracking-generated wants link to it.
-- **Notification routing** — when a tracking event matters to the user (new episode imported, upgrade available, tracking auto-archived), the notification service decides how to deliver it. Tracking emits the event; it doesn't route.
+- **Notification routing** — when a tracking event matters to the user (new episode imported, upgrade available, tracking auto-archived), [notifications](../notifications/README.md) decides how to deliver it. Tracking emits the event; it doesn't route.
 - **Exact data shapes** — column types, indexes, foreign keys, API contracts. Deliberately deferred to a later iteration.
 
 ## Interactions
@@ -201,7 +201,7 @@ User-facing UI strings will likely say **"monitoring"** or **"following"** depen
 - API endpoint shapes
 - The search scheduler's implementation
 - Quality profile structure
-- Notification routing rules
+- Notification routing rules (lives in [notifications](../notifications/README.md))
 - Storage thresholds, retention policies
 
 Each of those gets its own pass (or its own spec) once this model holds up against more user stories.

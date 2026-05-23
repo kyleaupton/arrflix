@@ -12,7 +12,7 @@ This doc is a back-fill: scan exists today as the 4-phase `ScannerService` in `b
 - The single biggest gap today is **reconciliation** — scan barely notices when files disappear. The greenfield model does two passes: an FS pass (what's on disk) and a DB pass (what we think is on disk), and resolves the diff.
 - Four **scan modes**: `full` (walk everything), `diff` (walk only directories with changed mtime), `verify` (no walk; `stat()` known files), `targeted` (a specific path or subtree).
 - Several **triggers**: manual, scheduled (cron), post-import, post-grab (downloader webhook), inotify (real-time on local FS), drift-detection cascades.
-- **Streaming pipeline**, not batched phases: walk emits events; matcher consumes batches; probe worker consumes events; SSE broker emits live progress. Failures in one stage don't stall the others.
+- **Streaming pipeline**, not batched phases: walk emits events; matcher consumes batches; probe worker consumes events; [realtime](../realtime/README.md) emits live progress to clients. Failures in one stage don't stall the others.
 - **OSDb hash computed unconditionally** at scan time — cheap, pays back hugely in [matching](../matching/README.md) v2 and [hygiene](../hygiene/README.md) v1.
 - **ffprobe metadata captured lazily** by a separate worker — drives quality-related hygiene rules without slowing the walk.
 - Scan is mostly plumbing. The differentiators it enables — instant drop-ins, paranoid integrity verification, no orphan rows, fast scheduled re-scans — are what users notice.
@@ -27,7 +27,7 @@ Once matching becomes its own subsystem, scan's responsibilities tighten:
 | **Reconciliation**           | Detect files in DB that no longer exist on disk; detect size/mtime drift on present files            |
 | **State refresh**            | Update `media_file_state.file_exists`, `last_verified_at`, file_size as appropriate                  |
 | **Cheap metadata capture**   | Compute OSDb hash on first discovery; emit "needs probe" events for ffprobe metadata                  |
-| **Event emission**           | Publish file events to the matcher (new files), hygiene (integrity findings), and SSE (live progress) |
+| **Event emission**           | Publish file events to the matcher (new files), hygiene (integrity findings), and [realtime](../realtime/README.md) (live progress to clients) |
 
 What scan **doesn't** own:
 
@@ -139,11 +139,11 @@ Worth shipping in v1 with explicit fallback; not worth blocking the rest of scan
 Today's scan is batched phases — walk everything, then identify everything, then persist everything. The greenfield shift is to a streaming pipeline:
 
 ```
-              walk emits FileEvent       matcher consumes batches    probe consumes events   SSE emits to UI
+              walk emits FileEvent       matcher consumes batches    probe consumes events   realtime emits to UI
                        │                            │                          │                      │
                        ▼                            ▼                          ▼                      ▼
         ┌──────────────────┐         ┌────────────────────┐       ┌────────────────────┐    ┌──────────────────┐
-        │   ScanWalker     │────────►│   MatcherService   │──────►│  MediaProbeWorker  │    │   SSE broker     │
+        │   ScanWalker     │────────►│   MatcherService   │──────►│  MediaProbeWorker  │    │ realtime.Emit    │
         │                  │         │   (batched calls)  │       │  (async, lazy)     │    │                  │
         └──────────────────┘         └────────────────────┘       └────────────────────┘    └──────────────────┘
                  │                            │                              │                         │
@@ -202,7 +202,7 @@ Scan is mostly plumbing, but a few well-placed features make it feel like a thin
 5. **Resumable scans.** Persistent scan state per `scan_run`. If the API restarts mid-scan, resume from the last committed batch. Big libraries (10TB+) need this.
 6. **Scan history.** `scan_run` table records every scan: started, completed, mode, trigger source, files walked / new / missing / errors. Surfaces *"your library is healthy because the last 7 scans were clean."*
 7. **Path policy filters.** Per-library exclusion patterns beyond just `extras/` and `sample.*`. *"Don't scan `**/.recycle/**`."* Useful for Synology / unRAID setups with snapshot directories.
-8. **Live progress with ETA.** SSE-driven UI: current file, files-per-second, percent complete, ETA. The "scan in progress" UX today is basically zero.
+8. **Live progress with ETA.** [Realtime](../realtime/README.md)-driven UI: current file, files-per-second, percent complete, ETA. The "scan in progress" UX today is basically zero.
 9. **Pause / resume scans.** A long scan can be paused (before a backup window, say) and resumed. Maps cleanly to the resumable-scan state machine.
 10. **Scan-trigger audit log.** *"This scan started because the post-grab webhook fired."* Helps explain surprising scan results — the user sees the cause without digging.
 
@@ -219,7 +219,7 @@ Scan is mostly plumbing, but a few well-placed features make it feel like a thin
 | **Plex / Jellyfin**                                   | Plex `library.new` webhook from Story 1 confirms a file actually appeared in Plex — orthogonal to scan, but they share the "file is now real" moment. |
 | **MediaProbeWorker** (new)                            | Scan emits "needs probe" events; probe worker consumes async; populates ffprobe metadata into `media_file_probe`. |
 | **IntegrityVerifyWorker** (new)                       | Walks no files; `stat()`s known files; updates `last_verified_at`; fires hygiene findings on stat errors.        |
-| **SSE broker**                                        | Live progress events (current file, files-per-second, ETA) emitted continuously during scan runs.                |
+| **[Realtime](../realtime/README.md)**                 | Live progress events (current file, files-per-second, ETA) emitted continuously during scan runs.                |
 
 ## Edge cases
 
@@ -264,13 +264,13 @@ Data shapes resolve in iteration 2.
 9. **Drive-offline detection heuristic.** Library root returning ENOENT/EACCES is the clear signal. Ambiguity (a single missing subdirectory) doesn't trigger; that's a normal "file was deleted" event.
 10. **Walker concurrency.** Parallel walks across library roots (or grouped libraries) is obvious. Parallel walks *within* a root are harder (FS contention, ordering). Lean serial within a root for simplicity.
 11. **Inotify "event mode" persistence.** When scan determines that inotify doesn't work on a root (no events, watch failures), where does that flag live? On the library/root config row, with a periodic re-test? Probably yes.
-12. **SSE event vocabulary.** What progress events does scan emit? Probably: `scan_started`, `scan_progress` (with file path + counts), `scan_file_matched`, `scan_file_missing`, `scan_completed`, `scan_failed`. Concrete event shapes resolve in iteration 2.
+12. **[Realtime](../realtime/README.md) event vocabulary.** What progress events does scan emit? Probably: `scan_started`, `scan_progress` (with file path + counts), `scan_file_matched`, `scan_file_missing`, `scan_completed`, `scan_failed`. Concrete event shapes resolve in iteration 2.
 
 ## What we're explicitly not deciding here
 
 - Exact table names, columns, indexes for `scan_run`, `media_file_probe`, or `media_file_state` extensions
 - API endpoint shapes for scan triggers and progress queries
-- SSE event payload shapes (vocabulary only, no payloads)
+- [Realtime](../realtime/README.md) event payload shapes (vocabulary only, no payloads)
 - Library multi-root vs grouping (deferred to libraries spec)
 - ffprobe field schema — what we extract and how we store it (deferred to hygiene's data-shape pass)
 - Hardlinks-across-libraries semantics

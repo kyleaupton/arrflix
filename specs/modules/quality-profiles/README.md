@@ -125,7 +125,7 @@ A want is **upgrade-eligible** if:
 The action taken depends on tracking's `upgrade_behavior`:
 
 - **`auto`** — the system replaces the current file. Existing hardlink is removed, new release is grabbed and imported.
-- **`propose`** — the system queues an upgrade notification ("Better release available — 4K Bluray 65GB, replace current 1080p WEB-DL 8GB?"). Requires one-tap approval. Default for most users.
+- **`propose`** — the system queues an upgrade [notification](../notifications/README.md) ("Better release available — 4K Bluray 65GB, replace current 1080p WEB-DL 8GB?"). Requires one-tap approval. Default for most users.
 - **`none`** — search stops once at-cutoff or as soon as any acceptable release is acquired (depending on whether cutoff is met).
 
 `propose` is the recommended default. `auto` is for power users who trust the system; the failure mode (file swapped silently) is what makes Sonarr's auto-upgrade feel scary.
@@ -166,7 +166,7 @@ To keep scope tight, these adjacent concerns live elsewhere:
 - **Search execution** — the search scheduler reads tracking config, runs searches, and hands results to the quality engine. The profile is consulted; it doesn't run.
 - **Tracking lifecycle** — tracking owns `active / paused / archived / canceled`.
 - **Upgrade behavior strategy** — tracking decides `auto / propose / none`.
-- **Notification routing** — when an upgrade is proposed or a grab happens, the notification service routes the event. Profile just provides the data ("here's the proposed release").
+- **Notification routing** — when an upgrade is proposed or a grab happens, [notifications](../notifications/README.md) routes the event. Profile just provides the data ("here's the proposed release").
 - **Quality detection / release name parsing** — the parser is a sibling system. Profile consumes parsed quality; it doesn't parse.
 - **Indexer management** — adding, removing, health-checking indexers. Profile references indexers by ID.
 - **Decision log storage** — profile produces events; decision log persists them.
@@ -184,7 +184,7 @@ To keep scope tight, these adjacent concerns live elsewhere:
 | **Release parser**      | Parses indexer result titles into quality bins; profile consumes those bins.                  |
 | **Decision log**        | Every gate/score decision becomes a log entry.                                                |
 | **Interactive search**  | Bypasses gating/scoring for selection but still displays them and logs the override.          |
-| **Notification service**| Profile + tracking together produce upgrade-available events that the notification service routes. |
+| **[Notifications](../notifications/README.md)** | Profile + tracking together produce upgrade-available events that notifications routes. |
 
 ## UI naming
 

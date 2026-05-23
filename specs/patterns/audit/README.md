@@ -146,7 +146,7 @@ That's the full contract. No shared library, no shared base class, no shared sch
 | [Matching](../../modules/matching/README.md)       | Producer; writes per-file rows with supersession chains                       |
 | [Hygiene](../../modules/hygiene/README.md)         | Producer; writes per-`(rule, target)` rows with lifecycle                     |
 | [Errors](../errors/README.md)                      | Sibling cross-cutting pattern. An error is observability for the failure path; an audit row is observability for the decision path. They're complementary; an audit row can reference an error's `Op` for failed decisions. |
-| Notifications (pending spec)                       | Subscribes to audit-row creation for push-notification triggers ("upgrade proposed", "match needs review"). |
+| [Notifications](../../modules/notifications/README.md) | Subscribes to audit-row creation for push-notification triggers ("upgrade proposed", "match needs review"). |
 
 ## Open questions
 

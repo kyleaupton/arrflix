@@ -230,14 +230,14 @@ Three UI surfaces, all backed by the same data:
 
 2. **Drill-down / decide pane.** Click an inbox item → see file path, parsed title/year, ranked suggestions with evidence per suggestion (*"guessit says 0.78, path-context says 0.31"*), one-click match, "Search TMDB" fallback, "Match by ID" power-user input.
 
-3. **Drop-in flow.** File appears in a watched library directory → scan picks it up → matcher runs the same pipeline. If `confident` outcome, file appears in library and a notification fires (*"Dropped Breaking.Bad.S01E03.mkv. Auto-matched as Breaking Bad S01E03."*). Otherwise lands in the inbox.
+3. **Drop-in flow.** File appears in a watched library directory → scan picks it up → matcher runs the same pipeline. If `confident` outcome, file appears in library and a [notification](../notifications/README.md) fires (*"Dropped Breaking.Bad.S01E03.mkv. Auto-matched as Breaking Bad S01E03."*). Otherwise lands in the inbox.
 
 ## Drop-in fulfills wants
 
 When a drop-in match resolves to identity that satisfies an open want (an episode the user has been waiting for, a movie they requested), the matcher:
 
 1. Closes the want, marking it `available`
-2. Fires Story 1's success notifications (push, etc.)
+2. Fires Story 1's success [notifications](../notifications/README.md) (push, etc.)
 3. Logs the match decision with a back-reference to the want
 
 This collapses Sonarr's separate "import from outside" workflow into the same surface as everything else. There's no second affordance; the matcher *is* the manual-grab side door.
