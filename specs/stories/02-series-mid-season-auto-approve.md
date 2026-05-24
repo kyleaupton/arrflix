@@ -141,24 +141,23 @@ Follows the template established by [Story 1](./01-happy-path-auto-approve.md): 
 - **Crucial difference from Story 1**: each season-pack download produces **N `import_task` rows, one per file**, and the matcher (see [matching](../modules/matching/README.md)) assigns each file to exactly one want based on parsed `(season, episode)` → `media_episode_external_id`. Each `import_task` carries the resolved `want_id`.
 - Per file imported:
   - 1 `media_file` created, linked to its `media_item` + `media_episode`
-  - The corresponding want transitions `downloading → imported`
-  - Plex partial-refresh fires on the library section (debounced — one refresh per batch, not 23)
+  - The corresponding want transitions `downloading → imported`, then `imported → available` once VerifyStep confirms it on disk. **Available is Arrflix's own truth — no media server required.**
+  - Media-server sync nudges Plex to partial-refresh (debounced — one refresh per batch, not 23), non-blocking.
 
-**Notifications:** none yet — we wait for Plex confirmation.
+**Notifications:** the per-season grouped notifications fire as wants reach `available` (Phase 6), gated on verification, not on Plex.
 
-### Phase 6 — Plex confirms (T+~hours, rolling)
+### Phase 6 — Notify + media-server sync (T+~hours, rolling)
 
 **Behind the scenes:**
 
-- Plex scans, fires `library.new` webhooks — likely one per file as Plex discovers them (timing batched by Plex).
-- Webhook handler correlates each new Plex item back to our `media_file` (path or rating key — same open question as Story 1).
-- Each correlated want: `imported → available`.
+- Wants reach `available` as each file is verified on disk (Phase 5) — this is what drives the notifications below. None of it waits on Plex.
+- Independently and rolling: Plex scans and fires `library.new` webhooks (batched by Plex); the handler records propagation + rating key per `media_file` and emits `media_file.propagated`. Missed webhooks are backfilled by reconciliation. Propagation flips the in-app "Open in Plex" affordance; it does not affect want state.
 
 **Notifications:**
 
-- 📱 **Grouped push** to Friend (debounce window ~10 min): **"Severance: 9 episodes from Season 1 are ready to watch."** Tap → Plex deep link to the show.
+- 📱 **Grouped push** to Friend (debounce window ~10 min): **"Severance: 9 episodes from Season 1 are ready to watch."** Deep link resolves to the Arrflix show page, which opens in Plex once propagation confirms.
 - Followed shortly by: **"Severance: 10 episodes from Season 2 are ready."** and **"Severance: 4 episodes from Season 3."**
-- In-app: "My subscriptions" → Severance now shows S1 + S2 + S3E01–E04 as **"Available on Plex"**; the show as a whole shows **"Up to date — next episode airs Fri"**.
+- In-app: "My subscriptions" → Severance now shows S1 + S2 + S3E01–E04 as **"Available"** (with **"Open in Plex"** appearing per episode as propagation confirms); the show as a whole shows **"Up to date — next episode airs Fri"**.
 
 ### Phase 7 — Smart scheduling kicks in for unaired (T+days)
 
@@ -240,7 +239,7 @@ Story 1 covered the per-want pipeline. Story 2 adds the **persistent intent** an
 - Request → tracking + first sync trigger: <1s
 - Series sync (cold) → wants spawned: <30s for a typical series; <2 min worst-case for very long-running shows
 - First grab attempt on a freshly aired episode: within the 1–6h peak window, with first search at +1h
-- ETA honesty: never claim "available" until Plex confirms; aggregate ETA derived only from `downloading` wants
+- ETA honesty: never claim "available" until the file is verified on disk (independent of Plex); aggregate ETA derived only from `downloading` wants
 
 ## Out of scope (variant stories)
 
@@ -276,4 +275,4 @@ Story 1 covered the per-want pipeline. Story 2 adds the **persistent intent** an
 
 9. **Mid-flight scope change.** Friend changes the preset to "Just this season" 5 minutes after submitting, while S1 + S2 packs are still downloading. Do those downloads cancel (out-of-scope now) or complete (already paid the bandwidth cost)? Lean: let in-flight downloads complete, cancel `searching` wants, narrow future scope. Pin in tracking.
 
-10. **First-import refresh latency.** Plex's `library.new` webhooks for 23 files imported in burst may take minutes or longer depending on Plex's scan throughput. The pill might say "imported" but Plex still says "not yet available" for several minutes. Do we surface a third state ("waiting on Plex") in the UI, or roll it into `imported`? Story 1 question, sharper here at scale.
+10. **First-import refresh latency — resolved by decoupling.** Wants reach `available` on disk-verify, so a slow Plex scan no longer holds them in `imported`. The "waiting on Plex" condition becomes a per-file _propagation_ badge ("syncing to your server…") layered on an already-`available` want — a secondary signal, not a want state. The open part is purely cosmetic: how prominently to surface propagation-pending in the grid. (See [acquisition → Media-server propagation](../modules/acquisition/README.md#media-server-propagation-decoupled-from-available).)

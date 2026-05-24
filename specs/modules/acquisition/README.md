@@ -2,14 +2,14 @@
 
 **Status:** Draft, iteration 1
 
-This doc defines the **acquisition pipeline**: the orchestration layer that takes a want from "we intend to acquire this" to "the file is in the library and Plex confirms it." It is the spine that ties together [tracking](../tracking/README.md), [quality profiles](../quality-profiles/README.md), [routing](../routing/README.md), [matching](../matching/README.md), and the existing download/import machinery.
+This doc defines the **acquisition pipeline**: the orchestration layer that takes a want from "we intend to acquire this" to "the file is in the library and verified." Surfacing that file in a downstream media server (Plex, Jellyfin) is a separate, non-blocking concern — see [Media-server propagation](#media-server-propagation-decoupled-from-available). It is the spine that ties together [tracking](../tracking/README.md), [quality profiles](../quality-profiles/README.md), [routing](../routing/README.md), [matching](../matching/README.md), and the existing download/import machinery.
 
 Acquisition is a **code module, not a settings surface.** It has no user-facing configuration of its own — every configurable knob the flow exposes lives in a sibling spec (quality profiles, routing rules, tracking defaults, indexers, downloaders, user permissions). What lives here is plumbing: the worker, search execution, the decision log writer, the event bus, the season-pack linkage.
 
 ## TL;DR
 
 - Acquisition is **orchestration**, not selection. Picking is owned by [quality profiles](../quality-profiles/README.md); post-pick decisions are owned by [routing](../routing/README.md). This doc owns the chain that connects them.
-- The pipeline: **want → search → quality (gate + score + pick) → routing (decide where) → download_job → import_task → media_file → Plex notify → available**.
+- The pipeline: **want → search → quality (gate + score + pick) → routing (decide where) → download_job → import_task → media_file → verify → available**. A want reaches `available` when Arrflix verifies the file on disk — **not** when Plex sees it. Media-server sync (Plex/Jellyfin) happens _after_ `available` and never gates it.
 - The pipeline writes audit rows following the system-wide [decision-artifact pattern](../../patterns/audit/README.md). Retention is centralized there, not here.
 - A single download_job can fulfill **many wants** (season packs). Linkage is M:N.
 - Interactive search shares all components with the autonomous flow but bypasses hard-gating and tags the entry as a manual override.
@@ -63,9 +63,10 @@ AcquisitionWorker picks up want
   → emit want.grabbed
 DownloadJobWorker (existing) → completed
 ImportWorker (existing, with want linkage) → media_file
-PlexNotifier (new)
-  → Plex partial-refresh
-  → on library.new webhook: correlate, emit want.available
+VerifyStep (new) → presence-verify on disk → emit want.available   ← Arrflix's own authority
+MediaServerSync (new, downstream, non-blocking)
+  → nudge each configured server to index (Plex partial-refresh / Jellyfin scan)
+  → on webhook OR reconciliation poll: record propagation, emit media_file.propagated
 ```
 
 **Interactive path** (the manual workflow today):
@@ -228,6 +229,49 @@ The data model needs to support **1 download_job → N wants**.
 - The matcher (see [matching](../matching/README.md)) determines which want each file fulfills, by season+episode for series or by media_item for movies.
 - On import completion: corresponding want transitions `downloading → imported`.
 
+## Media-server propagation (decoupled from `available`)
+
+**Arrflix owns the truth about its own library. A media server (Plex, Jellyfin) is a _downstream consumer_ of that library, not the authority on it.** The pipeline separates two orthogonal facts:
+
+| Axis                      | Question                              | Owner                   | Gates the want?                         |
+| ------------------------- | ------------------------------------- | ----------------------- | --------------------------------------- |
+| **Acquisition state**     | Is the file in my library, verified?  | Arrflix (this pipeline) | **Yes** — this _is_ the want lifecycle  |
+| **Media-server propagation** | Has Plex/Jellyfin indexed it yet?  | the media server        | **No** — enrichment only                |
+
+### `available` means _verified on disk_, not _seen by Plex_
+
+The last two transitions of the want lifecycle:
+
+- **`imported`** — ImportWorker has hardlinked the file into the library path and written the `media_file` row. The file is _placed_.
+- **`available`** — Arrflix has **verified the file is present and readable on disk** (a stat/size check; the same authority [scan](../scan/README.md)'s verify mode uses). The file is _confirmed_. This is the terminal happy state, and it is reachable with **no media server at all**.
+
+For the common case the verify is an inline check microseconds after the hardlink. The state still earns its place: it catches the "hardlink reported success but the file is gone / the disk errored" case, and gives scan-verify a re-confirmation hook.
+
+What this kills: the old `imported → available` transition was gated on a Plex `library.new` webhook. A missed webhook (Plex restart mid-scan, network blip) left the want stuck in `imported` **forever**, and Jellyfin / no-server users never reached a terminal state at all. That coupling is gone.
+
+### Propagation is a separate, non-blocking axis
+
+Once a file is `available`, Arrflix nudges each configured media server to index it (Plex partial-refresh, Jellyfin scan) and tracks the result as a **per-`(media_file, media_server)` propagation record** — server-agnostic, multi-server-ready:
+
+- Populated by **(a)** the server's webhook when it fires (fast path), or **(b)** a best-effort reconciliation poll that queries the server's API (backfill when the webhook is missed).
+- The media server is itself a [connectivity-health](../../patterns/connectivity-health/README.md) resource; reconciliation only runs while it's healthy.
+- **It never gates the want.** Webhook missed → the want is already `available`; propagation simply stays `pending` until the next backfill catches it.
+
+The full propagation model (record shape, reconciliation cadence, per-server webhook handling, `version_mismatch` health) lives in the **pending media-server spec** (a foundation gap). This section pins only the contract: _propagation enriches, it never gates._
+
+### Notifications fire on `available`, links resolve lazily
+
+"Ready to watch" fires the moment the want is `available` — Arrflix's own truth, never blocked on a server. Because Arrflix isn't a player (users watch _in_ Plex/Jellyfin), the notification's deep link resolves like this:
+
+- Propagation already `visible` → embed the server deep link directly.
+- Not yet → link to the **Arrflix media detail page**, which shows "syncing to your server…" and flips to "Open in Plex" the instant propagation confirms.
+
+Never a dead link, never a stuck want. (An optional _grace window_ — hold the push up to ~60–120s when a healthy server is configured, so the deep link is usually live on first tap — is a UX nicety the media-server spec may add. The default without it is still correct.)
+
+### Watch-state coupling is different — and legitimate
+
+`cleanup_after_watch` retention ([requests](../requests/README.md#retention)) genuinely depends on a media server, because "has the user watched it" is only knowable from the player. That coupling is unavoidable and stays. It degrades gracefully: with no media server, `cleanup_after_watch` simply never triggers (treat as `keep_forever`, or pair with `keep_for_days`). Do not confuse it with _availability_ coupling, which we have removed.
+
 ## What stays the same
 
 - Indexer service (Prowlarr wrapper)
@@ -248,7 +292,7 @@ The data model needs to support **1 download_job → N wants**.
 - **`download_job` grows `want` linkage.** Via an M:N intermediate, not a single FK.
 - **`import_task` grows a `want_id` FK.** One want per imported file.
 - **Search cache: in-memory → DB-backed**, longer TTL, with explicit invalidation hooks.
-- **`media_item` may grow `plex_rating_key`** for webhook correlation (see [Story 1 open questions](../../stories/01-happy-path-auto-approve.md#open-questions)).
+- **Media-server linkage stays off `media_item`.** Plex rating keys (and Jellyfin equivalents) live in a per-`(media_file, media_server)` propagation record, not a column on `media_item` — server-agnostic and multi-server-ready. Owned by the pending media-server spec; see [Media-server propagation](#media-server-propagation-decoupled-from-available).
 
 ## What gets added (summary)
 
@@ -272,7 +316,7 @@ New services (owned by sibling specs unless noted):
 - `TrackingService`
 - `WantService`
 - `QualityProfileService`
-- `PlexIntegrationService` (outbound refresh + inbound webhook receiver)
+- `MediaServerService` (outbound refresh nudge + inbound webhook/reconciliation poll; Plex now, Jellyfin later) — see the pending media-server spec. **Never gates the want lifecycle.**
 - `NotificationService` (with push channel) — see [notifications](../notifications/README.md)
 
 New workers — **owned here**:
@@ -293,8 +337,9 @@ The pipeline relies on events flowing between components. The [realtime](../real
 | `want.created`       | RequestService / TrackingService / Admin add | AcquisitionWorker (wake-up), SSE (user)  |
 | `want.grabbed`       | AcquisitionWorker                            | SSE, NotificationService                 |
 | `want.search_failed` | AcquisitionWorker                            | SearchScheduler (back-off), SSE          |
-| `want.imported`      | ImportWorker                                 | PlexIntegrationService (trigger refresh) |
-| `want.available`     | PlexIntegrationService                       | NotificationService, SSE                 |
+| `want.imported`      | ImportWorker                                 | VerifyStep (presence-verify on disk)     |
+| `want.available`     | VerifyStep (file verified on disk)           | NotificationService, SSE, MediaServerSync |
+| `media_file.propagated` | MediaServerSync (webhook or reconciliation poll) | NotificationService (deep-link upgrade), SSE |
 | `tracking.archived`  | TrackingService                              | SSE, NotificationService                 |
 | `upgrade.proposed`   | AcquisitionWorker                            | NotificationService                      |
 
@@ -337,7 +382,7 @@ If something here grows a knob worth surfacing, that knob lives in the appropria
 - Worker concurrency limits, queue depths, back-off curves
 - The event bus implementation (Go channel vs library)
 - Migration ordering / data backfill plan when renames land
-- Plex correlation strategy (covered in [Story 1 open questions](../../stories/01-happy-path-auto-approve.md#open-questions))
+- Media-server propagation mechanics — record shape, reconciliation cadence, per-server webhook/correlation strategy. Decoupled from the want lifecycle here (see [Media-server propagation](#media-server-propagation-decoupled-from-available)); the details live in the pending media-server spec.
 
 ## Doc neighbors
 

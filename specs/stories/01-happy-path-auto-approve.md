@@ -82,36 +82,35 @@ This story is also the **template** for stories 2–4. The shape (Cast → Preco
 - Downloader service hands the magnet/torrent to qBittorrent.
 - Download worker polls qBit; broadcasts progress via [realtime](../modules/realtime/README.md).
 
-### Phase 4 — Download → Import (T+~7 min)
+### Phase 4 — Download → Import → Verify (T+~7 min)
 
 **User-visible:**
 
 - If PWA closed: nothing yet.
-- If still watching: pill updates **"Importing..."** then **"Adding to Plex..."**
+- If still watching: pill updates **"Importing..."** then **"Available — in your library"**.
 
 **Behind the scenes:**
 
 - qBit reports complete.
 - Import service hardlinks file from downloads dir into the configured library path via the name template.
 - Creates `media_file` row, links to `media_item`, writes `media_file_state`.
-- Want status: `downloading` → `imported`
-- Import service calls Plex partial-refresh on the affected library section.
+- Want status: `downloading` → `imported`.
+- **VerifyStep** confirms the file is present and readable on disk (stat/size check). Want status: `imported` → `available`. **This is the terminal happy state — Arrflix has the file and has verified it, with no dependency on any media server.**
+- In parallel and non-blocking: the media-server sync nudges Plex to partial-refresh the affected section. This does not gate anything above.
 
-**Notifications:** none yet — we have not confirmed Plex visibility.
+**Notifications:** the `available` event fires _now_ (Phase 5), gated on Arrflix's own verification — not on Plex.
 
-### Phase 5 — Plex confirms (T+~8 min)
+### Phase 5 — Notify + media-server sync (T+~7 min → rolling)
 
 **Behind the scenes:**
 
-- Plex finishes scanning, fires `library.new` webhook.
-- Webhook handler correlates the new Plex item back to our `media_file` (path or rating key — see [Open questions](#open-questions)).
-- Want status: `imported` → `available`
-- [Notifications](../modules/notifications/README.md) fires the `available` event.
+- On `want → available` (Phase 4's verify), [notifications](../modules/notifications/README.md) fires the `available` event immediately. Nothing waits on Plex.
+- Independently, the media-server sync resolves propagation: when Plex's scan completes it fires `library.new`; the handler records a `(media_file, media_server)` propagation row + rating key and emits `media_file.propagated`. If the webhook never arrives, a reconciliation poll backfills the same record. Either way the want was never blocked.
 
 **Notifications:**
 
-- 📱 Push to Friend: **"Dune Part Two is ready to watch."** Tap → Plex deep link.
-- In-app status pill: **"Available on Plex — watch now"** (button).
+- 📱 Push to Friend: **"Dune Part Two is ready to watch."** The deep link points at the Arrflix media page, which shows "syncing to your server…" and flips to **"Open in Plex"** the moment propagation confirms (usually seconds). If propagation is already done when the push fires, the link goes straight to Plex.
+- In-app status pill: **"Available"** → **"Open in Plex"** once propagated.
 
 ### Phase 6 — Watch
 
@@ -122,8 +121,9 @@ This story is also the **template** for stories 2–4. The shape (Cast → Preco
 ## Postconditions
 
 - One `request` row, status `fulfilled` (or `approved` with a `fulfilled_at` — TBD)
-- One `want` row, status `available`
+- One `want` row, status `available` — reached when the file was verified on disk, independent of any media server
 - One `media_item`, one `media_file`, one `media_file_state`
+- A `(media_file, Plex)` propagation record, `visible` once Plex's scan completed (or backfilled by the reconciliation poll)
 - One `download_job`, status `completed`
 - One or more decision_log rows (every release considered by quality + the routing decision)
 - Friend's "my requests" page shows the request as fulfilled with a Plex link
@@ -168,7 +168,7 @@ These are the things this story assumes exist. Each is a foundation requirement 
 - Click → "request submitted" toast: <1s
 - Request → want created: <1s (same tx)
 - Want → first indexer search: <30s
-- ETA honesty: never claim "available" until Plex confirms
+- ETA honesty: never claim "available" until the file is verified present in the library — this no longer depends on Plex (media-server visibility is a separate, non-blocking signal)
 
 ## Out of scope (variant stories)
 
@@ -184,9 +184,9 @@ These are the things this story assumes exist. Each is a foundation requirement 
 
 ## Open questions
 
-1. **Plex correlation by path vs rating key.** Plex `library.new` webhooks give rating keys, but our canonical link is the file path. Options: walk the Plex API on import to discover the rating key, or match by path on webhook receipt. Each has failure modes (path mapping mismatches; partial scans). Pick one before implementing the webhook handler.
+1. **Plex correlation by path vs rating key.** Plex `library.new` webhooks give rating keys, but our canonical link is the file path. Options: walk the Plex API on import to discover the rating key, or match by path on webhook receipt. Each has failure modes (path mapping mismatches; partial scans). Pick one before implementing the webhook handler. _Note:_ this is now a **propagation** concern (which Plex item maps to our `media_file`), not an availability gate — it no longer blocks the want. Decided in the pending media-server spec.
 2. **Push permission UX timing.** Ask on first PWA visit, on first request submit, or after first available-notification _would_ have fired? Probably first request submit: "we'll notify you when it's ready — enable notifications?"
 3. **"Already auto-approved" UI.** Does the friend even know it was auto-approved? Pro: transparency. Con: extra cognitive load on the happy path. Probably skip in v1; surface in request history.
 4. **Tier picker vs auto-default.** If Friend has both `can_request_4k` and `can_request_movie`, do they pick tier at request time, or default to the highest allowed? Likely default to highest with explicit override. Story 3 locks this in.
-5. **`library.new` reliability.** If Plex misses a webhook (restart mid-scan, network blip), how do we eventually mark `available`? Fallback poller on `imported` wants? Manual "mark available" button?
+5. **`library.new` reliability — resolved by decoupling.** Availability no longer depends on the webhook: the want reaches `available` on disk-verify (Phase 4). A missed webhook only delays _media-server propagation_, which a reconciliation poll backfills. No want is ever stuck waiting on Plex. (Mechanics live in the pending media-server spec.)
 6. **ETA fidelity by phase.** We have no signal during `searching`. Generic "usually <1 min" or just a spinner? Probably show phase only, drop ETA except during `downloading`.
