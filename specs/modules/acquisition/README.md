@@ -88,21 +88,19 @@ The **back half** of the pipeline is unchanged. Once a download_job exists, the 
 
 ## Components
 
-### Indexer service (existing, unchanged)
+### Indexer service (see [indexers](../indexers/README.md))
 
-Thin Prowlarr wrapper. Search returns a list of raw indexer results. No scoring, no gating, no caching beyond what it does today. The cache becomes a separate concern (below).
+The search-execution path — Prowlarr query, capability-aware dispatch, result aggregation, the search cache, and per-indexer health/stats — is **owned by the [indexers module](../indexers/README.md)**. Acquisition is a consumer: it calls search, passes results to the quality profile, and fires the cache's invalidation hooks.
 
-### Search cache (restructured)
+### Search cache (owned by indexers; invalidated here)
 
-Today: in-memory, 5-minute TTL, per-service-instance.
+The DB-backed search cache **lives in [indexers](../indexers/README.md#search-cache-moved-from-acquisition)** (it has two consumers — this worker and manual search — so it belongs in the shared search subsystem, not here). It replaces the legacy in-memory, per-instance, 5-minute cache with a DB-backed store shared across restarts and worker processes, ~1-hour TTL for autonomous searches.
 
-New: **DB-backed** so autonomous workers share cache state across restarts and across worker processes. Longer TTL (probably ~1 hour) for autonomous searches, with explicit invalidation when:
+Acquisition's responsibility is to **fire the invalidation hooks** at the right moments:
 
 - A new release is grabbed (so re-search doesn't see the just-grabbed release as still available)
 - An indexer's config changes
 - A manual "search now" request
-
-Schema-wise: a table keyed by `(media_item_id or episode_id, query_hash)` storing the raw indexer result blob with an expiry. Out of scope here; covered in the data-shape iteration.
 
 The cache TTL is **not a user-configurable setting** — it's internal tuning.
 
@@ -331,7 +329,7 @@ New tables (owned by sibling specs unless noted):
 - `request` — see users / permissions / approval (pending spec)
 - Audit/decision tables — schema per producer; see [audit pattern](../../patterns/audit/README.md)
 - `download_job_want` (M:N linkage) — **owned here**
-- `indexer_search_cache` — **owned here**
+- `indexer_search_cache` — **owned by [indexers](../indexers/README.md)**; acquisition is a consumer and fires its invalidation hooks
 - (Optional iteration-2) `episode_release_pattern` for per-series search-timing learning — **owned here**
 - `push_subscription` — see [notifications](../notifications/README.md)
 - `notification_preference` — see [notifications](../notifications/README.md)
