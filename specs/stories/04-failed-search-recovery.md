@@ -173,11 +173,11 @@ Most of Story 1's requirements carry over unchanged. Net new for Story 4:
 
 ### UI surfaces
 
-- **Want pill states** beyond Story 1's set:
-  - `Searching for HD release…` (active)
-  - `Searching for HD release • last checked 4h ago` (after first retry without grab)
-  - `Still searching • 47 considered` (after the "still searching" threshold)
-  - The differentiation is mostly tone (warmer / cooler / yellow indicator); the data is the same.
+- **Want pill states** beyond Story 1's set — all renders of the same `(state, annotation, freshness)` projection ([acquisition → Want status](../modules/acquisition/README.md#want-status-the-two-axes)), not bespoke strings:
+  - state `searching`, no annotation → "Searching for HD release…"
+  - state `searching`, annotation `backing_off`, `last_searched_at` 4h ago → "Searching • last checked 4h ago"
+  - state `searching`, annotation `backing_off`, `considered_count` 47 → "Still searching • 47 considered"
+  - The differentiation is the annotation + freshness fields; pill copy is derived centrally, so tone (warmer / cooler / yellow) stays consistent across stories.
 - **Drill-down debug view** — "see what we've tried" link from any want's pill. Renders the search_run timeline + decision rows + aggregate stats. This is the same [audit](../patterns/audit/README.md) surface as Story 1's "why did this grab?" — bidirectional.
 - **"Force search now" affordance** — see [Open question #4](#open-questions). Lean: yes, but rate-limited.
 

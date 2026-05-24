@@ -86,7 +86,7 @@ Follows the [Story 1](./01-happy-path-auto-approve.md) template: Cast → Precon
 
 - Indexer-C also starts failing (perhaps a Prowlarr restart or Prowlarr-host hiccup affecting all sources). Two consecutive failures → transition `healthy → unreachable`.
 - AcquisitionWorker now sees: A `degraded` (rate-limited, deprioritized), B `blocked`, C `blocked`. The profile's `allowed_indexer_set` has zero healthy members.
-- AcquisitionWorker's behavior at this point per [acquisition](../modules/acquisition/README.md) + the connectivity-health [consumer gating](../patterns/connectivity-health/README.md#consumer-gating) recommendation: **defer searches**, do not enqueue new search runs against fully-blocked infrastructure. Wants stay in `searching`; SearchScheduler holds them with a `paused: indexer_health` annotation (distinct from normal back-off — see [Open question #4](#open-questions)).
+- AcquisitionWorker's behavior at this point per [acquisition](../modules/acquisition/README.md) + the connectivity-health [consumer gating](../patterns/connectivity-health/README.md#consumer-gating) recommendation: **defer searches**, do not enqueue new search runs against fully-blocked infrastructure. Wants stay in state `searching` with annotation `blocked` (`blocked_on: indexer`), distinct from `backing_off` — per [acquisition → Want status](../modules/acquisition/README.md#want-status-the-two-axes).
 - Severance S03E05's next-scheduled search (~T+50 min) is supposed to run but the scheduler skips it, logging "deferred: no healthy indexers in profile's allowed set."
 - The connectivity-health system fires `connectivity.failed` for the **system overall** — see [Open question #1](#open-questions) for the "which entity is failed" question.
 
@@ -105,7 +105,7 @@ Follows the [Story 1](./01-happy-path-auto-approve.md) template: Cast → Precon
 
 **User-visible (Friend):**
 
-- Severance's want pill changes from "Searching for HD release" to **"Paused — waiting for indexers"** (the new wait reason replaces the back-off reason).
+- Severance's want pill changes from "Searching for HD release" to **"Paused — waiting for indexers"** — same want state (`searching`), different annotation (`blocked`/indexer vs `backing_off`).
 - Sentinel's pill is unchanged (it was already in a long back-off; the next scheduled retry is hours away).
 - No push fires to Friend — this is admin-domain.
 
@@ -128,7 +128,7 @@ Follows the [Story 1](./01-happy-path-auto-approve.md) template: Cast → Precon
   - Row update + SSE event + audit row.
   - AcquisitionWorker re-enables Indexer-A.
 
-- T+~1h 5m: SearchScheduler sees that Severance S03E05's want now has a healthy indexer available. It clears the `paused: indexer_health` annotation and schedules the next search at the normal peak-window cadence (next slot ~10 min away).
+- T+~1h 5m: SearchScheduler sees that Severance S03E05's want now has a healthy indexer available. It clears the want's `blocked` annotation and schedules the next search at the normal peak-window cadence (next slot ~10 min away).
 
 - T+~1h 10m: Indexer-B's upstream comes back. Next probe succeeds → transition `unreachable → healthy`.
 
@@ -171,7 +171,7 @@ Follows the [Story 1](./01-happy-path-auto-approve.md) template: Cast → Precon
   - `connectivity.failed` rows: 2 admins × 2 channels = 4 rows, all `delivered`.
   - `connectivity.recovered` rows: same count, all `delivered`.
   - In-app entries visible in admins' bell icons (with whatever supersede behavior is chosen — see [Open question #6](#open-questions)).
-- **Severance S03E05**: imported, available on Plex, Friend has a push. The want's audit trail includes a `search_run` row marked `deferred: indexer_health` for the missed slot during the outage.
+- **Severance S03E05**: imported, available on Plex, Friend has a push. The want's audit trail includes a `search_run` row marked `deferred` (reason: no healthy indexers) for the missed slot during the outage.
 - **Sentinel**: still in its long back-off; no change attributable to this story.
 - **Admin dashboard**: 2 green + 1 red indexer; persistent banner about Indexer-C.
 
@@ -199,8 +199,8 @@ The pending indexers spec must declare, at minimum:
 
 ### SearchScheduler
 
-- Annotate paused wants with the **reason** for the pause: `back_off` (normal failure cadence) vs `indexer_health` (deferred due to no healthy indexers). These are distinct and need separate UI surfacing.
-- On health-recovery events, the scheduler resumes `indexer_health`-paused wants immediately (not on their original schedule); back-off-paused wants are unaffected.
+- Use the want **annotation** axis ([acquisition → Want status](../modules/acquisition/README.md#want-status-the-two-axes)): `backing_off` (normal failure cadence) vs `blocked` with `blocked_on: indexer` (deferred — no healthy indexers). Both are state `searching`; the annotation is what differs and what the pill + resume logic key off.
+- On health-recovery events, the scheduler resumes `blocked`(indexer) wants immediately (not on their original schedule); `backing_off` wants are unaffected (they wake on `next_attempt_at`).
 
 ### Notifications — `connectivity.failed` and `connectivity.recovered`
 
@@ -248,7 +248,7 @@ The pending indexers spec must declare, at minimum:
 
 3. **Per-indexer probe-on-demand UX.** The pattern recommends a uniform `POST /<resource>/{id}/probe` endpoint ([connectivity-health open question #6](../patterns/connectivity-health/README.md#open-questions)). For indexers, what does a "Test now" button actually do — call upstream's `/test`? Run the same probe the worker runs? Both produce a status decision, but the test endpoint may be heavier (real search vs. shallow ping). Lean: same probe the worker runs; document that it's a lightweight check.
 
-4. **`paused: indexer_health` annotation on wants.** Distinct from `paused: back_off`. This affects the want's pill ("Paused — waiting for indexers" vs "Still searching"), the SearchScheduler's resume logic (immediate on health recovery vs. wait for back-off slot), and the audit trail. Pin in [acquisition](../modules/acquisition/README.md).
+4. **Want annotation for infra-blocking — resolved.** Formalized as the want **annotation** axis: state stays `searching`, annotation is `blocked` (`blocked_on: indexer`) vs `backing_off`. This drives the pill copy, the resume logic (immediate on health recovery vs. wait for `next_attempt_at`), and the audit trail — all from one vocabulary. See [acquisition → Want status](../modules/acquisition/README.md#want-status-the-two-axes).
 
 5. **Thundering-herd on recovery.** 50 wants paused for indexer health. Indexer-A comes back healthy. Do all 50 wants immediately fire searches against A? That's both a stampede on A (likely getting it rate-limited again immediately) and wasteful (A may have nothing for most of them). Lean: stagger by reading the back-off curve from each want's last attempt, not by treating recovery as a "search all now" event. Pin in acquisition.
 

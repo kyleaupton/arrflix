@@ -170,7 +170,7 @@ The cost is one tracking row per movie, including one-off manual grabs (which cr
 
 To keep scope tight, these adjacent concerns live elsewhere:
 
-- **Search execution** — the search scheduler reads tracking config and runs searches. Tracking itself runs no code.
+- **Search execution** — the search scheduler reads tracking config and runs searches. Tracking itself runs no code. The want's runtime status (state × annotation) is likewise an acquisition concern — see [Want status](../acquisition/README.md#want-status-the-two-axes).
 - **Quality scoring** — defined by [quality profiles](../quality-profiles/README.md), not tracking. Tracking just references a profile by ID.
 - **Decision log** — every accept/reject the [acquisition](../acquisition/README.md) pipeline makes is logged via the [decision-artifact pattern](../../patterns/audit/README.md). Tracking is _not_ the home for that data, though tracking-generated wants link to it.
 - **Notification routing** — when a tracking event matters to the user (new episode imported, upgrade available, tracking auto-archived), [notifications](../notifications/README.md) decides how to deliver it. Tracking emits the event; it doesn't route.

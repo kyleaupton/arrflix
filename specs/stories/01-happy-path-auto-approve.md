@@ -140,7 +140,7 @@ These are the things this story assumes exist. Each is a foundation requirement 
 - **`tracking` entity**: the universal ongoing-intent primitive — one per requested media item (single-atom for a movie). Produces wants. See [tracking](../modules/tracking/README.md).
 - **`want` entity**: `{ id, tracking_id, type, quality_profile_id, status, created_at }` — every want has a tracking parent (movies included). Lifecycle: `pending → searching → grabbed → downloading → imported → available` plus terminals `failed`, `canceled`.
 - **`decision_log` entity** per `(want, search_run)`: every considered release with score, accept/reject + reason.
-- **`media_file` ↔ Plex correlation** — store Plex `rating_key` on `media_file` once known.
+- **media-server propagation record** — a per-`(media_file, media_server)` row that stores the server's `external_ref` (Plex `rating_key`, Jellyfin item id) once known. The rating key lives **here**, not on `media_file` — `media_file` is Arrflix's own truth and stays server-agnostic. See [media-server](../modules/media-server/README.md#the-propagation-record).
 - **`push_subscription`** per user (VAPID endpoint, keys, ua/device label) — see [notifications](../modules/notifications/README.md).
 - **`notification_preference`** per user, per event-type, per channel (push, in-app, future email) — see [notifications](../modules/notifications/README.md).
 
@@ -186,7 +186,7 @@ These are the things this story assumes exist. Each is a foundation requirement 
 
 ## Open questions
 
-1. **Plex correlation by path vs rating key.** Plex `library.new` webhooks give rating keys, but our canonical link is the file path. Options: walk the Plex API on import to discover the rating key, or match by path on webhook receipt. Each has failure modes (path mapping mismatches; partial scans). Pick one before implementing the webhook handler. _Note:_ this is now a **propagation** concern (which Plex item maps to our `media_file`), not an availability gate — it no longer blocks the want. Decided in the pending media-server spec.
+1. **Plex correlation by path vs rating key — resolved.** This is now a pure **propagation** concern (which Plex item maps to our `media_file`), not an availability gate — it no longer blocks the want. The [media-server](../modules/media-server/README.md#correlation-mapping-a-server-item-back-to-our-media_file) spec resolves it: correlate **path-primary** (we wrote the file via a deterministic name template) with an optional per-`(library, media_server)` path-mapping override for container-mount differences, falling back to basename matching; the rating key is the stored result, not the join key.
 2. **Push permission UX timing.** Ask on first PWA visit, on first request submit, or after first available-notification _would_ have fired? Probably first request submit: "we'll notify you when it's ready — enable notifications?"
 3. **"Already auto-approved" UI.** Does the friend even know it was auto-approved? Pro: transparency. Con: extra cognitive load on the happy path. Probably skip in v1; surface in request history.
 4. **Tier picker vs auto-default.** If Friend has both `can_request_4k` and `can_request_movie`, do they pick tier at request time, or default to the highest allowed? Likely default to highest with explicit override. Story 3 locks this in.

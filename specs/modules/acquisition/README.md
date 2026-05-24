@@ -229,6 +229,32 @@ The data model needs to support **1 download_job → N wants**.
 - The matcher (see [matching](../matching/README.md)) determines which want each file fulfills, by season+episode for series or by media_item for movies.
 - On import completion: corresponding want transitions `downloading → imported`.
 
+## Want status: the two axes
+
+A want's runtime status has **two orthogonal axes**, and conflating them is what makes status UI sprawl. Keeping them separate gives every surface — the request pill, the subscription grid, the realtime events — one vocabulary to render from instead of per-screen strings.
+
+**Axis 1 — `state` (the lifecycle).** The canonical state machine, unchanged:
+
+`pending → searching → grabbed → downloading → imported → available` (+ terminals `failed`, `canceled`).
+
+**Axis 2 — `annotation` (why it's holding).** An optional, structured reason explaining why a want isn't actively advancing right now. The bare state ("searching") doesn't distinguish "actively querying indexers" from "waiting out a back-off" from "blocked because every indexer is down" — but the user _and_ the scheduler's resume logic need that difference. The vocabulary is small and fixed (extensible as new holds emerge):
+
+| Annotation         | Meaning                                                                  | Typical state                     | Set by                                                                 |
+| ------------------ | ------------------------------------------------------------------------ | --------------------------------- | ---------------------------------------------------------------------- |
+| _(none)_           | Actively advancing — searching now, or downloading now                   | any                               | —                                                                      |
+| `awaiting_air`     | Episode hasn't aired yet; scheduler won't search                         | pending / searching               | SearchScheduler                                                        |
+| `awaiting_release` | Movie not yet released; scheduler won't search                           | pending / searching               | SearchScheduler                                                        |
+| `backing_off`      | Searched, nothing acceptable yet; in exponential back-off                | searching                         | SearchScheduler                                                        |
+| `blocked`          | Can't proceed — required infrastructure is unhealthy (`blocked_on`: `indexer` / `downloader` / `library`) | searching / grabbed / downloading | SearchScheduler / pipeline, via [connectivity-health](../../patterns/connectivity-health/README.md) |
+
+Plus a few **freshness / progress** fields the pill reads (data, not enum): `last_searched_at`, `search_attempt_count`, `considered_count` (cumulative releases evaluated — Story 4's "47 considered"), `next_attempt_at` (when the next search is due), and for the download phase `progress_pct` + `eta`.
+
+**The pill is a pure render of `(state, annotation, freshness)`.** "Searching for HD release…", "Searching • last checked 4h ago", "Still searching • 47 considered", "Paused — waiting for indexers", "Downloading 12% • ~7 min" are all the _same_ render function over different status projections — not strings authored per story. Realtime want events ([realtime](../realtime/README.md)) carry this structured projection, not pre-rendered text, so copy stays consistent everywhere.
+
+**Resume logic keys off the annotation, not the state.** A `blocked`(indexer) want resumes immediately on a `<resource>.health` recovery event; a `backing_off` want resumes on its `next_attempt_at` schedule. The scheduler distinguishes them by annotation — they're both `searching`, but they wake on different signals. (This is what [Story 10](../../stories/10-indexer-health-degraded-and-recovery.md) needs and what resolves its open question on distinguishing infra-blocked from backing-off wants.)
+
+**Not a want annotation: media-server propagation.** Once a want is `available`, whether Plex/Jellyfin has indexed the file is a _separate_ per-`(media_file, server)` status (see [Media-server propagation](#media-server-propagation-decoupled-from-available)), surfaced as its own badge — not a want annotation. The want is done; propagation is downstream.
+
 ## Media-server propagation (decoupled from `available`)
 
 **Arrflix owns the truth about its own library. A media server (Plex, Jellyfin) is a _downstream consumer_ of that library, not the authority on it.** The pipeline separates two orthogonal facts:
