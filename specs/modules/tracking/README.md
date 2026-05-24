@@ -7,12 +7,12 @@ This doc defines **tracking**: how Arrflix models the ongoing intent to keep a s
 ## TL;DR
 
 - Three distinct primitives — **request**, **tracking**, **want** — with separate lifecycles and responsibilities.
-- **Tracking** is per-series, holds the ongoing config (scope, quality, upgrade behavior, schedule). It is the _producer_ of wants.
-- **Wants** are the leaf-level work items (one per movie file, one per episode file). They flow through the pipeline defined in [Story 1](../../stories/01-happy-path-auto-approve.md).
-- **Requests** are the (optional) user-facing approval layer. A request may spawn tracking (for series) or a direct want (for movies).
-- Multi-user safe: one tracking record per series, requesters union their scopes, scope narrows on departure only if no one else needs it.
-- Smart scheduling is the differentiator — search frequency is biased by time-since-air, not a fixed RSS interval.
-- Auto-archives when a series is `Ended` upstream and all wanted episodes are acquired.
+- **Tracking** is the **universal ongoing-intent primitive** — one record per requested media item, series _or_ movie — holding the ongoing config (scope, quality, upgrade behavior, schedule). It is the _producer_ of wants. A movie is the degenerate case: a single-atom tracking that produces one want.
+- **Wants** are the leaf-level work items (one per movie file, one per episode file). They flow through the pipeline defined in [Story 1](../../stories/01-happy-path-auto-approve.md). **Invariant: every want has exactly one tracking parent.**
+- **Requests** are the (optional) user-facing approval layer. Every approved request spawns exactly one tracking (single-atom for a movie, scoped for a series), which produces the wants.
+- Multi-user safe: one tracking record per media item, requesters union their scopes, scope narrows on departure only if no one else needs it.
+- Smart scheduling is the differentiator — search frequency is biased by time-since-air (movies anchor the same curve on `release_date`), not a fixed RSS interval.
+- Auto-archives when the intent is complete — a series `Ended` upstream with all wanted episodes acquired, or a movie's one want acquired at-cutoff — and nothing is watching for upgrades.
 
 ## Why a separate primitive
 
@@ -27,29 +27,29 @@ Splitting into three primitives — request, tracking, want — gives each conce
 
 | Primitive    | Concept                                                       | Lifecycle                                                                                     |
 | ------------ | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| **Request**  | "a user asked for this; gated by approval"                    | `pending → approved → fulfilled` _or_ `pending → denied`                                      |
-| **Tracking** | "ensure this series stays current per these rules"            | `active / paused / archived / canceled`                                                       |
+| **Request**  | "a user asked for this; gated by approval"                    | `pending → approved → spawned` _or_ `pending → denied`                                      |
+| **Tracking** | "keep this media item current per these rules (a movie is a single atom)"            | `active / paused / archived / canceled`                                                       |
 | **Want**     | "acquire this specific atom" (one movie file, or one episode) | `pending → searching → grabbed → downloading → imported → available` (+ `failed`, `canceled`) |
 
-For movies, you typically have **optional request → want**.
-For series, you typically have **optional request → tracking → wants per episode**.
-Admin-added content skips the request layer.
+For movies: **optional request → tracking (single-atom) → one want**.
+For series: **optional request → tracking → wants per episode**.
+Admin-added content skips the request layer but still creates tracking (admin-anchored).
 
 ## What tracking owns
 
 A tracking record encodes five concerns:
 
-1. **What is being tracked** — a reference to the media item (a series). Tracking for movies is the rare exception, see [Movies under this model](#movies-under-this-model).
+1. **What is being tracked** — a reference to the media item (series or movie). See [Movies under this model](#movies-under-this-model) for the single-atom case.
 2. **Scope** — which episodes count as "wanted." See [Scope: rule + overrides](#scope-rule--overrides).
 3. **Quality profile** — which profile applies. See [the quality system](#interactions) for how this resolves to actual releases.
 4. **Upgrade behavior** — `auto` (replace existing files when a better release appears), `propose` (queue an upgrade as a [notification](../notifications/README.md) for one-tap approval), or `none`.
 5. **Schedule strategy** — `smart` (time-since-air bias, default) or `fixed` (poll every N minutes regardless).
-6. **Requesters** — the set of users who have asked for this. Drives both lifecycle (zero requesters → paused) and scope (union of requested scopes). Admin-initiated tracking lists the admin as the sole requester.
+6. **Requesters** — the set of [`tracking_requester` association rows](#multi-requester-semantics), one per user, each carrying that user's live per-requester intent (scope, overrides, tier, retention, monitor_future). Drives both lifecycle (zero rows → paused) and effective scope (union across rows). Admin-initiated tracking has an admin association row.
 7. **State** — `active / paused / archived / canceled`, plus a reason + timestamp on the last transition for auditability.
 
 ## Scope: rule + overrides
 
-Scope answers "which episodes does this tracking want?" The model is **one rule + per-episode overrides**:
+Scope answers "which episodes does this tracking want?" The model is **one rule + per-episode overrides**. (For a movie tracking, scope is the implicit single atom — the rules below are series-only and a no-op for movies.)
 
 **Preset rules** (cover ~95% of cases):
 
@@ -67,6 +67,8 @@ Scope answers "which episodes does this tracking want?" The model is **one rule 
 - Explicit exclude — force-exclude an episode the rule would include
 
 **Composition:** an episode is wanted iff `rule says yes` _and not_ explicitly excluded, _or_ explicitly included. Rule + overrides is universal — even `rule: all` + a long exclude list expresses anything.
+
+Scope and its overrides are **per-requester** — they live on each requester's [`tracking_requester` row](#multi-requester-semantics), not globally on the tracking. The tracking's effective scope is the union across requesters. This is what lets a departure correctly narrow scope, and lets per-episode notification audiences resolve to "the requesters whose scope covers this episode."
 
 We deliberately avoid a full rules DSL. Five presets + overrides is enough; richer rules can be added later as new presets if real demand emerges.
 
@@ -98,20 +100,24 @@ upstream       wanted │ episodes acquired                  └─────�
 
 **Auto-transitions:**
 
-- `active → archived` when (TMDB series ended) AND (all in-scope episodes acquired at or above cutoff).
-- `archived → active` when TMDB sync detects a new episode that the scope rule includes.
+- `active → archived` when the tracking is **complete** AND not watching for upgrades:
+  - _Series:_ TMDB marks the series `Ended` AND all in-scope episodes are acquired at or above cutoff.
+  - _Movie:_ the single want is acquired at or above cutoff (a movie is inherently "ended").
+  - In both cases, a tracking with `upgrade_behavior != none` stays `active` (running low-frequency upgrade searches) rather than archiving — archive means "done and not looking for better."
+- `archived → active` when TMDB sync detects a new in-scope episode (series), or — rare — a movie tracking is reactivated for upgrade watching.
 - `active → paused` when the last requester unsubscribes from non-admin tracking. Admin tracking does not auto-pause.
 
 **Manual transitions:** any user with appropriate permissions can pause / resume / cancel.
 
 ## Multi-requester semantics
 
-When two users both want the same series, we use one tracking record, not two.
+When two users both want the same media item (series _or_ movie), we use one tracking record, not two. For movies this is the dedup boundary that used to live on the want — the tracking now owns multi-requester state for both types, uniformly.
 
-- **Requesters set** — every user who currently wants this series is in the set. Admin-initiated tracking has the admin in the set.
-- **Effective scope** — the union of each requester's individual scope. Conceptually each requester has their own scope; tracking acts on the union. (Whether each requester's scope is stored separately or only the union is stored is a later-iteration decision; the _semantics_ are union, the _storage_ can collapse if we accept that narrowing-on-departure requires us to recompute.)
-- **Joining** — a user requests a series that's already tracked → they're added to the requesters set; effective scope widens to include their scope.
-- **Leaving** — a user cancels their request → removed from the set; effective scope narrows to the union of remaining requesters' scopes (no narrowing if their scope was already covered by others).
+- **Requesters set** — represented as **`tracking_requester` association rows**, one per `(tracking, user)`. Each row holds that requester's _live, mutable_ per-requester intent: their scope (+ per-episode overrides), tier floor/ceiling, retention, and `monitor_future`. Admin-initiated tracking has an admin `tracking_requester` row.
+- **`tracking_requester` is the source of truth for per-requester intent; the [request](../requests/README.md) is the frozen origin.** At spawn, the requester's `tracking_requester` row is _seeded from_ their request's intent flags. Thereafter the request is immutable (audit history — "what Alice originally asked for"), and the association row is what the user edits when they change their mind ("what Alice wants now"). The split is deliberate: it keeps requests clean audit artifacts while giving per-requester intent a live home.
+- **Effective scope** — the union of every `tracking_requester` row's scope. Tracking **caches** the effective scope (so the scheduler and scope evaluator read it cheaply) and **recomputes it from the association rows** on any join, leave, or per-requester edit. The cache is derived; the association rows are authoritative. (This resolves [open question #1](#open-questions).)
+- **Joining** — a user requests a media item that's already tracked → a new `tracking_requester` row is inserted (seeded from their request); the effective scope is recomputed and widens to include their scope.
+- **Leaving** — a user cancels → their `tracking_requester` row is removed; the effective scope is recomputed from the _surviving_ association rows and narrows accordingly (no narrowing if their scope was already covered by others). Because recompute reads live association rows — not frozen requests — it stays correct even after other requesters have edited their scope.
 - **Zero requesters** — tracking moves to `paused` (not `canceled`, so admins can revive it). For purely admin-initiated tracking with no human requester, this only happens if the admin explicitly removes themselves; otherwise tracking is admin-anchored.
 
 This avoids:
@@ -141,6 +147,7 @@ Refinements that fall out naturally:
 - **Per-series learning** — record observed "release lag" per series; bias the peak window accordingly. A show that always lands 3h after air gets searched at 3h, not blindly at 1–6h.
 - **Indexer health gating** — don't bother searching while all relevant indexers are unhealthy; resume on recovery.
 - **Failure back-off** — on consecutive empty searches for the same episode, exponential back-off within each frequency tier.
+- **Movie anchor** — a movie tracking has no air date; it anchors the same curve on the movie's `release_date` (or request time if the movie is unreleased), so a just-released movie gets the same peak-window urgency as a just-aired episode. [Story 4](../../stories/04-failed-search-recovery.md)'s recovery flow rides on this.
 
 Tracking _declares_ its schedule strategy. The search scheduler _implements_ it. Tracking doesn't run searches; it's just the configuration root.
 
@@ -148,14 +155,16 @@ Tracking _declares_ its schedule strategy. The search scheduler _implements_ it.
 
 ## Movies under this model
 
-In the common case, **movies do not have tracking records.** A movie request creates a want directly; the want flows through Story 1's pipeline and terminates at `available`.
+**Every movie gets a tracking record too** — it is just the degenerate, single-atom case. A movie request spawns a tracking whose scope is the one movie; that tracking produces exactly one want, which flows through [Story 1](../../stories/01-happy-path-auto-approve.md)'s pipeline to `available`. If the movie is found at-cutoff immediately and nothing is watching for upgrades, the tracking auto-archives right away.
 
-Tracking _can_ exist for a movie in two cases:
+Why universal rather than the old "movie → want directly" short-circuit:
 
-1. **Upgrade watching** — user has the movie in HD, wants to be notified when a 4K release appears. A movie-tracking record with `upgrade_behavior: propose` and scope that just identifies the one movie.
-2. **Pre-release monitoring** — a movie isn't out yet (theater release, no digital), user wants it grabbed as soon as a release surfaces. The tracking lives until the want is fulfilled, then auto-archives.
+- **Scheduling has one home.** A just-released or not-yet-available movie needs search retries and back-off ([Story 4](../../stories/04-failed-search-recovery.md)). That schedule lives on the tracking (anchored on `release_date`), exactly like an episode's lives on its tracking. No separate "non-tracking want" retry path.
+- **Upgrade watching is free.** "I have it in HD, grab 4K when it appears" is just `upgrade_behavior: propose` on the movie's tracking — not a special record conditionally spawned after the fact.
+- **Pre-release monitoring is free.** A movie with no release yet is simply an `active` tracking whose want is in long back-off until something surfaces.
+- **Multi-requester is uniform.** Two people wanting the same movie join the same tracking's requester set, exactly as for a series — the tracking, not the want, is the dedup boundary.
 
-Both are real but uncommon. We design tracking to support them but don't require them: a movie request can short-circuit to a direct want without ever instantiating tracking.
+The cost is one tracking row per movie, including one-off manual grabs (which create an admin-anchored tracking that auto-archives on import). That is a deliberate trade: one cheap row in exchange for a single code path and a clean invariant — **every want has exactly one tracking parent.**
 
 ## What tracking does NOT own
 
@@ -173,7 +182,7 @@ To keep scope tight, these adjacent concerns live elsewhere:
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **TMDB series sync** _(prerequisite, currently a foundation gap)_ | Must know every episode that exists, with air dates, to drive scope evaluation and scheduling. Without this, smart scheduling is meaningless.            |
 | **Wants**                                                         | Tracking _produces_ wants when an in-scope episode lacks an at-cutoff file. The relationship is 1:N. Each want carries a back-reference to its tracking. |
-| **Requests**                                                      | A series request may spawn a new tracking record or add the requester to an existing one. Movie requests typically don't touch tracking.                 |
+| **Requests**                                                      | A request (movie or series) spawns a new tracking record or adds the requester to an existing one.                                                       |
 | **Quality profile**                                               | Referenced by ID. Tracking doesn't define profiles, just selects one.                                                                                    |
 | **Decision log**                                                  | Read-only consumer in the UI: "for this tracked series, here's why nothing has grabbed in the last 24h."                                                 |
 | **Watch state** _(future)_                                        | Optional input — "stop tracking once I finish the series" requires Plex/Jellyfin webhook integration. Deferred until that integration lands.             |
@@ -186,7 +195,7 @@ User-facing UI strings will likely say **"monitoring"** or **"following"** depen
 
 ## Open questions
 
-1. **Scope storage shape.** Union-only (single computed scope on tracking) vs. per-requester (each requester has their own scope, union is computed). Per-requester is correct semantically; union-only is simpler if we accept recomputing on join/leave. To resolve when we draft the data-shape iteration.
+1. **Scope storage shape — resolved.** Per-requester scope lives on `tracking_requester` association rows (the live source of truth, seeded from each request at spawn); the tracking caches the union and recomputes it from those rows on join/leave/edit. Chosen over "recompute from the request rows" because requests are frozen after spawn — reading them for a recompute would miss any post-spawn scope edit. See [multi-requester semantics](#multi-requester-semantics).
 2. **Scope rule presets — are these the right five?** "Specific episode ranges" came up in conversation but isn't in the preset list; it's expressible via `all` + excludes but unwieldy if a user wants S05E10–S05E15. May need a sixth preset, or surface "specific episodes" in the UI even though it's just sugar over overrides.
 3. **Anime numbering.** Anime has dual numbering (per-season vs absolute) and the scope rules implicitly assume per-season. Anime support is out of scope for now, but the model should at least not preclude it. Worth a sanity-check pass when anime is on the table.
 4. **Per-episode overrides under TMDB renumbering.** If TMDB renumbers a series (rare but happens), per-episode overrides become wrong silently. Need to decide whether overrides key on a stable TMDB episode ID or on (season, episode) numbers — the former is robust but harder to surface in UI.
@@ -194,6 +203,7 @@ User-facing UI strings will likely say **"monitoring"** or **"following"** depen
 6. **Tracking deletion vs cancellation.** Is `canceled` actually deletion, or does it preserve a tombstone for "previously tracked"? Tombstones help the "you've already tried this show and removed it" UX. Probably worth keeping; flesh out in data-shape iteration.
 7. **Re-activation noisiness.** `archived → active` when a new episode appears could be surprising ("why is this show downloading? I thought I was done with it"). Notify on re-activation? Require confirmation? Probably notify-then-resume by default; let users opt for confirm-then-resume.
 8. **Cross-tracking dedup edge cases.** If admin tracks `season(2)` and a user requests `season(3)`, are these one tracking with scope `seasons 2-3`, or one tracking with two separate scope rules? The "rule + overrides" model assumes one rule per tracking. May need to relax to "list of rules, OR'd together" if real cases emerge.
+9. **Internal name vs the universal scope.** `tracking` now spans movies and one-off manual grabs, where the word reads slightly series-flavored. Rename candidates if it confuses contributors: `subscription`, `intent`, `monitor`. Leaning: keep `tracking` internally (the UI already says "following"/"monitoring"); revisit in the data-shape iteration.
 
 ## What we're explicitly not deciding here
 

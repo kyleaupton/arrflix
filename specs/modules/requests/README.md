@@ -2,7 +2,7 @@
 
 **Status:** Draft, iteration 1
 
-A request is what a user says when they want something added to the library. It is **not** the work itself, and not the long-term library state — it's the intent statement, gated by approval, that translates into the system's actual machinery ([tracking](../tracking/README.md) for series, [wants](../acquisition/README.md) for movies). This doc covers the request entity, lifecycle, approval flow, intent flags, quota enforcement, and the seams to tracking, acquisition, and the users/permissions spec.
+A request is what a user says when they want something added to the library. It is **not** the work itself, and not the long-term library state — it's the intent statement, gated by approval, that translates into the system's actual machinery: a [tracking](../tracking/README.md) record (single-atom for a movie, scoped for a series) that produces [wants](../acquisition/README.md). This doc covers the request entity, lifecycle, approval flow, intent flags, quota enforcement, and the seams to tracking, acquisition, and the users/permissions spec.
 
 The request entity is deliberately thin. The richness comes from a small set of intent flags + smart defaults + a presets layer over those flags, designed to beat Overseerr's rigidity without exposing complexity to the 80% case.
 
@@ -13,7 +13,7 @@ The request entity is deliberately thin. The richness comes from a small set of 
 - Lifecycle: `pending → approved → spawned`, _or_ `pending → denied / cancelled / expired`. After `spawned`, downstream state lives on tracking/wants — the request itself becomes a frozen artifact.
 - Approval is permission-driven: `requests.auto_approve:<type>:<tier>` auto-approves at request time; otherwise the request waits for someone holding `requests.approve` (see [users](../users/README.md#permissions)).
 - Quotas live on `user_policy` from the [users spec](../users/README.md#user_policy). Pre-flight visibility ("this will be your 3rd of 5 movies this week") is a first-class affordance, not an afterthought.
-- Multi-requester semantics are **owned by tracking** for series and by the want for movies; requests stay 1:1 with users.
+- Multi-requester semantics are **owned by tracking** for both movies and series (tracking is the dedup boundary); requests stay 1:1 with users.
 - Auto-approve is not a free pass: a soft-gating band can flip an auto-eligible request to manual review when quota thresholds are approached.
 - **Hardlink-aware retention** is the killer differentiator: the same file can serve a `watch_once` request from one user and a `keep_forever` request from another, simultaneously.
 
@@ -22,8 +22,8 @@ The request entity is deliberately thin. The richness comes from a small set of 
 Three concerns sit just adjacent to requests but don't belong inside them:
 
 - **Identity, roles, permissions, quotas** — owned by [users](../users/README.md). Requests consume the permission vocabulary (`requests.create:*`, `requests.approve`, `requests.auto_approve:*`) and quota envelope but do not define them.
-- **The ongoing-intent primitive** — owned by [tracking](../tracking/README.md). A series request _spawns_ tracking; it does not _replace_ it. Series scope semantics, multi-requester union, smart scheduling all live on tracking.
-- **The work itself** — owned by [acquisition](../acquisition/README.md). Approval produces a want (movie) or a tracking + wants (series); from there it's the pipeline's problem.
+- **The ongoing-intent primitive** — owned by [tracking](../tracking/README.md). A request (movie or series) _spawns_ tracking; it does not _replace_ it. Scope semantics, multi-requester union, smart scheduling all live on tracking.
+- **The work itself** — owned by [acquisition](../acquisition/README.md). Approval produces a tracking, which produces the want(s); from there it's the pipeline's problem.
 
 Pulling requests out as its own spec makes those seams explicit and lets each spec stay coherent. Without this split, the users spec balloons (auth, RBAC, quotas, request lifecycle) and the tracking spec inherits approval UX it shouldn't care about.
 
@@ -86,7 +86,7 @@ Both values are validated at submit time against `requests.create:<type>:<tier>`
 
 ### `scope` (series only)
 
-Pulled from tracking's [preset list](../tracking/README.md#scope-rule--overrides). The request declares its scope preference; if the request spawns _new_ tracking, that becomes the tracking's scope rule. If the request _joins_ existing tracking, the requester's scope is unioned in per the [multi-requester semantics](../tracking/README.md#multi-requester-semantics). The request stores its own (pre-union) scope, not the effective one.
+Pulled from tracking's [preset list](../tracking/README.md#scope-rule--overrides). The request declares its scope preference. At spawn this seeds the requester's [`tracking_requester` row](../tracking/README.md#multi-requester-semantics) — the live, mutable home for their per-requester scope. The request keeps its original scope as a frozen snapshot (audit), but the association row is the source of truth thereafter; the tracking's effective scope is the union across all requesters. If the request _joins_ existing tracking, its scope is unioned in via that new association row.
 
 ### `monitor_future` (series only)
 
@@ -200,15 +200,13 @@ Approval doesn't acquire content; it _spawns_ the entities that do.
 
 ### Movies
 
-A movie request's spawn step:
+A movie request's spawn step (uniform with series — a movie is a single-atom tracking):
 
 1. Resolve or create the `media_item` row for the movie (existing matching pipeline).
-2. Check whether an open want exists for this `(media_item, tier)`.
-   - **Yes** — link this request to the existing want; the user joins the want's multi-requester set. No new want is created.
-   - **No** — create a new want with the request's tier.
+2. Check whether tracking exists for this movie.
+   - **Yes** — insert a `tracking_requester` row for this requester (seeded from the request). No new tracking or want is created; the user sees "1 other person is also waiting on this."
+   - **No** — create a new single-atom tracking plus the requester's `tracking_requester` row (seeded from the request's tier and intent). The tracking produces the one want.
 3. Record audit rows.
-
-The user sees "1 other person is also waiting on this" in their UI when joining an open want.
 
 ### Series
 
@@ -216,8 +214,8 @@ A series request's spawn step:
 
 1. Resolve or create the `media_item` row for the series.
 2. Check whether tracking exists for this series.
-   - **Yes** — the requester joins the existing tracking's requester set per [multi-requester semantics](../tracking/README.md#multi-requester-semantics). The requester's scope is unioned in. Tracking's effective `upgrade_behavior` may shift based on the new tier_ceiling.
-   - **No** — create a new tracking record with this request's scope, tier, and monitor preferences.
+   - **Yes** — insert a `tracking_requester` row for this requester (seeded from the request) per [multi-requester semantics](../tracking/README.md#multi-requester-semantics); the effective scope recomputes and unions in their scope. Tracking's effective `tier_ceiling` may rise.
+   - **No** — create a new tracking record plus the requester's `tracking_requester` row (seeded from the request's scope, tier, and monitor preferences).
 3. Tracking's scheduler eventually emits wants per [tracking](../tracking/README.md).
 4. Record audit rows.
 
@@ -225,8 +223,8 @@ A series request's spawn step:
 
 When a request is cancelled (or hypothetically re-denied):
 
-- **Movie request linked to a want** — the user is removed from the want's requester set. If they were the last requester, the want is cancelled.
-- **Series request linked to tracking** — the user is removed from the tracking's requester set per tracking's leaving semantics. The tracking may pause or narrow scope.
+- **Movie request** — the user is removed from the tracking's requester set. If they were the last requester, the (single-atom) tracking pauses and its in-flight want is cancelled.
+- **Series request** — the user is removed from the tracking's requester set per tracking's leaving semantics. The tracking may pause or narrow scope.
 
 The request stays in the database as audit history; the cascade only touches downstream entities.
 
@@ -236,13 +234,13 @@ For requests with `retention=cleanup_after_watch`, the hygiene cleanup worker wa
 
 ## Multi-requester semantics — owned elsewhere
 
-The requests spec does **not** define how multiple requesters merge. That belongs to tracking (for series) and to the want (for movies). Requests stay 1:1 with the user who submitted them; downstream entities are the deduplication boundary.
+The requests spec does **not** define how multiple requesters merge. That belongs to tracking, for both movies and series. Requests stay 1:1 with the user who submitted them; the tracking is the deduplication boundary.
 
 What requests owns:
 
 - The per-user artifact ("here's what I asked for, when, why")
 - The per-user audit and quota accounting
-- The intent flags _before_ they're merged with anyone else's
+- The intent flags _as originally requested_ (the frozen origin). The _live_ per-requester copy — editable after spawn — lives on the [`tracking_requester` association](../tracking/README.md#multi-requester-semantics), seeded from these.
 
 What requests does not own:
 
@@ -269,7 +267,7 @@ The default user-facing surface is the requester's own request list. "All reques
 The request entity is sparse on mutation paths to keep the audit trail clean.
 
 - **While `pending`**: requester may edit notes, change tier (re-validated against permissions and quotas), change retention, change scope (series), or cancel. Approver may approve or deny.
-- **After `approved` / `spawned`**: read-only. To change downstream behavior, act on tracking/wants directly.
+- **After `approved` / `spawned`**: read-only. To change downstream behavior, act on your [`tracking_requester` association](../tracking/README.md#multi-requester-semantics) — your live per-requester intent (scope, overrides, tier, retention) — not the frozen request. (Want-level actions like cancel act on the wants.)
 - **`denied`, `cancelled`, `expired`**: read-only, terminal.
 
 Any mutation while `pending` resets the auto-approve check. Changing the tier from HD to 4K after submission may flip a request from auto-eligible to manual-required (and vice versa).

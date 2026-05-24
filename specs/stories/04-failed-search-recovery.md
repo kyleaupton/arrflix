@@ -37,7 +37,7 @@ Follows the [Story 1](./01-happy-path-auto-approve.md) template: Cast → Precon
 
 ### Phase 1 — Discovery & request (T+0s → T+1s)
 
-Indistinguishable from [Story 1 Phases 1–2](./01-happy-path-auto-approve.md#phase-1--discovery-t0s). Friend taps Request. Button morphs to a pill: **"Searching for HD release…"** A `request` row is created (`auto_approved: true`), a `want` is spawned in `pending`, and `want.created` fires.
+Indistinguishable from [Story 1 Phases 1–2](./01-happy-path-auto-approve.md#phase-1--discovery-t0s). Friend taps Request. Button morphs to a pill: **"Searching for HD release…"** A `request` row is created (`auto_approved: true`); it spawns a single-atom **tracking** (anchored on the movie's `release_date`), which creates a `want` in `pending` and fires `want.created`.
 
 The only difference from Story 1 is that the pre-flight summary on the Request button shows **"Note: this just released — may take a day or two to find a quality release"** based on a heuristic over `release_date` ≤ N days. (See [Open question #1](#open-questions).)
 
@@ -56,9 +56,9 @@ The only difference from Story 1 is that the pre-flight summary on the Request b
   - Writes a **search_run** audit row noting zero results across N indexers, per the [audit pattern](../patterns/audit/README.md).
   - Does **not** write per-release decision rows (there were no releases).
   - Emits `want.search_failed { reason: no_results, indexers_queried: [...], count: 0 }`.
-  - Hands the want back to the **SearchScheduler** with the back-off schedule for a non-tracking, freshly-released movie:
+  - Hands the want back to the **SearchScheduler**, which schedules retries per the movie tracking's smart schedule (anchored on `release_date` instead of an episode air date):
     - First retry: +30 min
-    - Then: +1h, +2h, +4h, +8h, +24h, then daily — exponential within tiers, per [tracking smart scheduling](../modules/tracking/README.md#smart-scheduling) adapted for one-shot movie wants.
+    - Then: +1h, +2h, +4h, +8h, +24h, then daily — exponential within tiers, per [tracking smart scheduling](../modules/tracking/README.md#smart-scheduling). Same curve as an episode; only the anchor differs.
 
 **Notifications:** none. A single empty search is not yet noteworthy.
 
@@ -139,8 +139,9 @@ Indistinguishable from [Story 1 Phases 4–5](./01-happy-path-auto-approve.md#ph
 
 ## Postconditions
 
-- **1 `request` row**, `status: spawned` then ultimately `fulfilled` (same lifecycle as Story 1; the failure phase doesn't touch the request entity).
-- **1 `want` row**, ending at `available`. Crucially, the want **never left `searching`** across the failure phase — it didn't transition to a `failed` terminal state. (See [Open question #3](#open-questions).)
+- **1 `request` row**, `status: spawned` (frozen once tracking + want exist; the failure phase doesn't touch the request entity).
+- **1 single-atom `tracking` row**, `active` throughout the 30h search (it only archives once the want is `available` at-cutoff). This is the scheduling home for the retries.
+- **1 `want` row** (parented to the tracking), ending at `available`. Crucially, the want **never left `searching`** across the failure phase — it didn't transition to a `failed` terminal state. (See [Open question #3](#open-questions).)
 - **1 `media_item`, 1 `media_file`, 1 `media_file_state`** — identical to Story 1.
 - **1 `download_job`, status `completed`** — created only on the successful pick at T+~30h, not on the earlier failures.
 - **~8–10 `search_run` rows** with timestamps spanning T+0 through T+~30h.
@@ -154,10 +155,7 @@ Most of Story 1's requirements carry over unchanged. Net new for Story 4:
 
 ### Back-off & scheduling
 
-- **Per-want retry schedule for non-tracking wants.** Tracking owns the smart-scheduling story for episodes ([tracking](../modules/tracking/README.md#smart-scheduling)); movie wants need their own schedule. Either:
-  - **(a)** Movie wants get a synthetic "anchor date" (the request's `created_at` or the movie's `release_date`) and reuse the smart-schedule curve, or
-  - **(b)** Movie wants have a simpler exponential back-off without time-since-air bias.
-  - Per [acquisition open questions](../modules/acquisition/README.md), this is unresolved — Story 4 forces the decision.
+- **One scheduling home, for movies and episodes alike — resolved.** Every want has a tracking parent (movies are single-atom trackings, per the [universal-intent model](../modules/tracking/README.md#movies-under-this-model)), so there is no "non-tracking want" special case. A movie tracking reuses the smart-schedule curve anchored on the movie's `release_date` (option (a) from the earlier draft); a not-yet-released movie anchors on request time until a release date is known. This is what Story 4 forced, and the universal-intent change settles it.
 - **Back-off resets on first new result.** If a search returns even one new release (regardless of whether it passes gates), the back-off may reset or relax — otherwise the system stays slow on long-running failures even after fresh indexer activity. Need to pick a heuristic.
 
 ### Audit & decision log

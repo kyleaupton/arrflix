@@ -50,7 +50,7 @@ The trace is returned in the API response and forgotten. There is no record of _
 **Autonomous path** (monitoring / approved request):
 
 ```
-tracking (or movie request) creates want
+tracking (single-atom for a movie, per-episode for a series) creates want(s)
   → emit want.created
 AcquisitionWorker picks up want
   → indexer search (cache lookup, longer TTL, DB-backed)
@@ -162,7 +162,7 @@ Event-driven on `want.created` and on scheduled retries from the SearchScheduler
    - Emit `want.grabbed`.
 6. If no winner:
    - Persist rejection rows.
-   - Schedule next search per the tracking's schedule strategy (or one-off retry policy for non-tracking wants).
+   - Schedule next search per the tracking's schedule strategy. Every want has a tracking parent (movies included, as a single-atom tracking), so there is no separate non-tracking retry path.
    - Emit `want.search_failed`.
 
 Concurrency: process wants in parallel, but **never two simultaneous searches for the same query** (in-flight dedup via the search cache or a short-lived advisory lock).
@@ -173,7 +173,7 @@ A background worker that, for each active tracking, decides when to run the next
 
 Smart scheduling rules summarized:
 
-- Don't search before air time.
+- Don't search before air time (episodes) or `release_date` (movies — a movie tracking anchors the same curve on its release date).
 - Bias high-frequency searches to the 1-6h post-air window.
 - Back off exponentially after consecutive empty results.
 - Stop entirely when a want is `available` at-cutoff or tracking is `archived` / `paused`.
@@ -334,7 +334,7 @@ The pipeline relies on events flowing between components. The [realtime](../real
 
 | Event                | Producer                                     | Consumers                                |
 | -------------------- | -------------------------------------------- | ---------------------------------------- |
-| `want.created`       | RequestService / TrackingService / Admin add | AcquisitionWorker (wake-up), SSE (user)  |
+| `want.created`       | TrackingService (every want has a tracking parent — movies included) | AcquisitionWorker (wake-up), SSE (user)  |
 | `want.grabbed`       | AcquisitionWorker                            | SSE, NotificationService                 |
 | `want.search_failed` | AcquisitionWorker                            | SearchScheduler (back-off), SSE          |
 | `want.imported`      | ImportWorker                                 | VerifyStep (presence-verify on disk)     |
@@ -368,7 +368,7 @@ If something here grows a knob worth surfacing, that knob lives in the appropria
 2. **Search cache scope.** Per `(media_item, query)` or finer? Series searches differ from episode searches; we want both to cache. Worth a small data-shape pass before implementing.
 3. **Cancellation semantics.** If a want is canceled while a search is in flight, what happens? The search completes; results are discarded; no download_job is created. If a download_job is in flight, the existing cancel path covers it.
 4. **Dedup against concurrent searches.** Two wants for the same media_item triggering simultaneous searches should share. The DB-backed cache + a short advisory lock should handle this, but worth nailing down.
-5. **Synthetic wants for interactive grabs.** When the user manually grabs something with no pre-existing want, we synthesize one to keep the pipeline uniform. Lifecycle of synthetic wants: created in `grabbed` state directly? Or briefly `pending → grabbed`? Probably the former — no point in going through search-evaluation for a release the user has already picked.
+5. **Synthetic wants for interactive grabs.** When the user manually grabs something with no pre-existing want, we synthesize one to keep the pipeline uniform. Lifecycle of synthetic wants: created in `grabbed` state directly? Or briefly `pending → grabbed`? Probably the former — no point in going through search-evaluation for a release the user has already picked. Since every want has a tracking parent, an interactive grab with no existing tracking synthesizes an admin-anchored single-atom tracking alongside the want; it auto-archives on import unless the user opts into upgrade-watching.
 6. **Pre-grab dedup.** If a download_job already covers a want (in progress), the AcquisitionWorker should skip it. How is this enforced — query at the start of every Pick, or rely on a unique constraint that errors and we retry? Query-first is simpler; document it.
 7. **Manual override + auto-upgrade interaction.** If a user manually grabs a 720p but the tracking is at 1080p profile, does auto-upgrade activate immediately? Probably yes (the manual grab doesn't override the profile, just the _current_ pick). Worth documenting in the upgrade-behavior section of [tracking](../tracking/README.md).
 

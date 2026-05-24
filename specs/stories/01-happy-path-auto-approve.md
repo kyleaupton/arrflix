@@ -59,8 +59,8 @@ This story is also the **template** for stories 2–4. The shape (Cast → Preco
   1. Checks `Friend.can_request_movie` → ok
   2. Evaluates approval policy: `auto_approve_movie_hd` is true → auto-approve
   3. Creates a **request** row: `{ id, requested_by, tmdb_id, type, tier, status: approved, approved_by: system, auto_approved: true }`
-  4. Creates a **want** row: `{ id, request_id, tmdb_id, type: movie, quality_tier: HD, status: pending }`
-  5. Emits a `want.created` event (event bus + [realtime](../modules/realtime/README.md))
+  4. Spawn step: no existing tracking for this movie → create a single-atom **tracking** row: `{ id, media_item_id, scope: self, quality_profile_id: <hd>, upgrade_behavior, schedule_strategy: smart, requesters: [Friend], state: active }`. Request → `spawned`, recording `spawned_tracking_id`.
+  5. Tracking produces one **want** row: `{ id, tracking_id, type: movie, quality_profile_id: <snapshot>, status: pending }`. Emits `want.created` (event bus + [realtime](../modules/realtime/README.md)).
 
 **Notifications:** none pushed — the in-app pill is sufficient when the user is here.
 
@@ -120,8 +120,9 @@ This story is also the **template** for stories 2–4. The shape (Cast → Preco
 
 ## Postconditions
 
-- One `request` row, status `fulfilled` (or `approved` with a `fulfilled_at` — TBD)
-- One `want` row, status `available` — reached when the file was verified on disk, independent of any media server
+- One `request` row, status `spawned` (frozen artifact once tracking + want exist)
+- One single-atom `tracking` row — `active` while searching, auto-archived once the want is `available` at-cutoff (a movie is inherently complete)
+- One `want` row (parented to the tracking via `tracking_id`), status `available` — reached when the file was verified on disk, independent of any media server
 - One `media_item`, one `media_file`, one `media_file_state`
 - A `(media_file, Plex)` propagation record, `visible` once Plex's scan completed (or backfilled by the reconciliation poll)
 - One `download_job`, status `completed`
@@ -135,8 +136,9 @@ These are the things this story assumes exist. Each is a foundation requirement 
 ### Data primitives
 
 - **User policy fields** (likely a `user_policy` table joined off `user`): `can_request_movie`, `can_request_4k`, `auto_approve_movie_hd`, `auto_approve_movie_4k`, `auto_approve_series_hd`, `auto_approve_series_4k`, plus quotas like `max_pending_requests`.
-- **`request` entity**: `{ id, requested_by, tmdb_id, type, tier, status, approved_by, approved_at, auto_approved, denied_reason, fulfilled_at }`. Lifecycle: `pending → approved → fulfilled` or `pending → denied`.
-- **`want` entity**: `{ id, request_id (nullable — admins can want without requesting), tmdb_id, type, quality_tier, status, created_at }`. Lifecycle: `pending → searching → grabbed → downloading → imported → available` plus terminals `failed`, `canceled`.
+- **`request` entity**: `{ id, requested_by, tmdb_id, type, tier, status, approved_by, approved_at, auto_approved, denied_reason, spawned_tracking_id }`. Lifecycle: `pending → approved → spawned` or `pending → denied` (see [requests](../modules/requests/README.md#lifecycle)).
+- **`tracking` entity**: the universal ongoing-intent primitive — one per requested media item (single-atom for a movie). Produces wants. See [tracking](../modules/tracking/README.md).
+- **`want` entity**: `{ id, tracking_id, type, quality_profile_id, status, created_at }` — every want has a tracking parent (movies included). Lifecycle: `pending → searching → grabbed → downloading → imported → available` plus terminals `failed`, `canceled`.
 - **`decision_log` entity** per `(want, search_run)`: every considered release with score, accept/reject + reason.
 - **`media_file` ↔ Plex correlation** — store Plex `rating_key` on `media_file` once known.
 - **`push_subscription`** per user (VAPID endpoint, keys, ua/device label) — see [notifications](../modules/notifications/README.md).
@@ -166,7 +168,7 @@ These are the things this story assumes exist. Each is a foundation requirement 
 ### Time targets (UX commitments)
 
 - Click → "request submitted" toast: <1s
-- Request → want created: <1s (same tx)
+- Request → tracking + want created: <1s (same tx)
 - Want → first indexer search: <30s
 - ETA honesty: never claim "available" until the file is verified present in the library — this no longer depends on Plex (media-server visibility is a separate, non-blocking signal)
 
