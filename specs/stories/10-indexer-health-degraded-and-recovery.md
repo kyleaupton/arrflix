@@ -138,7 +138,7 @@ Follows the [Story 1](./01-happy-path-auto-approve.md) template: Cast → Precon
 
 - The `connectivity.failed` notification fires its inverse: `connectivity.recovered` (per [notifications](../modules/notifications/README.md), this event exists alongside `connectivity.failed`). Audience: same as the failed event.
 - Outbox rows for `connectivity.recovered` are written. Push fires: **"Indexers recovered — acquisition resumed."**
-- The earlier `connectivity.failed` in-app entry: see [Open question #6](#open-questions) for whether it auto-dismisses (notification supersedes), gets marked as resolved, or stays as a historical entry.
+- The earlier `connectivity.failed` in-app entry **resolves**: `connectivity.recovered` declares `Resolves: <the failed dedup_key>`, so enqueuing it both delivers the "recovered" alert and flips the `failed` rows to `resolved` — visible in history, cleared from the attention count — per the [notifications resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle).
 
 **User-visible (Admin):**
 
@@ -206,7 +206,7 @@ The pending indexers spec must declare, at minimum:
 
 - Both events declared in [notifications](../modules/notifications/README.md). Audience: `admin`. Default bundle: `admin_alerts`.
 - Payload includes the affected resource(s) — for indexer-failure, either a single indexer or a list (when multiple have failed in a window).
-- Dedup key: probably `(resource_type, resource_id, status)` so the same indexer going up-down-up-down doesn't generate N pushes (per [notifications open question #4](../modules/notifications/README.md#open-questions): dedup drops or replaces — Story 10 needs at least "drop while recovered is in-flight").
+- Dedup + resolution: `connectivity.failed` is **`resolvable`** with a `dedup_key` identifying the failed resource/subsystem; repeat failures **replace** (latest state) rather than stacking. `connectivity.recovered` declares `Resolves: <that dedup_key>` — it delivers the recovery alert and resolves the failed rows in one step. See the [notifications resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle) (which settled notifications OQ#4).
 
 ### Realtime SSE channel `indexer.health`
 
@@ -252,7 +252,7 @@ The pending indexers spec must declare, at minimum:
 
 5. **Thundering-herd on recovery.** 50 wants paused for indexer health. Indexer-A comes back healthy. Do all 50 wants immediately fire searches against A? That's both a stampede on A (likely getting it rate-limited again immediately) and wasteful (A may have nothing for most of them). Lean: stagger by reading the back-off curve from each want's last attempt, not by treating recovery as a "search all now" event. Pin in acquisition.
 
-6. **`connectivity.recovered` superseding `connectivity.failed`.** When recovery fires, the failed-event in-app entry could: (a) stay as historical record, (b) get auto-dismissed (notification supersede mechanism — see [Story 4 open question](./04-failed-search-recovery.md#open-questions)), (c) get marked as "resolved" but remain visible. Lean: option (c) — resolved + visible. The history is useful for "when did this happen earlier today?" Pin in notifications.
+6. **`connectivity.recovered` superseding `connectivity.failed` — resolved.** Option (c): resolved + visible. This is now the [notifications resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle) — `connectivity.failed` is `resolvable`; `connectivity.recovered` declares `Resolves: <failed dedup_key>`, flipping the failed rows to `resolved` (kept in history, cleared from the attention count). History stays answerable for "when did this happen earlier today?"
 
 7. **Persistent-unreachable escalation.** Indexer-C is still down at T+1h 30m. At what point does the system escalate beyond the original "all indexers unavailable" push? Per-indexer "still down at 24h" reminder? Different bundle? Silent until the admin acts? Pin in the pending indexers spec per the pattern's [open question #4](../patterns/connectivity-health/README.md#open-questions).
 

@@ -12,6 +12,7 @@ This doc defines how Arrflix produces, routes, and delivers notifications across
 - **Bundled preferences with per-event overrides.** A user toggles channels per bundle (`My requests`, `Library activity`, `Admin alerts`). Power users can override at the event-type level. The combinatorial UI problem disappears; the data model still supports surgical control.
 - **Producer-owned batching.** Hygiene's weekly digest, scan's "47 new files imported" rollup — the producer owns the schedule and the payload composition. Notifications delivers individual events promptly. No central digest scheduler; no cadence column on preferences.
 - **Dedup keys on enqueue.** An optional `dedup_key` on each enqueue collapses storms (50 broken-hardlink findings → one push) without producers having to coordinate. Cheap to implement, expensive to retrofit.
+- **Resolvable notifications.** Events that describe a standing condition ("still searching", "indexers down") carry a resolution lifecycle: the condition is cleared by a `Resolve(dedup_key)` call or a resolving event, flipping `active` rows to `resolved` (and cancelling any not-yet-sent). No stale bell entries — and two stories stop hand-rolling "supersede."
 - **Outbox doubles as notification history.** Every attempted delivery is a row. The user's notification-history UI is just a query against the outbox filtered to that user.
 - **Email is first-class but optional.** The architecture treats email as a peer channel. The adapter signals "not configured" when SMTP credentials are missing; preferences hide the toggle; outbox rows park in `awaiting_config` rather than failing. Configure SMTP later, drain (or skip) the backlog.
 
@@ -164,15 +165,18 @@ Every enqueue writes one row per `(recipient, channel)` pair to `notification_ou
 | `channel`               | `push` / `in_app` / `email`                                                            |
 | `payload`               | JSONB — the typed constructor's serialized payload                                     |
 | `dedup_key`             | nullable — see [Dedup](#dedup-and-coalescing)                                          |
-| `status`                | `queued` / `delivering` / `delivered` / `failed` / `dead` / `awaiting_config`         |
+| `status`                | `queued` / `delivering` / `delivered` / `failed` / `dead` / `awaiting_config` / `superseded`         |
 | `attempts`              | integer; incremented on each failed try                                                |
 | `next_attempt_at`       | nullable timestamptz; set on retry-back-off                                            |
 | `last_error`            | nullable text; the most recent failure reason                                          |
 | `created_at`            | timestamptz                                                                            |
 | `delivered_at`          | nullable timestamptz                                                                   |
 | `read_at`               | nullable timestamptz — `in_app` only; updated by the bell-icon UI                     |
+| `resolvable`            | bool — true if this event represents a standing condition with a resolution lifecycle (see [Resolvable notifications](#resolvable-notifications-resolution-lifecycle)) |
+| `resolution_state`      | nullable — `active` / `resolved`; only set when `resolvable`                          |
+| `resolved_at`           | nullable timestamptz — when the condition cleared                                     |
 
-The delivery worker polls for `status='queued' AND next_attempt_at <= now()`, marks rows `delivering` while it works (so a crashed worker leaves provable in-flight state), hands the row to the adapter, and transitions to `delivered`, `failed` (transient, schedule retry), `dead` (permanent — bad subscription endpoint, malformed email), or `awaiting_config` (adapter reports not configured).
+The delivery worker polls for `status='queued' AND next_attempt_at <= now()`, marks rows `delivering` while it works (so a crashed worker leaves provable in-flight state), hands the row to the adapter, and transitions to `delivered`, `failed` (transient, schedule retry), `dead` (permanent — bad subscription endpoint, malformed email), or `awaiting_config` (adapter reports not configured). A resolvable row whose condition clears before delivery transitions to `superseded` (cancelled, never sent) — see [Resolvable notifications](#resolvable-notifications-resolution-lifecycle).
 
 **Retry semantics:** exponential back-off (1s, 4s, 16s, 64s, …) up to a max of ~1 hour, capped at ~10 attempts before transitioning to `dead`. Adapter-reported permanent failures bypass retry entirely.
 
@@ -186,6 +190,36 @@ Each enqueue accepts an optional `dedup_key`. The semantics:
 - `dedup_key` is opaque to the system — its content is the producer's choice. Hygiene might use `"hygiene.error_finding.<library_id>"` to collapse a storm of findings under one push; metadata might use `"metadata.renumber.<series_id>"` to avoid alerting on the same series twice.
 
 The pattern is intentionally simple. Producers that need richer batching (rolled-up summaries with counts and per-item details) own that logic and emit a single digest event. Dedup is the *floor* of coalescing, not the ceiling.
+
+### Resolvable notifications (resolution lifecycle)
+
+Most notifications are **one-shot**: "your episode is available", "import finished". Delivered, read, done. But a class of notifications describe a **standing condition** that later clears:
+
+- "Still searching for *Sentinel*" — clears when the release is found ([Story 4](../../stories/04-failed-search-recovery.md)).
+- "All indexers unavailable" — clears when an indexer recovers ([Story 10](../../stories/10-indexer-health-degraded-and-recovery.md)).
+- "Request pending review" — clears when an approver decides.
+- "Upgrade proposed" — clears when the user accepts or declines.
+
+For these, leaving a stale "still searching" entry in the bell after the thing was found — or a red "indexers down" banner after they recovered — is a bug. Two separate stories independently reached for a "supersede" mechanism; rather than hand-roll it twice, resolution is a **first-class lifecycle** on the outbox.
+
+**The model.** A resolvable event type declares `resolvable: true` (a constant in its constructor, like audience) and supplies a `dedup_key` that identifies the *condition*, not the individual message. Its outbox rows carry `resolution_state: active`. The condition is cleared in one of two ways, both of which transition every `active` row matching that `dedup_key` (across all recipients and channels) to `resolved`:
+
+1. **`notifications.Resolve(ctx, dedupKey)`** — a lightweight call with no new notification. Use when the clearing isn't itself noteworthy. _Story 4:_ the AcquisitionWorker calls `Resolve("want.<id>.search_stalled")` on `want.grabbed` — the user doesn't need a separate "we found it" message ahead of the eventual `want.available`.
+2. **A resolving event that declares `Resolves: <dedupKey>`** — delivers itself _and_ resolves the prior condition. Use when the recovery is worth announcing. _Story 10:_ `connectivity.recovered` is a real admin notification ("indexers recovered") that also resolves the `connectivity.failed` rows.
+
+**Per-channel resolution behavior:**
+
+| Channel  | If still `queued` (not yet delivered)         | If already `delivered`                                                            |
+| -------- | --------------------------------------------- | -------------------------------------------------------------------------------- |
+| `in_app` | row → `superseded` (never shown)              | row → `resolved`; stays as history, drops out of the unread/attention count      |
+| `push`   | row → `superseded` (don't push a stale state) | already in the tray — can't recall; in_app + app state reconcile when opened     |
+| `email`  | row → `superseded`                            | already sent — can't recall                                                      |
+
+The headline win: a "still searching" push that hasn't fired yet is *cancelled* when the want recovers, and the in-app entry quietly resolves rather than lingering. A delivered "indexers down" alert stays visible but flips to `resolved` — [Story 10](../../stories/10-indexer-health-degraded-and-recovery.md)'s "resolved + visible" choice — so "when did this happen earlier today?" stays answerable.
+
+**Relationship to dedup (resolves [open question #4](#open-questions)).** Resolution also settles drop-vs-replace: for a **resolvable** event, a repeat enqueue under the same `(dedup_key, recipient)` while a row is still `active` **replaces** the payload (you want the latest state of the standing condition — e.g. "47 considered" → "52 considered"), keeping the original `created_at`. For a **transient** event, the original behavior holds — the repeat is **dropped**. So drop is the default; replace is what resolvable conditions get.
+
+One-shot events are unaffected: no `resolvable` flag, no `resolution_state`, exactly today's behavior.
 
 ### Push subscriptions
 
@@ -209,7 +243,7 @@ Subscriptions that return permanent push errors (410 Gone, 404 Not Found) are de
 
 The `in_app` channel uses the outbox row directly. The bell-icon UI reads recent rows; user actions on the UI update `read_at`. There is no separate read-receipts table; for the in-app surface, the outbox row is the durable record.
 
-Unread count is `COUNT(*) WHERE channel='in_app' AND recipient_user_id=$1 AND status='delivered' AND read_at IS NULL`. Marking all as read is a single `UPDATE`.
+Unread count is `COUNT(*) WHERE channel='in_app' AND recipient_user_id=$1 AND status='delivered' AND read_at IS NULL AND resolution_state IS DISTINCT FROM 'resolved'`. Marking all as read is a single `UPDATE`. A resolved standing-condition row drops out of the attention count even if never explicitly read.
 
 ## Email and SMTP configuration
 
@@ -244,7 +278,7 @@ The pattern handles this gracefully:
 | **[Matching](../matching/README.md)**                             | Producer: `match.dropped_in` for drop-in auto-matches that resolve open wants.                                                                                         |
 | **[Metadata](../metadata/README.md)**                             | Producer: `metadata.renumber` when TMDB renumbers a series and overrides need review.                                                                                  |
 | **[Hygiene](../hygiene/README.md)**                               | Producer: `hygiene.error_finding` (immediate, dedup'd) and `hygiene.digest_weekly` (producer-owned schedule).                                                          |
-| **[Connectivity-health pattern](../../patterns/connectivity-health/README.md)** | Producer: `connectivity.failed` and `connectivity.recovered` on `failed`-tier transitions. Subscriber via `<resource_type>.health` SSE channels.       |
+| **[Connectivity-health pattern](../../patterns/connectivity-health/README.md)** | Producer: `connectivity.failed` (resolvable) and `connectivity.recovered` (declares `Resolves` the failed key) on `failed`-tier transitions. Subscriber via `<resource_type>.health` SSE channels. |
 | **[Audit pattern](../../patterns/audit/README.md)**               | Subscriber: some audit events trigger notifications (approval-needed, manual-override-applied). Notifications references audit rows by ID in event payloads.           |
 | **[Users](../users/README.md)**                                   | Recipient resolution for `admin` audience uses the permission keys defined there. User identity (email, push subscriptions) hangs off `app_user`.                      |
 | **SSE (existing system)**                                         | Sibling channel — *not* a notification channel. SSE delivers real-time UI updates; notifications delivers durable events. Both can fire on the same event.            |
@@ -267,7 +301,7 @@ Referenced (owned elsewhere):
 1. **Bundle catalog finalization.** The starter set (`my_requests`, `library_activity`, `admin_alerts`, `admin_summaries`) is directional. Iteration 2 should pin the full catalog and the bundle-default channels per bundle. Lean: ship the four-bundle starter; add new bundles as new event-type categories emerge.
 2. **Admin install-wide defaults vs per-admin only.** When a new admin is promoted, they get bundle defaults. Should those defaults be configurable per-install ("our team wants admin_alerts on email + push by default") or hardcoded? Lean: configurable per-install, surfaced in Settings → Notifications → Admin defaults.
 3. **System-event registry — do we expose this in the UI?** `system` audience events bypass user preferences entirely. Should the UI at least *show* the user "we will email you for password resets and invites" so it's not opaque? Lean: yes, a read-only "system emails" disclosure section in the preferences page.
-4. **Dedup semantics: drop vs replace.** When a dedup_key collides with an in-flight row, do we drop the new enqueue or replace the existing payload (preserving the original `created_at` but updating `payload`)? Replace is useful for "show the latest count" digests; drop is simpler. Lean: drop in v1; revisit if a real producer needs replace.
+4. **Dedup semantics: drop vs replace — resolved.** Transient events **drop** the colliding enqueue (the simple default). Resolvable events **replace** the payload (keeping the original `created_at`) so the standing condition shows its latest state. See [Resolvable notifications](#resolvable-notifications-resolution-lifecycle).
 5. **`awaiting_config` drain UX.** When SMTP is first configured, the admin sees "Drain N queued emails?" — but `N` could be huge if the system has been running unconfigured for months. Default to "drain only those from the last 7 days"? Per-event-type cutoffs? Lean: 7-day default with admin override.
 6. **Push subscription cleanup cadence.** Subscriptions that haven't seen activity in months are likely dead. Run a periodic prune (e.g., 6-month silence + last delivery attempt failed). Lean: yes; prune at the hygiene cadence.
 7. **Quiet hours.** Per-user "don't push between 11pm and 7am" — common Tier-2 feature. Defer to v2; flag here. The model accommodates it as a delivery-side filter (rows queued during quiet hours park with `next_attempt_at` set to wake-time).

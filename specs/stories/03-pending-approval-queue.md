@@ -133,7 +133,7 @@ Follows the [Story 1](./01-happy-path-auto-approve.md) template.
   3. Emits `request.decision_made` event (audience: `user`, recipient: Cousin).
   4. Audit row: `request.denied { actor: admin, reason }`.
 
-**Admin's queue:** both rows disappear from `pending`. Queue is now empty. Admin's in-app pending-review notifications (and the corresponding push entry, if still on the lock screen) auto-dismiss or are marked resolved — see [Open question #3](#open-questions).
+**Admin's queue:** both rows disappear from `pending`. Queue is now empty. The admins' in-app `request.pending_review` entries **resolve**: on decision, the request service calls `notifications.Resolve("request.<id>.pending_review")`, flipping the active rows to `resolved` (cleared from the bell's attention count, kept as history) and cancelling any not-yet-sent push. Per the [resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle).
 
 ### Phase 5 — Friend's approved request flows through (T+~16 min → T+~25 min)
 
@@ -193,10 +193,10 @@ Most requirements are already declared in [requests](../modules/requests/README.
 - Implementation: small adapter at the producer that buffers + emits a single aggregated event after the debounce window. The underlying outbox rows still exist per-request for accurate history.
 - Single-request submissions skip batching (fire immediately after a brief wait). Multi-request batches use a different template: "_2 requests need review_" with deep link to the queue.
 
-### Notification supersede on decision
+### Notification resolution on decision
 
-- When a `pending` request transitions to `approved` or `denied`, any in-app `request.pending_review` notification entries referencing it should be **marked resolved** (or auto-dismissed) so admins don't see stale "needs review" bell entries for already-decided requests.
-- Same supersede mechanism Stories [4](./04-failed-search-recovery.md) and [10](./10-indexer-health-degraded-and-recovery.md) flagged. Notifications spec needs to settle the mechanism.
+- `request.pending_review` is declared **`resolvable`** with `dedup_key = "request.<id>.pending_review"`. When the request transitions to `approved` or `denied`, the request service calls `notifications.Resolve(dedup_key)`: in-app rows flip to `resolved` (kept as history, dropped from the attention count), and any not-yet-sent push is cancelled. Admins don't see stale "needs review" bell entries for already-decided requests.
+- This is the same [resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle) Stories [4](./04-failed-search-recovery.md) and [10](./10-indexer-health-degraded-and-recovery.md) use — three stories, one mechanism, now settled in the notifications spec.
 
 ### Decision visibility & notification routing
 
@@ -237,7 +237,7 @@ Most requirements are already declared in [requests](../modules/requests/README.
 
 2. **Cross-user prior-request history in the drill-in.** When an admin reviews Cousin's request for Longlegs, should the detail page show that Friend has _also_ previously requested Longlegs (and was approved/denied/cancelled)? Lean: yes for admins (it's useful context), no for non-admin co-approvers (privacy across users). The requests spec touches this in [pre-flight visibility](../modules/requests/README.md#pre-flight-visibility) but doesn't pin who sees what across users.
 
-3. **Notification supersede on decision.** Two `pending_review` in-app rows in admin's bell; admin decides both. Do the rows: (a) stay as historical "needs review" entries — stale, (b) auto-dismiss — clean but loses history, (c) update to "resolved: approved by you (this decision)" — best for forensics. Lean: (c). Same supersede mechanism Stories 4 and 10 flagged.
+3. **Notification resolution on decision — resolved.** Option (c): the `pending_review` rows flip to `resolved` (kept as history, cleared from the attention count) via the [notifications resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle), not auto-dismissed (which would lose history). Same mechanism as Stories 4 and 10. The remaining nicety — whether the resolved entry reads "resolved: approved by you" with the deciding actor — is a payload/template detail, not a mechanism question.
 
 4. **Denial push policy.** Denial is non-urgent and potentially face-saving; pushing it feels heavy. Lean: in-app default, push opt-in. Approval pushes (the good news) stay on by default. Pin in [notifications](../modules/notifications/README.md) bundle defaults for `request.decision_made`.
 

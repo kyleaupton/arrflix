@@ -93,7 +93,7 @@ The only difference from Story 1 is that the pre-flight summary on the Request b
 
   > **"We're still looking for _Sentinel_."** It just released and quality releases sometimes take a day or two. We'll keep trying. _[See what we've tried]_ · _[Cancel request]_
 
-  (Push delivery for this event is **off by default** — in-app only — to avoid push fatigue. See [Open question #2](#open-questions).)
+  (Push delivery for this event is **off by default** — in-app only — to avoid push fatigue. See [Open question #2](#open-questions).) This is a **resolvable** notification (`dedup_key = "want.<id>.search_stalled"`) — it clears itself when the want recovers, per the [resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle).
 
 **Behind the scenes:**
 
@@ -124,7 +124,7 @@ The only difference from Story 1 is that the pre-flight summary on the Request b
 
 **Notifications:**
 
-- The pending in-app "still searching" notification is **superseded** (auto-dismissed when the want is no longer in a failing state).
+- The "still searching" notification **resolves**: the AcquisitionWorker calls `notifications.Resolve("want.<id>.search_stalled")` on `want.grabbed`. The in-app entry flips to `resolved` (drops out of the bell's attention count, stays in history); if a "still searching" push was queued but not yet sent, it's cancelled (`superseded`). Per the [resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle).
 - No push yet — push fires only on `available`, same as Story 1.
 
 ### Phase 6 — Download → Import → Plex confirms → Available (T+~30h → T+~30h 8min)
@@ -135,7 +135,7 @@ Indistinguishable from [Story 1 Phases 4–5](./01-happy-path-auto-approve.md#ph
 
 - 📱 Push to Friend: **"_Sentinel_ is ready to watch."** Tap → Plex deep link.
 - In-app pill: **"Available on Plex"**.
-- The "still searching" notification, if not already auto-dismissed, is dismissed now.
+- The "still searching" notification, if not already resolved at grab, is resolved now.
 
 ## Postconditions
 
@@ -146,7 +146,7 @@ Indistinguishable from [Story 1 Phases 4–5](./01-happy-path-auto-approve.md#ph
 - **1 `download_job`, status `completed`** — created only on the successful pick at T+~30h, not on the earlier failures.
 - **~8–10 `search_run` rows** with timestamps spanning T+0 through T+~30h.
 - **~50 `decision_log` rows total** — 47 rejected across the failure phase, plus 1 grabbed + 1 runner_up + 10 rejected from the final successful search.
-- **1 in-app notification** (the "still searching" message), `dismissed_at` populated when the want recovered.
+- **1 in-app notification** (the "still searching" message), `resolution_state: resolved` once the want recovered — visible in history, cleared from the attention count.
 - Friend's "my requests" page shows Sentinel as fulfilled, with the back-history collapsed under a "took 30 hours, 47 rejected" detail toggle.
 
 ## What must be true (foundation requirements)
@@ -167,8 +167,8 @@ Most of Story 1's requirements carry over unchanged. Net new for Story 4:
 
 ### Notification semantics
 
-- **A "still searching" event type**, audience: requester, channel default in-app. Producers: AcquisitionWorker after N consecutive failed search_runs OR M hours since `want.created` without a successful grab. Per [notifications](../modules/notifications/README.md) — typed constructor; payload includes the want, the aggregate reject breakdown, deep link to debug surface.
-- **Auto-dismissal semantics** — when the want transitions to `grabbed`, in-app notifications referencing it should be dismissed (or marked superseded), not just left as stale "still searching" entries. Need a notification-supersede mechanism, or the producer emits a `notification.supersede(dedup_key)` paired event.
+- **A "still searching" event type**, audience: requester, channel default in-app, declared **`resolvable`** with `dedup_key = "want.<id>.search_stalled"`. Producers: AcquisitionWorker after N consecutive failed search_runs OR M hours since `want.created` without a successful grab. Per [notifications](../modules/notifications/README.md) — typed constructor; payload includes the want, the aggregate reject breakdown, deep link to debug surface. Because it's resolvable, repeat enqueues **replace** (latest "N considered" count) rather than stacking.
+- **Resolution semantics — provided by the notifications resolution lifecycle.** When the want transitions to `grabbed`, the AcquisitionWorker calls `notifications.Resolve(dedup_key)`: active in-app rows flip to `resolved` (kept as history, dropped from the unread count) and any not-yet-sent push is cancelled. No bespoke supersede mechanism — see [notifications](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle).
 - **Push opt-out for this event by default** — confirmed in [Open question #2](#open-questions); this story's recommendation is that "still searching" is **in-app only by default** with an opt-in for push.
 
 ### UI surfaces
