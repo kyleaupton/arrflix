@@ -102,6 +102,19 @@ This taxonomy bounds both the mismatch feature and how much trust each advertise
 
 "Source" is not a stream property — nothing in a container says "I came from a Blu-ray." Like release group and edition, it is inherently a name-derived claim. Parsing is the _only_ source for the right-hand column; for the left-hand column it produces a claim that a later step may confirm or contradict.
 
+## Persisted parse
+
+The parse is computed pre-download, but consumers need it long after — most importantly to **re-render name templates over an existing library** (a template change, a mass-rename) without re-downloading. The advertised side is the only re-render input that isn't already durable: `Media` lives in the DB, `MediaInfo` lives in the [probe table](../scan/README.md#ffprobe-metadata--lazy-out-of-band), but `Quality`/`Release` are derived from a release title the `download_job` eventually purges. So Arrflix persists the parse, per `media_file`:
+
+- **Raw source string** — the release title (grabbed) or the filename (scanned). The source of truth: enables re-parse, and is the audit trail for "what produced this file."
+- **Parsed fields** — the advertised `Quality` + `Release`, as a snapshot. Redundant with re-parsing, but cheap, and it's the working value for fast render/list, a stable record across parser versions, and the home for [correction-loop](#open-questions) overrides.
+- **`parser_version`** — so we know whether a re-parse would differ, and can offer an explicit "re-parse" (to pick up parser improvements) rather than silently changing output on every read.
+- **`origin`** — `grabbed` | `scanned` | `manual`. Tells consumers how much to trust the parse and whether the raw string is a release title or a filename.
+
+**Grabbed → lossless re-render; scanned → best-effort.** A grabbed file has a real release title, so its persisted parse is complete and a mass-rename reproduces the original name exactly. A scanned file's parse comes from its existing filename: reliable where the namer encoded the info (most Sonarr/Plex names carry quality + group + edition), `Unknown` only for whatever the old name omitted — the same limitation Sonarr has renaming files it didn't grab. `origin` lets the mass-rename preflight say so honestly ("source/group unknown for these — they'll drop from the new name").
+
+This — plus `MediaInfo` (probe table) and `Media` (DB) — is the complete set of re-render inputs. Persisting `MediaInfo` rather than re-probing is what keeps a 5,000-file mass-rename fast.
+
 ## The engine
 
 One pure function, two input flavors:
@@ -200,6 +213,7 @@ The published parity number ("99.x% with Sonarr 4.0.x / Radarr 5.x") falls out o
 7. **Path-flavor folder context shape.** How much directory context does path mode consume (immediate parent only, or full ancestry)? Sonarr uses limited context. Pin against the [scan](../scan/README.md) / [matching](../matching/README.md) needs.
 8. **`Field[T]` ergonomics.** Generics make per-field confidence clean but ripple through every consumer that reads a value. Do consumers see `ParsedRelease.Quality.Resolution.Value` or a flattened view with confidence on the side? Lean: a flattened "values" view for consumers + a parallel provenance map, so most call sites stay simple.
 9. **Correction loop.** User overrides ("this PROPER is fake", "this group always ships x265") improving future parses — keyed on group/pattern. In scope for the parsing module or a matching/hygiene concern? Lean: design the override store here (it's parse-shaped), surface it via matching's re-match UI.
+10. **Persisted-parse storage shape.** Raw string + parsed snapshot + `parser_version` + `origin`, per `media_file` — a 1:1 companion table (`media_file_parse`) or columns on `media_file`? Lean: companion table, so the advertised namespaces stay grouped and nullable for pre-existing rows. Shape lands with [libraries](../libraries/README.md) / [matching](../matching/README.md) data-shape work.
 
 ## What we're explicitly not deciding here
 

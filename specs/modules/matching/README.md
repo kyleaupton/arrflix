@@ -297,6 +297,7 @@ What's new:
 - `media_file.osdb_hash` column — populated unconditionally from v1; consumed by v2 OS resolver and v1 hygiene dedup
 - `MatcherService` with the resolver + aggregator architecture
 - The `name-parse` resolver backed by the unified [parser](../parsing/README.md), the primary identity signal (replacing guessit)
+- The [persisted parse](../parsing/README.md#persisted-parse) on scanned files (`origin: scanned`, parsed from the filename, best-effort), written alongside the `media_file`
 - Confidence model + banded outcomes
 - Threshold presets in settings (Strict / Recommended / Relaxed)
 - Match-by-ID and bulk-override surfaces

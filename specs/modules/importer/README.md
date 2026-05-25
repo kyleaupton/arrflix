@@ -98,7 +98,7 @@ The destination path is the chosen [name template](../name-templates/README.md) 
 - **Media** — type, title, year, TMDB id, and for series the season/episode of the assigned want.
 - **Release** — title/group/edition parsed from the job's release name.
 - **MediaInfo** — codec, resolution, HDR, audio, container, extracted by `ffprobe` on the source file. Import is the **one place** this exists: it's post-download by definition, so routing (pre-download) never sees it, and a name template that references `{mediainfo.*}` resolves only here.
-- **Quality** — the **asserted-reconciled** bin: resolution from `MediaInfo` (`ffprobe`), source from the release-name parse (unverifiable, so it stays). So `{{.Quality.Full}}` renders what the file _is_, not what the release _claimed_ — see [name templates](../name-templates/README.md) and the [re-gate](#the-asserted-re-gate).
+- **Quality** — the advertised parse (`Full`, `Resolution`, `Source`, …), **not** reconciled with `ffprobe`. For a grabbed file the [re-gate](#the-asserted-re-gate) already hard-failed any resolution mismatch, so the advertised bin matches reality; `Source` is advertised-only. Rendered from the file's [persisted parse](../parsing/README.md#persisted-parse).
 
 For series the importer renders show-folder → season-folder → file and joins them; for movies, optional movie-folder → file. The full destination is `library.root_path` joined with the rendered relative path. A render failure (typo, missing required field) fails the task — currently non-retryable, with no fallback template; whether v1 should ship a hardcoded fallback is an [open question](#open-questions).
 
@@ -115,6 +115,7 @@ On a successful placement the importer writes, in a single transaction:
 - **`media_file`** — `{ library_id, media_item_id, episode_id?, path }`. The relative `path` within the library. Owned by [libraries](../libraries/README.md)/[scan](../scan/README.md); the importer is its writer on the grab path. It carries **no** media-server rating key — propagation lives [elsewhere](../media-server/README.md#the-propagation-record).
 - **`media_file_state`** — `file_exists = true`, `file_size`. The presence/size facts [scan](../scan/README.md)'s verify mode reconciles against.
 - **`media_file_import`** — the per-attempt record: method, source, dest, success. This is the importer's slice of the [audit](../../patterns/audit/README.md) story — the durable "how did this file get here" trail, including the path translation applied.
+- **The [persisted parse](../parsing/README.md#persisted-parse)** — the raw release title + parsed `Quality`/`Release` + `parser_version` + `origin: grabbed`, stored with the `media_file` so a template can be re-rendered (mass-rename) after the `download_job` is purged.
 - **`import_task`** completion — final status, `dest`, `method`, `media_file_id`.
 
 Then, outside-but-paired-with the placement: the linked **want transitions `downloading → imported`** and the importer emits `want.imported`. This want coupling is a **v1 addition** — v0 writes the `media_file` but never touches want state (the want lifecycle didn't exist yet). A transaction that fails _after_ a successful hardlink leaves an orphaned link on disk; cleanup of that orphan is an [open question](#open-questions) (today it persists until a scan reconciles it).

@@ -14,7 +14,7 @@ This doc is the companion to [tracking](../tracking/README.md). Tracking decides
 - Three admin-UX tiers: **preset** (90% of users), **profile editor** (power), **custom formats** (advanced). Defaults must be great; advanced surfaces stay hidden.
 - Selection algorithm: filter by hard gates → pick best allowed quality bin with a release → pick highest-scored release in that bin → deterministic tie-break.
 - **Hard gates remove**, **soft scores order**. Mixing them is the TRaSH-guides trap.
-- **The same gates and scores run twice:** on the release's _advertised_ attributes to decide the grab, then on the file's _asserted_ (`ffprobe`) attributes at import — the **import-time re-gate**. Hard-fail on the real file → reject + blocklist + re-search; soft-fail → keep, penalize, log a hygiene finding. The file's quality of record is the **asserted** bin.
+- **The same gates and scores run twice:** on the release's _advertised_ attributes to decide the grab, then on the file's _asserted_ (`ffprobe`) attributes at import — the **import-time re-gate**. Hard-fail on the real file → reject + blocklist + re-search; soft-fail → keep, penalize, log a hygiene finding. The file's recorded quality stays the **advertised** parse — the re-gate just validates it (a resolution lie hard-fails; `Source` is unverifiable either way).
 - Interactive search is always one click away and bypasses automated selection, but still writes audit rows.
 - Requesters get zero in-tier control. Admins get all the knobs.
 
@@ -123,7 +123,7 @@ The re-gate reuses the existing gate + score machinery — no new comparison sys
 
 **What the re-gate can and cannot reject.** It only re-evaluates attributes `ffprobe` can actually assert — resolution, codec, HDR/DV, audio format, channels, bit depth. It **cannot** assert **source** (BluRay vs WEB-DL), edition, or release group (see the [parsing verifiable taxonomy](../parsing/README.md#what-ffprobe-can-and-cannot-verify)). So a hard gate on resolution _can_ reject a downloaded file; a hard gate on source _cannot_ — source-based gates stay advertised-trusted at import. The reject-vs-penalize partition is an [open question](#open-questions).
 
-**The asserted bin is the file's quality of record.** After the re-gate, the file's quality is the asserted-reconciled bin: **resolution from `ffprobe`**, **source from the parse** (unverifiable, so it stays). This is the value [name templates](../name-templates/README.md) render and [upgrade detection](#upgrade-detection) compares — so the library reflects what the file _is_, not what its release _claimed_.
+**The file's recorded quality is the advertised parse, validated.** Arrflix persists the advertised `Quality` (the [parse snapshot](../parsing/README.md#persisted-parse)) as the file's recorded quality — there is **no** separate asserted bin, and `Quality` is never reconciled or mutated. The re-gate is what makes it trustworthy: a resolution mismatch hard-fails *before* the file is recorded, and `Source` is advertised-only (`ffprobe` can't see it). This recorded quality is what [upgrade detection](#upgrade-detection) compares and [name templates](../name-templates/README.md) render.
 
 **Ownership.** The re-gate's pass/fail _logic_ lives here (it's the profile's gates and scores). The _pipeline step_ that invokes it, the blocklist, and the want-back-to-`searching` transition are [acquisition](../acquisition/README.md)'s; the [importer](../importer/README.md) supplies the asserted attributes and calls the re-gate before it hardlinks; the mismatch finding is [hygiene](../hygiene/README.md)'s. The profile only says "pass, penalize, or hard-fail."
 
@@ -136,7 +136,7 @@ A release is **strictly better** than the current file if:
 - It's in a higher-ranked quality bin than the current file, **or**
 - It's in the same bin AND its score exceeds the current file's score by a configurable delta (anti-flapping).
 
-The current file's bin and score are the **asserted** values recorded by the [import-time re-gate](#import-time-re-gate) — so upgrade comparisons are file-truth vs candidate-claim, and a soft-fail penalty (an over-advertised current file) correctly makes an honest release upgrade-eligible.
+The current file's bin and score are its recorded **advertised** values, validated by the [import-time re-gate](#import-time-re-gate) — so a soft-fail penalty (an over-advertised current file) correctly makes an honest release upgrade-eligible.
 
 A want is **upgrade-eligible** if:
 

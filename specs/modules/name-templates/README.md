@@ -11,9 +11,9 @@ The model is implemented and stable: Go `text/template` over a typed evaluation 
 - A name template is a `(type, template, optional folder templates, default flag)` row. Each renders to a single path component; the import worker joins them via `filepath.Join`.
 - **Two types**: `movie` and `series`. Movies have a folder template + file template. Series have a show-folder + season-folder + file template.
 - **DSL is Go `text/template`** with two custom funcs: `sanitize` (strip filesystem-illegal chars) and `clean` (drop `"unknown"` values, then sanitize).
-- **Variables come from a unified `EvaluationContext`** with five namespaces: `Candidate` (the release), `Quality` (the quality bin — **asserted-reconciled at render time**), `Release` (group, edition), `Media` (TMDB), `MediaInfo` (post-download `ffprobe` analysis).
+- **Variables come from a unified `EvaluationContext`** with five namespaces: `Candidate` (the release), `Quality` (the advertised parse — persisted per file, **immutable**), `Release` (group, edition), `Media` (TMDB), `MediaInfo` (post-download `ffprobe` analysis).
 - **Name from truth, not claims.** `ffprobe`-verifiable tags (codec/audio/HDR/resolution) render from `MediaInfo`; non-verifiable ones (source/group/edition) from the parse. The shipped default uses identity + quality bin only — it can't be wrong.
-- **Sonarr/Radarr parity** is read-parity (matcher, for trials) + write-parity (token-vocabulary + format-string import; byte-identical output is a harness-tested aspiration). `{{.Quality.Full}}` intentionally reflects asserted truth — identical when the release was honest, truthful when it wasn't.
+- **Sonarr/Radarr parity** is read-parity (matcher, for trials) + write-parity (token-vocabulary + format-string import; byte-identical output is a harness-tested aspiration). `{{.Quality.Full}}` is the advertised parse in both tools, so honest releases render identically; the re-gate rejects resolution-mislabeled releases upstream, so there's nothing to disagree about.
 - Per-type default; routing falls back to the default for the media type when no template is explicitly chosen.
 - v1 adds: **syntax validation at create / update**, **preview/dry-run endpoint** against sample data, and a clearer **missing-variable contract** (today: silent empty string; lean for v1: still silent, but lint-warn at save time).
 - v1 does **not** add: template versioning, range-based multi-episode syntax, includes/snippets — all deferred to [open questions](#open-questions).
@@ -84,7 +84,7 @@ Use case: occasionally useful for the file template (e.g., embedding the release
 
 Source: the [name-parser](../parsing/README.md) over the candidate title (the **advertised** bin). Fields: `Full` (human-readable string like `"Bluray-2160p Remux"`), `Resolution` (enumerated), `Source` (enumerated), `IsRemux`, `IsRepack`, `Version`.
 
-**At render time the values are asserted-reconciled.** Templates run at import, after `ffprobe`. The [re-gate](../quality-profiles/README.md#import-time-re-gate) reconciles `Quality` against the real file before rendering: **`Resolution` from `MediaInfo`** (verifiable), **`Source` from the parse** (`ffprobe` can't see it). So `{{.Quality.Full}}` writes what the file _is_. The routing engine reads the same namespace _pre-download_ and sees the advertised values — same struct, different phase.
+**`Quality` is the advertised parse — persisted and immutable.** At grab it's parsed from the release title; for [scanned](../matching/README.md) files, from the existing filename. It's stored on the `media_file` as part of the [persisted parse](../parsing/README.md#persisted-parse) and read from there at render — never mutated, never phase-dependent. The [re-gate](../quality-profiles/README.md#import-time-re-gate) is what keeps a grabbed file's bin honest: a resolution mismatch hard-fails *before* placement, and `Source` is advertised-only in Arrflix and Sonarr alike (`ffprobe` can't see it). So `{{.Quality.Full}}` is as truthful as the medium allows, with no reconciliation.
 
 The enumerations are stable; new values are additive. `Resolution` covers `Unknown / SD / 480p / 576p / 720p / 1080p / 1440p / 2160p / 4320p`. `Source` covers the standard set (`SDTV`, `CAM`, `Telesync`, `Telecine`, `Screener`, `DVD`, `DVD-Rip`, `HDTV`, `WEBRip`, `WEB-DL`, `BluRay`, `REMUX`, `Raw-HD`, `Unknown`).
 
@@ -122,7 +122,9 @@ A filename should reflect what the file **is**, not what its release **claimed**
 
 - **`ffprobe`-verifiable attributes render from `MediaInfo` (asserted)** — codec, audio, channels, HDR/DV, resolution. Facts about the bytes.
 - **Non-verifiable attributes render from `Release`/`Quality` (name-derived)** — release group, edition, and the **source** half of the quality bin. `ffprobe` can't see these, so the parse is the only source; they aren't "lies" (see the [parsing taxonomy](../parsing/README.md#what-ffprobe-can-and-cannot-verify)).
-- **`Quality` is asserted-reconciled at render time** — resolution from `MediaInfo`, source from the parse. This is the [re-gate](../quality-profiles/README.md#import-time-re-gate)'s output, not the raw advertised parse.
+- **The quality bin renders from the advertised `Quality`** — no reconciliation. For grabbed files the [re-gate](../quality-profiles/README.md#import-time-re-gate) already hard-failed any resolution mismatch, so the advertised bin matches reality; `Source` is name-derived in Arrflix and Sonarr alike. `Quality` is read from the file's [persisted parse](../parsing/README.md#persisted-parse).
+
+**The catalog enforces this.** For any attribute that exists in *both* an advertised and an asserted form (codec, audio, HDR — once the parser extracts them for routing/scoring), the variable catalog exposes **only** the `MediaInfo` (asserted) version; the advertised version is a lint error in a template. Unverifiable attributes (`Source`, group, edition) have no asserted form, so they render from `Quality`/`Release` and stay allowed. This makes the footgun structurally impossible rather than a matter of author discipline — while the advertised versions remain available to [routing](../routing/README.md), which needs them pre-download.
 
 The seed templates already follow this — `{{.MediaInfo.AudioCodec}}`, `{{.MediaInfo.HDR}}`, `{{.MediaInfo.VideoCodec}}` for granular tags, `{{.Quality.Full}}` for the bin, `{{.Release.ReleaseGroup}}` / `{{.Release.Edition}}` for provenance. The principle just makes it a contract.
 
@@ -137,7 +139,7 @@ The goal is that a migrating user can paste their existing naming scheme — but
 
 The committed write-parity surface is **token-vocabulary parity + format-string import** (paste your Sonarr/Radarr format string, get familiar output). **Byte-identical rendered output is a harness-tested aspiration, not a contract** — the real effort is reproducing libmediainfo's field conventions through `ffprobe` (AVC vs h264 vs x264, channel rendering, DV labels), measurable the same way the [parser parity harness](../parsing/README.md#testing-strategy--parity-as-a-ci-gate) measures quality parity.
 
-**One intentional divergence — loud and rare.** Our `{{.Quality.Full}}` reflects **asserted** truth (post-re-gate). When a release was honest, it matches Sonarr's grabbed quality. When the release **lied** (advertised `Bluray-1080p`, the stream is a web encode), ours writes the measured value while Sonarr writes what it grabbed — deliberately: _identical when the release was honest; truthful when it wasn't._
+**No divergence on the quality bin.** `{{.Quality.Full}}` is the advertised parse in both Arrflix and Sonarr, so honest releases render identically. A release that *lied* about resolution never reaches render in Arrflix — the [re-gate](../quality-profiles/README.md#import-time-re-gate) hard-failed it upstream — so there's no mislabeled file to disagree about. Source was always advertised in both tools. Parity here is clean.
 
 ## Per-type structure
 
@@ -247,8 +249,8 @@ A season-pack download is matched per-file to its episodes by the import matcher
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | **[Routing](../routing/README.md)**               | Rules pick a template by ID. The action set on a fired rule fills `download_job.name_template_id`, which propagates to import tasks.    |
 | **Import (existing)**                             | Loads the template row, renders each component against the import-task's `EvaluationContext`, joins with `filepath.Join`, appends extension. |
-| **[Parsing](../parsing/README.md)** | Produces the advertised `Quality`/`Release` the templates read.                                                                       |
-| **[Quality profiles](../quality-profiles/README.md)** | The re-gate reconciles `Quality` to asserted truth before render; `{{.Quality.Full}}` is the file's quality of record, not the advertised claim. |
+| **[Parsing](../parsing/README.md)** | Produces the advertised `Quality`/`Release` the templates read, persisted per file for re-render.                                     |
+| **[Quality profiles](../quality-profiles/README.md)** | The re-gate validates a grabbed file's quality before placement; it does not mutate `Quality`, which renders from the persisted advertised parse. |
 | **[Acquisition](../acquisition/README.md)**       | The pipeline assembles the `EvaluationContext` for both routing and import — the template just reads it.                                |
 | **[Users](../users/README.md)**                   | `name_templates.*` permissions gate the API.                                                                                            |
 | **Frontend (`NameTemplateSettings.vue`)**         | CRUD + (v1) live preview using the new endpoint.                                                                                        |
@@ -257,8 +259,8 @@ A season-pack download is matched per-file to its episodes by the import matcher
 
 - The routing decision that picks a template ([routing](../routing/README.md))
 - The variable catalog itself — that's defined by `EvaluationContext` and lives in code adjacent to whoever owns that struct (matching / metadata / mediainfo) ([metadata](../metadata/README.md), [matching](../matching/README.md))
-- The name-parser that produces `Quality` and `Release` (lives in [parsing](../parsing/README.md))
-- The **re-gate** that reconciles `Quality` to asserted truth before render ([quality profiles](../quality-profiles/README.md#import-time-re-gate) logic, run by the [importer](../importer/README.md))
+- The name-parser that produces `Quality` and `Release`, and the [persisted parse](../parsing/README.md#persisted-parse) the renderer reads them from (both [parsing](../parsing/README.md))
+- The **re-gate** that validates a grabbed file's quality before placement ([quality profiles](../quality-profiles/README.md#import-time-re-gate) / [importer](../importer/README.md)) — it doesn't mutate `Quality`
 - The mediainfo probe (lives with import / scan)
 - The library root path that gets prepended ([libraries](../libraries/README.md))
 - The file extension (appended by the import worker, source-derived)

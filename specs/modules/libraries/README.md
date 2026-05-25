@@ -178,6 +178,7 @@ Hard free-space floors are not in v1; routing rules can express their own minimu
 8. **Move-between-libraries.** "Move this movie from Movies-HD to Movies-4K" is a real operator action that today requires manual filesystem work + re-scan. Worth a first-class operation? Probably yes eventually, but it spans hygiene + import + scan and doesn't have a clear home. Defer.
 
 9. **Per-library permissions.** `libraries.read:<id>` — can a user have CRUD access to one library but not another? Lean: not in v1; lift via `resource_id` on permission grants if real demand emerges (the [users](../users/README.md) spec already supports per-resource scoping in the grant table).
+10. **`media_file` carries the persisted parse + origin.** Re-rendering templates over a library (mass-rename) needs each file's advertised parse persisted — raw string + parsed `Quality`/`Release` + `parser_version` + `origin: grabbed|scanned|manual`; see [parsing § persisted parse](../parsing/README.md#persisted-parse). Lean: a 1:1 `media_file_parse` companion rather than widening `media_file`. Pin the shape in the data-shape pass.
 
 ## What we're explicitly not deciding here
 
