@@ -62,7 +62,10 @@ AcquisitionWorker picks up want
   → create download_job linked to want(s)
   → emit want.grabbed
 DownloadJobWorker (existing) → completed
-ImportWorker (existing, with want linkage) → media_file
+ImportWorker (existing, with want linkage)
+  → ffprobe asserted attributes; quality re-gate on the real file
+      ├─ hard-fail → reject import, blocklist release, want → searching (re-grab), emit want.regate_failed
+      └─ pass / soft-fail → hardlink → media_file (soft-fail also logs a quality/advertised-mismatch finding)
 VerifyStep (new) → presence-verify on disk → emit want.available   ← Arrflix's own authority
 MediaServerSync (new, downstream, non-blocking)
   → nudge each configured server to index (Plex partial-refresh / Jellyfin scan)
@@ -84,7 +87,23 @@ user opens movie/series → clicks search
 
 ### What stays the same
 
-The **back half** of the pipeline is unchanged. Once a download_job exists, the existing DownloadJobWorker and ImportWorker do their thing. Hardlinks, name templates, media_file creation — all stay. The new world is about the **front half**: persistent intent + a richer selection layer + an orchestrator that wakes on events instead of clicks.
+The **back half** of the pipeline is unchanged, with one addition. Once a download_job exists, the existing DownloadJobWorker and ImportWorker do their thing — hardlinks, name templates, media_file creation all stay. The one new step is the **import-time re-gate** (see below): before the file is placed, the profile is re-run against the file's asserted attributes. The new world is otherwise about the **front half**: persistent intent + a richer selection layer + an orchestrator that wakes on events instead of clicks.
+
+## Import-time re-gate (asserted verification)
+
+The selection front-half decides the grab on **advertised** attributes (the [parsed](../parsing/README.md) release title — all we have pre-download). The back-half adds the mirror step: at import, before the file is placed, the [importer](../importer/README.md) probes the file with `ffprobe` and re-runs the same [quality profile](../quality-profiles/README.md#import-time-re-gate) against the **asserted** attributes. **Advertised gates the grab; asserted gates the keep.**
+
+This is distinct from VerifyStep, and the two sit side by side in the back half answering different questions:
+
+- **VerifyStep** asks _"is the file there?"_ — presence/size on disk (`imported → available`).
+- **The re-gate** asks _"is the file what we ordered?"_ — quality on the actual bytes (before placement).
+
+Outcomes — the pass/penalize/hard-fail _logic_ is owned by [quality profiles](../quality-profiles/README.md#import-time-re-gate); the _orchestration_ is owned here:
+
+- **Pass / soft-fail** → the file is placed. A soft-fail (over-advertised but acceptable — e.g., a false Atmos claim on a fine 1080p) is kept, its recorded score penalized, and a [`quality/advertised-mismatch`](../hygiene/README.md) finding logged at import. No user notification — soft mismatches are common.
+- **Hard-fail** (the asserted file fails a gate `ffprobe` can verify — e.g., advertised 2160p, the stream is 1080p) → the import is rejected, the release is **blocklisted**, and the want returns to `searching` to re-grab. The AcquisitionWorker treats this like a failed search with the offending release excluded, so it can't re-pick the same bad file. Emits `want.regate_failed`.
+
+The re-gate can only reject on attributes `ffprobe` asserts; source / edition / group stay advertised-trusted (see the [parsing taxonomy](../parsing/README.md#what-ffprobe-can-and-cannot-verify)). The reject-vs-penalize partition is [quality profiles' open question](../quality-profiles/README.md#open-questions).
 
 ## Components
 
@@ -362,6 +381,7 @@ The pipeline relies on events flowing between components. The [realtime](../real
 | `want.grabbed`       | AcquisitionWorker                            | SSE, NotificationService                 |
 | `want.search_failed` | AcquisitionWorker                            | SearchScheduler (back-off), SSE          |
 | `want.imported`      | ImportWorker                                 | VerifyStep (presence-verify on disk)     |
+| `want.regate_failed` | ImportWorker (re-gate hard-fail)             | AcquisitionWorker (blocklist + re-search), SearchScheduler, SSE |
 | `want.available`     | VerifyStep (file verified on disk)           | NotificationService, SSE, MediaServerSync |
 | `media_file.propagated` | MediaServerSync (webhook or reconciliation poll) | NotificationService (deep-link upgrade), SSE |
 | `tracking.archived`  | TrackingService                              | SSE, NotificationService                 |

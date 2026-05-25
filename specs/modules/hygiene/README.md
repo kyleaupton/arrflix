@@ -56,12 +56,15 @@ Each finding type is a **rule** with a stable ID, default severity, default fix 
 | `quality/bitrate-outlier`        | Bitrate-per-resolution outside expected range                     | `info`                         | `observe`        | `tolerance_pct: 30`                          |
 | `quality/codec-preference`       | Codec/container deviates from user preference                     | `info`                         | `observe`        | `preferred_video`, `preferred_audio`         |
 | `quality/format-inconsistency`   | Mixed resolutions across seasons of the same series               | `info`                         | `observe`        | —                                            |
+| `quality/advertised-mismatch`    | Release-advertised attributes disagree with the file's `ffprobe` truth (e.g. false Atmos/DV claim) | `warn`        | `observe`        | confident on audio/HDR; humble on source/edition |
 | `layout/naming-drift`            | File path doesn't match current name template                     | `warn`                         | `propose`        | —                                            |
 | `layout/duplicate-files`         | Two or more files claim the same identity                         | `warn`                         | `propose`        | `ignore_intentional_versions: true`          |
 | `identity/unmatched-file`        | Scanner found a file it couldn't identify                         | `error`                        | `propose`        | —                                            |
 | `identity/wrong-match-suspect`   | Parsed title/year disagrees with stored title/year                | `warn`                         | `propose`        | `title_similarity_threshold: 0.7`            |
 
 The catalog is **append-only** as we grow. New rules ship with sensible defaults and a "new since last release" badge on the rules screen, so users with `error`-everything configs aren't surprised by score drops.
+
+**`quality/advertised-mismatch` is import-time-sourced.** Unlike the integrity rules (computed by the nightly audit + scan backfill), this finding is written by the [import-time re-gate](../quality-profiles/README.md#import-time-re-gate) at placement, when the importer holds both the advertised parse and the fresh `ffprobe`. It fires only on **soft-fail** keeps — hard-fails are rejected and never become library files. Its scope follows the [`ffprobe` verifiable taxonomy](../parsing/README.md#what-ffprobe-can-and-cannot-verify): confident on audio (false Atmos/channels) and HDR/DV presence, silent on source / edition / upscale, which `ffprobe` can't adjudicate.
 
 ## The rule config model (ESLint-style)
 
@@ -236,11 +239,11 @@ Janitor screens are useful. These are what make the dashboard *cool*:
 | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | **[Scan](../../docs/guide/roadmap.md) (existing)**    | Source of integrity findings; opportunistically populates `hygiene_finding` during walks. Hygiene rules' detection logic _runs in scan_ for free updates. |
 | **[Decision log](../../patterns/audit/README.md)**    | `identity/wrong-match-suspect` findings link back to the import decision that placed the file. Closes the loop between acquisition and post-hoc review.    |
-| **[Quality profiles](../quality-profiles/README.md)** | `quality/upgrade-candidate` re-uses the upgrade-detection logic defined there. Hygiene surfaces the count; quality-profiles owns the definition.            |
+| **[Quality profiles](../quality-profiles/README.md)** | `quality/upgrade-candidate` re-uses upgrade-detection; `quality/advertised-mismatch` is the [re-gate](../quality-profiles/README.md#import-time-re-gate)'s soft-fail delta. Hygiene surfaces; quality-profiles owns the definitions. |
 | **[Tracking](../tracking/README.md)**                 | Tracking states ("active subscription, last episode aired 21d ago, no file") inform a future `identity/missing-aired-episode` rule. Cross-references want-debugger view. |
 | **[Metadata](../metadata/README.md)**                 | `identity/wrong-match-suspect` uses parsed-title-vs-stored-title comparison; depends on metadata freshness.                       |
 | **Name templates (existing)**                         | Template changes regenerate `layout/naming-drift` findings against existing files.                                                |
-| **Import (existing)**                                 | Hooks into import-error pathways: failed imports can surface as `identity/unmatched-file` findings instead of being lost in logs. |
+| **Import (existing)**                                 | Hooks into import-error pathways: failed imports surface as `identity/unmatched-file`; the [re-gate](../quality-profiles/README.md#import-time-re-gate)'s soft-fail writes `quality/advertised-mismatch` at placement. |
 | **[Notifications](../notifications/README.md)**       | Critical findings push immediately; warnings batched into digest. Per-user preferences.                                            |
 | **Storage intelligence (future)**                     | Free-space + hygiene combined: *"You'd free 47 GB by resolving these 12 broken hardlinks."*                                       |
 
@@ -302,6 +305,7 @@ A third surface — **the finding story view** — is reached by drill-down from
 9. **Permission / ownership findings.** Plex can't read because of UID mismatch. Real, but out of scope for v1. Revisit if support load demands.
 10. **Notification routing for hygiene.** Per-rule, per-severity, per-user? Or just "send me a digest"? Should align with the [notifications](../notifications/README.md) subsystem — defer to that spec.
 11. **Multi-library scoping.** Per-library audit view, all-libraries view, or both? Multi-library users will want both. Probably defaults to all-libraries with a filter.
+12. **`quality/advertised-mismatch` remediation.** Default is `observe` (informational — the file is fine, just over-advertised). Worth a `propose` action ("blocklist this group / re-search for an honest release")? It overlaps the upgrade path. Lean: `observe` in v1; revisit if users want a one-tap "get the real thing."
 
 ## What we're explicitly not deciding here
 

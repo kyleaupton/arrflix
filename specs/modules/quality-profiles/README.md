@@ -14,6 +14,7 @@ This doc is the companion to [tracking](../tracking/README.md). Tracking decides
 - Three admin-UX tiers: **preset** (90% of users), **profile editor** (power), **custom formats** (advanced). Defaults must be great; advanced surfaces stay hidden.
 - Selection algorithm: filter by hard gates → pick best allowed quality bin with a release → pick highest-scored release in that bin → deterministic tie-break.
 - **Hard gates remove**, **soft scores order**. Mixing them is the TRaSH-guides trap.
+- **The same gates and scores run twice:** on the release's _advertised_ attributes to decide the grab, then on the file's _asserted_ (`ffprobe`) attributes at import — the **import-time re-gate**. Hard-fail on the real file → reject + blocklist + re-search; soft-fail → keep, penalize, log a hygiene finding. The file's quality of record is the **asserted** bin.
 - Interactive search is always one click away and bypasses automated selection, but still writes audit rows.
 - Requesters get zero in-tier control. Admins get all the knobs.
 
@@ -108,6 +109,24 @@ This distinction is load-bearing. Mixing them is what makes Sonarr quality confi
 
 **Heuristic for which is which:** "If I see a release that fails this rule, do I want it to *never grab* (gate) or just to *rank lower* (score)?" Most preferences are scores. Most safety/sanity checks are gates.
 
+## Import-time re-gate
+
+The selection algorithm above runs on the release's **advertised** attributes — the [parsed](../parsing/README.md) title is all we have before download. Advertised attributes are a _claim_. The same profile is therefore run a **second time at import**, against the file's **asserted** attributes (`ffprobe`/mediainfo on the actual bytes), to confirm we got what we grabbed.
+
+The re-gate reuses the existing gate + score machinery — no new comparison system. The outcome maps onto the same gate-vs-score distinction:
+
+| Re-gate outcome on the asserted file | Action |
+| ------------------------------------ | ------ |
+| **Passes** | Place the file normally. |
+| **Hard-gate fail** (e.g., advertised 2160p, the stream is 1080p; or a quality bin we don't accept) | **Reject the import, blocklist the release, return the want to `searching`** so the pipeline re-grabs. The auto-recovery loop. |
+| **Soft-score drop** (e.g., the "Atmos" claim is false but it's a fine 1080p) | **Keep the file**, apply the score penalty (lowering its recorded score), and log a [`quality/advertised-mismatch`](../hygiene/README.md) finding. No user notification — soft mismatches are common; the finding is there for anyone who cares. |
+
+**What the re-gate can and cannot reject.** It only re-evaluates attributes `ffprobe` can actually assert — resolution, codec, HDR/DV, audio format, channels, bit depth. It **cannot** assert **source** (BluRay vs WEB-DL), edition, or release group (see the [parsing verifiable taxonomy](../parsing/README.md#what-ffprobe-can-and-cannot-verify)). So a hard gate on resolution _can_ reject a downloaded file; a hard gate on source _cannot_ — source-based gates stay advertised-trusted at import. The reject-vs-penalize partition is an [open question](#open-questions).
+
+**The asserted bin is the file's quality of record.** After the re-gate, the file's quality is the asserted-reconciled bin: **resolution from `ffprobe`**, **source from the parse** (unverifiable, so it stays). This is the value [name templates](../name-templates/README.md) render and [upgrade detection](#upgrade-detection) compares — so the library reflects what the file _is_, not what its release _claimed_.
+
+**Ownership.** The re-gate's pass/fail _logic_ lives here (it's the profile's gates and scores). The _pipeline step_ that invokes it, the blocklist, and the want-back-to-`searching` transition are [acquisition](../acquisition/README.md)'s; the [importer](../importer/README.md) supplies the asserted attributes and calls the re-gate before it hardlinks; the mismatch finding is [hygiene](../hygiene/README.md)'s. The profile only says "pass, penalize, or hard-fail."
+
 ## Upgrade detection
 
 Once a want has been fulfilled (file imported), should we keep looking for better releases?
@@ -116,6 +135,8 @@ A release is **strictly better** than the current file if:
 
 - It's in a higher-ranked quality bin than the current file, **or**
 - It's in the same bin AND its score exceeds the current file's score by a configurable delta (anti-flapping).
+
+The current file's bin and score are the **asserted** values recorded by the [import-time re-gate](#import-time-re-gate) — so upgrade comparisons are file-truth vs candidate-claim, and a soft-fail penalty (an over-advertised current file) correctly makes an honest release upgrade-eligible.
 
 A want is **upgrade-eligible** if:
 
@@ -167,7 +188,10 @@ To keep scope tight, these adjacent concerns live elsewhere:
 - **Tracking lifecycle** — tracking owns `active / paused / archived / canceled`.
 - **Upgrade behavior strategy** — tracking decides `auto / propose / none`.
 - **Notification routing** — when an upgrade is proposed or a grab happens, [notifications](../notifications/README.md) routes the event. Profile just provides the data ("here's the proposed release").
-- **Quality detection / release name parsing** — the parser is a sibling system. Profile consumes parsed quality; it doesn't parse.
+- **Quality detection / release-name parsing** — owned by [parsing](../parsing/README.md). The profile consumes parsed (advertised) quality and asserted (`ffprobe`) attributes; it parses neither.
+- **The asserted-attributes extractor** (`ffprobe`/mediainfo) — a sibling extractor ([importer](../importer/README.md) / [scan](../scan/README.md)); the profile consumes `MediaInfo`, it doesn't probe.
+- **Re-gate orchestration and want recovery** — the import-time re-gate's _logic_ lives here, but the _pipeline step_, the blocklist, and the want-back-to-`searching` transition are [acquisition](../acquisition/README.md)'s.
+- **The advertised-vs-asserted mismatch finding** — surfaced by [hygiene](../hygiene/README.md) (`quality/advertised-mismatch`); the profile produces the delta, hygiene presents it.
 - **Indexer management** — adding, removing, health-checking indexers. Profile references indexers by ID.
 - **Decision log storage** — profile produces events; decision log persists them.
 - **Exact data shapes** — column types, indexes, foreign keys, API contracts. Deferred.
@@ -181,7 +205,9 @@ To keep scope tight, these adjacent concerns live elsewhere:
 | **Wants**               | Each want carries the resolved `quality_profile_id` from its origin (tier resolution or tracking). |
 | **Auto-select worker**  | Reads the profile to gate + score search results.                                             |
 | **Indexer service**     | Profile references the indexer set (full or scoped) for searches.                             |
-| **Release parser**      | Parses indexer result titles into quality bins; profile consumes those bins.                  |
+| **[Parsing](../parsing/README.md)** | Produces advertised quality from titles and (via the `ffprobe` extractor) asserted `MediaInfo`; the profile consumes both, parses neither. |
+| **[Importer](../importer/README.md)** | Runs the import-time re-gate before placement: provides asserted attributes, calls the profile, acts on pass / penalize / hard-fail. |
+| **[Hygiene](../hygiene/README.md)** | Surfaces the advertised-vs-asserted delta as `quality/advertised-mismatch`. |
 | **Decision log**        | Every gate/score decision becomes a log entry.                                                |
 | **Interactive search**  | Bypasses gating/scoring for selection but still displays them and logs the override.          |
 | **[Notifications](../notifications/README.md)** | Profile + tracking together produce upgrade-available events that notifications routes. |
@@ -203,13 +229,15 @@ User-facing UI: requesters see "**Quality**" with options "HD" / "4K"; admins se
 8. **Tracking-specific scoring overrides.** Could a tracking record override scoring rules for a specific series? "For this anime, prefer x265 +500 even though the global profile prefers x264." Maybe later; iteration 1 says no — profile is the unit.
 9. **Decision log retention.** Owned centrally by the [audit pattern](../../patterns/audit/README.md). The trade-off (forever for grabbed, short for rejected) is captured there; nothing for quality-profiles to decide.
 10. **Tier mismatch UX (Story 3).** When a user requests 4K but only HD is permitted, do we: (a) hide the 4K option entirely, (b) show it disabled with a "why?", or (c) show it enabled but route to admin approval? This is exactly Story 3's job to resolve — flagging it here as a quality-profile-adjacent question.
+11. **Import-time hard-fail boundary.** Which gate failures on the _asserted_ file justify rejecting an already-downloaded release (blocklist + re-search) vs. merely penalizing the score? Resolution below floor is a clear reject; a false Atmos claim is a clear penalize. And `ffprobe` can't assert **source**, so source-based gates can't reject at import — they stay advertised-trusted. Lean: ffprobe-verifiable hard gates can reject; non-verifiable gates can only penalize. Pin the partition + the soft-fail penalty magnitude (vs the upgrade anti-flapping delta) in iteration 2.
 
 ## What we're explicitly not deciding here
 
 - Exact table names, columns, indexes
 - API endpoint shapes
 - Custom format DSL / regex / rule grammar specifics
-- The release-name parser implementation
+- The release-name parser implementation (owned by [parsing](../parsing/README.md))
+- The reject-vs-penalize partition and soft-fail penalty magnitude for the import-time re-gate (open question)
 - Indexer-management UX
 - The exact set of preset profiles shipped out of the box
 - Cost-of-storage / disk-aware policies (separate subsystem)

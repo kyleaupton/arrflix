@@ -8,9 +8,10 @@ This spec is **primarily descriptive** — the import worker exists and runs in 
 
 ## TL;DR
 
-- The importer runs **after** a `download_job` reaches `completed`. It spawns one **`import_task` per file**, then a worker drains tasks: resolve source → assign to a want → render destination → hardlink/copy → write rows → advance the want to `imported`.
+- The importer runs **after** a `download_job` reaches `completed`. It spawns one **`import_task` per file**, then a worker drains tasks: resolve source → assign to a want → **ffprobe + re-gate on asserted attributes** → render destination → hardlink/copy → write rows → advance the want to `imported`. A re-gate **hard-fail** short-circuits to reject + blocklist instead.
 - An `import_task` is the unit of work and the audit trail for one file: `{ source, want, library, name_template, dest, method, media_file }` plus a retry/lifecycle envelope. It carries the routing decision copied off the `download_job`.
 - **The importer executes; it does not decide.** Library, name template, and downloader are routing's output. The importer reads them off the job.
+- **The re-gate is a decision the importer _consumes_, not makes.** After `ffprobe`, before the hardlink, it asks [quality profiles](../quality-profiles/README.md#import-time-re-gate) "does the asserted file still pass the profile it was grabbed under?" — the same boundary it keeps with routing and path-mapping. Pass/soft-fail → place (soft-fail logs a `quality/advertised-mismatch` finding); hard-fail → fail the task `quality_rejected`, and [acquisition](../acquisition/README.md#import-time-re-gate-asserted-verification) blocklists + re-searches.
 - **File assignment is closed-world.** The job already names the wants it fulfils; the importer only maps the torrent's files _onto_ those known targets (which file is S03E05). This is distinct from [matching](../matching/README.md)'s open-world identity resolution — they share the filename parser, nothing else.
 - **Path resolution is a [path-mapping](../path-mapping/README.md#the-four-boundaries) boundary-1 call** (`translate(downloader, arrflix, content_path)`), and the hardlink-vs-copy choice reads path-mapping's [device verdict](../path-mapping/README.md#hardlink-feasibility-the-first-class-output). v0 stubs both; v1 wires them.
 - **Hardlink-first, copy-fallback.** `os.Link` when the source and library share a device; a byte copy (temp file + atomic rename) otherwise. The method is recorded per file.
@@ -53,7 +54,7 @@ The `download_job` already carries the identity: `media_item_id`, and for series
 - **Movie** — pick the main file: the largest video file, samples excluded. One file, one want.
 - **Series** — parse each filename's episode marker (`S03E05`, `3x05`, multi-episode ranges like `S03E05-E06`) and assign it to the matching want. The job's linked wants are the target set; a file whose marker matches no open want is overflow.
 
-The parsing primitive (filename → season/episode markers) is the _same_ primitive [matching](../matching/README.md) needs for its open-world identity work. It is a pure function — it touches no DB, no metadata provider — which makes it the cheapest and most valuable unit-test surface in the flow, and the natural thing to share. The importer owns the **assignment** (closed-world, deterministic, target set known); matching owns **identity** (open-world, TMDB-validated, confidence-banded) on the [scan](../scan/README.md)/drop-in path. They share the parser and diverge immediately after. v0 keeps its own copy of the parser in the importer package; consolidating it into a shared parsing package is intended, not blocking — see [open questions](#open-questions).
+The parsing primitive (filename → season/episode markers) is the _same_ primitive [matching](../matching/README.md) needs for its open-world identity work. It is a pure function — it touches no DB, no metadata provider — which makes it the cheapest and most valuable unit-test surface in the flow, and the natural thing to share. The importer owns the **assignment** (closed-world, deterministic, target set known); matching owns **identity** (open-world, TMDB-validated, confidence-banded) on the [scan](../scan/README.md)/drop-in path. They share the parser — the unified [parsing](../parsing/README.md) engine (path flavor) — and diverge immediately after. v0 keeps its own copy in the importer package; consolidating onto `internal/parsing` is intended, not blocking — see [open questions](#open-questions).
 
 ### Season packs and overflow
 
@@ -81,6 +82,15 @@ v0 has a `pathMapper.Apply()` **stub that returns the path unchanged** — corre
 
 An `import_task` records its source path at spawn time. If that path is stale by the time the worker runs it (a container remount, a path change), the worker **re-derives** it by re-querying the downloader for the job's files rather than failing outright. The frozen-string source path is a v0 quirk — the twin of [libraries OQ#4](../libraries/README.md#open-questions) (`import_task.library_root_path` as a string). v1 resolves both through the volume layer so a task references stable identity, not a captured string; the migration is coordinated with path-mapping ([OQ#9](../path-mapping/README.md#open-questions)).
 
+## The asserted re-gate
+
+Before rendering and placement, the importer extracts the file's asserted attributes with `ffprobe` and asks [quality profiles](../quality-profiles/README.md#import-time-re-gate) to re-run the profile the release was grabbed under — against the real file this time. **The importer consumes the verdict; it does not compute it** — the same boundary it keeps with [routing](../routing/README.md) (destination) and [path-mapping](../path-mapping/README.md) (device verdict).
+
+- **Pass / soft-fail** → proceed to render + placement. On a soft-fail (over-advertised but acceptable), the importer records the score penalty and writes a [`quality/advertised-mismatch`](../hygiene/README.md) finding — the importer is the one place that holds **both** the advertised parse (off the job) and the fresh `ffprobe`, so it is where the delta is computed.
+- **Hard-fail** → the task fails with a typed `quality_rejected` ([errors](../../patterns/errors/README.md)), non-retryable; no file is placed. [Acquisition](../acquisition/README.md#import-time-re-gate-asserted-verification) reacts by blocklisting the release and returning the want to `searching`. Rejecting **before** the hardlink means there's no placed file to clean up.
+
+`ffprobe` runs once here regardless — the rendered name template already needs `MediaInfo` — so the re-gate is essentially free on top.
+
 ## Rendering the destination
 
 The destination path is the chosen [name template](../name-templates/README.md) rendered against an evaluation context the importer assembles:
@@ -88,6 +98,7 @@ The destination path is the chosen [name template](../name-templates/README.md) 
 - **Media** — type, title, year, TMDB id, and for series the season/episode of the assigned want.
 - **Release** — title/group/edition parsed from the job's release name.
 - **MediaInfo** — codec, resolution, HDR, audio, container, extracted by `ffprobe` on the source file. Import is the **one place** this exists: it's post-download by definition, so routing (pre-download) never sees it, and a name template that references `{mediainfo.*}` resolves only here.
+- **Quality** — the **asserted-reconciled** bin: resolution from `MediaInfo` (`ffprobe`), source from the release-name parse (unverifiable, so it stays). So `{{.Quality.Full}}` renders what the file _is_, not what the release _claimed_ — see [name templates](../name-templates/README.md) and the [re-gate](#the-asserted-re-gate).
 
 For series the importer renders show-folder → season-folder → file and joins them; for movies, optional movie-folder → file. The full destination is `library.root_path` joined with the rendered relative path. A render failure (typo, missing required field) fails the task — currently non-retryable, with no fallback template; whether v1 should ship a hardcoded fallback is an [open question](#open-questions).
 
@@ -154,8 +165,10 @@ The importer does **not** emit `want.available` (the verify step does) or `media
 | [Routing](../routing/README.md) | Decides downloader + library + name template; the importer reads those off the `download_job` and executes them. Never re-decides. |
 | [Path-mapping](../path-mapping/README.md) | Boundary-1 `translate` resolves the downloader path to canonical; the device verdict drives hardlink-vs-copy. The importer is a consumer; the mechanics are the pattern's. |
 | [Name-templates](../name-templates/README.md) | Rendered here against the media + release + mediainfo context to compute the destination path. |
+| [Quality profiles](../quality-profiles/README.md) | The importer runs the import-time re-gate before placement — supplies asserted `ffprobe` attributes, acts on pass / penalize / hard-fail, doesn't own the logic. |
+| [Parsing](../parsing/README.md) | The closed-world filename-marker parse is the path flavor of the unified parser; the importer calls `internal/parsing` instead of keeping a private copy. |
 | [Libraries](../libraries/README.md) | Destination root; per-type default for orphan imports. The importer writes `media_file.library_id`. |
-| [Matching](../matching/README.md) | Shares the filename-parsing primitive. Owns open-world identity (scan/drop-in); the importer owns closed-world assignment (grab path). Overflow files hand off to matching via `unmatched_file`. |
+| [Matching](../matching/README.md) | Owns open-world identity (scan/drop-in); the importer owns closed-world assignment (grab path). Both consume the same [parser](../parsing/README.md). Overflow files hand off to matching via `unmatched_file`. |
 | [Scan](../scan/README.md) | Reconciles what the importer writes (`media_file_state` presence/size); cleans up orphaned links. Shares the file-on-disk truth. |
 | [Downloaders](../downloaders/README.md) | `ListFiles` at spawn; re-queried during source self-heal. |
 | [Realtime](../realtime/README.md) | `import_task_updated` / `download_job_updated` SSE for progress. |
@@ -178,9 +191,10 @@ The importer does **not** emit `want.available` (the verify step does) or `media
 2. **Frozen source path → volume-resolved.** v1 resolves the v0 string-path quirk through the volume layer, coordinated with [libraries OQ#4](../libraries/README.md#open-questions) and [path-mapping OQ#9](../path-mapping/README.md#open-questions). Confirm they land together rather than as two migrations.
 3. **Name-template render failure.** Non-retryable and fatal today. Should v1 ship a hardcoded fallback template (so a typo degrades to a sane path instead of a stuck file), or keep it loud? Lean: loud + a clear activity error — a silent fallback hides a misconfiguration.
 4. **Overflow disposition.** Files a season pack carries beyond the wanted set: `unmatched_file` (reconcile via matching) vs first-class "extras." Owned by [acquisition](../acquisition/README.md#overflow--under-coverage); the importer just needs the disposition pinned to know where to route them.
-5. **Shared parser extraction.** Promote the filename-marker parser into a package both the importer and [matching](../matching/README.md) consume. Lean: do it when matching is built (it forces the seam concrete); until then the importer's copy is the reference. Not a blocker.
+5. **Shared parser extraction.** The filename-marker parse is the path flavor of the unified [parser](../parsing/README.md); the importer calls `internal/parsing` rather than keeping its v0 copy. Lands when parsing is built; until then the importer's copy is the reference. Not a blocker.
 6. **Verify step ownership.** The `imported → available` presence-verify is listed in [acquisition](../acquisition/README.md#event-bus--messaging) as a distinct step. Confirm it lives at the acquisition boundary (a thin worker reacting to `want.imported`) rather than being folded into the import worker — keeps the importer's responsibility bounded at `imported`.
 7. **Concurrency.** The worker claims a bounded batch per tick. Right knob for v1 (fixed batch size vs a worker pool sized to FS throughput)? Lean: keep the simple bounded batch; revisit only if large libraries show import as a bottleneck.
+8. **Re-gate hard-fail scope in a season pack.** One file hard-failing the re-gate fails its own task (per-task, as today) while siblings proceed — but is the **blocklist** scoped to the single file or the whole release? Lean: the release (the pack is the grabbable unit, so re-grabbing should avoid the whole pack), with the surviving siblings still imported. Pin with [acquisition](../acquisition/README.md#import-time-re-gate-asserted-verification).
 
 ## What we're explicitly not deciding here
 

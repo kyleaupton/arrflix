@@ -9,7 +9,8 @@ This doc supersedes the "Unmatched Media Resolution" line item in [the roadmap](
 ## TL;DR
 
 - Matching is its own subsystem in `internal/matcher/`. The existing identification logic (scattered across `scan.go`, `internal/identity/`, and the guessit client) gets restructured into a clean **resolver + aggregator** pipeline.
-- **Resolvers** are independent identity signals (path-embed, guessit, OSDb hash, embedded tags). They each emit candidate identities with their own confidence. They live in `internal/matcher/resolvers/`. External-system clients (e.g., `internal/guessit/`) stay where they are.
+- **Resolvers** are independent identity signals (path-embed, name-parse, OSDb hash, embedded tags). They each emit candidate identities with their own confidence. They live in `internal/matcher/resolvers/`.
+- **The string parse comes from [parsing](../parsing/README.md), not from a resolver-local parser.** The `name-parse` resolver turns the unified parser's identity hint (title/year/season/episode, with per-field confidence) into a TMDB candidate. **guessit** is demoted to an _optional fallback_ resolver — it supplies an alternate parse only when the primary parse is low-confidence, is gated by `Available()`, and is removed once Tier-1 identity parity holds (see [parsing § guessit disposition](../parsing/README.md#guessit-disposition)).
 - **Aggregator** combines votes across resolvers, validates against the metadata provider, computes a combined confidence, and bands the outcome.
 - **Tiered execution** for performance: ground-truth resolvers run first; if they produce a validated identity, more expensive resolvers are skipped. Aggregator math is unchanged — tiering is an optimization, not a correctness mechanism.
 - **Match decisions are first-class records.** Every consequential decision (auto-match, manual match, re-match, un-match) writes a `match_decision` row with full evidence. Re-matches supersede prior decisions; the chain is auditable.
@@ -74,7 +75,7 @@ Three roles:
                        │            └─────────────────────┬───────────────────┘
                        │                                  │
                        │            ┌─────────────────────────────────────────┐
-                       │            │  Tier 3: guessit, path-context          │
+                       │            │  Tier 3: name-parse, path-context       │
                        │            └─────────────────────┬───────────────────┘
                        │                                  │
                        │            ┌─────────────────────────────────────────┐
@@ -121,7 +122,8 @@ Two key shifts vs v0: (1) resolvers can emit multiple candidates with confidence
 | `path-embed`     | 1    | TRaSH-style `tmdb-X` / `tvdb-X` / `imdb-X`  | v1      | Folds in the existing `internal/identity/` regex     |
 | `embedded-tags`  | 1    | Container-level IDs (MKV/MP4 metadata)      | v2      | Cheap when present; relies on ffprobe                |
 | `osdb-hash`      | 2    | OpenSubtitles file fingerprint → IMDb       | v2      | Hash always computed in v1; lookup gated by user opt-in |
-| `guessit`        | 3    | Parsed title/year/S-E from filename         | v1      | Wraps the existing `internal/guessit/` HTTP client   |
+| `name-parse`     | 3    | Parsed title/year/S-E from the unified [parser](../parsing/README.md) | v1 | Primary string-parse signal; reads `internal/parsing` (no sidecar) |
+| `guessit`        | 3 (fallback) | Alternate parse when `name-parse` identity confidence is low | v1 → removed | Optional, gated by `Available()`; wraps `internal/guessit`; retained longest for anime, then deleted |
 | `path-context`   | 3    | Sibling-file and directory inference        | v1      | Low signal, useful tiebreaker                        |
 
 Per-library resolver toggle is a v2 surface, but the catalog is **registry-shaped from v1** — resolvers register at startup, the aggregator iterates the registered set. Adding/removing resolvers later is dropping in / out of a slice, not a code restructure.
@@ -259,8 +261,11 @@ The differentiators between *another fix-match modal* and *a matcher people enjo
 
 ```
 backend/internal/
+  parsing/                          ← the unified string parser (see parsing spec)
+                                       title/year/S-E + quality + attributes, pure Go
+
   guessit/                          ← thin HTTP client for the FastAPI sidecar
-                                       (one external system; stays its own package)
+                                       (optional fallback only; removed once parity holds)
 
   matcher/                          ← all matching logic
     service.go                      ← MatcherService (the public surface)
@@ -268,7 +273,8 @@ backend/internal/
     resolver.go                     ← Resolver interface, ExternalRef, Candidate types
     resolvers/
       pathembed.go                  ← folds in the existing internal/identity/ regex
-      guessit.go                    ← uses internal/guessit
+      nameparse.go                  ← primary string-parse signal; reads internal/parsing
+      guessit.go                    ← optional fallback; uses internal/guessit
       osdbhash.go                   (v2 stub)
       embeddedtags.go               (v2 stub)
 ```
@@ -282,7 +288,7 @@ Rule of thumb: a package gets its own module only when it owns a boundary — an
 What stays:
 - `media_item`, `media_file`, `media_file_state`, `media_file_import` schemas
 - `unmatched_file` table (with richer `suggested_matches` JSONB shape)
-- `internal/guessit/` client and the FastAPI sidecar
+- `internal/guessit/` client and the FastAPI sidecar — **transitionally**, as an optional fallback resolver only; removed once the unified [parser](../parsing/README.md) clears Tier-1 identity parity (see [parsing § guessit disposition](../parsing/README.md#guessit-disposition))
 - The 4-phase scan structure (walk → identify → enrich → persist), reframed as walk → match → enrich → persist
 - The TRaSH-style path regex (relocated to `internal/matcher/resolvers/pathembed.go`)
 
@@ -290,6 +296,7 @@ What's new:
 - `match_decision` table — the decision log artifact
 - `media_file.osdb_hash` column — populated unconditionally from v1; consumed by v2 OS resolver and v1 hygiene dedup
 - `MatcherService` with the resolver + aggregator architecture
+- The `name-parse` resolver backed by the unified [parser](../parsing/README.md), the primary identity signal (replacing guessit)
 - Confidence model + banded outcomes
 - Threshold presets in settings (Strict / Recommended / Relaxed)
 - Match-by-ID and bulk-override surfaces
@@ -310,6 +317,7 @@ Since we have zero users besides Kyle, the migration is "drop the old code, run 
 
 | Neighbor                                              | How matching interacts                                                                                                              |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **[Parsing](../parsing/README.md)**                   | Provides the string parse (title/year/S-E + per-field confidence) under the `name-parse` resolver. The matcher consumes the parse; it doesn't parse. guessit is an optional fallback parse, removed once parity holds. |
 | **Scan**                                              | Scan walks the filesystem and produces `FileRef`s; matcher consumes them. Scan loses identification logic entirely.                 |
 | **[Metadata](../metadata/README.md)**                 | Matching writes external IDs via the metadata layer's interface. Cross-provider resolution (IMDb→TMDB) goes through metadata.       |
 | **[Hygiene](../hygiene/README.md)**                   | `identity/unmatched-file` and `identity/wrong-match-suspect` are findings over matcher state. Hygiene is rollup; matcher is drill-down. |
@@ -328,7 +336,7 @@ Since we have zero users besides Kyle, the migration is "drop the old code, run 
 5. **Cross-resolver disagreement on tier short-circuit.** If Tier 1 short-circuits with high confidence and a user later re-matches manually with a different identity, the chain is auditable but the disagreement signal is lost. Should we backfill by running Tier 2/3 in the background after a short-circuit, just to populate evidence? Probably no — cheap, but storage-bloaty and not load-bearing.
 6. **Stale-ID hygiene finding.** When TMDB returns a redirect for an embedded ID, the path has a stale ID. Should this surface as a hygiene finding (`identity/stale-embedded-id`) so the user can rename? Probably yes — same shape as `layout/naming-drift`.
 7. **Per-library resolver toggle UX.** Eventually a user might want `osdb-hash-only` or `no-guessit` for a given library. The registry is shaped for this; the UI is v2. Data shape: per-library resolver-enable list, falls back to global. Confirm in the data-shape iteration.
-8. **Confidence calibration.** The bands (0.95 / 0.7 / 0.5) and the resolver weights (0.95 path-embed, 0.6 guessit, etc.) are guesses. Real tuning requires a test corpus. v1 ships with educated defaults; per-user threshold and per-resolver weight overrides come later as needed.
+8. **Confidence calibration.** The bands (0.95 / 0.7 / 0.5) and the resolver weights (0.95 path-embed, 0.6 name-parse, etc.) are guesses. Real tuning requires the labeled corpus — the same one [parsing](../parsing/README.md#testing-strategy--parity-as-a-ci-gate) builds, which calibrates both. v1 ships with educated defaults; per-user threshold and per-resolver weight overrides come later as needed.
 9. **Validation provider abstraction.** The aggregator calls "the metadata provider" for ID validation. The metadata spec lays out a provider seam. The matcher writes against whatever the metadata layer exposes — exact contract resolves when external_id work lands. Order of operations: metadata's external_id pattern ships first, matcher v1 uses it.
 10. **Resolver evidence size cap.** A `guessit` raw response or a TMDB candidate list can be sizable JSON. Hard cap on `evidence` JSONB size per decision? Probably yes, with a "truncated" flag. 8KB feels generous.
 11. **Drop-in detection latency.** Inotify on library directories vs periodic re-scan? Inotify is real-time but fragile across NFS/SMB; re-scan is reliable but laggy. Probably both, configurable. Out of scope for matcher v1 — owned by scan.
