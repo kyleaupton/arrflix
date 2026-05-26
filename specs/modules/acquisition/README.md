@@ -313,7 +313,7 @@ Never a dead link, never a stuck want. (An optional _grace window_ — hold the 
 
 ### Watch-state coupling is different — and legitimate
 
-`cleanup_after_watch` retention ([requests](../requests/README.md#retention)) genuinely depends on a media server, because "has the user watched it" is only knowable from the player. That coupling is unavoidable and stays. It degrades gracefully: with no media server, `cleanup_after_watch` simply never triggers (treat as `keep_forever`, or pair with `keep_for_days`). Do not confuse it with _availability_ coupling, which we have removed.
+[Hygiene](../hygiene/README.md#retention--cleanup-the-home-for-request-retention)'s optional watch-based cleanup rule genuinely depends on a media server, because "has this been watched" is only knowable from the player. That coupling is legitimate and stays — but it's a *read* feeding an optional cleanup heuristic, never a gate. It degrades gracefully: with no media server, the watch-based rule simply never fires, and time-based cleanup (which needs no server) is unaffected. Do not confuse it with _availability_ coupling, which we have removed. (Retention is owned by hygiene as a library-wide policy, not by requests — see [requests → where retention went](../requests/README.md#where-retention-went).)
 
 ## What stays the same
 

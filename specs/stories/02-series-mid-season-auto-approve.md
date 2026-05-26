@@ -61,13 +61,13 @@ Follows the template established by [Story 1](./01-happy-path-auto-approve.md): 
 
 **Behind the scenes:**
 
-- `POST /requests { tmdb_id, type: "series", tier: "HD", preset: "add_to_library" }`
-- Preset resolves to flags: `retention: keep_forever`, `tier_floor: hd`, `tier_ceiling: hd`, `scope: all`, `monitor_future: true`.
+- `POST /requests { tmdb_id, type: "series", tier: "hd", scope: "all" }`
+- The two request choices: `tier: hd` and `scope: all` (whole series — which *includes future episodes*; there is no separate `monitor_future` flag in iteration 2).
 - Request service:
   1. Checks `Friend.requests.create:series:hd` → ok
-  2. Quota check: well under soft threshold → eligible for auto-approve
+  2. Quota check: under the cap → eligible for auto-approve (the binary quota check, iteration 2 — no soft-threshold band)
   3. Evaluates approval: `requests.auto_approve:series:hd` is true → auto-approve fires
-  4. Transactionally writes `request` row: `{ id, requester_id, tmdb_id, type: series, tier_floor: hd, tier_ceiling: hd, retention: keep_forever, scope: all, monitor_future: true, status: approved, auto_approved: true }`
+  4. Transactionally writes `request` row: `{ id, requester_id, tmdb_id, type: series, tier: hd, scope: all, status: approved, auto_approved: true }`
   5. Spawn step: no existing tracking for this series → create new [[tracking]] row: `{ id, media_item_id, scope_rule: all, quality_profile_id: <hd>, upgrade_behavior: propose, schedule_strategy: smart, requesters: [Friend], state: active }`
   6. Updates request: `status: spawned, spawned_tracking_id: <tracking_id>`
   7. Emits `tracking.created` event ([realtime](../modules/realtime/README.md))
@@ -245,7 +245,7 @@ Story 1 covered the per-want pipeline. Story 2 adds the **persistent intent** an
 
 - **Tier mismatch / 4K gating** — Friend can only request HD. Story 3 (pending) covers the 4K request path.
 - **Manual approval queue** — Friend has `auto_approve`. Manual approval flow is its own story.
-- **Scope ≠ `all`** — Friend uses the "Add to library" preset (everything). Variant stories: `latest_season_plus_future`, `pilot`, per-episode overrides.
+- **Scope ≠ `all`** — Friend requests the whole series (everything). Variant stories: a specific season, `pilot`, and the richer scope rules / per-episode overrides managed on the tracking post-spawn.
 - **Multi-requester** — Bob requests Severance mid-acquisition while Friend's tracking is in flight. Owned by tracking's [multi-requester semantics](../modules/tracking/README.md#multi-requester-semantics); deserves its own story (the proposed Story 07).
 - **Already partially in library** — Severance S1 already imported (e.g., from a different request or manual drop-in) when Friend subscribes. Scope evaluation finds existing files and skips those wants.
 - **Failed grab for some episodes** — pack found for S1, but S2 has no acceptable release. Wants stay `searching`; back-off kicks in; admin sees nothing landed for that subset. Needs the "couldn't find" notification UX (proposed Story 04).
@@ -273,6 +273,6 @@ Story 1 covered the per-want pipeline. Story 2 adds the **persistent intent** an
 
 8. **SearchScheduler visibility for the user.** "We'll search for S03E05 starting 1 hour after Friday's air time" is helpful UX. Where does that surface — on the subscription card, the episode cell, both? And do we let users force-search early?
 
-9. **Mid-flight scope change.** Friend changes the preset to "Just this season" 5 minutes after submitting, while S1 + S2 packs are still downloading. Do those downloads cancel (out-of-scope now) or complete (already paid the bandwidth cost)? Lean: let in-flight downloads complete, cancel `searching` wants, narrow future scope. Pin in tracking.
+9. **Mid-flight scope change.** Friend narrows scope to "Just this season" 5 minutes after submitting, while S1 + S2 packs are still downloading. Do those downloads cancel (out-of-scope now) or complete (already paid the bandwidth cost)? Lean: let in-flight downloads complete, cancel `searching` wants, narrow future scope. Pin in tracking.
 
 10. **First-import refresh latency — resolved by decoupling.** Wants reach `available` on disk-verify, so a slow Plex scan no longer holds them in `imported`. The "waiting on Plex" condition becomes a per-file _propagation_ badge ("syncing to your server…") layered on an already-`available` want — a secondary signal, not a want state. The open part is purely cosmetic: how prominently to surface propagation-pending in the grid. (See [acquisition → Media-server propagation](../modules/acquisition/README.md#media-server-propagation-decoupled-from-available).)

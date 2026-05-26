@@ -9,7 +9,7 @@ This doc is the companion to [tracking](../tracking/README.md). Tracking decides
 ## TL;DR
 
 - Two concepts: a **tier** is the user-facing simple choice (HD, 4K); a **profile** is the admin-managed config behind it.
-- One profile per tier. Profiles can also exist outside of tier designation, for admin / tracking use.
+- A tier resolves to a profile **per media type** — an HD-movie profile and an HD-series profile are distinct, because movie and episode releases have incompatible size ranges, release-group ecosystems, and quality lists. One user-facing label, type-scoped configs behind it. Profiles can also exist outside of tier designation, for admin / tracking use.
 - Profile owns: quality list + ordering, cutoff, hard gates, soft scoring (custom formats), indexer scoping.
 - Three admin-UX tiers: **preset** (90% of users), **profile editor** (power), **custom formats** (advanced). Defaults must be great; advanced surfaces stay hidden.
 - Selection algorithm: filter by hard gates → pick best allowed quality bin with a release → pick highest-scored release in that bin → deterministic tie-break.
@@ -28,7 +28,7 @@ Different audiences need different surfaces:
 A single "quality knob" can't serve both. So:
 
 - **Tier** is the requester-facing concept. Today: `HD`, `4K`. The label tells a user what they're getting; the system handles the rest.
-- **Profile** is the admin-facing config. The HD tier *resolves to* a specific profile that the admin has tuned. The 4K tier resolves to another. Profiles outside of tier designation can also exist — for example, a tracking record that wants a "best effort 720p" or a more aggressive "anime profile."
+- **Profile** is the admin-facing config. The HD tier *resolves to* a specific profile that the admin has tuned — resolved **per media type**, so HD-for-movies and HD-for-series are separately tunable configs behind the one label. The 4K tier resolves to its own profiles. Profiles outside of tier designation can also exist — for example, a tracking record that wants a "best effort 720p" or a more aggressive "anime profile."
 
 The tier is a **stable contract** with users. The profile is its **mutable implementation**. Admins can change what "HD" means without changing the request UX.
 
@@ -65,12 +65,14 @@ A profile encodes the following concerns:
 
 ## Tiers
 
-A tier is a small, system-recognized set of designations. Each tier is bound to exactly one profile at any given time.
+A tier is a small, system-recognized set of designations. A tier **resolves to a profile per media type** — the binding is keyed on `(tier, media_type)`, so the `HD` label points at one profile for movies and another for series, and profiles are correspondingly **type-scoped**. The binding is extensible to further keys (per requester-group, per library) but those are deferred — see [open questions](#open-questions).
+
+This split is not cosmetic. Movie and episode releases have incompatible per-file size ranges (a sane movie size gate would reject every episode, and vice-versa), different release-group ecosystems, and TV-only concepts like season packs — it's the reason Sonarr and Radarr ship as separate quality systems.
 
 Initial tier set:
 
-- **HD** — the default tier. Bound to the admin's HD profile.
-- **4K** — opt-in tier. Bound to the admin's 4K profile if 4K is enabled; otherwise absent from the request UI.
+- **HD** — the default tier. Resolves to the admin's HD movie / HD series profiles.
+- **4K** — opt-in tier. Resolves to the admin's 4K profiles if 4K is enabled; otherwise absent from the request UI.
 
 Tier registry is extensible (admins may want SD, 8K, "Source" eventually), but iteration 1 keeps it to HD and 4K. Adding tiers later doesn't break existing requests because tier is a forward-compatible enum, not a freeform string.
 
@@ -201,7 +203,7 @@ To keep scope tight, these adjacent concerns live elsewhere:
 | Neighbor                | How quality profile interacts                                                                 |
 | ----------------------- | --------------------------------------------------------------------------------------------- |
 | **Tracking**            | Tracking references a profile by ID. Same profile can be used by many tracking records.       |
-| **Requests**            | Request specifies a tier; request service resolves tier → profile when creating the want.     |
+| **Requests**            | Request specifies a tier; request service resolves `(tier, media type) → profile` when creating the want (media type is known at want-spawn). |
 | **Wants**               | Each want carries the resolved `quality_profile_id` from its origin (tier resolution or tracking). |
 | **Auto-select worker**  | Reads the profile to gate + score search results.                                             |
 | **Indexer service**     | Profile references the indexer set (full or scoped) for searches.                             |

@@ -9,7 +9,8 @@ This doc complements [acquisition](../acquisition/README.md) (which gets files _
 ## TL;DR
 
 - Hygiene is the **retrospective** view — *arr stacks are forward-time-biased; nobody owns the "what's broken in my library now" question. This is the wedge.
-- Four categories: **integrity** (FS ↔ DB consistency), **quality drift** (files exist but aren't ideal), **layout** (naming, duplicates), **identity** (matching problems).
+- Five categories: **integrity** (FS ↔ DB consistency), **quality drift** (files exist but aren't ideal), **layout** (naming, duplicates), **identity** (matching problems), **lifecycle** (retention / cleanup — what's worth *removing*).
+- **Retention / cleanup lives here**, not on the request. A library-wide operator policy decides what to clean up, with two Arrflix-owned triggers — **age** (works with no media server) and an **explicit done signal** — and media-server **watch-state as an optional accelerant** that makes a file cleanup-eligible sooner. Additive, never load-bearing: no server → the watch-based rule simply never fires, time-based cleanup is unaffected.
 - Each finding kind is a **rule** with configurable severity (`off | info | warn | error`), fix mode (`auto | propose | observe`), and optional path-based overrides — the ESLint model.
 - **Findings are first-class records**, not just dashboard counts. Each has a lifecycle (`detected → resolved | dismissed`), history, and a story.
 - Computation is **nightly audit (authoritative) + opportunistic scan-time backfill (free updates)**. Dashboard reads cached findings; "Re-run audit" for impatient users.
@@ -38,8 +39,9 @@ The wedge is to make this **observable, trended over time, and remediable in-app
 | **quality**  | Files exist but don't match current standards | Suboptimal but functional           |
 | **layout**   | Naming, organization, duplicates              | Cosmetic, Plex hygiene              |
 | **identity** | Matching / metadata problems                  | Wrong content in the right slot     |
+| **lifecycle**| Content that's a candidate for *removal* per the retention policy | Storage reclaim (opt-in, never automatic surprise) |
 
-The integrity category is where the dashboard *earns trust* — surfacing real data risk is high-stakes and high-impact. Quality drift is where it gets *addictive* — visible, fixable, satisfying. Layout is the long tail.
+The four entropy categories (integrity / quality / layout / identity) are about disorder that *accumulated*; **lifecycle** is the inverse — *intentional* storage reclaim driven by the [retention policy](#retention--cleanup-the-home-for-request-retention). It reuses the same finding / remediation / destructive-preflight machinery but is opt-in by default (most users keep everything). The integrity category is where the dashboard *earns trust* — surfacing real data risk is high-stakes and high-impact. Quality drift is where it gets *addictive* — visible, fixable, satisfying. Layout is the long tail.
 
 ## The catalog
 
@@ -61,6 +63,8 @@ Each finding type is a **rule** with a stable ID, default severity, default fix 
 | `layout/duplicate-files`         | Two or more files claim the same identity                         | `warn`                         | `propose`        | `ignore_intentional_versions: true`          |
 | `identity/unmatched-file`        | Scanner found a file it couldn't identify                         | `error`                        | `propose`        | —                                            |
 | `identity/wrong-match-suspect`   | Parsed title/year disagrees with stored title/year                | `warn`                         | `propose`        | `title_similarity_threshold: 0.7`            |
+| `lifecycle/age-cleanup`          | File older than the configured grace window since fulfillment     | `off`                          | `propose`        | `grace_days`, scope globs                    |
+| `lifecycle/watched-cleanup`      | File watched (per media-server watch-state) and past a short grace | `off`                          | `propose`        | `grace_days`, `whose_watch`                  |
 
 The catalog is **append-only** as we grow. New rules ship with sensible defaults and a "new since last release" badge on the rules screen, so users with `error`-everything configs aren't surprised by score drops.
 
@@ -221,6 +225,28 @@ Every batch action that touches the filesystem goes through a preflight:
 
 Cost of a wrong batch click is too high to skip this.
 
+## Retention & cleanup (the home for "request retention")
+
+Iteration 1 of [requests](../requests/README.md#where-retention-went) modeled retention as a per-request flag (`keep_forever` / `cleanup_after_watch` / `keep_for_days(N)`). That made the media server **load-bearing** for a request feature — `cleanup_after_watch` did nothing without watch-state, silently inverting the user's intent into "keep forever." It also asked a casual requester to reason about a file's eventual deletion, which is an operator concern, not a request-time one.
+
+So retention lives here, as a **library-wide policy** the operator configures once. It's the `lifecycle/*` category above. The model follows the system-wide rule: **a behavior's trigger must be Arrflix-owned; a media server can only enrich or accelerate.**
+
+**Two Arrflix-owned triggers** (a file becomes cleanup-eligible when either fires):
+
+- **Age** — `lifecycle/age-cleanup`: N days since fulfillment. Needs no media server; always works. This is the honest floor that `keep_for_days(N)` used to express.
+- **Explicit done** — a user (or admin) marks a title "done, clean it up." Arrflix owns this signal directly.
+
+**Watch-state is the optional accelerant**, never a sole trigger:
+
+- `lifecycle/watched-cleanup` fires when [media-server watch-state](../media-server/README.md#watch-state-ingestion--the-legitimate-coupling) reports the title watched, past a short grace window. It's effectively the explicit-done signal, auto-clicked by the player.
+- **No media server → the rule simply never has a signal**, and nothing breaks: time-based cleanup still runs, and the user can still mark done manually. This is the additive-not-load-bearing posture, mirrored exactly from the [availability decoupling](../acquisition/README.md#media-server-propagation-decoupled-from-available). Watch-state can only ever make cleanup happen *sooner*; its absence never makes a file stick around against the policy.
+
+**Hardlink-aware, by reusing the existing machinery.** "Eligible for cleanup" ≠ "delete now." A file flagged by a `lifecycle/*` rule goes through the same [hardlink intelligence](#killer-ux-moves) and [destructive preflight](#destructive-preflight) as a broken-hardlink fix: if the file is still held alive by torrents or other links, the dashboard surfaces *"removing this won't free space until you also …"* rather than silently deleting. Default fix mode is `propose` (one-tap, with preflight); `auto` is available for the operator who trusts it.
+
+**Defaults to off.** Most users keep everything — the `lifecycle/*` rules ship `off`, so the library never deletes anything until the operator opts in. Because they're `off`/`info`-weight, they don't drag the [health score](#health-score) (not cleaning up a watched movie isn't a health problem).
+
+Per-user / multi-retention ("watch-once for Alice, keep-forever for Bob on the *same* hardlinked file") is **parked** — it's a richer storage feature for a later iteration, not a v1 policy. v1 is a single library-wide policy.
+
 ## Killer UX moves
 
 Janitor screens are useful. These are what make the dashboard *cool*:
@@ -242,6 +268,8 @@ Janitor screens are useful. These are what make the dashboard *cool*:
 | **[Quality profiles](../quality-profiles/README.md)** | `quality/upgrade-candidate` re-uses upgrade-detection; `quality/advertised-mismatch` is the [re-gate](../quality-profiles/README.md#import-time-re-gate)'s soft-fail delta. Hygiene surfaces; quality-profiles owns the definitions. |
 | **[Tracking](../tracking/README.md)**                 | Tracking states ("active subscription, last episode aired 21d ago, no file") inform a future `identity/missing-aired-episode` rule. Cross-references want-debugger view. |
 | **[Metadata](../metadata/README.md)**                 | `identity/wrong-match-suspect` uses parsed-title-vs-stored-title comparison; depends on metadata freshness.                       |
+| **[Requests](../requests/README.md)**                 | Owns retention/cleanup that iteration-1 requests carried. Requests no longer carry a retention flag; the `lifecycle/*` policy is operator-set and library-wide. |
+| **[Media-server](../media-server/README.md)**         | Supplies watch-state, the optional accelerant for `lifecycle/watched-cleanup`. Absent server → the rule never fires; time-based cleanup is unaffected. |
 | **Name templates (existing)**                         | Template changes regenerate `layout/naming-drift` findings; the batch re-render reads each file's [persisted parse](../parsing/README.md#persisted-parse) (lossless for grabbed, best-effort for scanned).                |
 | **Import (existing)**                                 | Hooks into import-error pathways: failed imports surface as `identity/unmatched-file`; the [re-gate](../quality-profiles/README.md#import-time-re-gate)'s soft-fail writes `quality/advertised-mismatch` at placement. |
 | **[Notifications](../notifications/README.md)**       | Critical findings push immediately; warnings batched into digest. Per-user preferences.                                            |
@@ -306,6 +334,8 @@ A third surface — **the finding story view** — is reached by drill-down from
 10. **Notification routing for hygiene.** Per-rule, per-severity, per-user? Or just "send me a digest"? Should align with the [notifications](../notifications/README.md) subsystem — defer to that spec.
 11. **Multi-library scoping.** Per-library audit view, all-libraries view, or both? Multi-library users will want both. Probably defaults to all-libraries with a filter.
 12. **`quality/advertised-mismatch` remediation.** Default is `observe` (informational — the file is fine, just over-advertised). Worth a `propose` action ("blocklist this group / re-search for an honest release")? It overlaps the upgrade path. Lean: `observe` in v1; revisit if users want a one-tap "get the real thing."
+13. **`lifecycle/watched-cleanup` "whose watch" semantics.** The `whose_watch` option: does the rule fire when *anyone* watches, or a specific user? And for content multiple people care about, fire on *either* or *all* watching? Lean: simplest useful default is "anyone watched + past grace," with `whose_watch` reserved for later refinement. Pin alongside the parked per-user multi-retention work.
+14. **Manual "mark done" surface.** The explicit-done trigger needs a home — a button on the media detail page, owned by the web UI. Confirm it writes the same cleanup-eligibility signal the watch-state accelerant does, so the two paths converge. UI-iteration detail.
 
 ## What we're explicitly not deciding here
 

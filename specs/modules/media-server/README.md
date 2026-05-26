@@ -13,13 +13,13 @@ The hard architectural decision is already made elsewhere and is **not** relitig
 - **Propagation** is tracked per-`(media_file, media_server)` in a dedicated record (`state ∈ pending | visible | unknown`, `external_ref` = rating key / item id, `synced_at`). The rating key lives **here**, never on `media_file`.
 - Propagation is populated by **(a)** the server webhook (fast path) or **(b)** a reconciliation poll (backfill). Both are **idempotent upserts** — order and duplication don't matter. Poll runs **only while the server is healthy**.
 - **Outbound nudge** (Plex partial-refresh / Jellyfin scan) is **debounced per library section** — Story 02's 23-file import fires *one* refresh, not 23.
-- **Watch-state ingestion** is the *one* legitimate coupling: `cleanup_after_watch` retention needs "has the requester watched it," which only the player knows. Webhook when available, **poll always as the floor** (Plex server-side play webhooks are Plex Pass-only). Degrades to "never fires" with no server.
+- **Watch-state ingestion** is the *one* legitimate coupling: [hygiene](../hygiene/README.md)'s optional watch-based cleanup policy needs "has this been watched," which only the player knows. Webhook when available, **poll always as the floor** (Plex server-side play webhooks are Plex Pass-only). Degrades to "never fires" with no server — purely additive, never load-bearing.
 - **`MediaServerService`** (outbound nudge + inbound webhook/reconciliation/watch-state) with a **`MediaServerSync`** worker. Emits **`media_file.propagated`** (consumed by [notifications](../notifications/README.md) for deep-link upgrade + SSE).
 - **Identity stays in [users](../users/README.md).** This spec owns the *server connection* and *library/playback integration*; the Plex-OAuth-as-login bits stay with users. The bridge is the per-user watch-state mapping.
 
 ## Why this is its own spec
 
-The propagation contract is small, but it touches five subsystems (acquisition, notifications, requests retention, hygiene cleanup, connectivity-health) and it's the natural home for a moving target — Plex first, Jellyfin next, possibly two servers at once. Folding it into acquisition would re-couple the want lifecycle to a downstream consumer, which is exactly what the structural pass tore apart. Folding it into notifications would conflate "is it visible in Plex" (a fact about the world) with "tell the user it's ready" (a delivery concern).
+The propagation contract is small, but it touches five subsystems (acquisition, notifications, hygiene retention/cleanup, watch-state ingestion, connectivity-health) and it's the natural home for a moving target — Plex first, Jellyfin next, possibly two servers at once. Folding it into acquisition would re-couple the want lifecycle to a downstream consumer, which is exactly what the structural pass tore apart. Folding it into notifications would conflate "is it visible in Plex" (a fact about the world) with "tell the user it's ready" (a delivery concern).
 
 It earns its own spec for the same reason downloaders does: it's a **provider abstraction with one concrete implementation today and a clear second**, plus a runtime-health surface, plus inbound/outbound integration mechanics that no single neighbor should own.
 
@@ -117,13 +117,13 @@ The load-bearing row is the first column: **a media server being down has zero e
 
 ### Watch-state ingestion — the legitimate coupling
 
-`cleanup_after_watch` retention ([requests](../requests/README.md#retention)) genuinely needs "has the requester watched it," which only the player knows. This is the one place a coupling to the server is correct — and it's a *read*, not a gate.
+[Hygiene](../hygiene/README.md)'s optional watch-based cleanup policy genuinely needs "has this been watched," which only the player knows. This is the one place a coupling to the server is correct — and it's a *read*, not a gate.
 
-- **Per-user mapping.** A play event carries the *server's* account identity (Plex account, Jellyfin user). Cleanup is per-request, so "watched" means the **requester** watched it → we need to map server-account → Arrflix user. That mapping field lives on the Arrflix user and is owned by [users](../users/README.md) (it's the same Plex account already used for [Plex SSO](#credentials--the-sso-boundary)); this spec *consumes* it.
+- **Per-user mapping.** A play event carries the *server's* account identity (Plex account, Jellyfin user). To know *who* watched something, we map server-account → Arrflix user. That mapping field lives on the Arrflix user and is owned by [users](../users/README.md) (it's the same Plex account already used for [Plex SSO](#credentials--the-sso-boundary)); this spec *consumes* it. Hygiene's policy decides whose watch matters (anyone, a specific user); this spec just records who played what.
 - **Webhook when available, poll as the floor.** Plex's server-side play/scrobble webhooks are a **Plex Pass feature** — non-Plex-Pass installs get none. So watch-state cannot be webhook-only: the worker polls the sessions/history API as the baseline and treats webhooks as a latency optimization when present. Jellyfin exposes playback via its webhook plugin + sessions API (modeled).
-- **Degrades to nothing.** No server, or watch-state unobtainable → `cleanup_after_watch` simply never fires, behaving like `keep_forever` (optionally paired with `keep_for_days(N)`), exactly as [requests](../requests/README.md#retention) specifies. No want, no file, no retention decision is ever *stuck* waiting on watch-state — it just doesn't trigger the optional cleanup.
+- **Degrades to nothing.** No server, or watch-state unobtainable → hygiene's watch-based cleanup rule simply never has a signal to fire on. No want, no file, no cleanup decision is ever *stuck* waiting on watch-state — the optional cleanup just doesn't trigger, and time-based cleanup (which needs no server) is unaffected.
 
-This is kept **deliberately distinct** from availability coupling (which we removed). Watch-state feeds *retention*, never the want lifecycle.
+This is kept **deliberately distinct** from availability coupling (which we removed). Watch-state feeds an *optional cleanup heuristic*, never the want lifecycle. It is the same additive-not-load-bearing posture the rest of the system follows — a media server enriches and accelerates, it never gates.
 
 ### Notifications & lazy deep-link resolution
 
@@ -153,7 +153,7 @@ v1 implements the Plex column. Jellyfin is a driver + credential-shape addition 
 
 - **The want lifecycle / `available`.** Owned by [acquisition](../acquisition/README.md). This spec is strictly downstream of `available`.
 - **Plex-as-login (SSO/OAuth).** Owned by [users](../users/README.md). This spec owns the *server connection*, not user identity. See below.
-- **Retention policy.** Owned by [requests](../requests/README.md). This spec only *supplies* watch-state; requests/hygiene decide what to do with it.
+- **Retention / cleanup policy.** Owned by [hygiene](../hygiene/README.md). This spec only *supplies* watch-state; hygiene decides what to do with it.
 - **The cleanup worker.** Owned by [hygiene](../hygiene/README.md). It reads watch-state + retention; it does not live here.
 - **The connectivity-health pattern itself** (worker shape, hysteresis, audit hook) — this spec is a *producer* conforming to it, not its definition.
 - **Notification delivery / routing.** Owned by [notifications](../notifications/README.md). This spec emits `media_file.propagated`; notifications decides who hears about it.
@@ -176,8 +176,7 @@ Clean rule of thumb: **identity in, library/playback out.** Anything about *who 
 | [Acquisition](../acquisition/README.md)                        | Upstream. Emits `want.available` / writes `media_file`; this spec reacts *after* `available`. Never gates it. The contract lives in acquisition's [propagation section](../acquisition/README.md#media-server-propagation-decoupled-from-available). |
 | [Connectivity-health](../../patterns/connectivity-health/README.md) | Pattern this spec produces. Probe, `version_mismatch` extension, consumer mapping declared here; worker shape + audit hook owned by the pattern. |
 | [Notifications](../notifications/README.md)                    | Consumes `media_file.propagated` (deep-link upgrade + SSE) and subscribes to `media_server.health` for `failed`-tier admin alerts.          |
-| [Requests](../requests/README.md)                              | `cleanup_after_watch` retention consumes the watch-state this spec ingests. The legitimate coupling.                                        |
-| [Hygiene](../hygiene/README.md)                                | The cleanup worker reads watch-state + retention to decide what's safe to remove. This spec supplies the watch-state signal only.           |
+| [Hygiene](../hygiene/README.md)                                | Owns the optional watch-based cleanup policy that consumes the watch-state this spec ingests. The legitimate coupling. This spec supplies the watch signal only. |
 | [Users](../users/README.md)                                    | Owns Plex SSO identity + per-user Plex account id; this spec reads that id for watch-state per-user mapping. Boundary above.                |
 | [Libraries](../libraries/README.md)                            | Section mapping ties a server section to an Arrflix library; path-mapping override resolves container-mount differences.                    |
 | [Scan](../scan/README.md)                                      | Shares the verify authority (file-on-disk truth). Correlation reuses the path knowledge scan/import establish.                              |
@@ -196,7 +195,7 @@ Clean rule of thumb: **identity in, library/playback out.** Anything about *who 
 
 - **`media_file`** — [libraries](../libraries/README.md) / [scan](../scan/README.md). Server-agnostic; carries no rating key.
 - **user → Plex account id** — [users](../users/README.md). Read for watch-state per-user mapping.
-- **request retention flags + watch state** — [requests](../requests/README.md). This spec supplies the watch signal; requests/hygiene own the decision.
+- **retention / cleanup policy + watch state** — [hygiene](../hygiene/README.md). This spec supplies the watch signal; hygiene owns the decision.
 
 ## Open questions
 
@@ -205,7 +204,7 @@ Clean rule of thumb: **identity in, library/playback out.** Anything about *who 
 3. **Targeted-poll delay after nudge.** How long to wait for a confirming webhook before firing a targeted reconciliation poll? Too short = redundant polls; too long = laggy deep links. Lean: ~30–60s, tunable; the slow sweep covers the tail regardless.
 4. **Grace-window default.** Modeled, defaults off. Worth shipping the *toggle* in v1, or defer the whole thing to iteration 2? Lean: defer the implementation; keep the design note so the notification flow already anticipates it.
 5. **Watch-state poll cost.** Polling sessions/history on every server on a cadence has a cost proportional to library size for some endpoints. Need to confirm Plex/Jellyfin expose an *incremental* "watched since T" query rather than a full history walk. Lean: incremental where the API allows; flag if it doesn't.
-6. **"Watched" semantics for shared accounts.** If multiple Arrflix users share one Plex account, "the requester watched it" is ambiguous. Lean: treat any play on the mapped account as the requester watching; document the limitation. Multi-user-per-account is an edge case for v1.
+6. **"Watched" semantics for shared accounts.** If multiple Arrflix users share one Plex account, attributing a play to a specific user is ambiguous. Lean: treat any play on the mapped account as that user watching; document the limitation. Multi-user-per-account is an edge case for v1. (Whose watch a cleanup rule cares about is hygiene's call, not this spec's.)
 7. **Persistent-unreachable → `failed` TTL.** When does a down server escalate from quiet `blocked` to a loud admin alert? Per the connectivity-health pattern this is an implementer threshold. Lean: longer than downloaders (a server being down doesn't break acquisition) — order of 10–15 min.
 8. **Jellyfin webhook-plugin dependency.** Jellyfin's inbound events require the operator to install the webhook plugin. When the Jellyfin driver lands, does Arrflix hard-require it, or fall back to poll-only? Lean: poll-only floor (same as Plex non-Pass), webhook optional. Out of v1 scope regardless.
 
@@ -224,7 +223,7 @@ Clean rule of thumb: **identity in, library/playback out.** Anything about *who 
 - [Acquisition](../acquisition/README.md) — upstream; owns the want lifecycle and the propagation contract this spec implements.
 - [Connectivity-health](../../patterns/connectivity-health/README.md) — the pattern this spec produces.
 - [Notifications](../notifications/README.md) — consumes `media_file.propagated`; lazy deep-link resolution.
-- [Requests](../requests/README.md) — `cleanup_after_watch` retention; the legitimate watch-state coupling.
+- [Hygiene](../hygiene/README.md) — owns the watch-based cleanup policy; the legitimate watch-state coupling.
 - [Hygiene](../hygiene/README.md) — cleanup worker that reads watch-state + retention.
 - [Users](../users/README.md) — Plex SSO identity boundary; per-user account mapping.
 - [Libraries](../libraries/README.md) / [Scan](../scan/README.md) — `media_file` truth, section/path mapping, verify authority.

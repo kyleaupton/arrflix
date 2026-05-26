@@ -52,17 +52,17 @@ Follows the [Story 1](./01-happy-path-auto-approve.md) template.
 
 **User-visible:**
 
-- Bob picks the "Add to library" preset, taps Request.
+- Bob picks "whole series", taps Request.
 - Pill: **"Subscribing… adding Seasons 1–2"**.
 - Toast: "Request submitted — we'll grab the back catalog and keep following."
 
 **Behind the scenes:**
 
-- `POST /requests { tmdb_id, type: "series", tier: "hd", preset: "add_to_library" }` → flags `retention: keep_forever`, `scope: all`, `monitor_future: true`.
+- `POST /requests { tmdb_id, type: "series", tier: "hd", scope: "all" }` — the two request choices (`scope: all` includes future episodes; no separate `monitor_future` flag).
 - Request service:
   1. Validates `Bob.requests.create:series:hd` → ok.
-  2. Quota check under threshold; `requests.auto_approve:series:hd` held → auto-approve fires.
-  3. Writes Bob's `request` row: `{ requester_id: bob, scope: all, status: approved, auto_approved: true }`. **Bob's request stores its own pre-union scope (`all`)** per [requests](../modules/requests/README.md#scope-series-only).
+  2. Quota check under the cap; `requests.auto_approve:series:hd` held → auto-approve fires.
+  3. Writes Bob's `request` row: `{ requester_id: bob, tier: hd, scope: all, status: approved, auto_approved: true }`. **Bob's request stores its own pre-union scope (`all`)** per [requests](../modules/requests/README.md#scope-series-only).
   4. Spawn step: tracking for this series **already exists** → Bob **joins** it (per [requests → series mapping](../modules/requests/README.md#series)), rather than creating a second tracking.
   5. Bob's request transitions `approved → spawned`, recording `spawned_tracking_id: <existing tracking>`.
 
@@ -109,15 +109,15 @@ Compressed [Story 2](./02-series-mid-season-auto-approve.md#phase-4--auto-select
 
 - Tracking: `requesters: [Alice, Bob]`, effective scope `all`, `state: active`.
 - New S3 episodes continue to air; both Alice and Bob want S3, so S3 episode-imported notifications go to **both**.
-- New S1/S2 content is moot (complete seasons), but upgrade-watching now applies to S1/S2 as well (Bob's `keep_forever` + the tracking's `upgrade_behavior` covers them).
+- New S1/S2 content is moot (complete seasons), but upgrade-watching now applies to S1/S2 as well (the tracking's `upgrade_behavior` covers them).
 - The library has all 29 episodes (modulo unaired S3). One physical copy of each; both requesters "want" the S3 ones, only Bob "wants" the S1/S2 ones.
 
-### Phase 6 — A wrinkle: Alice's and Bob's intents diverge (illustrative)
+### Phase 6 — What is (and isn't) per-requester (illustrative)
 
 This phase illustrates the per-requester intent distinction without changing state:
 
-- If Alice's request had `retention: cleanup_after_watch` and Bob's is `keep_forever`, an S3 file serves **both intents from one hardlink** ([requests hardlink-aware multi-retention](../modules/requests/README.md#retention)). The file is cleanup-eligible only when **all** requesters' intents agree it's removable. Alice watching her S3 episode does not free the file, because Bob's `keep_forever` still holds it.
-- In this story both use `keep_forever`, so no divergence triggers — but the model carries each requester's intent independently, and the want/file is the arbitration point. (Full retention/cleanup behavior is [hygiene](../modules/hygiene/README.md) + watch-state, a foundation gap; flagged, not exercised.)
+- **Scope and tier are per-requester.** Each requester's scope (Alice `season(3)`, Bob `all`) and tier live independently on their `tracking_requester` row and coexist on the one tracking. If they wanted different tiers (Alice HD, Bob 4K) those would coexist too — that's the divergent-tier / upgrade case, [out of scope here](#out-of-scope-variant-stories) (Story 06).
+- **Retention is *not* per-requester.** Iteration 1 modeled a per-request `retention` flag plus a hardlink-aware "watch-once for Alice, keep-forever for Bob on one file" scheme. Iteration 2 removed it: keeping and cleanup are now a single library-wide [hygiene](../modules/hygiene/README.md) policy, and per-user multi-retention is parked for a later storage iteration. So there is no per-requester retention divergence to arbitrate — the shared S3 file is governed by one library policy regardless of who tracks it.
 
 ### Phase 7 — Bob departs: scope narrows (T+~days)
 
@@ -142,7 +142,7 @@ This phase illustrates the per-requester intent distinction without changing sta
 **The "what happens to acquired files" decision, committed:**
 
 - Scope narrowing affects what the tracking **wants going forward** (future acquisition + upgrade-watching), **not** what's already on disk. Deleting acquired content because a requester left would be hostile and surprising.
-- The S1/S2 files are now governed only by **retention** (Bob's `keep_forever` request is gone; if no other request references them, they fall to the library's default retention). Whether they eventually become cleanup-eligible is [hygiene](../modules/hygiene/README.md)'s call, not tracking's. See [Open question #5](#open-questions).
+- The S1/S2 files are now governed only by the library-wide [hygiene](../modules/hygiene/README.md) retention policy — there's no per-request retention to lose when Bob leaves (retention isn't a request concern in iteration 2). Whether they eventually become cleanup-eligible is hygiene's call, not tracking's. See [Open question #5](#open-questions).
 
 **User-visible (Alice):**
 
@@ -170,7 +170,7 @@ Most of [Story 2](./02-series-mid-season-auto-approve.md)'s requirements carry o
 
 ### Tracking requester-set + scope recomputation
 
-- **`tracking_requester` association** — one row per `(tracking, user)`, holding that user's live per-requester intent (scope, overrides, tier, retention, monitor_future). Insert on join, remove on leave, mutate on edit.
+- **`tracking_requester` association** — one row per `(tracking, user)`, holding that user's live per-requester intent (scope + per-episode overrides, tier). Insert on join, remove on leave, mutate on edit. (Iteration 1 also stored retention + `monitor_future` here; retention is now a library-wide hygiene policy and `monitor_future` is subsumed by scope.)
 - **Effective-scope recomputation** on every join/leave/edit, sourced from the surviving association rows. Tracking caches the union but recomputes from the association rows — _not_ from the frozen request rows, which would miss post-spawn edits. This is the concrete resolution to [tracking open question #1](../modules/tracking/README.md#open-questions).
 - **Scope-delta evaluation** — on a widening, spawn wants for newly in-scope episodes lacking files; on a narrowing, cancel in-flight wants for newly out-of-scope episodes and leave acquired files in place.
 
@@ -189,7 +189,7 @@ Most of [Story 2](./02-series-mid-season-auto-approve.md)'s requirements carry o
 
 ### Per-requester intent independence
 
-- Each requester's retention/tier/scope intent is stored on **their `tracking_requester` row** and carried independently (seeded from their request, then live). The want/file is the arbitration point for divergent retention intents (hardlink-aware multi-retention). Foundationally requires watch-state for full cleanup behavior; the association must carry per-requester intent now even though cleanup is deferred.
+- Each requester's **scope and tier** intent is stored on **their `tracking_requester` row** and carried independently (seeded from their request, then live). Retention is no longer per-requester — it moved to a library-wide [hygiene](../modules/hygiene/README.md) policy in iteration 2, and per-user multi-retention (the same-file-different-lifetime idea) is parked. So the association carries scope + tier; there is no per-requester retention to arbitrate.
 
 ### Time targets
 
@@ -199,8 +199,8 @@ Most of [Story 2](./02-series-mid-season-auto-approve.md)'s requirements carry o
 
 ## Out of scope (variant stories)
 
-- **Divergent tiers across requesters** — Alice wants HD, Bob wants 4K. The tracking's effective `tier_ceiling` rises; existing HD files become upgrade candidates. This is upgrade territory (proposed Story 06); deliberately kept same-tier here.
-- **Divergent retention with watch-state** — Alice `cleanup_after_watch`, Bob `keep_forever`, then Alice watches and Bob later leaves. The cleanup-eligibility arbitration is real but needs watch-state (foundation gap). Phase 6 illustrates the model; a dedicated story exercises the cleanup trigger once watch-state lands.
+- **Divergent tiers across requesters** — Alice wants HD, Bob wants 4K. The tracking's effective tier rises to 4K; existing HD files become upgrade candidates. This is upgrade territory (proposed Story 06); deliberately kept same-tier here.
+- **Per-user multi-retention** — the parked idea where one hardlinked file serves a "watch-once" intent for one user and "keep-forever" for another. Removed from the per-request model in iteration 2 (retention is now a single library-wide [hygiene](../modules/hygiene/README.md) policy); revisit as a storage feature in a later iteration. A future story exercises watch-based cleanup once hygiene's `lifecycle/*` rules and watch-state land.
 - **Last requester leaves** — if Alice (not Bob) had left and Bob remained, fine; but if **both** leave, the tracking moves to `paused` (not canceled), per [tracking lifecycle](../modules/tracking/README.md#lifecycle). Brief variant.
 - **Admin-anchored tracking** — admin added the tracking; a user joins then leaves. The tracking doesn't pause on the user's departure because the admin anchors it. Variant.
 - **Movie duplicate** — two users want the same movie; the second joins the existing single-atom **tracking**'s requester set (the tracking, not the want, is the dedup boundary — uniform with the series case). Worth a short companion story or a paragraph.
@@ -219,7 +219,7 @@ Most of [Story 2](./02-series-mid-season-auto-approve.md)'s requirements carry o
 
 4. **Scope storage — resolved.** Per-requester scope lives on a `tracking_requester` join table (live, mutable, seeded from each request); the tracking caches the union and recomputes from those rows on join/leave/edit. We deliberately do _not_ recompute from the request rows: requests are frozen after spawn, so they'd miss post-spawn scope edits. The "duplication" with the request's original scope is intentional — request = frozen origin, association = live state. See [tracking open question #1](../modules/tracking/README.md#open-questions).
 
-5. **Acquired files after scope narrowing.** This story commits to "files persist; scope narrowing only affects future wants + upgrade-watching." But who governs the orphaned S1/S2 files' eventual fate? With Bob's `keep_forever` request gone, do they fall to a library-default retention, become hygiene cleanup candidates, or stay forever untouched? Lean: they persist indefinitely unless an explicit cleanup policy claims them; [hygiene](../modules/hygiene/README.md) may surface them as "untracked content" for optional review. Pin the retention default for orphaned-by-departure files.
+5. **Acquired files after scope narrowing.** This story commits to "files persist; scope narrowing only affects future wants + upgrade-watching." But who governs the orphaned S1/S2 files' eventual fate? With Bob gone, the files are governed by the library-wide [hygiene](../modules/hygiene/README.md) retention policy (there's no per-request retention to lose in iteration 2). Do they persist indefinitely, become `lifecycle/*` cleanup candidates, or surface as "untracked content" for review? Lean: persist indefinitely unless an explicit cleanup policy claims them; hygiene may surface them as "untracked content" for optional review.
 
 6. **In-flight want cancellation on narrowing — partial packs.** If a season pack covering S2E01–E10 is mid-download when Bob leaves, do we cancel the download (wasting the bandwidth already spent) or let it complete (acquiring files no one is tracking)? Lean: let in-flight downloads complete (bandwidth already committed), cancel only `searching`/`pending` wants. Symmetric with [Story 2 open question #9](./02-series-mid-season-auto-approve.md#open-questions).
 

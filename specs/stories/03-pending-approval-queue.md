@@ -46,14 +46,14 @@ Follows the [Story 1](./01-happy-path-auto-approve.md) template.
 
 **Behind the scenes:**
 
-- `POST /requests { tmdb_id, type: "movie", tier: "4k", preset: "add_to_library" }`
+- `POST /requests { tmdb_id, type: "movie", tier: "4k" }`
 - Request service:
   1. Validates `Friend.requests.create:movie:4k` → ok.
-  2. Quota check: under threshold → eligible if permission held.
+  2. Quota check: under the cap → eligible if permission held (binary quota, iteration 2).
   3. Auto-approve check: `Friend.requests.auto_approve:movie:4k` → **not held** → auto-approve does not fire.
-  4. Writes `request` row: `{ id, requester_id: friend, tmdb_id, type: movie, tier_floor: 4k, tier_ceiling: 4k, retention: keep_forever, status: pending, auto_approved: false }`.
+  4. Writes `request` row: `{ id, requester_id: friend, tmdb_id, type: movie, tier: 4k, status: pending, auto_approved: false }`.
   5. Emits `request.pending_review` event ([notifications](../modules/notifications/README.md), audience: `admin`).
-  6. Audit row written: `request.submitted { requester, resolved_flags }` per [audit](../patterns/audit/README.md).
+  6. Audit row written: `request.submitted { requester, tier }` per [audit](../patterns/audit/README.md).
 
 **Notifications:**
 
@@ -219,7 +219,7 @@ Most requirements are already declared in [requests](../modules/requests/README.
 
 ## Out of scope (variant stories)
 
-- **Soft-quota gating** — user holds auto-approve but is in the soft-threshold band; request bounces to manual queue. Real edge, deserves its own story. Pre-flight context for the approver would include "this user is at 4/5 weekly HD" — adding the quota dimension to the row.
+- **Over-quota rejection** — user holds auto-approve but is at or over their hard quota cap; submission is rejected at submit with a structured 422 (iteration 2 has no soft-threshold band — quota is binary). Brief variant. Pre-flight still shows the running count ("this user is at 4/5 weekly HD") so the wall isn't a surprise.
 - **Approve-with-modification** — admin drops the tier from 4K to HD before approving Friend. Currently spec says no, deny-with-reason is the workaround. Variant story would re-evaluate.
 - **Auto-expiration** — Friend's 4K request sits in queue for 14+ days because admin doesn't notice. Auto-transitions to `expired` with a notification to Friend. Edge case; brief variant.
 - **Cancellation by requester before decision** — Friend cancels their pending 4K request because they decided HD is fine and submitted that separately (which auto-approves). The cancel cascade is in the requests spec; deserves a brief story.

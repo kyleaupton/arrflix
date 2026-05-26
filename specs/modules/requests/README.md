@@ -1,21 +1,22 @@
 # Requests — the user-facing intent layer
 
-**Status:** Draft, iteration 1
+**Status:** Draft, iteration 2
 
-A request is what a user says when they want something added to the library. It is **not** the work itself, and not the long-term library state — it's the intent statement, gated by approval, that translates into the system's actual machinery: a [tracking](../tracking/README.md) record (single-atom for a movie, scoped for a series) that produces [wants](../acquisition/README.md). This doc covers the request entity, lifecycle, approval flow, intent flags, quota enforcement, and the seams to tracking, acquisition, and the users/permissions spec.
+A request is what a user says when they want something added to the library. It is **not** the work itself, and not the long-term library state — it's the intent statement, gated by approval, that translates into the system's actual machinery: a [tracking](../tracking/README.md) record (single-atom for a movie, scoped for a series) that produces [wants](../acquisition/README.md). This doc covers the request entity, lifecycle, approval flow, the two things a requester actually chooses, quota enforcement, and the seams to tracking, acquisition, and the users/permissions spec.
 
-The request entity is deliberately thin. The richness comes from a small set of intent flags + smart defaults + a presets layer over those flags, designed to beat Overseerr's rigidity without exposing complexity to the 80% case.
+The request entity is deliberately thin. A requester makes at most two choices — **which tier** and (for a series) **how much of it** — and everything else is a smart default or owned by a system that actually understands the trade-off.
+
+> **What changed in iteration 2.** Iteration 1 piled lifecycle preferences onto the request: a `retention` flag (`keep_forever` / `cleanup_after_watch` / …), a `tier_floor`/`tier_ceiling` range, a `monitor_future` toggle, and a presets layer to hide all of it. Those are gone. **Retention is no longer a request concern** — it's a library/storage policy owned by [hygiene](../hygiene/README.md), which is what gets media-server watch-state out of the request path entirely (it becomes one optional, additive cleanup rule). The tier *range* collapses to a single tier; `monitor_future` folds into scope; presets disappear because there's no longer enough complexity to hide. See [Where retention went](#where-retention-went).
 
 ## TL;DR
 
-- A **request** is a per-user intent statement: "I want this media at this tier, with these lifecycle preferences." It is **distinct** from the library state (tracking) and the work items (wants).
-- One entity, a small set of intent flags: **`retention`**, **`tier_floor` / `tier_ceiling`**, **`scope`** (series only), **`monitor_future`** (series only). Defaults cover the 80% case; presets ("Watch this weekend", "I'm a fan") cover the next 15%.
+- A **request** is a per-user intent statement: "I want this media, at this tier" (+ for a series, "this much of it"). It is **distinct** from the library state (tracking) and the work items (wants).
+- A requester chooses **at most two things**: **`tier`** (a single value from the admin's tier catalog) and, for series, **`scope`**. Both have sane defaults; many requests are a single tap.
 - Lifecycle: `pending → approved → spawned`, _or_ `pending → denied / cancelled / expired`. After `spawned`, downstream state lives on tracking/wants — the request itself becomes a frozen artifact.
 - Approval is permission-driven: `requests.auto_approve:<type>:<tier>` auto-approves at request time; otherwise the request waits for someone holding `requests.approve` (see [users](../users/README.md#permissions)).
-- Quotas live on `user_policy` from the [users spec](../users/README.md#user_policy). Pre-flight visibility ("this will be your 3rd of 5 movies this week") is a first-class affordance, not an afterthought.
+- Quotas live on `user_policy` from the [users spec](../users/README.md#user_policy) and are a **binary hard cap**: under the cap proceeds, over the cap is rejected at submit. Pre-flight visibility ("this will be your 3rd of 5 movies this week") is a first-class affordance.
 - Multi-requester semantics are **owned by tracking** for both movies and series (tracking is the dedup boundary); requests stay 1:1 with users.
-- Auto-approve is not a free pass: a soft-gating band can flip an auto-eligible request to manual review when quota thresholds are approached.
-- **Hardlink-aware retention** is the killer differentiator: the same file can serve a `watch_once` request from one user and a `keep_forever` request from another, simultaneously.
+- **Retention / cleanup is not here.** A request says *what to acquire*, not *how long to keep it*. Keeping and cleanup are a library-wide policy owned by [hygiene](../hygiene/README.md).
 
 ## Why this is its own spec
 
@@ -31,10 +32,10 @@ Pulling requests out as its own spec makes those seams explicit and lets each sp
 
 A request encodes a single user's intent for a single media item at a single moment in time. Concretely:
 
-- **Subject** — a reference to a media item (movie or series). For series, the request may optionally narrow to a specific season or episode via the `scope` flag; the request entity itself is uniform, granularity is a property of its flags.
+- **Subject** — a reference to a media item (movie or series). For series, the request may narrow via `scope`; the request entity itself is uniform, granularity is a property of its scope.
 - **Requester** — the user submitting the request.
-- **Tier** — the requested quality tier (e.g., `hd`, `4k`), validated against the requester's `requests.create:<type>:<tier>` permission.
-- **Intent flags** — see [Intent flags](#intent-flags) below.
+- **Tier** — the requested quality tier (see [Tier](#tier)). Validated against the requester's `requests.create:<type>:<tier>` permission.
+- **Scope** (series only) — see [Scope](#scope-series-only).
 - **Notes** — optional free-text reason from the requester; optional free-text reason from the approver on approve or deny.
 - **Status** — see [Lifecycle](#lifecycle).
 - **Timestamps** — created, decided, spawned, terminal.
@@ -45,67 +46,46 @@ What a request is _not_:
 
 - It is not the library state. ("Does the library have this at 4K?" is a question for [tracking](../tracking/README.md) / media-item state, not for any request.)
 - It is not the work item. ("Why hasn't this downloaded yet?" is a question for [wants](../acquisition/README.md), not for the originating request.)
+- It is not a retention policy. ("How long do we keep this?" is a [hygiene](../hygiene/README.md) / library-policy question, not a per-request choice.)
 - It is not perpetual. Once a request has spawned tracking or a want, the request is frozen. Subsequent changes — cancel monitoring, upgrade tier, swap scope — act on tracking/wants, not on the original request.
 
-## Intent flags
+## What the requester chooses
 
-The flags are what make the system flexible without piling on entity types. Most users never set them by hand; they're exposed through [presets](#intent-presets). The four flags:
+There are only two knobs, and most requests touch neither (they accept the defaults).
 
-| Flag                              | Meaning                                                                                                                                                                       | Default                            | Applies to |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ---------- |
-| **`retention`**                   | How long the content should stay in the library after fulfillment                                                                                                             | `keep_forever`                     | All        |
-| **`tier_floor` / `tier_ceiling`** | Acceptable range of quality tiers; the system aims for `ceiling`, will accept `floor`                                                                                         | `floor = ceiling = requested tier` | All        |
-| **`scope`**                       | For series, which episodes are wanted (defers to [tracking](../tracking/README.md#scope-rule--overrides) for the rule grammar)                                                | `all`                              | Series     |
-| **`monitor_future`**              | For series, whether to subscribe to future episodes as they air                                                                                                               | `true` if scope includes future    | Series     |
+### Tier
 
-### `retention`
+The requested quality tier — a single value from the admin-curated tier catalog ([quality profiles](../quality-profiles/README.md#tiers)). A tier is a human-meaningful label ("HD", "4K", "3D"); it resolves at want-spawn to a profile per media type, and the requester never sees the profile machinery.
 
-The defining flag — this is what makes "watch this weekend" and "I'm a fan of this show" the same entity with different settings. Values:
+- **The tier set is whatever the admin has configured.** A casual install has one tier (`HD`) and the request UI shows *no* tier selector at all — one option is no choice. An enthusiast install adds `4K`; a home-theater install might add `3D`. New device needs become new admin-defined tiers, not new request concepts.
+- **Permission-gated.** The tier is validated at submit against `requests.create:<type>:<tier>`. Asking for a tier you can't request → submission rejected. (Story 3 owns the tier-mismatch UX — hide vs. disabled-with-reason vs. route-to-approval.)
+- **Default** — the tier catalog's default tier (typically `HD`).
 
-| Value                 | Meaning                                                                                                                                                                            |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `keep_forever`        | Default. Once acquired, the file stays in the library until manually removed.                                                                                                      |
-| `cleanup_after_watch` | The file stays until the requester has watched it (via Plex/Jellyfin watch-state), then is eligible for cleanup.                                                                   |
-| `keep_for_days(N)`    | The file is eligible for cleanup N days after fulfillment, watched or not.                                                                                                         |
-| `pinned`              | Like `keep_forever`, but additionally exempt from tier-downgrade and storage-pressure cleanup heuristics. Explicit user-pinned.                                                    |
+Note the deliberate omissions: there is no `tier_floor`/`tier_ceiling` *range* on the request. "I'd take HD but prefer 4K" is **upgrade behavior**, owned by [tracking](../tracking/README.md) (`upgrade_behavior`) and the [profile](../quality-profiles/README.md), not a request-time knob. And there is no "give me both 4K and HD" — that's two requests (and runs into the unsolved [multiple-versions question](#open-questions)).
 
-> **Watch-state coupling, by design.** `cleanup_after_watch` is the one retention mode that genuinely needs a media server — "watched" is only knowable from the player (Plex/Jellyfin watch-state). This coupling is legitimate and unavoidable; it degrades gracefully (no media server → it never fires, behaving like `keep_forever`, optionally paired with `keep_for_days(N)`). Note this is _watch-state_ coupling, not _availability_ coupling: a file being **in the library** is Arrflix's own truth and never depends on a media server (see [acquisition → Media-server propagation](../acquisition/README.md#media-server-propagation-decoupled-from-available)).
+### Scope (series only)
 
-**Hardlink-aware multi-retention.** The same underlying file can be hardlinked by multiple requests with different retention policies. Cleanup runs per-request; a file is eligible for actual deletion only when _all_ requests pointing at it have been satisfied or expired. This is unique to Arrflix — Overseerr can't model "watch once" alongside "keep forever" for the same media because they don't own the filesystem strategy. It's also the conceptual underpinning for the [hygiene](../hygiene/README.md) cleanup worker, which reads request retention state to decide what's safe to remove.
+For a series, how much of it the requester wants. Pulled from tracking's [preset list](../tracking/README.md#scope-rule--overrides), surfaced to the requester as a short choice:
 
-The request itself runs no code. Cleanup eligibility is a function the hygiene worker evaluates over the request's flags + watch state + age.
+- **Whole series** (default) — every episode that exists or will exist. This *includes future episodes* — there is no separate `monitor_future` flag; "keep getting new episodes" is just what "whole series" means.
+- **A specific season** — `season(N)`.
+- **Pilot only** — to try a show before committing.
 
-### `tier_floor` / `tier_ceiling`
+Per-episode overrides and the richer scope rules (`future_only`, `latest_season_plus_future`) are **not** request-time choices — they're managed on the [tracking](../tracking/README.md) after spawn, by a user who wants that level of control.
 
-Most requests pin both to the same tier ("I want HD"). The split exists for two cases:
+At spawn, the request's scope seeds the requester's [`tracking_requester` row](../tracking/README.md#multi-requester-semantics) — the live, mutable home for their per-requester scope. The request keeps its original scope as a frozen snapshot (audit); the association row is the source of truth thereafter. The tracking's effective scope is the union across all requesters.
 
-1. **Graceful degradation** — "I'd love 4K, but HD is fine if 4K isn't around." `floor=hd, ceiling=4k`. The acquisition pipeline tries the ceiling first; if nothing meets quality-profile criteria, falls back toward the floor.
-2. **Auto-upgrade** — paired with tracking's `upgrade_behavior`. If `ceiling > current library tier`, future releases at the ceiling can replace the current file. Owned by tracking; the request just expresses the preference.
+## Where retention went
 
-Both values are validated at submit time against `requests.create:<type>:<tier>`. The ceiling drives the permission check; the floor only needs the lower permission. (Asking for a 4K-ceiling when you can't request 4K → submission rejected.)
+Iteration 1 made `retention` a per-request flag whose marquee value, `cleanup_after_watch`, depended on media-server watch-state to fire. That made Plex/Jellyfin **load-bearing** for a request feature — the one place in the system that violated the rule established everywhere else (a media server enriches and accelerates; it never gates).
 
-### `scope` (series only)
+Iteration 2 removes retention from the request:
 
-Pulled from tracking's [preset list](../tracking/README.md#scope-rule--overrides). The request declares its scope preference. At spawn this seeds the requester's [`tracking_requester` row](../tracking/README.md#multi-requester-semantics) — the live, mutable home for their per-requester scope. The request keeps its original scope as a frozen snapshot (audit), but the association row is the source of truth thereafter; the tracking's effective scope is the union across all requesters. If the request _joins_ existing tracking, its scope is unioned in via that new association row.
+- **Keeping and cleanup are a library-wide policy**, owned by [hygiene](../hygiene/README.md). The operator configures it once (e.g. "propose cleanup of watched movies older than N days"); a casual requester is never asked to reason about a file's eventual deletion.
+- **Watch-state becomes purely additive.** Its only consumer is now an *optional* hygiene cleanup rule. With no media server, the rule simply never has a signal to act on — and nothing about requests, tracking, or availability is affected. This is the additive-not-load-bearing posture the rest of the system already follows.
+- **The differentiator survives, in the right home.** "Auto-clean watched content" is still something Overseerr can't do (it doesn't own the filesystem). It just moves from a per-request user knob to an operator policy — where storage lifecycle actually belongs.
 
-### `monitor_future` (series only)
-
-Strictly speaking, this is `scope: all` vs. `scope: <bounded>`. We surface it as a separate flag because "keep monitoring for new episodes" is the question users ask, not the underlying scope-rule choice. Internally it collapses to a scope decision on tracking.
-
-## Intent presets
-
-The flags are powerful but most users should never see them. The UI surfaces a small set of named presets, each of which pins the underlying flags. Suggested starter set:
-
-| Preset                | retention             | tier                 | scope (series) | monitor_future |
-| --------------------- | --------------------- | -------------------- | -------------- | -------------- |
-| "Watch this weekend"  | `cleanup_after_watch` | requested tier       | n/a            | n/a            |
-| "Add to library"      | `keep_forever`        | requested tier       | `all`          | true           |
-| "I'm a fan"           | `keep_forever`        | floor=hd, ceiling=4k | `all`          | true           |
-| "Just this season"    | `keep_forever`        | requested tier       | `season(N)`    | false          |
-| "Pilot only"          | `keep_forever`        | requested tier       | `pilot`        | false          |
-| "Advanced…"           | (user customizes)     | (user customizes)    | (user customizes) | (user customizes) |
-
-Presets are UI sugar over the flag combinations. The server-side request stores the **resolved flags**, not the preset name — presets are not stable identifiers, flags are. A future preset rename or removal doesn't break historical requests.
+The hardlink-aware "watch-once for Alice, keep-forever for Bob on the same file" idea is parked for a future iteration; it belongs to the storage/hygiene layer, not the request entity.
 
 ## Lifecycle
 
@@ -140,18 +120,18 @@ Presets are UI sugar over the flag combinations. The server-side request stores 
 **State semantics:**
 
 - **`pending`** — submitted, awaiting decision. The only state in which a request mutates.
-- **`approved`** — decision made (manual or auto); the request is committed, but the spawn step (creating tracking / want) has not completed yet. Brief intermediate state. Approved-but-not-spawned exists so the spawn step is atomic and observable in audit.
+- **`approved`** — decision made (manual or auto); the request is committed, but the spawn step (creating tracking / want) has not completed yet. Brief intermediate state, kept so the spawn step is atomic and observable in audit.
 - **`spawned`** — tracking and/or wants now exist; their IDs are recorded on the request. The request is read-only history.
 - **`denied`** — decision: no. Carries a reason (visible to the requester).
 - **`cancelled`** — requester withdrew before a decision was made. Terminal.
 - **`expired`** — pending request timed out (configurable, see [Open questions](#open-questions)). Terminal.
 
-**Important:** the request entity does **not** track download / import / availability state. Once spawned, those questions belong to the want lifecycle ([acquisition](../acquisition/README.md)). The UI can _join_ a request to its spawned wants for display ("your request is now downloading"), but the request itself is frozen.
+**Important:** the request entity does **not** track download / import / availability state, and (unlike iteration 1) carries **no post-spawn sub-state** — there is no `satisfied` flag fed back from watch-state, because retention isn't a request concern anymore. Once spawned, all downstream questions belong to the want lifecycle ([acquisition](../acquisition/README.md)). The UI can _join_ a request to its spawned wants for display ("your request is now downloading"), but the request itself is frozen.
 
 **Reversibility:**
 
 - `approved → spawned` is automatic and irreversible. To undo a fulfilled request, cancel the resulting tracking/wants.
-- `denied → pending`: admin re-opens. See [open question #4](#open-questions); lean is to require a new request linked back to the original.
+- `denied → pending`: admin re-opens. See [open question #3](#open-questions); lean is to require a new request linked back to the original.
 - `cancelled` and `expired` are terminal.
 
 ## Approval
@@ -160,13 +140,13 @@ Approval is the gate between `pending` and `approved`. Two paths.
 
 ### Auto-approval
 
-If the requester holds `requests.auto_approve:<type>:<tier>` at request time **and** the request passes [quota gating](#quota-gating), the request is created and transitioned `pending → approved → spawned` in one transaction. The audit row records the decision as automatic.
+If the requester holds `requests.auto_approve:<type>:<tier>` at request time **and** the request is [under quota](#quota-gating), the request is created and transitioned `pending → approved → spawned` in one transaction. The audit row records the decision as automatic.
 
 Auto-approve is **per-tier**: a user can have `auto_approve:movie:hd` but require manual review for `:4k`. This is the killer differentiator vs. Overseerr's single-flag auto-approve.
 
 ### Manual approval
 
-If auto-approve does not fire, the request sits in `pending`. Any user holding `requests.approve` (or a scope-qualified variant) can transition it to `approved` or `denied`, with an optional reason.
+If auto-approve does not fire (no permission, or over quota), the request sits in `pending`. Any user holding `requests.approve` (or a scope-qualified variant) can transition it to `approved` or `denied`, with an optional reason.
 
 Approver permissions (defined in [users](../users/README.md#permissions)):
 
@@ -180,19 +160,16 @@ The approve / deny split exists because some admin patterns want different sets 
 
 ### Quota gating
 
-Auto-approval has a third condition beyond the permission: the request must fit within the requester's quota envelope defined in their `user_policy` (see [users](../users/README.md#user_policy)).
+Auto-approval has a second condition beyond the permission: the request must fit within the requester's quota envelope defined in their `user_policy` (see [users](../users/README.md#user_policy)).
 
-The quota check is not binary. Three outcomes:
+The quota check is **binary** (iteration 1's soft-threshold band is gone — its shape was never settled, and an all-or-nothing cap is enough for v1):
 
-| Condition                                                              | Outcome                                                                                          |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Under all applicable quotas                                            | Auto-approve fires (assuming permission held)                                                    |
-| Within soft-threshold band (e.g., 70–100% of any quota)                | Auto-approve **does not fire**, request falls into manual review even with permission held      |
-| Over any hard quota                                                    | Submission rejected with a structured 422 (see [errors](../../patterns/errors/README.md))        |
+| Condition            | Outcome                                                                                   |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| Under the quota cap  | Proceeds. Auto-approves if the auto-approve permission is held; otherwise manual review.   |
+| At or over the cap   | Submission rejected with a structured 422 (see [errors](../../patterns/errors/README.md)). |
 
-The soft-threshold band is configurable per `user_policy`. This gives admins a way to let power users self-serve normal volume while keeping themselves in the loop on outliers — no all-or-nothing trust decision.
-
-Quota dimensions, reset windows, and "what counts against quota" are defined in the users spec under [user_policy](../users/README.md#user_policy).
+Quota dimensions, reset windows, and "what counts against quota" are defined in the users spec under [user_policy](../users/README.md#user_policy). The pre-flight surface still shows the running count ("this will be your 3rd of 5 this week") — that affordance is unchanged; only the banding logic is removed.
 
 ## Mapping requests to downstream state
 
@@ -204,8 +181,8 @@ A movie request's spawn step (uniform with series — a movie is a single-atom t
 
 1. Resolve or create the `media_item` row for the movie (existing matching pipeline).
 2. Check whether tracking exists for this movie.
-   - **Yes** — insert a `tracking_requester` row for this requester (seeded from the request). No new tracking or want is created; the user sees "1 other person is also waiting on this."
-   - **No** — create a new single-atom tracking plus the requester's `tracking_requester` row (seeded from the request's tier and intent). The tracking produces the one want.
+   - **Yes** — insert a `tracking_requester` row for this requester (seeded from the request's tier). No new tracking or want is created; the user sees "1 other person is also waiting on this."
+   - **No** — create a new single-atom tracking plus the requester's `tracking_requester` row (seeded from the request's tier). The tracking produces the one want.
 3. Record audit rows.
 
 ### Series
@@ -214,8 +191,8 @@ A series request's spawn step:
 
 1. Resolve or create the `media_item` row for the series.
 2. Check whether tracking exists for this series.
-   - **Yes** — insert a `tracking_requester` row for this requester (seeded from the request) per [multi-requester semantics](../tracking/README.md#multi-requester-semantics); the effective scope recomputes and unions in their scope. Tracking's effective `tier_ceiling` may rise.
-   - **No** — create a new tracking record plus the requester's `tracking_requester` row (seeded from the request's scope, tier, and monitor preferences).
+   - **Yes** — insert a `tracking_requester` row for this requester (seeded from the request) per [multi-requester semantics](../tracking/README.md#multi-requester-semantics); the effective scope recomputes and unions in their scope.
+   - **No** — create a new tracking record plus the requester's `tracking_requester` row (seeded from the request's scope and tier).
 3. Tracking's scheduler eventually emits wants per [tracking](../tracking/README.md).
 4. Record audit rows.
 
@@ -228,10 +205,6 @@ When a request is cancelled (or hypothetically re-denied):
 
 The request stays in the database as audit history; the cascade only touches downstream entities.
 
-### Watch state and retention
-
-For requests with `retention=cleanup_after_watch`, the hygiene cleanup worker watches for the requester's watch-state event from Plex/Jellyfin, marks the request as `satisfied` (a sub-state on `spawned`, not a separate lifecycle state), and includes the underlying file in its cleanup-eligibility evaluation. The file is removed only when all requests on it agree it's safe to remove.
-
 ## Multi-requester semantics — owned elsewhere
 
 The requests spec does **not** define how multiple requesters merge. That belongs to tracking, for both movies and series. Requests stay 1:1 with the user who submitted them; the tracking is the deduplication boundary.
@@ -240,12 +213,12 @@ What requests owns:
 
 - The per-user artifact ("here's what I asked for, when, why")
 - The per-user audit and quota accounting
-- The intent flags _as originally requested_ (the frozen origin). The _live_ per-requester copy — editable after spawn — lives on the [`tracking_requester` association](../tracking/README.md#multi-requester-semantics), seeded from these.
+- The intent _as originally requested_ (the frozen origin: tier + scope). The _live_ per-requester copy — editable after spawn — lives on the [`tracking_requester` association](../tracking/README.md#multi-requester-semantics), seeded from these.
 
 What requests does not own:
 
 - The merged scope ("the library wants seasons 1–3 because Alice asked for S1 and Bob asked for S2–3")
-- The effective tier ceiling across requesters
+- The effective tier across requesters
 - The "who's still wanting this?" lifecycle
 
 Different requesters can have different intents pointing at the same downstream entity. The downstream entity arbitrates between them.
@@ -266,8 +239,8 @@ The default user-facing surface is the requester's own request list. "All reques
 
 The request entity is sparse on mutation paths to keep the audit trail clean.
 
-- **While `pending`**: requester may edit notes, change tier (re-validated against permissions and quotas), change retention, change scope (series), or cancel. Approver may approve or deny.
-- **After `approved` / `spawned`**: read-only. To change downstream behavior, act on your [`tracking_requester` association](../tracking/README.md#multi-requester-semantics) — your live per-requester intent (scope, overrides, tier, retention) — not the frozen request. (Want-level actions like cancel act on the wants.)
+- **While `pending`**: requester may edit notes, change tier (re-validated against permissions and quotas), change scope (series), or cancel. Approver may approve or deny.
+- **After `approved` / `spawned`**: read-only. To change downstream behavior, act on your [`tracking_requester` association](../tracking/README.md#multi-requester-semantics) — your live per-requester intent (scope, overrides, tier) — not the frozen request. (Want-level actions like cancel act on the wants.)
 - **`denied`, `cancelled`, `expired`**: read-only, terminal.
 
 Any mutation while `pending` resets the auto-approve check. Changing the tier from HD to 4K after submission may flip a request from auto-eligible to manual-required (and vice versa).
@@ -278,7 +251,7 @@ Requests are decision artifacts: every approve, deny, auto-approve, and cancel i
 
 Per-request audit rows:
 
-- `submitted` — initial creation, with the requester and resolved flags
+- `submitted` — initial creation, with the requester, tier, and scope
 - `mutated` — pending-state edits (tier change, scope change, notes)
 - `auto_approved` / `approved` / `denied` — the decision, with actor and reason
 - `spawned` — references the resulting tracking and/or want IDs
@@ -320,9 +293,10 @@ Overseerr's UX makes you guess. Ours shows the math. The data is all derivable; 
 - The acquisition pipeline ([acquisition](../acquisition/README.md))
 - Tracking semantics, multi-requester merge, scope-rule grammar ([tracking](../tracking/README.md))
 - The permission vocabulary, role catalog, user_policy schema, activity-scoping predicate ([users](../users/README.md))
-- The quality-profile catalog and tier registry ([quality profiles](../quality-profiles/README.md))
+- The quality-profile catalog, tier registry, and tier→profile resolution ([quality profiles](../quality-profiles/README.md))
 - The decision-artifact schema ([audit pattern](../../patterns/audit/README.md))
-- Cleanup execution and storage-pressure heuristics ([hygiene](../hygiene/README.md))
+- **Retention and cleanup** — keeping policy, watch-based cleanup, storage-pressure heuristics ([hygiene](../hygiene/README.md)). A request says what to acquire, never how long to keep it.
+- **Watch-state** — ingested by [media-server](../media-server/README.md), consumed by hygiene's cleanup policy. Requests neither read nor depend on it.
 - Notification delivery (lives in [notifications](../notifications/README.md))
 - Library state ("is this in the library?") and want state ("has it downloaded?") — both joined for UI but not owned here
 - Watchlist semantics ("I might want this someday") — separate concept, deliberately not in this spec
@@ -332,40 +306,39 @@ Overseerr's UX makes you guess. Ours shows the math. The data is all derivable; 
 | Neighbor                                              | How requests interact                                                                                                                |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | **[Users / permissions](../users/README.md)**         | Consumes `requests.*` permissions and `user_policy` quotas. Subject to the activity-scoping predicate.                               |
-| **[Tracking](../tracking/README.md)**                 | Series request approval spawns or joins tracking. Cancellation removes the requester from tracking's set.                            |
+| **[Tracking](../tracking/README.md)**                 | Request approval spawns or joins tracking, seeding the requester's association row from tier + scope. Cancellation removes the requester. |
 | **[Acquisition / wants](../acquisition/README.md)**   | Movie request approval spawns or joins a want. Series wants flow through tracking.                                                   |
-| **[Quality profiles](../quality-profiles/README.md)** | Tier names come from the tier registry. The request's `tier_ceiling` / `tier_floor` map to profile selection at spawn time.          |
+| **[Quality profiles](../quality-profiles/README.md)** | Tier names come from the tier registry. The request's tier resolves to a profile (per media type) at spawn time.                     |
 | **[Audit pattern](../../patterns/audit/README.md)**   | Every decision (auto-approve, approve, deny, cancel, expire) writes a structured audit row.                                          |
 | **[Errors](../../patterns/errors/README.md)**         | Submission and approval errors use the typed-error model (forbidden, conflict, quota-exceeded, validation).                          |
 | **[Metadata](../metadata/README.md)**                 | Subject resolution at submit time goes through the media-item / TMDB sync surfaces.                                                  |
-| **[Hygiene](../hygiene/README.md)**                   | Reads request retention flags + watch state when deciding cleanup eligibility. Hardlink-aware multi-retention is enforced here.      |
+| **[Hygiene](../hygiene/README.md)**                   | Owns retention/cleanup as a library policy. Requests do not carry retention; hygiene decides what's safe to remove.                  |
+| **[Media-server](../media-server/README.md)**         | Supplies watch-state to hygiene's cleanup policy. No coupling to requests.                                                            |
 | **[Notifications](../notifications/README.md)**       | Emits events on pending-needs-review, decision-made, request-fulfilled.                                                              |
 
 ## Open questions
 
 1. **Watchlist as a separate concept.** Users want to bookmark "I might want this someday" without actually requesting. Is a watchlist a `pending` request that never gets approved, a separate entity, or just a UI affordance over media-item state? Lean: separate concept, not in this spec.
-2. **`pinned` retention.** Worth modeling as a separate value or fold into `keep_forever`? The distinction is whether tier-upgrade / storage-pressure cleanup heuristics can act on the file. Lean: keep separate.
-3. **Approve-with-modification.** Should approvers be able to drop the tier or scope before approving ("approve, but at HD not 4K")? Currently out of scope; deny-with-reason is the workaround. Reconsider if real users hit this repeatedly.
-4. **Re-opening a denied request.** Model as a state transition (`denied → pending`) or require a new request linked to the original via a `re_request_of` back-reference? Lean: new request with back-reference — cleaner for audit.
-5. **Expiration window.** Default for pending requests sitting un-decided. Probably 14 days or 30 days, configurable per `user_policy`. Pin in iteration 2.
-6. **Soft-threshold band shape.** Single percentage (e.g., 70–100%)? Per-quota override ("over 80% of weekly movies but not yet over storage")? Lean: single percentage to start, complicate if needed.
-7. **Bundle requests / movie nights.** "Approve these 3 movies as one decision." Useful UX, but adds entity complexity. Defer to iteration 2 unless real demand surfaces.
-8. **Group / shared requests.** "Movie night for 4 people — bills against the booker's quota, notifies all four when ready." Probably v2; want to confirm the data model leaves room.
-9. **Tier upgrade as a request.** If Alice has HD and asks for 4K, is that a new request (with `tier_ceiling=4k` and duplicate-detection flagging it as an upgrade) or a mutation of the existing? Lean: new request, with pre-flight surfacing the upgrade intent. Worth sanity-checking against real flows.
-10. **Cancellation race.** Requester cancels at the moment auto-approve is mid-flight. Lean: optimistic concurrency, cancelled-takes-precedence — but pin the rule explicitly in iteration 2.
-11. **Notes visibility.** Approver's denial reason is visible to requester. Requester's submission note — visible to approver only, or to other viewers? Lean: approver only by default.
-12. **Bulk operations.** Bulk approve, bulk deny, bulk cancel. Cosmetic API additions on top of the model; defer until UI demands.
-13. **What "watched" means for shared retention.** If Alice's request is `cleanup_after_watch` and Bob's is `keep_forever`, the file stays. But what if Alice and Bob both have `cleanup_after_watch` — does the file go after _either_ watches, or _both_? Lean: both. Pin in iteration 2.
-14. **Re-request after denial cooldown.** Prevent a user from spamming the same denied request? Lean: not in the model — handle as a soft-gate in pre-flight ("you were denied this 2 days ago; sure you want to ask again?").
+2. **Scope granularity at request time.** Is `whole series / season(N) / pilot` the right starting set, or does v1 need even less (whole-series + pilot only)? The richer rules and per-episode overrides live on tracking post-spawn regardless.
+3. **Re-opening a denied request.** Model as a state transition (`denied → pending`) or require a new request linked to the original via a `re_request_of` back-reference? Lean: new request with back-reference — cleaner for audit.
+4. **Expiration window.** Default for pending requests sitting un-decided. Probably 14 or 30 days, configurable per `user_policy`. Pin in a later iteration.
+5. **Bundle requests / movie nights.** "Approve these 3 movies as one decision." Useful UX, but adds entity complexity. Defer unless real demand surfaces.
+6. **Group / shared requests.** "Movie night for 4 people — bills against the booker's quota, notifies all four when ready." Probably later; want to confirm the data model leaves room.
+7. **Tier upgrade as a request.** If Alice has HD and asks for 4K, is that a new request (with duplicate-detection flagging it as an upgrade) or a mutation of the existing? Lean: new request, with pre-flight surfacing the upgrade intent. Note this overlaps the unsolved multiple-versions question below.
+8. **Multiple versions of the same item.** Requesting (and acquiring) two resolutions of one movie — e.g. 4K for the home theater and 1080p for the phone — is **not yet modeled.** The want/tracking layer currently assumes one file per atom; manual dual-version DB rows are possible but Arrflix does not plan to acquire two versions. Parked pending a tracking/want model decision.
+9. **Cancellation race.** Requester cancels at the moment auto-approve is mid-flight. Lean: optimistic concurrency, cancelled-takes-precedence — pin the rule explicitly later.
+10. **Notes visibility.** Approver's denial reason is visible to requester. Requester's submission note — visible to approver only, or to other viewers? Lean: approver only by default.
+11. **Bulk operations.** Bulk approve, bulk deny, bulk cancel. Cosmetic API additions on top of the model; defer until UI demands.
+12. **Re-request after denial cooldown.** Prevent a user from spamming the same denied request? Lean: not in the model — handle as a soft-gate in pre-flight ("you were denied this 2 days ago; sure you want to ask again?").
 
 ## What we're explicitly not deciding here
 
 - Exact table names, columns, indexes, constraints
 - API endpoint shapes, request/response formats, status code matrices
 - The quota schema on `user_policy` (lives in users spec)
-- The cleanup worker's implementation, scheduling, and storage-pressure heuristics (lives in hygiene)
+- Retention / cleanup policy, the cleanup worker, storage-pressure heuristics (lives in [hygiene](../hygiene/README.md))
 - Notification routing rules and delivery channels (lives in [notifications](../notifications/README.md))
-- UI component layouts, preset copy, error wording
+- UI component layouts, error wording, the tier-mismatch UX (Story 3)
 - Backfill / migration ordering relative to the users spec rollout
 - Relative ordering of pre-flight checks (permission → quota → duplicate → submit) — the spec mandates all of them, not their order
 
@@ -374,8 +347,9 @@ Overseerr's UX makes you guess. Ours shows the math. The data is all derivable; 
 - [Users](../users/README.md) — identity, roles, permissions, `user_policy`, activity-visibility scoping
 - [Tracking](../tracking/README.md) — series ongoing-intent primitive, multi-requester semantics
 - [Acquisition](../acquisition/README.md) — the pipeline that turns approved requests into library files
-- [Quality profiles](../quality-profiles/README.md) — tier registry, profile selection
-- [Hygiene](../hygiene/README.md) — reads retention flags and watch state to drive cleanup
+- [Quality profiles](../quality-profiles/README.md) — tier registry, tier→profile resolution
+- [Hygiene](../hygiene/README.md) — owns retention/cleanup policy (where watch-state lands)
+- [Media-server](../media-server/README.md) — ingests watch-state; supplies it to hygiene
 - [Audit pattern](../../patterns/audit/README.md) — decision-artifact stream this spec writes into
 - [Errors](../../patterns/errors/README.md) — typed error model for submission/approval failures
 - [Story 1](../../stories/01-happy-path-auto-approve.md) — pressure-tests this spec end-to-end
