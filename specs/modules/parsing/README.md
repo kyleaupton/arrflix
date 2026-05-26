@@ -42,7 +42,7 @@ Sonarr/Radarr's parser is **one engine** that extracts everything. We ported a s
 - The **canonical advertised attribute model** (`ParsedRelease`) and its per-field confidence + provenance.
 - **Quality detection** (resolution, source, bin, remux, proper/repack/version) — the existing `internal/release/` logic, folded in.
 - **Identity-hint extraction** (parsed title, year, type hint, season, episode(s), absolute number, daily/air-date, multi-episode range, edition) — the port that replaces guessit.
-- **Release-attribute extraction** (release group, codec, audio format/channels, HDR _claim_, language(s)).
+- **Release-attribute extraction** (release group, codec, audio format/channels, HDR _claim_, dual-audio _claim_, language(s)). Dual-audio is reserved as an advertised attribute now because it's a first-class anime quality axis (sub/dub) and, unlike source/edition, `ffprobe` can _assert_ it — so it slots cleanly into the advertised-vs-asserted model. Fansub group is the anime case of `release group`; no separate field.
 - The **labeled corpus** and the **parity-harness contract** (Tier-1 golden diff, Tier-2 live regeneration).
 
 ## What parsing does NOT own
@@ -61,11 +61,12 @@ Sonarr/Radarr's parser is **one engine** that extracts everything. We ported a s
 | ------------ | ------------------------------------------------------------------------------------ | -------------------------------- |
 | **Identity** | parsed title, year, type hint (movie/series), season, episode(s), absolute #, daily/air-date, multi-ep range, edition | feeds [matching](../matching/README.md) → `Media`; feeds importer assignment |
 | **Quality**  | resolution, source, bin (`Full`), `IsRemux`, `IsRepack`, version                      | `Quality` namespace              |
-| **Release**  | release group, codec, audio format, audio channels, HDR-claim, languages              | `Release` namespace (+ extensions) |
+| **Release**  | release group, codec, audio format, audio channels, HDR-claim, dual-audio-claim, languages | `Release` namespace (+ extensions) |
 
-Two boundary notes:
+Three boundary notes:
 
 - **Identity is a _hint_, not a resolution.** Parsing says "this string looks like *The Office* S03E05"; [matching](../matching/README.md) decides whether that's TMDB id N with the right confidence. The `Media` namespace is populated by matching/metadata, **not** by parsing.
+- **Numbering is parsed in the release's _own namespace_, not the canonical one.** A release numbers episodes however its scene/fansub convention does — Western `S03E05`, or anime-style **absolute** (`One Piece - 1071`), or a scene numbering that matches neither the provider's seasons nor the absolute count. Parsing emits the number(s) it sees **tagged with which namespace they're in** (`season_episode` / `absolute` / `daily`) and never silently coerces an absolute number into a `(season, episode)`. Reconciling that namespace against the provider's canonical episode identity is [matching](../matching/README.md#the-resolver-catalog)'s job — a future numbering-mapping resolver — so parsing only has to _preserve the distinction_. This is the load-bearing seam for anime: collapsing numbering to a single `(season, episode)` shape bakes in "release-numbering == provider-numbering," which is exactly the assumption anime breaks.
 - **The raw `Candidate` namespace** (indexer result: size, seeders, indexer, GUID, …) is **not** parsed — it's passed through from the search result. Parsing reads the candidate's _title_; it doesn't own the candidate.
 
 ### Per-field confidence + provenance
@@ -98,7 +99,7 @@ This taxonomy bounds both the mismatch feature and how much trust each advertise
 
 | ffprobe **can** assert (advertised value is checkable) | ffprobe **cannot** assert (advertised value is the only source) |
 | ------------------------------------------------------- | --------------------------------------------------------------- |
-| resolution, video codec, HDR/DV presence, audio format, audio channels, bit depth, runtime, container | **source** (BluRay vs WEB-DL vs HDTV), release group, edition, proper/repack, remux |
+| resolution, video codec, HDR/DV presence, audio format, audio channels, audio track count / languages (dual-audio), bit depth, runtime, container | **source** (BluRay vs WEB-DL vs HDTV), release group, edition, proper/repack, remux |
 
 "Source" is not a stream property — nothing in a container says "I came from a Blu-ray." Like release group and edition, it is inherently a name-derived claim. Parsing is the _only_ source for the right-hand column; for the left-hand column it produces a claim that a later step may confirm or contradict.
 

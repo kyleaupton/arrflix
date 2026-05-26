@@ -115,6 +115,8 @@ type Candidate struct {
 
 Two key shifts vs v0: (1) resolvers can emit multiple candidates with confidences, not "one answer or nothing", and (2) the raw evidence persists on the result so the decision log captures the why.
 
+**`EpisodeRef` is always _canonical_** — stable provider episode identity, never a raw scene/absolute number. A Western release resolves straight to it. An anime release names episodes in a different [numbering namespace](../parsing/README.md) (absolute `1071`, or a scene number matching neither the provider's seasons nor the absolute count); converting that namespaced number into a canonical `EpisodeRef` is the job of the future **`episode-numbering`** mapping resolver below (XEM / AniDB), which consumes parsing's namespace tag plus the resolved series identity. Reserving it as a registry slot now — rather than a schema change later — is the anime seam on the matcher side. Until it ships, anime episode identity falls to the `guessit` fallback, best-effort.
+
 ### The resolver catalog
 
 | Resolver         | Tier | Signal type                                 | v1 / v2 | Notes                                                |
@@ -125,6 +127,7 @@ Two key shifts vs v0: (1) resolvers can emit multiple candidates with confidence
 | `name-parse`     | 3    | Parsed title/year/S-E from the unified [parser](../parsing/README.md) | v1 | Primary string-parse signal; reads `internal/parsing` (no sidecar) |
 | `guessit`        | 3 (fallback) | Alternate parse when `name-parse` identity confidence is low | v1 → removed | Optional, gated by `Available()`; wraps `internal/guessit`; retained longest for anime, then deleted |
 | `path-context`   | 3    | Sibling-file and directory inference        | v1      | Low signal, useful tiebreaker                        |
+| `episode-numbering` | 3 | Maps a release's scene/absolute episode number → canonical episode identity (XEM- / AniDB-style mapping) | v2 (anime) | Future. Consumes [parsing](../parsing/README.md)'s numbering-namespace tag + the series identity; emits a canonical `EpisodeRef`. Registry-shaped so it drops in without a restructure. |
 
 Per-library resolver toggle is a v2 surface, but the catalog is **registry-shaped from v1** — resolvers register at startup, the aggregator iterates the registered set. Adding/removing resolvers later is dropping in / out of a slice, not a code restructure.
 
