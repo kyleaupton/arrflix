@@ -58,7 +58,7 @@ Greenfield scan does two passes per run:
    └─────────────────────────────────────────────────────────────────────┘
 ```
 
-The "in DB, not on disk" branch is what plugs `integrity/orphan-db-row` in [hygiene](../hygiene/README.md). The "size/mtime drift" branch is the foundation for `integrity/broken-hardlink` detection (a hardlink whose source was deleted often manifests as a size or stat change).
+The "in DB, not on disk" branch is what plugs `integrity/orphan-db-row` in [hygiene](../hygiene/README.md). Broken-hardlink detection no longer rides the "size/mtime drift" guess (which misses the canonical case — a torrent removed, link count 2→1, size/mtime unchanged): scan captures `st_nlink` per file, and a hardlink-imported file whose live `nlink == 1` is a _proven_ broken hardlink. That exact predicate and the inode reference graph it feeds are owned by [hardlinks](../hardlinks/README.md).
 
 Scan does not *fix* missing files; it surfaces them as findings. Remediation is the hygiene system's call.
 
@@ -91,6 +91,7 @@ Verify never walks the FS. It iterates the known `media_file` rows, `stat()`s ea
 - File present, size matches → update `last_verified_at`
 - File present, size differs → flag as drifted; emit hygiene finding
 - File missing → flip `file_exists = false`; emit `integrity/orphan-db-row` finding
+- File present, but a hardlink-imported file's `st_nlink` is now `1` → emit `integrity/broken-hardlink` (the exact [hardlinks](../hardlinks/README.md) `nlink` signal, not a size/mtime guess)
 
 Verify is the cheap continuous check. Run it hourly or daily — sample-based for large libraries (don't `stat()` 100K files at once).
 
@@ -212,6 +213,7 @@ Scan is mostly plumbing, but a few well-placed features make it feel like a thin
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | **[Matching](../matching/README.md)**                 | Scan emits `FileEvent`s for new files → `MatcherService.MatchBatch` consumes batches. Scan reads matcher's writes for dedup. |
 | **[Hygiene](../hygiene/README.md)**                   | Scan opportunistically populates `hygiene_finding` rows during walks (broken hardlinks, orphan rows, phantom files, drift). |
+| **[Hardlinks](../hardlinks/README.md)**               | Scan is the capture point: stamps `st_dev` / `st_ino` / `st_nlink` on `media_file_state` during the stats it already does; the exact `nlink` predicate replaces the old drift heuristic for broken-link detection. |
 | **[Metadata](../metadata/README.md)**                 | New matches trigger enrichment downstream — scan itself is metadata-agnostic.                                      |
 | **[Tracking / wants](../tracking/README.md)**         | A file appearing on disk (drop-in or scan-discovered) can satisfy an open want via matcher's drop-in flow. Scan doesn't talk to tracking directly. |
 | **Import**                                            | Import is the *write* side; scan is the *read* side. Together they keep DB and FS in sync. Post-import targeted scan confirms the file landed. |
@@ -239,7 +241,7 @@ A handful of FS realities that need explicit handling:
 Iteration 1 doesn't pin column types, but sketching the touch points clarifies the model:
 
 - `media_file` — added (on new discoveries), kept (on present files), unchanged (on missing — see state below)
-- `media_file_state` — `file_exists`, `file_size`, `last_verified_at`, possibly `mtime` field for future Diff heuristics
+- `media_file_state` — `file_exists`, `file_size`, `last_verified_at`, possibly `mtime` for future Diff heuristics, and `st_dev` / `st_ino` / `st_nlink` captured on every `stat()` (zero extra I/O — same `Stat_t`) for the [hardlinks](../hardlinks/README.md) reference graph
 - `media_file.osdb_hash` — populated on first discovery; never recomputed unless drift detected
 - `media_file_probe` (new table) — ffprobe output keyed on `media_file_id`; populated by `MediaProbeWorker`
 - `scan_run` (new table) — per-scan audit row (mode, trigger, started/completed, counts, errors)

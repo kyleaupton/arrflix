@@ -80,6 +80,8 @@ Arrflix is hardlink-first; hardlinks require one filesystem. The resolver makes 
 
 This is surfaced **before** the cost is paid: at routing/config time, when a downloader is paired with a library, Arrflix can report ✅ "hardlinks OK" or ⚠ "different filesystems — imports will copy." It also feeds a [hygiene](../hygiene/README.md) finding when an existing library's files turn out to be copies that _could_ have been links.
 
+This layer answers the **predictive, single-file** question only ("will this pair link?"). The **retrospective, multi-path** question — what is currently linked to what, an inode's `nlink` reference count, which torrent holds it alive — is the [hardlinks](../hardlinks/README.md) reference graph, which _consumes_ `device()` / `sameFile()` here rather than reimplementing them. Clean split: path-mapping is stateless and before-the-fact; hardlinks is the captured graph, after-the-fact.
+
 ### Auto-detection — three tiers
 
 Detection is an **assist**. It writes to the same table manual authoring does, only ever **fills empty** fields, and never overwrites a value the operator typed.
@@ -192,6 +194,7 @@ The operator therefore chooses among three postures over the _same_ data: **full
 - [Downloaders](../downloaders/README.md) — boundaries 1–2; aliases reference downloader rows; reachable-but-unusable health input.
 - [Media-server](../media-server/README.md) — boundaries 3–4; supersedes its per-`(library, server)` path-mapping override.
 - [Libraries](../libraries/README.md) — roots resolve through volumes by inference; multi-root interaction; the hardlink verdict pairs against library roots.
+- [Hardlinks](../hardlinks/README.md) — consumes this spec's `device()` / `sameFile()` primitives for the retrospective reference graph; predictive-vs-retrospective split.
 - [Scan](../scan/README.md) — shares the file-on-disk truth; import resolves + chooses link-vs-copy.
 - [Acquisition](../acquisition/README.md) — builds `SavePath`; holds a grab whose path can't resolve.
 - [Routing](../routing/README.md) — may read the hardlink verdict to avoid filesystem-spanning pairings.

@@ -104,7 +104,7 @@ For series the importer renders show-folder → season-folder → file and joins
 
 ## The filesystem operation
 
-`HardlinkOrCopy`: attempt `os.Link(source, dest)` first; on failure (cross-device, or the verdict already says different filesystems) fall back to a byte-for-byte copy into a temp file followed by an atomic rename. The chosen method (`hardlink` | `copy`) is recorded on the task and the import record.
+`HardlinkOrCopy`: attempt `os.Link(source, dest)` first; on failure (cross-device, or the verdict already says different filesystems) fall back to a byte-for-byte copy into a temp file followed by an atomic rename. The chosen method (`hardlink` | `copy`) is recorded on the task and the import record. That recorded method is half the [hardlinks](../hardlinks/README.md) broken-link predicate — a `hardlink`-method file whose live `nlink` later drops to `1` is _provably_ broken — and a cheap post-link `nlink ≥ 2` assertion here guards against an FS reporting a link it didn't actually make.
 
 Collision handling: if the destination already exists and this is a **reimport** (the task chains off a `previous_task_id`), the old file is removed first; otherwise the collision is a [`Conflict`](../../patterns/errors/README.md) and the task fails rather than clobbering.
 
@@ -212,6 +212,7 @@ The importer does **not** emit `want.available` (the verify step does) or `media
 - [Acquisition](../acquisition/README.md) — owns the pipeline and the want lifecycle; the importer is its back half.
 - [Routing](../routing/README.md) — decides the destination the importer executes.
 - [Path-mapping](../path-mapping/README.md) — boundary-1 resolution + the hardlink verdict.
+- [Hardlinks](../hardlinks/README.md) — the recorded import method feeds its broken-link predicate; optional post-link `nlink` assertion.
 - [Name-templates](../name-templates/README.md) — rendered here to compute the destination path.
 - [Libraries](../libraries/README.md) — destination roots, per-type default, the `media_file` index.
 - [Matching](../matching/README.md) — open-world identity; shares the filename parser, owns the drop-in path.

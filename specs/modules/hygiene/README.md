@@ -253,7 +253,7 @@ Janitor screens are useful. These are what make the dashboard *cool*:
 
 1. **Trend lines, prominently.** *"Broken hardlinks: 12 ⇩ from 47 last week."* The library is improving, visibly. Reward the user for tending it.
 2. **Root-cause clustering.** Don't list 47 broken hardlinks raw — group them: *"Most of these are under `{library}/Kids` — did you move that folder?"* Surface the likely cause, not just the symptoms.
-3. **Hardlink intelligence.** For each broken hardlink, show inode + ref count + which torrents currently hold the file alive: *"This file is held by 3 torrents in qBittorrent. Deleting the file won't free space until you also remove torrent X."* Nobody else does this.
+3. **Hardlink intelligence.** For each broken hardlink, show inode + ref count + which torrents currently hold the file alive: *"This file is held by 3 torrents in qBittorrent. Deleting the file won't free space until you also remove torrent X."* Nobody else does this. The engine is the [hardlinks](../hardlinks/README.md) reference graph — `st_nlink` plus the inode→torrent correlation; hygiene renders the story, it doesn't compute it.
 4. **"What changed" mode.** Diff since last audit: *"+5 broken hardlinks, +12 phantom files, −8 resolved."* Find the moment things broke.
 5. **Finding stories.** Each finding has a narrative pane: *"Imported 2024-03-12 from torrent abc123. Hardlink broke 2026-04-12 when the torrent was removed from qBittorrent. The original download is no longer in cache."* Debuggable history, not a mystery error.
 6. **Pre-flight diffs before destructive batches.** Already covered above — non-negotiable for trust.
@@ -273,6 +273,7 @@ Janitor screens are useful. These are what make the dashboard *cool*:
 | **Name templates (existing)**                         | Template changes regenerate `layout/naming-drift` findings; the batch re-render reads each file's [persisted parse](../parsing/README.md#persisted-parse) (lossless for grabbed, best-effort for scanned).                |
 | **Import (existing)**                                 | Hooks into import-error pathways: failed imports surface as `identity/unmatched-file`; the [re-gate](../quality-profiles/README.md#import-time-re-gate)'s soft-fail writes `quality/advertised-mismatch` at placement. |
 | **[Notifications](../notifications/README.md)**       | Critical findings push immediately; warnings batched into digest. Per-user preferences.                                            |
+| **[Hardlinks](../hardlinks/README.md)**               | Owns the reference graph behind `integrity/broken-hardlink` (the exact `nlink` + import-method predicate) and the hardlink-aware [cleanup preflight](#retention--cleanup-the-home-for-request-retention) (`ReclaimableBytes`). Hygiene presents; hardlinks computes. |
 | **Storage intelligence (future)**                     | Free-space + hygiene combined: *"You'd free 47 GB by resolving these 12 broken hardlinks."*                                       |
 
 ## Audit cadence and lifecycle
