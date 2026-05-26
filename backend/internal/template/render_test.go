@@ -3,11 +3,11 @@ package template
 import (
 	"testing"
 
-	"github.com/kyleaupton/arrflix/internal/release"
+	"github.com/kyleaupton/arrflix/internal/parsing"
 )
 
 func TestRender(t *testing.T) {
-	result := release.Parse("21.Jump.Street.2012.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.Atmos-GROUP")
+	result := parsing.Parse("21.Jump.Street.2012.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.Atmos-GROUP").Values()
 
 	// Create a namespaced context structure matching EvaluationContext.ToTemplateData()
 	media := map[string]any{
@@ -72,7 +72,7 @@ func TestRender(t *testing.T) {
 }
 
 func TestRenderZeroPaddedSeasonEpisode(t *testing.T) {
-	result := release.Parse("Breaking.Bad.S01E05.720p.BluRay.x264-GROUP")
+	result := parsing.Parse("Breaking.Bad.S01E05.720p.BluRay.x264-GROUP").Values()
 
 	media := map[string]any{
 		"Title":        "Breaking Bad",

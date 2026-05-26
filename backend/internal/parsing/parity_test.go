@@ -1,0 +1,283 @@
+package parsing
+
+// Tier-1 parity: hermetic, fast, runs in `just check`. It diffs Parse against
+// the committed goldens that the Tier-2 reference (internal/test/parity)
+// captured from live pinned Sonarr/Radarr. No containers, no network — the
+// goldens are embedded.
+//
+// Scope is the quality half currently implemented: the quality bin, release
+// group, proper/repack revision, and (movies) edition. Identity fields
+// (title/year/season/episode/languages) are compared once the identity port
+// lands. The codec/audio/HDR/dual-audio fields have no parse-oracle and are not
+// compared here at all.
+//
+// The test reports per-field/per-tool compat % and fails on any mismatch that
+// is not in the intentional-divergence allowlist.
+
+import (
+	_ "embed"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+	"testing"
+)
+
+// parityMiss is one field disagreement between Parse and the oracle.
+type parityMiss struct{ input, field, want, got string }
+
+//go:embed testdata/sonarr.golden.json
+var sonarrGolden []byte
+
+//go:embed testdata/radarr.golden.json
+var radarrGolden []byte
+
+// goldenEntry mirrors what the Tier-2 regen writes: the input and the raw
+// oracle parse output.
+type goldenEntry struct {
+	Input  string          `json:"input"`
+	Output json.RawMessage `json:"output"`
+}
+
+// oracleQuality is the shared shape of Sonarr/Radarr's nested quality object.
+type oracleQuality struct {
+	Quality struct {
+		Name string `json:"name"`
+	} `json:"quality"`
+	Revision struct {
+		Version  int  `json:"version"`
+		Real     int  `json:"real"`
+		IsRepack bool `json:"isRepack"`
+	} `json:"revision"`
+}
+
+// oracleFields is the tool-agnostic projection we compare against.
+type oracleFields struct {
+	bin      string
+	group    string
+	version  int
+	isRepack bool
+	edition  string // movies only
+}
+
+func (q *oracleQuality) bin() string {
+	if q == nil || q.Quality.Name == "" {
+		return "Unknown"
+	}
+	return q.Quality.Name
+}
+
+// allowlistKey identifies one intentional divergence: a specific field on a
+// specific input for a specific tool.
+type allowlistKey struct {
+	tool  string
+	input string
+	field string
+}
+
+// allowlist holds divergences we accept on purpose. compat % = matches /
+// (total − allowlisted); the test fails only on un-allowlisted mismatches of an
+// enforced field. Each entry carries the reason it's expected.
+var allowlist = map[allowlistKey]string{
+	// Sonarr couples quality to a successful EPISODE parse: a title with no
+	// valid season/episode (movie-ish or malformed) comes back Unknown. arrflix
+	// extracts quality independent of identity, so it reports the real bin.
+	{"sonarr", "Sans.Series.De.Traces.FRENCH.720p.BluRay.x264-FHD", "bin"}:                             "no S/E → Sonarr Unknown; arrflix quality is identity-independent",
+	{"sonarr", "Series Away(2001) Bluray FHD Hi10P.mkv", "bin"}:                                        "no S/E → Sonarr Unknown; arrflix quality is identity-independent",
+	{"sonarr", "Series.Title.S05EO1.Episode.Title.2160p.BDRip.AAC.7.1.HDR10.x265.10bit-Markll", "bin"}: "malformed S05EO1 (letter O) → Sonarr Unknown; arrflix quality is identity-independent",
+	{"sonarr", "The.Series.The.Lost.Sonarr.Summer.HR.WS.PDTV.x264-DHD", "bin"}:                         "no S/E → Sonarr Unknown; arrflix quality is identity-independent",
+	{"sonarr", "[Vodes] Series Title - Other Title (2020) [BDRemux 1080p HEVC Dual-Audio]", "bin"}:     "no episode number → Sonarr Unknown; arrflix quality is identity-independent",
+	{"sonarr", "[coldhell] Series v2 [BD1080p][5A45EABE].mkv", "bin"}:                                  "no episode number → Sonarr Unknown; arrflix quality is identity-independent",
+	{"sonarr", "[coldhell] Series v3 [BD720p][03192D4C]", "bin"}:                                       "no episode number → Sonarr Unknown; arrflix quality is identity-independent",
+
+	// Radarr v6 uses a different movie quality vocabulary than the Sonarr-style
+	// names arrflix emits uniformly: a distinct Remux-1080p/2160p bin (vs
+	// "Bluray-Xp Remux") and BR-DISK for full discs.
+	{"radarr", "The Movie 2023 2160p BluRay REMUX HEVC DTS-HD MA TrueHD 7.1 Atmos-GROUP", "bin"}: "Radarr v6 'Remux-2160p' vs arrflix unified 'Bluray-2160p Remux'",
+	{"radarr", "The.Movie.2018.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-FraMeSToR", "bin"}:           "Radarr v6 'Remux-1080p' vs arrflix unified 'Bluray-1080p Remux'",
+	{"radarr", "The.Movie.2020.Hybrid.2160p.UHD.BluRay.Remux.DV.HDR.HEVC.Atmos-GROUP", "bin"}:    "Radarr v6 'Remux-2160p' vs arrflix unified 'Bluray-2160p Remux'",
+	{"radarr", "The.Movie.2018.1080p.BluRay.AVC.TrueHD.7.1.Atmos-GROUP", "bin"}:                  "Radarr v6 'BR-DISK' (full disc) vs arrflix 'Bluray-1080p'",
+}
+
+// fieldSpec names a compared field and whether a mismatch fails the test.
+// Enforced fields are the validated ones; group is reported-only for now — it
+// was never parity-tested before and its long-tail divergences (both tools
+// over/under-extracting) need a dedicated triage pass.
+type fieldSpec struct {
+	name     string
+	enforced bool
+}
+
+func TestParitySonarr(t *testing.T) {
+	runParity(t, "sonarr", sonarrGolden, decodeSonarr, []fieldSpec{
+		{"bin", true}, {"version", true}, {"isRepack", true}, {"group", false},
+	})
+}
+
+func TestParityRadarr(t *testing.T) {
+	runParity(t, "radarr", radarrGolden, decodeRadarr, []fieldSpec{
+		{"bin", true}, {"version", true}, {"isRepack", true}, {"edition", true}, {"group", false},
+	})
+}
+
+func decodeSonarr(raw json.RawMessage) oracleFields {
+	var out struct {
+		ParsedEpisodeInfo *struct {
+			Quality      *oracleQuality `json:"quality"`
+			ReleaseGroup string         `json:"releaseGroup"`
+		} `json:"parsedEpisodeInfo"`
+	}
+	_ = json.Unmarshal(raw, &out)
+	if out.ParsedEpisodeInfo == nil {
+		return oracleFields{bin: "Unknown"}
+	}
+	return oracleFields{
+		bin:      out.ParsedEpisodeInfo.Quality.bin(),
+		group:    out.ParsedEpisodeInfo.ReleaseGroup,
+		version:  out.ParsedEpisodeInfo.Quality.Revision.Version,
+		isRepack: out.ParsedEpisodeInfo.Quality.Revision.IsRepack,
+	}
+}
+
+func decodeRadarr(raw json.RawMessage) oracleFields {
+	var out struct {
+		ParsedMovieInfo *struct {
+			Quality      *oracleQuality `json:"quality"`
+			ReleaseGroup string         `json:"releaseGroup"`
+			Edition      string         `json:"edition"`
+		} `json:"parsedMovieInfo"`
+	}
+	_ = json.Unmarshal(raw, &out)
+	if out.ParsedMovieInfo == nil {
+		return oracleFields{bin: "Unknown"}
+	}
+	return oracleFields{
+		bin:      out.ParsedMovieInfo.Quality.bin(),
+		group:    out.ParsedMovieInfo.ReleaseGroup,
+		version:  out.ParsedMovieInfo.Quality.Revision.Version,
+		isRepack: out.ParsedMovieInfo.Quality.Revision.IsRepack,
+		edition:  out.ParsedMovieInfo.Edition,
+	}
+}
+
+// fieldStat tracks compat for one field.
+type fieldStat struct {
+	matches     int
+	compared    int
+	allowlisted int
+}
+
+func runParity(t *testing.T, tool string, golden []byte, decode func(json.RawMessage) oracleFields, fields []fieldSpec) {
+	t.Helper()
+
+	var entries []goldenEntry
+	if err := json.Unmarshal(golden, &entries); err != nil {
+		t.Fatalf("decode %s golden: %v", tool, err)
+	}
+	if len(entries) == 0 {
+		t.Fatalf("%s golden is empty", tool)
+	}
+
+	stats := map[string]*fieldStat{}
+	enforced := map[string]bool{}
+	for _, f := range fields {
+		stats[f.name] = &fieldStat{}
+		enforced[f.name] = f.enforced
+	}
+
+	var failMisses, reportMisses []parityMiss
+
+	for _, e := range entries {
+		want := decode(e.Output)
+		got := Parse(e.Input).Values()
+
+		for _, f := range fields {
+			expected, actual := compareField(f.name, want, got)
+			st := stats[f.name]
+			st.compared++
+			if expected == actual {
+				st.matches++
+				continue
+			}
+			if _, ok := allowlist[allowlistKey{tool, e.Input, f.name}]; ok {
+				st.allowlisted++
+				continue
+			}
+			m := parityMiss{e.Input, f.name, expected, actual}
+			if f.enforced {
+				failMisses = append(failMisses, m)
+			} else {
+				reportMisses = append(reportMisses, m)
+			}
+		}
+	}
+
+	// Report per-field compat %.
+	t.Logf("=== %s parity over %d inputs ===", tool, len(entries))
+	for _, f := range fields {
+		st := stats[f.name]
+		denom := st.compared - st.allowlisted
+		pct := 100.0
+		if denom > 0 {
+			pct = float64(st.matches) / float64(denom) * 100
+		}
+		tag := "enforced"
+		if !f.enforced {
+			tag = "reported"
+		}
+		t.Logf("  %-9s %6.2f%%  (%d/%d matched, %d allowlisted) [%s]", f.name, pct, st.matches, denom, st.allowlisted, tag)
+	}
+
+	if len(reportMisses) > 0 {
+		t.Logf("%d reported-only %s divergences (not enforced — triage pending):%s", len(reportMisses), tool, formatMisses(reportMisses))
+	}
+	if len(failMisses) > 0 {
+		t.Errorf("%d un-allowlisted enforced %s mismatches:%s", len(failMisses), tool, formatMisses(failMisses))
+	}
+}
+
+// formatMisses renders misses deterministically (sorted by field then input).
+func formatMisses(misses []parityMiss) string {
+	sort.Slice(misses, func(i, j int) bool {
+		if misses[i].field != misses[j].field {
+			return misses[i].field < misses[j].field
+		}
+		return misses[i].input < misses[j].input
+	})
+	var b strings.Builder
+	for _, m := range misses {
+		fmt.Fprintf(&b, "\n  [%s] %q\n      want %q  got %q", m.field, m.input, m.want, m.got)
+	}
+	return b.String()
+}
+
+// compareField returns the (expected, actual) string pair for a field, with the
+// oracle→ours normalizations applied.
+func compareField(field string, want oracleFields, got Values) (string, string) {
+	switch field {
+	case "bin":
+		return want.bin, got.Quality.Full
+	case "group":
+		return want.group, got.Release.ReleaseGroup
+	case "version":
+		// Compare the proper level, not the raw counter: the oracle's baseline
+		// is 1 (and 0 when it didn't parse), while our engine uses 0 for the
+		// original. properLevel collapses both to "how many propers deep".
+		return fmt.Sprintf("%d", properLevel(want.version)), fmt.Sprintf("%d", properLevel(got.Quality.Version))
+	case "isRepack":
+		return fmt.Sprintf("%t", want.isRepack), fmt.Sprintf("%t", got.Quality.IsRepack)
+	case "edition":
+		return want.edition, got.Identity.Edition
+	default:
+		return "", ""
+	}
+}
+
+// properLevel maps a revision counter to "propers deep": 0/1 → 0 (original),
+// 2 → 1, etc. Symmetric across the oracle's 1-based and our 0-based baselines.
+func properLevel(v int) int {
+	if v <= 1 {
+		return 0
+	}
+	return v - 1
+}

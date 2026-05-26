@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kyleaupton/arrflix/internal/release"
+	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/template"
 )
 
@@ -108,8 +108,14 @@ type MediaInfoFields struct {
 	VideoMultiViewCount int      `path:"mediainfo.video_multi_view_count" label:"Video Multi-View Count" type:"number" phase:"post_download"`
 }
 
-// NewEvaluationContext creates an EvaluationContext from a DownloadCandidate and parse result
-func NewEvaluationContext(candidate DownloadCandidate, result release.ParseResult) EvaluationContext {
+// NewEvaluationContext creates an EvaluationContext from a DownloadCandidate
+// and a parsed release. It fills the advertised namespaces (Quality, Release)
+// from the parse via its flat Values() projection; Media is populated later by
+// matching (WithMedia/WithSeriesInfo) and MediaInfo by the ffprobe extractor
+// (WithMediaInfo). Edition lives under Identity in the parse model but maps to
+// the Release namespace here, where the evaluation context groups it.
+func NewEvaluationContext(candidate DownloadCandidate, parsed parsing.ParsedRelease) EvaluationContext {
+	v := parsed.Values()
 	return EvaluationContext{
 		Candidate: CandidateFields{
 			Size:        candidate.Size,
@@ -128,16 +134,16 @@ func NewEvaluationContext(candidate DownloadCandidate, result release.ParseResul
 			GUID:        candidate.GUID,
 		},
 		Quality: QualityFields{
-			Full:       result.Quality.Full(),
-			Resolution: result.Quality.Resolution(),
-			Source:     result.Quality.Source(),
-			IsRemux:    result.Quality.IsRemux(),
-			IsRepack:   result.Quality.Revision.IsRepack,
-			Version:    result.Quality.Version(),
+			Full:       v.Quality.Full,
+			Resolution: v.Quality.Resolution,
+			Source:     v.Quality.Source,
+			IsRemux:    v.Quality.IsRemux,
+			IsRepack:   v.Quality.IsRepack,
+			Version:    v.Quality.Version,
 		},
 		Release: ReleaseFields{
-			ReleaseGroup: result.Release.GetReleaseGroup(),
-			Edition:      result.Release.GetEdition(),
+			ReleaseGroup: v.Release.ReleaseGroup,
+			Edition:      v.Identity.Edition,
 		},
 		Media:     MediaFields{},
 		MediaInfo: nil,

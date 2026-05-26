@@ -8,7 +8,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
-	"github.com/kyleaupton/arrflix/internal/release"
+	"github.com/kyleaupton/arrflix/internal/parsing"
 )
 
 func TestEngine_Evaluate(t *testing.T) {
@@ -32,7 +32,7 @@ func TestEngine_Evaluate(t *testing.T) {
 		Age:       1000,
 		AgeHours:  10,
 	}
-	q := release.Parse(candidate.Title)
+	q := parsing.Parse(candidate.Title)
 	evalCtx := model.NewEvaluationContext(candidate, q)
 
 	trace, err := engine.Evaluate(context.Background(), evalCtx)

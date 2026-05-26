@@ -1,11 +1,19 @@
-package release
+package parsing
 
 import (
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 )
+
+// rawParse is the engine's internal result: the ported quality half plus the
+// release group and edition. Parse wraps it into the ParsedRelease model.
+type rawParse struct {
+	quality  Quality
+	revision Revision
+	group    *string
+	edition  *string
+}
 
 type Resolution string
 
@@ -167,209 +175,6 @@ type Revision struct {
 	Version  int
 	Real     int
 	IsRepack bool
-}
-
-// ParseResult contains all information parsed from a release title.
-// It separates quality metrics (resolution, source, codecs) from release metadata
-// (release group, edition) for semantic clarity.
-type ParseResult struct {
-	Quality QualityInfo
-	Release ReleaseInfo
-}
-
-// QualityInfo represents encoding quality characteristics.
-// This includes resolution, source quality, and version information.
-type QualityInfo struct {
-	Quality  Quality  // The core quality enum (resolution + source combination)
-	Revision Revision // Version/repack information
-}
-
-// Source returns the source type (BluRay, WEB-DL, HDTV, etc.)
-func (qi QualityInfo) Source() string {
-	return qi.Quality.Source()
-}
-
-// Resolution returns the resolution string (720p, 1080p, 2160p, etc.)
-func (qi QualityInfo) Resolution() string {
-	return qi.Quality.Resolution()
-}
-
-// IsRemux returns true if this is a REMUX quality
-func (qi QualityInfo) IsRemux() bool {
-	return qi.Quality.IsRemux()
-}
-
-// Full returns the Radarr/Sonarr-style quality tag (e.g., "HDTV-720p", "WEBDL-1080p")
-func (qi QualityInfo) Full() string {
-	return qi.Quality.String()
-}
-
-// Version returns the revision version number
-func (qi QualityInfo) Version() int {
-	return qi.Revision.Version
-}
-
-// String returns a human-readable representation including revision info
-func (qi QualityInfo) String() string {
-	res := qi.Quality.String()
-	if qi.Revision.Version > 1 {
-		res += fmt.Sprintf(" v%d", qi.Revision.Version)
-	}
-	if qi.Revision.IsRepack {
-		res += " [REPACK]"
-	}
-	return res
-}
-
-// ReleaseInfo represents release metadata (not quality-related).
-// This includes information about who released it and what edition it is.
-type ReleaseInfo struct {
-	ReleaseGroup *string // Release group name (e.g., "DIMENSION", "NTb", "Tigole")
-	Edition      *string // Movie edition (e.g., "Director's Cut", "Extended", "IMAX")
-}
-
-// GetReleaseGroup returns the release group name, or empty string if not found
-func (ri ReleaseInfo) GetReleaseGroup() string {
-	if ri.ReleaseGroup == nil {
-		return ""
-	}
-	return *ri.ReleaseGroup
-}
-
-// GetEdition returns the edition string, or empty string if not found
-func (ri ReleaseInfo) GetEdition() string {
-	if ri.Edition == nil {
-		return ""
-	}
-	return *ri.Edition
-}
-
-// QualityModel is the legacy struct that combines quality and release info.
-// Deprecated: Use ParseResult with separate QualityInfo and ReleaseInfo instead.
-type QualityModel struct {
-	Quality      Quality
-	Revision     Revision
-	ReleaseGroup *string // Pointer allows nil (not found) vs "" (empty)
-	Edition      *string // Movies only, nil for TV or not found
-}
-
-func (qm QualityModel) String() string {
-	res := qm.Quality.String()
-	if qm.Revision.Version > 1 {
-		res += fmt.Sprintf(" v%d", qm.Revision.Version)
-	}
-	if qm.Revision.IsRepack {
-		res += " [REPACK]"
-	}
-	return res
-}
-
-func (qm QualityModel) Source() string {
-	return qm.Quality.Source()
-}
-
-func (qm QualityModel) Resolution() string {
-	return qm.Quality.Resolution()
-}
-
-func (qm QualityModel) IsRemux() bool {
-	return qm.Quality.IsRemux()
-}
-
-// Full returns the Radarr/Sonarr-style quality tag (e.g., "HDTV-720p", "WEBDL-1080p")
-// without revision information. This matches what name templates expect: {{.Quality.Full}}
-func (qm QualityModel) Full() string {
-	return qm.Quality.String()
-}
-
-// Version returns the revision version number
-func (qm QualityModel) Version() int {
-	return qm.Revision.Version
-}
-
-// FieldInfo represents metadata about an available quality field
-type FieldInfo struct {
-	Name        string                 // Field name (e.g., "Full", "Resolution")
-	Type        string                 // Field type: "string", "bool", "int"
-	Description string                 // Human-readable description
-	Accessor    func(QualityModel) any // Function to get the field value
-}
-
-// QualityFields is the registry of all available quality fields
-var QualityFields = []FieldInfo{
-	{
-		Name:        "Full",
-		Type:        "string",
-		Description: "Full quality tag (e.g., HDTV-720p, WEBDL-1080p)",
-		Accessor:    func(qm QualityModel) any { return qm.Full() },
-	},
-	{
-		Name:        "Resolution",
-		Type:        "string",
-		Description: "Resolution value (e.g., 720p, 1080p, 2160p)",
-		Accessor:    func(qm QualityModel) any { return qm.Resolution() },
-	},
-	{
-		Name:        "Source",
-		Type:        "string",
-		Description: "Source type (e.g., HDTV, WEB-DL, BluRay)",
-		Accessor:    func(qm QualityModel) any { return qm.Source() },
-	},
-	{
-		Name:        "IsRemux",
-		Type:        "bool",
-		Description: "Whether the quality is a remux",
-		Accessor:    func(qm QualityModel) any { return qm.IsRemux() },
-	},
-	{
-		Name:        "IsRepack",
-		Type:        "bool",
-		Description: "Whether the release is a repack",
-		Accessor:    func(qm QualityModel) any { return qm.Revision.IsRepack },
-	},
-	{
-		Name:        "Version",
-		Type:        "int",
-		Description: "Revision version number",
-		Accessor:    func(qm QualityModel) any { return qm.Version() },
-	},
-	{
-		Name:        "ReleaseGroup",
-		Type:        "string",
-		Description: "Release group name (e.g., DIMENSION, NTb, Tigole)",
-		Accessor: func(qm QualityModel) any {
-			if qm.ReleaseGroup == nil {
-				return ""
-			}
-			return *qm.ReleaseGroup
-		},
-	},
-	{
-		Name:        "Edition",
-		Type:        "string",
-		Description: "Movie edition (e.g., Director's Cut, Extended) - movies only",
-		Accessor: func(qm QualityModel) any {
-			if qm.Edition == nil {
-				return ""
-			}
-			return *qm.Edition
-		},
-	},
-}
-
-// GetField retrieves a field value by name from a QualityModel
-func GetField(name string, qm QualityModel) (any, error) {
-	for _, field := range QualityFields {
-		if field.Name == name {
-			return field.Accessor(qm), nil
-		}
-	}
-	return nil, fmt.Errorf("unknown quality field: %s", name)
-}
-
-// ListFields returns all available quality fields
-func ListFields() []FieldInfo {
-	return QualityFields
 }
 
 var (
@@ -758,13 +563,6 @@ func parseEdition(title string) *string {
 	return nil
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func ParseResolution(name string) int {
 	match := ResolutionRegex.FindStringSubmatch(name)
 	if match != nil {
@@ -798,49 +596,47 @@ func ParseResolution(name string) int {
 	return 0
 }
 
-// Parse extracts quality and release information from a release title.
-// It returns a ParseResult containing separated QualityInfo (resolution, source, etc.)
-// and ReleaseInfo (release group, edition).
-func Parse(name string) ParseResult {
+// parseRaw extracts quality, revision, release group, and edition from a
+// release title or filename. It is the ported Sonarr/Radarr quality engine;
+// Parse wraps its output into the ParsedRelease model.
+func parseRaw(name string) rawParse {
 	normalizedName := strings.ReplaceAll(name, "_", " ")
 	normalizedName = strings.TrimSpace(normalizedName)
 
-	result := ParseResult{
-		Quality: QualityInfo{Quality: Unknown},
-	}
+	result := rawParse{quality: Unknown}
 
 	// Parse Revision
 	if vMatch := VersionRegex.FindStringSubmatch(normalizedName); vMatch != nil {
 		for i, groupName := range VersionRegex.SubexpNames() {
 			if groupName == "version" && vMatch[i] != "" {
 				v, _ := strconv.Atoi(vMatch[i])
-				result.Quality.Revision.Version = v
+				result.revision.Version = v
 			}
 		}
 	}
 
 	if ProperRegex.MatchString(normalizedName) {
-		if result.Quality.Revision.Version < 2 {
-			result.Quality.Revision.Version = 2
+		if result.revision.Version < 2 {
+			result.revision.Version = 2
 		} else {
-			result.Quality.Revision.Version++
+			result.revision.Version++
 		}
 	}
 
 	if RepackRegex.MatchString(normalizedName) {
-		result.Quality.Revision.IsRepack = true
-		if result.Quality.Revision.Version < 2 {
-			result.Quality.Revision.Version = 2
+		result.revision.IsRepack = true
+		if result.revision.Version < 2 {
+			result.revision.Version = 2
 		} else {
-			result.Quality.Revision.Version++
+			result.revision.Version++
 		}
 	}
 
 	// Parse release group (use original name to preserve formatting)
-	result.Release.ReleaseGroup = parseReleaseGroup(name)
+	result.group = parseReleaseGroup(name)
 
 	// Parse edition (movies only - parsed for all but primarily used for movies)
-	result.Release.Edition = parseEdition(normalizedName)
+	result.edition = parseEdition(normalizedName)
 
 	resolution := ParseResolution(normalizedName)
 	remuxMatch := RemuxRegex.MatchString(normalizedName)
@@ -867,7 +663,7 @@ func Parse(name string) ParseResult {
 
 	// Raw-HD detection (check early, before source detection)
 	if RawHDRegex.MatchString(normalizedName) {
-		result.Quality.Quality = RAWHD
+		result.quality = RAWHD
 		return result
 	}
 
@@ -875,35 +671,35 @@ func Parse(name string) ParseResult {
 	if BlurayRegex.MatchString(normalizedName) {
 		// XviD/DivX + Bluray = Bluray-480p (Sonarr parity)
 		if hasXvid || hasDivx {
-			result.Quality.Quality = Bluray480p
+			result.quality = Bluray480p
 			return result
 		}
 		switch resolution {
 		case 2160:
 			if remuxMatch {
-				result.Quality.Quality = Bluray2160pRemux
+				result.quality = Bluray2160pRemux
 			} else {
-				result.Quality.Quality = Bluray2160p
+				result.quality = Bluray2160p
 			}
 		case 1080:
 			if remuxMatch {
-				result.Quality.Quality = Bluray1080pRemux
+				result.quality = Bluray1080pRemux
 			} else {
-				result.Quality.Quality = Bluray1080p
+				result.quality = Bluray1080p
 			}
 		case 720:
-			result.Quality.Quality = Bluray720p
+			result.quality = Bluray720p
 		case 576:
-			result.Quality.Quality = Bluray576p
+			result.quality = Bluray576p
 		case 480, 360, 540:
-			result.Quality.Quality = Bluray480p
+			result.quality = Bluray480p
 		default:
 			// Treat a remux without resolution as 1080p, not 720p
 			// 720p remux should fallback as 720p BluRay
 			if remuxMatch {
-				result.Quality.Quality = Bluray1080pRemux
+				result.quality = Bluray1080pRemux
 			} else {
-				result.Quality.Quality = Bluray720p
+				result.quality = Bluray720p
 			}
 		}
 		return result
@@ -912,17 +708,17 @@ func Parse(name string) ParseResult {
 	if WebDlRegex.MatchString(normalizedName) && !WebRipRegex.MatchString(normalizedName) {
 		switch resolution {
 		case 2160:
-			result.Quality.Quality = WEBDL2160p
+			result.quality = WEBDL2160p
 		case 1080:
-			result.Quality.Quality = WEBDL1080p
+			result.quality = WEBDL1080p
 		case 720:
-			result.Quality.Quality = WEBDL720p
+			result.quality = WEBDL720p
 		default:
 			// [WEBDL] bracket without resolution defaults to 720p
 			if strings.Contains(name, "[WEBDL]") {
-				result.Quality.Quality = WEBDL720p
+				result.quality = WEBDL720p
 			} else {
-				result.Quality.Quality = WEBDL480p
+				result.quality = WEBDL480p
 			}
 		}
 		return result
@@ -931,13 +727,13 @@ func Parse(name string) ParseResult {
 	if WebRipRegex.MatchString(normalizedName) {
 		switch resolution {
 		case 2160:
-			result.Quality.Quality = WEBRip2160p
+			result.quality = WEBRip2160p
 		case 1080:
-			result.Quality.Quality = WEBRip1080p
+			result.quality = WEBRip1080p
 		case 720:
-			result.Quality.Quality = WEBRip720p
+			result.quality = WEBRip720p
 		default:
-			result.Quality.Quality = WEBRip480p
+			result.quality = WEBRip480p
 		}
 		return result
 	}
@@ -945,29 +741,29 @@ func Parse(name string) ParseResult {
 	if HdtvRegex.MatchString(normalizedName) {
 		// HDTV + MPEG2 = Raw-HD (uncompressed HDTV capture)
 		if MPEG2Regex.MatchString(normalizedName) {
-			result.Quality.Quality = RAWHD
+			result.quality = RAWHD
 			return result
 		}
 		switch resolution {
 		case 2160:
-			result.Quality.Quality = HDTV2160p
+			result.quality = HDTV2160p
 		case 1080:
-			result.Quality.Quality = HDTV1080p
+			result.quality = HDTV1080p
 		case 720:
-			result.Quality.Quality = HDTV720p
+			result.quality = HDTV720p
 		default:
 			// [HDTV] bracket without resolution defaults to 720p
 			if strings.Contains(name, "[HDTV]") {
-				result.Quality.Quality = HDTV720p
+				result.quality = HDTV720p
 			} else {
-				result.Quality.Quality = SDTV
+				result.quality = SDTV
 			}
 		}
 		return result
 	}
 
 	if DvdRegex.MatchString(normalizedName) {
-		result.Quality.Quality = DVD
+		result.quality = DVD
 		return result
 	}
 
@@ -975,13 +771,13 @@ func Parse(name string) ParseResult {
 	if BDRipRegex.MatchString(normalizedName) || BRRipRegex.MatchString(normalizedName) {
 		switch resolution {
 		case 2160:
-			result.Quality.Quality = Bluray2160p
+			result.quality = Bluray2160p
 		case 1080:
-			result.Quality.Quality = Bluray1080p
+			result.quality = Bluray1080p
 		case 720:
-			result.Quality.Quality = Bluray720p
+			result.quality = Bluray720p
 		default:
-			result.Quality.Quality = Bluray480p
+			result.quality = Bluray480p
 		}
 		return result
 	}
@@ -991,15 +787,15 @@ func Parse(name string) ParseResult {
 		DSRRegex.MatchString(normalizedName) || TVRipRegex.MatchString(normalizedName) {
 		switch resolution {
 		case 1080:
-			result.Quality.Quality = HDTV1080p
+			result.quality = HDTV1080p
 		case 720:
-			result.Quality.Quality = HDTV720p
+			result.quality = HDTV720p
 		default:
 			// HR.WS (High Resolution Widescreen) PDTV = 720p
 			if HighDefPdtvRegex.MatchString(normalizedName) {
-				result.Quality.Quality = HDTV720p
+				result.quality = HDTV720p
 			} else {
-				result.Quality.Quality = SDTV
+				result.quality = SDTV
 			}
 		}
 		return result
@@ -1010,15 +806,15 @@ func Parse(name string) ParseResult {
 	if remuxMatch && resolution != 0 {
 		switch resolution {
 		case 480:
-			result.Quality.Quality = Bluray480p
+			result.quality = Bluray480p
 		case 720:
-			result.Quality.Quality = Bluray720p
+			result.quality = Bluray720p
 		case 1080:
-			result.Quality.Quality = Bluray1080pRemux
+			result.quality = Bluray1080pRemux
 		case 2160:
-			result.Quality.Quality = Bluray2160pRemux
+			result.quality = Bluray2160pRemux
 		}
-		if result.Quality.Quality != Unknown {
+		if result.quality != Unknown {
 			return result
 		}
 	}
@@ -1028,25 +824,25 @@ func Parse(name string) ParseResult {
 		switch resolution {
 		case 2160:
 			if remuxMatch {
-				result.Quality.Quality = Bluray2160pRemux
+				result.quality = Bluray2160pRemux
 			} else {
-				result.Quality.Quality = Bluray2160p
+				result.quality = Bluray2160p
 			}
 		case 1080:
 			if remuxMatch {
-				result.Quality.Quality = Bluray1080pRemux
+				result.quality = Bluray1080pRemux
 			} else {
-				result.Quality.Quality = Bluray1080p
+				result.quality = Bluray1080p
 			}
 		case 720:
-			result.Quality.Quality = Bluray720p
+			result.quality = Bluray720p
 		case 360, 480, 540, 576:
-			result.Quality.Quality = DVD
+			result.quality = DVD
 		default:
 			if remuxMatch {
-				result.Quality.Quality = Bluray1080pRemux
+				result.quality = Bluray1080pRemux
 			} else {
-				result.Quality.Quality = Bluray720p
+				result.quality = Bluray720p
 			}
 		}
 		return result
@@ -1056,15 +852,15 @@ func Parse(name string) ParseResult {
 	if AnimeWebDlRegex.MatchString(normalizedName) {
 		switch resolution {
 		case 2160:
-			result.Quality.Quality = WEBDL2160p
+			result.quality = WEBDL2160p
 		case 1080:
-			result.Quality.Quality = WEBDL1080p
+			result.quality = WEBDL1080p
 		case 720:
-			result.Quality.Quality = WEBDL720p
+			result.quality = WEBDL720p
 		case 360, 480, 540, 576:
-			result.Quality.Quality = WEBDL480p
+			result.quality = WEBDL480p
 		default:
-			result.Quality.Quality = WEBDL720p
+			result.quality = WEBDL720p
 		}
 		return result
 	}
@@ -1084,59 +880,59 @@ func Parse(name string) ParseResult {
 		case 2160:
 			if extQuality == Bluray720p {
 				if remuxMatch {
-					result.Quality.Quality = Bluray2160pRemux
+					result.quality = Bluray2160pRemux
 				} else {
-					result.Quality.Quality = Bluray2160p
+					result.quality = Bluray2160p
 				}
 			} else {
-				result.Quality.Quality = HDTV2160p
+				result.quality = HDTV2160p
 			}
 		case 1080:
 			if extQuality == Bluray720p {
 				if remuxMatch {
-					result.Quality.Quality = Bluray1080pRemux
+					result.quality = Bluray1080pRemux
 				} else {
-					result.Quality.Quality = Bluray1080p
+					result.quality = Bluray1080p
 				}
 			} else {
-				result.Quality.Quality = HDTV1080p
+				result.quality = HDTV1080p
 			}
 		case 720:
 			if extQuality == Bluray720p {
-				result.Quality.Quality = Bluray720p
+				result.quality = Bluray720p
 			} else {
-				result.Quality.Quality = HDTV720p
+				result.quality = HDTV720p
 			}
 		case 360, 480, 576:
 			if extQuality == Bluray720p {
-				result.Quality.Quality = Bluray480p
+				result.quality = Bluray480p
 			} else {
-				result.Quality.Quality = SDTV
+				result.quality = SDTV
 			}
 		}
-		if result.Quality.Quality != Unknown {
+		if result.quality != Unknown {
 			return result
 		}
 	}
 
 	// x264 codec fallback → SDTV (Sonarr parity)
 	if hasX264 {
-		result.Quality.Quality = SDTV
+		result.quality = SDTV
 		return result
 	}
 
 	// Concatenated bluray patterns (bluray720p, bluray1080p, bluray2160p)
 	normalizedLower := strings.ToLower(normalizedName)
 	if strings.Contains(normalizedLower, "bluray720p") {
-		result.Quality.Quality = Bluray720p
+		result.quality = Bluray720p
 		return result
 	}
 	if strings.Contains(normalizedLower, "bluray1080p") {
-		result.Quality.Quality = Bluray1080p
+		result.quality = Bluray1080p
 		return result
 	}
 	if strings.Contains(normalizedLower, "bluray2160p") {
-		result.Quality.Quality = Bluray2160p
+		result.quality = Bluray2160p
 		return result
 	}
 
@@ -1147,10 +943,10 @@ func Parse(name string) ParseResult {
 			if otherMatch[i] != "" {
 				switch gn {
 				case "hdtv":
-					result.Quality.Quality = HDTV720p
+					result.quality = HDTV720p
 					return result
 				case "sdtv":
-					result.Quality.Quality = SDTV
+					result.quality = SDTV
 					return result
 				}
 			}
@@ -1159,10 +955,10 @@ func Parse(name string) ParseResult {
 
 	// Extension-based fallback (Sonarr parity)
 	// If we still have Unknown quality, try to determine from extension
-	if result.Quality.Quality == Unknown {
+	if result.quality == Unknown {
 		extQuality := getQualityForExtension(name)
 		if extQuality != Unknown {
-			result.Quality.Quality = extQuality
+			result.quality = extQuality
 		}
 	}
 

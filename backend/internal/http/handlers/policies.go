@@ -7,7 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/kyleaupton/arrflix/internal/model"
-	"github.com/kyleaupton/arrflix/internal/release"
+	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/service"
 )
 
@@ -322,7 +322,7 @@ type PoliciesEvaluateOutput struct {
 }
 
 func (h *Policies) Evaluate(ctx context.Context, input *PoliciesEvaluateInput) (*PoliciesEvaluateOutput, error) {
-	q := release.Parse(input.Body.Title)
+	q := parsing.Parse(input.Body.Title)
 	evalCtx := model.NewEvaluationContext(input.Body, q)
 
 	trace, err := h.svc.Policies.Evaluate(ctx, evalCtx)
