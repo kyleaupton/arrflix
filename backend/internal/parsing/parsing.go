@@ -1,12 +1,39 @@
 package parsing
 
+// Domain selects which identity pattern set Parse applies. Quality and release
+// metadata are domain-free and always parsed; only identity (title, year,
+// numbering) is domain-specific.
+type Domain string
+
+const (
+	// DomainAuto lets Parse detect series vs movie from the title.
+	DomainAuto Domain = ""
+	// DomainSeries applies the Sonarr series patterns only.
+	DomainSeries Domain = "series"
+	// DomainMovie applies the Radarr movie patterns only.
+	DomainMovie Domain = "movie"
+)
+
 // config holds the options Parse was called with.
 type config struct {
 	isPath bool
+	domain Domain
 }
 
 // Option configures a Parse call.
 type Option func(*config)
+
+// AsSeries parses identity with the Sonarr series patterns (title, season,
+// episode, absolute, daily). Domain-aware callers — scan, download, matching —
+// pass this; they know the domain.
+func AsSeries() Option {
+	return func(c *config) { c.domain = DomainSeries }
+}
+
+// AsMovie parses identity with the Radarr movie patterns (title, year).
+func AsMovie() Option {
+	return func(c *config) { c.domain = DomainMovie }
+}
 
 // AsPath parses input as an on-disk path (filename + folder context) rather
 // than a release title. For now it only records the flavor on the result; the
@@ -57,9 +84,21 @@ func Parse(input string, opts ...Option) ParsedRelease {
 	// Release.
 	p.Release.ReleaseGroup = strPtrField(raw.group, "release-group parser")
 
-	// Identity — edition is the one identity field the quality engine already
-	// extracts; the rest await the identity port.
+	// Identity — edition is set by the quality engine; title/year/numbering come
+	// from the domain-specific identity pass.
 	p.Identity.Edition = strPtrField(raw.edition, "edition parser")
+
+	domain := cfg.domain
+	if domain == DomainAuto {
+		domain = detectDomain(input)
+	}
+	switch domain {
+	case DomainSeries:
+		parseSeriesIdentity(&p, input)
+	case DomainMovie:
+		parseMovieIdentity(&p, input)
+	}
+	p.Identity.TypeHint = Field[string]{Value: string(domain), Confidence: confDetected, Evidence: "domain dispatch"}
 
 	return p
 }

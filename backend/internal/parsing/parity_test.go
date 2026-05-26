@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -58,6 +59,12 @@ type oracleFields struct {
 	version  int
 	isRepack bool
 	edition  string // movies only
+	// identity
+	title    string
+	year     int
+	season   int
+	episodes []int
+	absolute []int
 }
 
 func (q *oracleQuality) bin() string {
@@ -111,32 +118,51 @@ type fieldSpec struct {
 func TestParitySonarr(t *testing.T) {
 	runParity(t, "sonarr", sonarrGolden, decodeSonarr, []fieldSpec{
 		{"bin", true}, {"version", true}, {"isRepack", true}, {"group", false},
+		// identity — reported while the port stabilizes, then promoted.
+		{"title", false}, {"year", false}, {"season", false}, {"episodes", false}, {"absolute", false},
 	})
 }
 
 func TestParityRadarr(t *testing.T) {
 	runParity(t, "radarr", radarrGolden, decodeRadarr, []fieldSpec{
 		{"bin", true}, {"version", true}, {"isRepack", true}, {"edition", true}, {"group", false},
+		{"title", false}, {"year", false},
 	})
 }
 
 func decodeSonarr(raw json.RawMessage) oracleFields {
 	var out struct {
 		ParsedEpisodeInfo *struct {
-			Quality      *oracleQuality `json:"quality"`
-			ReleaseGroup string         `json:"releaseGroup"`
+			Quality                *oracleQuality `json:"quality"`
+			ReleaseGroup           string         `json:"releaseGroup"`
+			SeasonNumber           int            `json:"seasonNumber"`
+			EpisodeNumbers         []int          `json:"episodeNumbers"`
+			AbsoluteEpisodeNumbers []int          `json:"absoluteEpisodeNumbers"`
+			SeriesTitleInfo        *struct {
+				TitleWithoutYear string `json:"titleWithoutYear"`
+				Year             int    `json:"year"`
+			} `json:"seriesTitleInfo"`
 		} `json:"parsedEpisodeInfo"`
 	}
 	_ = json.Unmarshal(raw, &out)
-	if out.ParsedEpisodeInfo == nil {
+	pei := out.ParsedEpisodeInfo
+	if pei == nil {
 		return oracleFields{bin: "Unknown"}
 	}
-	return oracleFields{
-		bin:      out.ParsedEpisodeInfo.Quality.bin(),
-		group:    out.ParsedEpisodeInfo.ReleaseGroup,
-		version:  out.ParsedEpisodeInfo.Quality.Revision.Version,
-		isRepack: out.ParsedEpisodeInfo.Quality.Revision.IsRepack,
+	f := oracleFields{
+		bin:      pei.Quality.bin(),
+		group:    pei.ReleaseGroup,
+		version:  pei.Quality.Revision.Version,
+		isRepack: pei.Quality.Revision.IsRepack,
+		season:   pei.SeasonNumber,
+		episodes: pei.EpisodeNumbers,
+		absolute: pei.AbsoluteEpisodeNumbers,
 	}
+	if pei.SeriesTitleInfo != nil {
+		f.title = pei.SeriesTitleInfo.TitleWithoutYear
+		f.year = pei.SeriesTitleInfo.Year
+	}
+	return f
 }
 
 func decodeRadarr(raw json.RawMessage) oracleFields {
@@ -145,18 +171,23 @@ func decodeRadarr(raw json.RawMessage) oracleFields {
 			Quality      *oracleQuality `json:"quality"`
 			ReleaseGroup string         `json:"releaseGroup"`
 			Edition      string         `json:"edition"`
+			MovieTitle   string         `json:"movieTitle"`
+			Year         int            `json:"year"`
 		} `json:"parsedMovieInfo"`
 	}
 	_ = json.Unmarshal(raw, &out)
-	if out.ParsedMovieInfo == nil {
+	pmi := out.ParsedMovieInfo
+	if pmi == nil {
 		return oracleFields{bin: "Unknown"}
 	}
 	return oracleFields{
-		bin:      out.ParsedMovieInfo.Quality.bin(),
-		group:    out.ParsedMovieInfo.ReleaseGroup,
-		version:  out.ParsedMovieInfo.Quality.Revision.Version,
-		isRepack: out.ParsedMovieInfo.Quality.Revision.IsRepack,
-		edition:  out.ParsedMovieInfo.Edition,
+		bin:      pmi.Quality.bin(),
+		group:    pmi.ReleaseGroup,
+		version:  pmi.Quality.Revision.Version,
+		isRepack: pmi.Quality.Revision.IsRepack,
+		edition:  pmi.Edition,
+		title:    pmi.MovieTitle,
+		year:     pmi.Year,
 	}
 }
 
@@ -187,9 +218,15 @@ func runParity(t *testing.T, tool string, golden []byte, decode func(json.RawMes
 
 	var failMisses, reportMisses []parityMiss
 
+	// Parse in the tool's domain: series inputs → Sonarr patterns, movie → Radarr.
+	domainOpt := AsSeries()
+	if tool == "radarr" {
+		domainOpt = AsMovie()
+	}
+
 	for _, e := range entries {
 		want := decode(e.Output)
-		got := Parse(e.Input).Values()
+		got := Parse(e.Input, domainOpt).Values()
 
 		for _, f := range fields {
 			expected, actual := compareField(f.name, want, got)
@@ -268,9 +305,28 @@ func compareField(field string, want oracleFields, got Values) (string, string) 
 		return fmt.Sprintf("%t", want.isRepack), fmt.Sprintf("%t", got.Quality.IsRepack)
 	case "edition":
 		return want.edition, got.Identity.Edition
+	case "title":
+		return want.title, got.Identity.Title
+	case "year":
+		return fmt.Sprintf("%d", want.year), fmt.Sprintf("%d", got.Identity.Year)
+	case "season":
+		return fmt.Sprintf("%d", want.season), fmt.Sprintf("%d", got.Identity.Numbering.Season)
+	case "episodes":
+		return joinInts(want.episodes), joinInts(got.Identity.Numbering.EpisodeNumbers)
+	case "absolute":
+		return joinInts(want.absolute), joinInts(got.Identity.Numbering.AbsoluteNumbers)
 	default:
 		return "", ""
 	}
+}
+
+// joinInts renders an int slice as a stable comma-joined string for comparison.
+func joinInts(xs []int) string {
+	parts := make([]string, len(xs))
+	for i, x := range xs {
+		parts[i] = strconv.Itoa(x)
+	}
+	return strings.Join(parts, ",")
 }
 
 // properLevel maps a revision counter to "propers deep": 0/1 → 0 (original),
