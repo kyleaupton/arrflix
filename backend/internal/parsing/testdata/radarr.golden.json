@@ -1,0 +1,1260 @@
+[
+  {
+    "input": "The Movie 2009 1080p BluRay x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The Movie 2009 1080p BluRay x264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 7,
+            "modifier": "none",
+            "name": "Bluray-1080p",
+            "resolution": 1080,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The Movie 2009 1080p BluRay x264-GROUP",
+        "simpleReleaseTitle": "A Movie 2009 1080p BluRay x264-GROUP",
+        "tmdbId": 0,
+        "year": 2009
+      },
+      "title": "The Movie 2009 1080p BluRay x264-GROUP"
+    }
+  },
+  {
+    "input": "The Movie 2009 Extended Cut 1080p BluRay DTS x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "Extended Cut",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The Movie 2009 Extended Cut 1080p BluRay DTS x264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 7,
+            "modifier": "none",
+            "name": "Bluray-1080p",
+            "resolution": 1080,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The Movie 2009 Extended Cut 1080p BluRay DTS x264-GROUP",
+        "simpleReleaseTitle": "A Movie 2009 Extended Cut 1080p BluRay DTS x264-GROUP",
+        "tmdbId": 0,
+        "year": 2009
+      },
+      "title": "The Movie 2009 Extended Cut 1080p BluRay DTS x264-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2017.Directors.Cut.2160p.UHD.BluRay.x265-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "Directors Cut",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2017.Directors.Cut.2160p.UHD.BluRay.x265-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 19,
+            "modifier": "none",
+            "name": "Bluray-2160p",
+            "resolution": 2160,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2017.Directors.Cut.2160p.UHD.BluRay.x265-GROUP",
+        "simpleReleaseTitle": "A.Movie.2017.Directors.Cut.2160p.UHD.BluRay.x265-GROUP",
+        "tmdbId": 0,
+        "year": 2017
+      },
+      "title": "The.Movie.2017.Directors.Cut.2160p.UHD.BluRay.x265-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2019.IMAX.1080p.WEB-DL.DD5.1.H264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "IMAX",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2019.IMAX.1080p.WEB-DL.DD5.1.H264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 3,
+            "modifier": "none",
+            "name": "WEBDL-1080p",
+            "resolution": 1080,
+            "source": "webdl"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2019.IMAX.1080p.WEB-DL.DD5.1.H264-GROUP",
+        "simpleReleaseTitle": "A.Movie.2019.IMAX.1080p.WEB-DL.DD5.1.H264-GROUP",
+        "tmdbId": 0,
+        "year": 2019
+      },
+      "title": "The.Movie.2019.IMAX.1080p.WEB-DL.DD5.1.H264-GROUP"
+    }
+  },
+  {
+    "input": "The Movie 2021 Theatrical 720p BluRay x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "Theatrical",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The Movie 2021 Theatrical 720p BluRay x264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 6,
+            "modifier": "none",
+            "name": "Bluray-720p",
+            "resolution": 720,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The Movie 2021 Theatrical 720p BluRay x264-GROUP",
+        "simpleReleaseTitle": "A Movie 2021 Theatrical 720p BluRay x264-GROUP",
+        "tmdbId": 0,
+        "year": 2021
+      },
+      "title": "The Movie 2021 Theatrical 720p BluRay x264-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2015.UNRATED.1080p.BluRay.x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "UNRATED",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2015.UNRATED.1080p.BluRay.x264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 7,
+            "modifier": "none",
+            "name": "Bluray-1080p",
+            "resolution": 1080,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2015.UNRATED.1080p.BluRay.x264-GROUP",
+        "simpleReleaseTitle": "A.Movie.2015.UNRATED.1080p.BluRay.x264-GROUP",
+        "tmdbId": 0,
+        "year": 2015
+      },
+      "title": "The.Movie.2015.UNRATED.1080p.BluRay.x264-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2020.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2020.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 18,
+            "modifier": "none",
+            "name": "WEBDL-2160p",
+            "resolution": 2160,
+            "source": "webdl"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2020.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-GROUP",
+        "simpleReleaseTitle": "A.Movie.2020.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-GROUP",
+        "tmdbId": 0,
+        "year": 2020
+      },
+      "title": "The.Movie.2020.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2018.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-FraMeSToR",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2018.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-FraMeSToR",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 30,
+            "modifier": "remux",
+            "name": "Remux-1080p",
+            "resolution": 1080,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "FraMeSToR",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2018.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-FraMeSToR",
+        "simpleReleaseTitle": "A.Movie.2018.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-FraMeSToR",
+        "tmdbId": 0,
+        "year": 2018
+      },
+      "title": "The.Movie.2018.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-FraMeSToR"
+    }
+  },
+  {
+    "input": "The.Movie.2016.PROPER.1080p.BluRay.x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2016.PROPER.1080p.BluRay.x264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 7,
+            "modifier": "none",
+            "name": "Bluray-1080p",
+            "resolution": 1080,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 2
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2016.PROPER.1080p.BluRay.x264-GROUP",
+        "simpleReleaseTitle": "A.Movie.2016.PROPER.1080p.BluRay.x264-GROUP",
+        "tmdbId": 0,
+        "year": 2016
+      },
+      "title": "The.Movie.2016.PROPER.1080p.BluRay.x264-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2014.REPACK.720p.WEB-DL.x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2014.REPACK.720p.WEB-DL.x264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 5,
+            "modifier": "none",
+            "name": "WEBDL-720p",
+            "resolution": 720,
+            "source": "webdl"
+          },
+          "revision": {
+            "isRepack": true,
+            "real": 0,
+            "version": 2
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2014.REPACK.720p.WEB-DL.x264-GROUP",
+        "simpleReleaseTitle": "A.Movie.2014.REPACK.720p.WEB-DL.x264-GROUP",
+        "tmdbId": 0,
+        "year": 2014
+      },
+      "title": "The.Movie.2014.REPACK.720p.WEB-DL.x264-GROUP"
+    }
+  },
+  {
+    "input": "The Movie (2012) 1080p WEBRip x265 AAC-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The Movie (2012) 1080p WEBRip x265 AAC-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 15,
+            "modifier": "none",
+            "name": "WEBRip-1080p",
+            "resolution": 1080,
+            "source": "webrip"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The Movie (2012) 1080p WEBRip x265 AAC-GROUP",
+        "simpleReleaseTitle": "A Movie (2012) 1080p WEBRip x265 AAC-GROUP",
+        "tmdbId": 0,
+        "year": 2012
+      },
+      "title": "The Movie (2012) 1080p WEBRip x265 AAC-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2022.German.DL.1080p.BluRay.x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 4,
+          "name": "German"
+        },
+        {
+          "id": -2,
+          "name": "Original"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 4,
+            "name": "German"
+          },
+          {
+            "id": -2,
+            "name": "Original"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2022.German.DL.1080p.BluRay.x264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 7,
+            "modifier": "none",
+            "name": "Bluray-1080p",
+            "resolution": 1080,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2022.German.DL.1080p.BluRay.x264-GROUP",
+        "simpleReleaseTitle": "A.Movie.2022.German.DL.1080p.BluRay.x264-GROUP",
+        "tmdbId": 0,
+        "year": 2022
+      },
+      "title": "The.Movie.2022.German.DL.1080p.BluRay.x264-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.1999.1080p.BluRay.x264.DTS-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.1999.1080p.BluRay.x264.DTS-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 7,
+            "modifier": "none",
+            "name": "Bluray-1080p",
+            "resolution": 1080,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.1999.1080p.BluRay.x264.DTS-GROUP",
+        "simpleReleaseTitle": "A.Movie.1999.1080p.BluRay.x264.DTS-GROUP",
+        "tmdbId": 0,
+        "year": 1999
+      },
+      "title": "The.Movie.1999.1080p.BluRay.x264.DTS-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2010.480p.DVDRip.XviD-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2010.480p.DVDRip.XviD-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 2,
+            "modifier": "none",
+            "name": "DVD",
+            "resolution": 0,
+            "source": "dvd"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2010.480p.DVDRip.XviD-GROUP",
+        "simpleReleaseTitle": "A.Movie.2010.480p.DVDRip.XviD-GROUP",
+        "tmdbId": 0,
+        "year": 2010
+      },
+      "title": "The.Movie.2010.480p.DVDRip.XviD-GROUP"
+    }
+  },
+  {
+    "input": "The Movie 2023 2160p BluRay REMUX HEVC DTS-HD MA TrueHD 7.1 Atmos-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The Movie 2023 2160p BluRay REMUX HEVC DTS-HD MA TrueHD 7.1 Atmos-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 31,
+            "modifier": "remux",
+            "name": "Remux-2160p",
+            "resolution": 2160,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The Movie 2023 2160p BluRay REMUX HEVC DTS-HD MA TrueHD 7.1 Atmos-GROUP",
+        "simpleReleaseTitle": "A Movie 2023 2160p BluRay REMUX HEVC DTS-HD MA TrueHD 7.1 Atmos-GROUP",
+        "tmdbId": 0,
+        "year": 2023
+      },
+      "title": "The Movie 2023 2160p BluRay REMUX HEVC DTS-HD MA TrueHD 7.1 Atmos-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.Part.II.2008.1080p.BluRay.x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie Part II",
+        "movieTitles": [
+          "The Movie Part II"
+        ],
+        "originalTitle": "The.Movie.Part.II.2008.1080p.BluRay.x264-GROUP",
+        "primaryMovieTitle": "The Movie Part II",
+        "quality": {
+          "quality": {
+            "id": 7,
+            "modifier": "none",
+            "name": "Bluray-1080p",
+            "resolution": 1080,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.Part.II.2008.1080p.BluRay.x264-GROUP",
+        "simpleReleaseTitle": "A.Movie.2008.1080p.BluRay.x264-GROUP",
+        "tmdbId": 0,
+        "year": 2008
+      },
+      "title": "The.Movie.Part.II.2008.1080p.BluRay.x264-GROUP"
+    }
+  },
+  {
+    "input": "Movie Title 2017 HDTV x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "Movie Title",
+        "movieTitles": [
+          "Movie Title"
+        ],
+        "originalTitle": "Movie Title 2017 HDTV x264-GROUP",
+        "primaryMovieTitle": "Movie Title",
+        "quality": {
+          "quality": {
+            "id": 1,
+            "modifier": "none",
+            "name": "SDTV",
+            "resolution": 480,
+            "source": "tv"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "Movie Title 2017 HDTV x264-GROUP",
+        "simpleReleaseTitle": "A Movie 2017 HDTV x264-GROUP",
+        "tmdbId": 0,
+        "year": 2017
+      },
+      "title": "Movie Title 2017 HDTV x264-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2013.Extended.Edition.2160p.UHD.BluRay.DTS-HD.MA.7.1.HDR.x265-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "Extended Edition",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2013.Extended.Edition.2160p.UHD.BluRay.DTS-HD.MA.7.1.HDR.x265-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 19,
+            "modifier": "none",
+            "name": "Bluray-2160p",
+            "resolution": 2160,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2013.Extended.Edition.2160p.UHD.BluRay.DTS-HD.MA.7.1.HDR.x265-GROUP",
+        "simpleReleaseTitle": "A.Movie.2013.Extended.Edition.2160p.UHD.BluRay.DTS-HD.MA.7.1.HDR.x265-GROUP",
+        "tmdbId": 0,
+        "year": 2013
+      },
+      "title": "The.Movie.2013.Extended.Edition.2160p.UHD.BluRay.DTS-HD.MA.7.1.HDR.x265-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2019.MULTi.VFF.1080p.BluRay.x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 2,
+          "name": "French"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 2,
+            "name": "French"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2019.MULTi.VFF.1080p.BluRay.x264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 7,
+            "modifier": "none",
+            "name": "Bluray-1080p",
+            "resolution": 1080,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2019.MULTi.VFF.1080p.BluRay.x264-GROUP",
+        "simpleReleaseTitle": "A.Movie.2019.MULTi.VFF.1080p.BluRay.x264-GROUP",
+        "tmdbId": 0,
+        "year": 2019
+      },
+      "title": "The.Movie.2019.MULTi.VFF.1080p.BluRay.x264-GROUP"
+    }
+  },
+  {
+    "input": "The Movie 2021 1080p AMZN WEB-DL DDP5.1 H.264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The Movie 2021 1080p AMZN WEB-DL DDP5.1 H.264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 3,
+            "modifier": "none",
+            "name": "WEBDL-1080p",
+            "resolution": 1080,
+            "source": "webdl"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The Movie 2021 1080p AMZN WEB-DL DDP5.1 H.264-GROUP",
+        "simpleReleaseTitle": "A Movie 2021 1080p AMZN WEB-DL DDP5.1 H.264-GROUP",
+        "tmdbId": 0,
+        "year": 2021
+      },
+      "title": "The Movie 2021 1080p AMZN WEB-DL DDP5.1 H.264-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2005.Special.Edition.720p.BluRay.x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "Special Edition",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2005.Special.Edition.720p.BluRay.x264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 6,
+            "modifier": "none",
+            "name": "Bluray-720p",
+            "resolution": 720,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2005.Special.Edition.720p.BluRay.x264-GROUP",
+        "simpleReleaseTitle": "A.Movie.2005.Special.Edition.720p.BluRay.x264-GROUP",
+        "tmdbId": 0,
+        "year": 2005
+      },
+      "title": "The.Movie.2005.Special.Edition.720p.BluRay.x264-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2020.Hybrid.2160p.UHD.BluRay.Remux.DV.HDR.HEVC.Atmos-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2020.Hybrid.2160p.UHD.BluRay.Remux.DV.HDR.HEVC.Atmos-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 31,
+            "modifier": "remux",
+            "name": "Remux-2160p",
+            "resolution": 2160,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2020.Hybrid.2160p.UHD.BluRay.Remux.DV.HDR.HEVC.Atmos-GROUP",
+        "simpleReleaseTitle": "A.Movie.2020.Hybrid.2160p.UHD.BluRay.Remux.DV.HDR.HEVC.Atmos-GROUP",
+        "tmdbId": 0,
+        "year": 2020
+      },
+      "title": "The.Movie.2020.Hybrid.2160p.UHD.BluRay.Remux.DV.HDR.HEVC.Atmos-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2018.1080p.BluRay.AVC.TrueHD.7.1.Atmos-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2018.1080p.BluRay.AVC.TrueHD.7.1.Atmos-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 22,
+            "modifier": "brdisk",
+            "name": "BR-DISK",
+            "resolution": 1080,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2018.1080p.BluRay.AVC.TrueHD.7.1.Atmos-GROUP",
+        "simpleReleaseTitle": "A.Movie.2018.1080p.BluRay.AVC.TrueHD.7.1.Atmos-GROUP",
+        "tmdbId": 0,
+        "year": 2018
+      },
+      "title": "The.Movie.2018.1080p.BluRay.AVC.TrueHD.7.1.Atmos-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2011.Limited.720p.BluRay.x264-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2011.Limited.720p.BluRay.x264-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 6,
+            "modifier": "none",
+            "name": "Bluray-720p",
+            "resolution": 720,
+            "source": "bluray"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2011.Limited.720p.BluRay.x264-GROUP",
+        "simpleReleaseTitle": "A.Movie.2011.Limited.720p.BluRay.x264-GROUP",
+        "tmdbId": 0,
+        "year": 2011
+      },
+      "title": "The.Movie.2011.Limited.720p.BluRay.x264-GROUP"
+    }
+  },
+  {
+    "input": "The.Movie.2024.4K.WEB.h265-GROUP",
+    "output": {
+      "customFormatScore": 0,
+      "customFormats": [],
+      "languages": [
+        {
+          "id": 0,
+          "name": "Unknown"
+        }
+      ],
+      "parsedMovieInfo": {
+        "edition": "",
+        "imdbId": "",
+        "languages": [
+          {
+            "id": 0,
+            "name": "Unknown"
+          }
+        ],
+        "movieTitle": "The Movie",
+        "movieTitles": [
+          "The Movie"
+        ],
+        "originalTitle": "The.Movie.2024.4K.WEB.h265-GROUP",
+        "primaryMovieTitle": "The Movie",
+        "quality": {
+          "quality": {
+            "id": 8,
+            "modifier": "none",
+            "name": "WEBDL-480p",
+            "resolution": 480,
+            "source": "webdl"
+          },
+          "revision": {
+            "isRepack": false,
+            "real": 0,
+            "version": 1
+          }
+        },
+        "releaseGroup": "GROUP",
+        "releaseHash": "",
+        "releaseTitle": "The.Movie.2024.4K.WEB.h265-GROUP",
+        "simpleReleaseTitle": "A.Movie.2024.4K.WEB.h265-GROUP",
+        "tmdbId": 0,
+        "year": 2024
+      },
+      "title": "The.Movie.2024.4K.WEB.h265-GROUP"
+    }
+  }
+]
