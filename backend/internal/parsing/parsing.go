@@ -83,6 +83,9 @@ func Parse(input string, opts ...Option) ParsedRelease {
 
 	// Release.
 	p.Release.ReleaseGroup = strPtrField(raw.group, "release-group parser")
+	if langs := parseLanguages(input); len(langs) > 0 {
+		p.Release.Languages = Field[[]string]{Value: langs, Confidence: confDetected, Evidence: "language parser"}
+	}
 
 	// Identity — edition is set by the quality engine; title/year/numbering come
 	// from the domain-specific identity pass.

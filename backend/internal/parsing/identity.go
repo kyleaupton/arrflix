@@ -51,13 +51,19 @@ var titleSeparators = strings.NewReplacer(".", " ", "_", " ")
 
 var multiSpace = regexp.MustCompile(`\s+`)
 
+// leadingTag matches a leading "[SubGroup]" / "[Dolby Vision]" tag, which
+// Sonarr/Radarr strip from the title (it's the release/subgroup prefix, not the
+// work title).
+var leadingTag = regexp.MustCompile(`^\s*\[[^\]]*\]\s*`)
+
 // normalizeTitle turns a raw matched title into the display form the oracle
-// reports (seriesTitleInfo.title / movieTitle): separators become spaces,
-// runs of whitespace collapse, and the result is trimmed. It does not lowercase
-// or strip accents — that heavier normalization is CleanTitle's job, used for
-// matching, not for the parsed display title.
+// reports (seriesTitleInfo.title / movieTitle): a leading bracket tag is
+// dropped, separators become spaces, runs of whitespace collapse, and the
+// result is trimmed. It does not lowercase or strip accents — that heavier
+// normalization is CleanTitle's job, used for matching, not the display title.
 func normalizeTitle(raw string) string {
-	t := titleSeparators.Replace(raw)
+	t := leadingTag.ReplaceAllString(raw, "")
+	t = titleSeparators.Replace(t)
 	t = multiSpace.ReplaceAllString(t, " ")
 	return strings.TrimSpace(t)
 }

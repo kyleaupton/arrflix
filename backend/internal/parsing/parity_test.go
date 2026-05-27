@@ -5,14 +5,15 @@ package parsing
 // captured from live pinned Sonarr/Radarr. No containers, no network — the
 // goldens are embedded.
 //
-// Scope is the quality half currently implemented: the quality bin, release
-// group, proper/repack revision, and (movies) edition. Identity fields
-// (title/year/season/episode/languages) are compared once the identity port
-// lands. The codec/audio/HDR/dual-audio fields have no parse-oracle and are not
-// compared here at all.
+// Enforced fields (a mismatch fails the test, modulo the allowlist): quality
+// bin, proper/repack revision, version, and (movies) edition. Reported-only
+// fields (compat measured but not enforced while the port stabilizes): release
+// group and the identity fields (title, year, season, episodes, absolute,
+// languages). The codec/audio/HDR/dual-audio fields have no parse-oracle and are
+// not compared here at all.
 //
-// The test reports per-field/per-tool compat % and fails on any mismatch that
-// is not in the intentional-divergence allowlist.
+// The test reports per-field/per-tool compat % and fails on any enforced-field
+// mismatch that is not in the intentional-divergence allowlist.
 
 import (
 	_ "embed"
@@ -60,11 +61,26 @@ type oracleFields struct {
 	isRepack bool
 	edition  string // movies only
 	// identity
-	title    string
-	year     int
-	season   int
-	episodes []int
-	absolute []int
+	title     string
+	year      int
+	season    int
+	episodes  []int
+	absolute  []int
+	languages []string
+}
+
+// langName is the {id,name} shape of an oracle language entry.
+type langName struct {
+	Name string `json:"name"`
+}
+
+// langNames extracts the names from an oracle language list.
+func langNames(in []langName) []string {
+	out := make([]string, 0, len(in))
+	for _, l := range in {
+		out = append(out, l.Name)
+	}
+	return out
 }
 
 func (q *oracleQuality) bin() string {
@@ -104,6 +120,37 @@ var allowlist = map[allowlistKey]string{
 	{"radarr", "The.Movie.2018.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-FraMeSToR", "bin"}:           "Radarr v6 'Remux-1080p' vs arrflix unified 'Bluray-1080p Remux'",
 	{"radarr", "The.Movie.2020.Hybrid.2160p.UHD.BluRay.Remux.DV.HDR.HEVC.Atmos-GROUP", "bin"}:    "Radarr v6 'Remux-2160p' vs arrflix unified 'Bluray-2160p Remux'",
 	{"radarr", "The.Movie.2018.1080p.BluRay.AVC.TrueHD.7.1.Atmos-GROUP", "bin"}:                  "Radarr v6 'BR-DISK' (full disc) vs arrflix 'Bluray-1080p'",
+
+	// Identity: Sonarr fed a movie-ish/yearless title splits the YEAR into a
+	// season+episode (2016 → S20E16, 2017 → season 2017) or reads a bundle's
+	// "Part 1" as S01E01. There is no real episode identity; arrflix correctly
+	// extracts none.
+	{"sonarr", "Death.Series.2017.German.DD51.DL.1080p.NetflixHD.x264-TVS", "season"}:      "Sonarr uses year 2017 as season; no real season",
+	{"sonarr", "S for Series 2005 1080p UHD BluRay DD+7.1 x264-LoRD.mkv", "season"}:        "Sonarr uses year 2005 as season; no real season",
+	{"sonarr", "Series 2016 German DD51 DL 720p NetflixHD x264-TVS", "season"}:             "Sonarr splits year 2016 into season 20; no real season",
+	{"sonarr", "Series.Title.2011.1080p.UHD.BluRay.DD5.1.HDR.x265-CtrlHD.mkv", "season"}:   "Sonarr splits year 2011 into season 20; no real season",
+	{"sonarr", "Series.Title.2014.2160p.UHD.BluRay.X265-IAMABLE.mkv", "season"}:            "Sonarr splits year 2014 into season 20; no real season",
+	{"sonarr", "[DameDesuYo] Series Bundle - Part 1 (BD 4K 8bit FLAC)", "season"}:          "Sonarr reads bundle 'Part 1' as season 1",
+	{"sonarr", "Series 2016 German DD51 DL 720p NetflixHD x264-TVS", "episodes"}:           "Sonarr splits year 2016 into episode 16; no real episode",
+	{"sonarr", "Series.Title.2011.1080p.UHD.BluRay.DD5.1.HDR.x265-CtrlHD.mkv", "episodes"}: "Sonarr splits year 2011 into episode 11; no real episode",
+	{"sonarr", "Series.Title.2014.2160p.UHD.BluRay.X265-IAMABLE.mkv", "episodes"}:          "Sonarr splits year 2014 into episode 14; no real episode",
+	{"sonarr", "[DameDesuYo] Series Bundle - Part 1 (BD 4K 8bit FLAC)", "episodes"}:        "Sonarr reads bundle 'Part 1' as episode 1",
+	{"sonarr", "Sans.Series.De.Traces.FRENCH.720p.BluRay.x264-FHD", "languages"}:           "Sonarr can't parse as series → Unknown; arrflix correctly detects French",
+
+	// Title divergences. Group 1: Sonarr force-parses a year as S/E and is left
+	// with a partial title; arrflix parses no series identity, so no title.
+	{"sonarr", "Death.Series.2017.German.DD51.DL.1080p.NetflixHD.x264-TVS", "title"}:    "Sonarr force-parses year-as-S/E (title 'Death'); arrflix parses no series identity",
+	{"sonarr", "S for Series 2005 1080p UHD BluRay DD+7.1 x264-LoRD.mkv", "title"}:      "Sonarr force-parses year-as-S/E; arrflix parses no series identity",
+	{"sonarr", "Series 2016 German DD51 DL 720p NetflixHD x264-TVS", "title"}:           "Sonarr force-parses year-as-S/E; arrflix parses no series identity",
+	{"sonarr", "Series.Title.2011.1080p.UHD.BluRay.DD5.1.HDR.x265-CtrlHD.mkv", "title"}: "Sonarr force-parses year-as-S/E; arrflix parses no series identity",
+	{"sonarr", "Series.Title.2014.2160p.UHD.BluRay.X265-IAMABLE.mkv", "title"}:          "Sonarr force-parses year-as-S/E; arrflix parses no series identity",
+	{"sonarr", "The Series (BD)(640x480(RAW) (BATCH 1) (1-13)", "title"}:                "malformed batch title; out of scope",
+	// Group 2: anime absolute numbering — best-effort and out of the v1 claim;
+	// title is affected where the absolute parse is partial.
+	{"sonarr", "Series Slayer 04 vostfr FHD.mkv", "title"}:                           "anime absolute (non-bracket); best-effort, out of v1 claim",
+	{"sonarr", "The Online Series Alicization 04 vostfr FHD", "title"}:               "anime absolute (non-bracket); best-effort, out of v1 claim",
+	{"sonarr", "[DameDesuYo] Series Bundle - Part 1 (BD 4K 8bit FLAC)", "title"}:     "anime bundle; absolute best-effort, out of v1 claim",
+	{"sonarr", "[Doremi].The.Series.5.Go.Go!.31.[1280x720].[C65D4B1F].mkv", "title"}: "anime absolute; best-effort, out of v1 claim",
 }
 
 // fieldSpec names a compared field and whether a mismatch fails the test.
@@ -118,15 +165,17 @@ type fieldSpec struct {
 func TestParitySonarr(t *testing.T) {
 	runParity(t, "sonarr", sonarrGolden, decodeSonarr, []fieldSpec{
 		{"bin", true}, {"version", true}, {"isRepack", true}, {"group", false},
-		// identity — reported while the port stabilizes, then promoted.
-		{"title", false}, {"year", false}, {"season", false}, {"episodes", false}, {"absolute", false},
+		// identity — title/year/season/episodes/languages enforced; absolute is
+		// best-effort (out of the v1 claim).
+		{"title", true}, {"year", true}, {"season", true}, {"episodes", true}, {"languages", true},
+		{"absolute", false},
 	})
 }
 
 func TestParityRadarr(t *testing.T) {
 	runParity(t, "radarr", radarrGolden, decodeRadarr, []fieldSpec{
 		{"bin", true}, {"version", true}, {"isRepack", true}, {"edition", true}, {"group", false},
-		{"title", false}, {"year", false},
+		{"title", true}, {"year", true}, {"languages", true},
 	})
 }
 
@@ -138,6 +187,7 @@ func decodeSonarr(raw json.RawMessage) oracleFields {
 			SeasonNumber           int            `json:"seasonNumber"`
 			EpisodeNumbers         []int          `json:"episodeNumbers"`
 			AbsoluteEpisodeNumbers []int          `json:"absoluteEpisodeNumbers"`
+			Languages              []langName     `json:"languages"`
 			SeriesTitleInfo        *struct {
 				TitleWithoutYear string `json:"titleWithoutYear"`
 				Year             int    `json:"year"`
@@ -150,13 +200,14 @@ func decodeSonarr(raw json.RawMessage) oracleFields {
 		return oracleFields{bin: "Unknown"}
 	}
 	f := oracleFields{
-		bin:      pei.Quality.bin(),
-		group:    pei.ReleaseGroup,
-		version:  pei.Quality.Revision.Version,
-		isRepack: pei.Quality.Revision.IsRepack,
-		season:   pei.SeasonNumber,
-		episodes: pei.EpisodeNumbers,
-		absolute: pei.AbsoluteEpisodeNumbers,
+		bin:       pei.Quality.bin(),
+		group:     pei.ReleaseGroup,
+		version:   pei.Quality.Revision.Version,
+		isRepack:  pei.Quality.Revision.IsRepack,
+		season:    pei.SeasonNumber,
+		episodes:  pei.EpisodeNumbers,
+		absolute:  pei.AbsoluteEpisodeNumbers,
+		languages: langNames(pei.Languages),
 	}
 	if pei.SeriesTitleInfo != nil {
 		f.title = pei.SeriesTitleInfo.TitleWithoutYear
@@ -173,6 +224,7 @@ func decodeRadarr(raw json.RawMessage) oracleFields {
 			Edition      string         `json:"edition"`
 			MovieTitle   string         `json:"movieTitle"`
 			Year         int            `json:"year"`
+			Languages    []langName     `json:"languages"`
 		} `json:"parsedMovieInfo"`
 	}
 	_ = json.Unmarshal(raw, &out)
@@ -181,13 +233,14 @@ func decodeRadarr(raw json.RawMessage) oracleFields {
 		return oracleFields{bin: "Unknown"}
 	}
 	return oracleFields{
-		bin:      pmi.Quality.bin(),
-		group:    pmi.ReleaseGroup,
-		version:  pmi.Quality.Revision.Version,
-		isRepack: pmi.Quality.Revision.IsRepack,
-		edition:  pmi.Edition,
-		title:    pmi.MovieTitle,
-		year:     pmi.Year,
+		bin:       pmi.Quality.bin(),
+		group:     pmi.ReleaseGroup,
+		version:   pmi.Quality.Revision.Version,
+		isRepack:  pmi.Quality.Revision.IsRepack,
+		edition:   pmi.Edition,
+		title:     pmi.MovieTitle,
+		year:      pmi.Year,
+		languages: langNames(pmi.Languages),
 	}
 }
 
@@ -315,9 +368,25 @@ func compareField(field string, want oracleFields, got Values) (string, string) 
 		return joinInts(want.episodes), joinInts(got.Identity.Numbering.EpisodeNumbers)
 	case "absolute":
 		return joinInts(want.absolute), joinInts(got.Identity.Numbering.AbsoluteNumbers)
+	case "languages":
+		return normalizeLangs(want.languages), normalizeLangs(got.Release.Languages)
 	default:
 		return "", ""
 	}
+}
+
+// normalizeLangs renders a language set order-independently and treats the
+// oracle's "Unknown" as the empty set (which is how we represent no detection).
+func normalizeLangs(langs []string) string {
+	kept := make([]string, 0, len(langs))
+	for _, l := range langs {
+		if l == "Unknown" {
+			continue
+		}
+		kept = append(kept, l)
+	}
+	sort.Strings(kept)
+	return strings.Join(kept, ",")
 }
 
 // joinInts renders an int slice as a stable comma-joined string for comparison.
