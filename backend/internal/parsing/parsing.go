@@ -87,10 +87,10 @@ func Parse(input string, opts ...Option) ParsedRelease {
 		p.Release.Languages = Field[[]string]{Value: langs, Confidence: confDetected, Evidence: "language parser"}
 	}
 
-	// Identity — edition is set by the quality engine; title/year/numbering come
-	// from the domain-specific identity pass.
-	p.Identity.Edition = strPtrField(raw.edition, "edition parser")
-
+	// Identity — title/year/numbering come from the domain-specific identity
+	// pass. Edition is movie-domain only and is set by parseMovieIdentity's
+	// faithful Radarr port (NOT by the quality engine's raw.edition, which stays
+	// quality-engine territory for a later phase); the series path leaves it empty.
 	domain := cfg.domain
 	if domain == DomainAuto {
 		domain = detectDomain(input)
