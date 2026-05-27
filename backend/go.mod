@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/cyruzin/golang-tmdb v1.8.2
 	github.com/danielgtaylor/huma/v2 v2.37.3
+	github.com/dlclark/regexp2 v1.12.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/golang-migrate/migrate/v4 v4.17.0
