@@ -486,13 +486,11 @@ func populateSeriesIdentity(p *ParsedRelease, res *seriesMatch) {
 //   - (nil, nil)                 → null (first>last etc.) → caller tries next pattern
 //   - (nil, invalidDate{})       → InvalidDateException → caller aborts the loop
 //
-// re is matched against releaseTitle (the same string the interpreter uses for
-// ReleaseTokens); this mirrors upstream, which matches simpleTitle for the
-// loop-selection step but passes releaseTitle into ParseMatchCollection where the
-// MatchCollection is regenerated against releaseTitle. Sonarr actually passes the
-// simpleTitle MatchCollection into ParseMatchCollection — so we re-run re against
-// the same string the winning match came from. The caller passes c.simple in via
-// re already matched on c.simple; here we collect all matches over that string.
+// The winning pattern already matched c.simple (passed in as `first`); here we
+// collect its remaining non-overlapping matches over that same string to form the
+// .NET MatchCollection. releaseTitle (c.release) is used only to slice
+// ReleaseTokens at the end — mirroring upstream, which indexes releaseTitle with
+// an offset accumulated over the simpleTitle the match ran on.
 func parseSeriesMatchCollection(re *regexp2.Regexp, first *regexp2.Match, releaseTitle string) (*seriesMatch, error) {
 	// Collect all non-overlapping matches (the .NET MatchCollection).
 	matches := []*regexp2.Match{first}

@@ -19,12 +19,11 @@ import (
 //   - simple   — release with quality/codec stripped (SimpleTitleRegex), website
 //     prefix/postfix removed, torrent suffix removed, quality brackets cleaned,
 //     and six-digit airdates normalized. This is the string the identity regex
-//     TABLE is matched against in later phases.
+//     TABLE is matched against by the series/movie identity parsers.
 //
-// This pipeline is NOT wired into Parse() yet — P3/P4 call it. It is a port of
-// the simplify stages only; the matching-oriented normalize helpers
-// (CleanSeriesTitle/CleanMovieTitle, NormalizeTitle) belong to the matching
-// module and are intentionally not ported here.
+// This is a port of the simplify stages only; the matching-oriented normalize
+// helpers (CleanSeriesTitle/CleanMovieTitle, NormalizeTitle) belong to the
+// matching module and are intentionally not ported here.
 //
 // Every pattern below is transcribed verbatim from upstream and compiled through
 // mustCompile (regexp2, .NET semantics + ReDoS timeout). RegexOptions.IgnoreCase

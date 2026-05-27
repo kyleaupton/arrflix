@@ -14,10 +14,9 @@ import (
 // parseMovieLanguages → Radarr LanguageParser.cs:66).
 //
 // Every regex is transcribed verbatim through mustCompile (regexp2, .NET
-// semantics + ReDoS timeout). The .NET lookaround the prior RE2-adapted port
-// worked around in Go — the Spanish "(?!\(Latino\))", the German DL
-// "(?<!WEB[-_. ]?)", the SUB-adjacency lookarounds, the Radarr "(?<!DTS[._ -])"
-// — go back INTO the patterns verbatim; the Go-side workarounds are gone.
+// semantics + ReDoS timeout), including the .NET lookarounds RE2 can't express —
+// the Spanish "(?!\(Latino\))", the German DL "(?<!WEB[-_. ]?)", the
+// SUB-adjacency lookarounds, the Radarr "(?<!DTS[._ -])".
 // RegexOptions.IgnoreCase maps to regexp2.IgnoreCase; the case-SENSITIVE
 // CaseSensitiveLanguageRegex is intentionally compiled WITHOUT IgnoreCase
 // (upstream embeds inline (?i) only around the SUB lookarounds, which regexp2

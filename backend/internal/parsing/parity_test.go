@@ -6,12 +6,12 @@ package parsing
 // goldens are embedded.
 //
 // Enforced fields (a mismatch fails the test, modulo the allowlist): the
-// stabilized identity + group + language fields — Sonarr title/year/season/
-// episodes/group/languages and Radarr title/year/edition/group/languages.
-// Reported-only fields (compat measured but not enforced while the matching half
-// stabilizes): quality bin / version / isRepack (P6 quality re-port) and Sonarr
-// absolute (anime, out of the v1 claim). The codec/audio/HDR/dual-audio fields
-// have no parse-oracle and are not compared here at all.
+// identity + group + language fields — Sonarr title/year/season/episodes/group/
+// languages and Radarr title/year/edition/group/languages. Reported-only fields
+// (compat measured but not enforced): quality bin / version / isRepack (pending
+// the quality re-port) and Sonarr absolute (anime, out of the v1 claim). The
+// codec/audio/HDR/dual-audio fields have no parse-oracle and are not compared
+// here at all.
 //
 // The test reports per-field/per-tool compat % and fails on any enforced-field
 // mismatch that is not in the intentional-divergence allowlist.
@@ -103,27 +103,9 @@ type allowlistKey struct {
 // (total − allowlisted); the test fails only on un-allowlisted mismatches of an
 // enforced field. Each entry carries the reason it's expected.
 //
-// Phase 5 rebuild: the entire prior allowlist is now INERT and was removed. The
-// faithful Sonarr/Radarr group re-port (group.go) and the clean.go CJK rune-bug
-// fix brought every previously-divergent ENFORCED field (Sonarr title/year/
-// season/episodes/group; Radarr title/year/edition/group) to 100% parity against
-// the goldens with NO masking required. Verified by an exhaustive liveness probe:
-// not one of the old title/season/episodes entries was still being hit. The only
-// remaining live divergences sit on still-REPORTED fields — bin (Sonarr couples
-// quality to a successful episode parse; Radarr v6 uses a different quality
-// vocabulary), deferred to the dedicated quality PR (see below). Reported fields
-// are not gated, so they need no allowlist; their divergences surface honestly
-// in the reported compat metric.
-//
-// Phase 5.5 (languages): the faithful per-domain LanguageParser re-port
-// (language.go via regexp2) fed the correct upstream input — Sonarr from
-// result.ReleaseTokens (the post-S/E substring), Radarr from the group-blanked
-// simpleReleaseTitle — brought languages to 100.00% golden parity for BOTH
-// tools (Sonarr 92.1% → 100%, Radarr 81.3% → 100%) with NO masking required.
-// languages is now ENFORCED for both.
-//
-// Net: there is zero genuine two-sided disagreement left on any enforced field,
-// so the allowlist is intentionally empty.
+// It is currently empty: every enforced field matches the goldens exactly, so
+// nothing needs masking. Reported-only fields are not gated and need no entry —
+// their divergences surface in the reported compat metric.
 var allowlist = map[allowlistKey]string{}
 
 // fieldSpec names a compared field and whether a mismatch fails the test.
@@ -132,27 +114,19 @@ type fieldSpec struct {
 	enforced bool
 }
 
-// Promotion status (Phase 5 + 5.5). After the faithful Sonarr/Radarr group
-// re-port (group.go), the clean.go CJK rune-slicing fix, and the P5.5 faithful
-// LanguageParser re-port (language.go), the stabilized identity + group +
-// language fields hit 100% golden parity and are now ENFORCED:
-//
+// Enforced fields match the goldens exactly; a mismatch fails the build:
 //   - Sonarr: title, year, season, episodes, group, languages
 //   - Radarr: title, year, edition, group, languages
 //
-// Still REPORTED-only (deliberately deferred, NOT enforced):
-//   - bin / version / isRepack — the quality engine (engine.go) is the one part
-//     still on stdlib RE2, not yet verbatim-re-ported. Its faithful re-port AND
-//     the per-domain quality bin vocabulary (Sonarr nests remux as a modifier;
-//     Radarr v6 has first-class Remux-1080p/2160p + BR-DISK bins — so the Radarr
-//     `bin` gap is ~66% and is almost entirely VOCABULARY, not detection) are a
-//     dedicated next PR. See .ignore/per-domain-quality-vocabulary.md.
-//   - absolute (Sonarr) — anime absolute numbering, ~99.8% but out of the v1
-//     enforced claim.
+// Reported-only (measured, not gated), deliberately deferred:
+//   - bin / version / isRepack — the quality engine (engine.go) is still on
+//     stdlib RE2 pending a faithful re-port, and the bin vocabulary is unified
+//     where Radarr wants per-domain bins (Remux-1080p/2160p, BR-DISK). Both are
+//     a dedicated quality PR; see .ignore/per-domain-quality-vocabulary.md.
+//   - absolute (Sonarr) — anime absolute numbering, out of the v1 enforced claim.
 //
-// The allowlist is empty: no enforced field has any genuine divergence to mask
-// (see the allowlist comment). Do NOT add allowlist masks or tweak the parser to
-// chase the remaining reported-field numbers — those belong to the quality PR.
+// Don't add allowlist masks or tweak the parser to chase the reported-field
+// numbers — those belong to the quality PR.
 
 func TestParitySonarr(t *testing.T) {
 	runParity(t, "sonarr", sonarrGolden, decodeSonarr, []fieldSpec{

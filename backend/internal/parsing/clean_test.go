@@ -4,7 +4,6 @@ import "testing"
 
 // These tests exercise the pre-match simplify pipeline (clean.go) per stage. They
 // assert on the three working strings (release/simple) and the reject signal.
-// clean.go is not wired into Parse() yet; this is its standalone coverage.
 
 func TestRemoveFileExtensionClean(t *testing.T) {
 	tests := []struct {

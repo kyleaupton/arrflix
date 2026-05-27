@@ -52,11 +52,11 @@ const confDetected = 0.9
 // It is pure, deterministic, and total: unparseable input yields low-confidence
 // (zero) fields, never an error.
 //
-// This currently populates the quality half (resolution, source, bin, remux,
-// proper/repack), the release group, and the movie edition — the ported
-// Sonarr/Radarr quality engine. The identity half (title, year, season/episode,
-// daily, absolute, languages) is not yet extracted; those fields stay
-// zero-valued until the identity port.
+// Quality (resolution, source, bin, remux, proper/repack) is parsed for every
+// input by the ported Sonarr/Radarr quality engine. Identity (title, year,
+// numbering, edition), release group, and languages come from the
+// domain-specific pass selected by the Domain option, or by detection from the
+// title; fields a given input doesn't carry stay zero-valued.
 func Parse(input string, opts ...Option) ParsedRelease {
 	var cfg config
 	for _, opt := range opts {
@@ -81,15 +81,13 @@ func Parse(input string, opts ...Option) ParsedRelease {
 	p.Quality.Version = intField(raw.revision.Version, "version token")
 	p.Quality.Real = intField(raw.revision.Real, "real token")
 
-	// Release. ReleaseGroup / ReleaseHash are set by the domain-specific identity
+	// Release. ReleaseGroup / ReleaseHash come from the domain-specific identity
 	// pass below (parseSeriesGroup / parseMovieGroup in group.go — the faithful
 	// Sonarr/Radarr ports), mirroring upstream which derives the group from the
 	// post-match release/simpleReleaseTitle and the winning match's subgroup/hash.
-	//
-	// Languages are now parsed inside the domain-specific identity pass — Sonarr
-	// from result.ReleaseTokens (the post-S/E substring), Radarr from the
-	// group-blanked simpleReleaseTitle — faithfully matching upstream's input,
-	// rather than the old raw-input single parser.
+	// Languages are parsed in the same pass — Sonarr from result.ReleaseTokens
+	// (the post-S/E substring), Radarr from the group-blanked simpleReleaseTitle —
+	// matching upstream's input.
 
 	// Identity — title/year/numbering come from the domain-specific identity
 	// pass. Edition is movie-domain only and is set by parseMovieIdentity's
