@@ -85,8 +85,6 @@ func Parse(input string, opts ...Option) ParsedRelease {
 	// pass below (parseSeriesGroup / parseMovieGroup in group.go — the faithful
 	// Sonarr/Radarr ports), mirroring upstream which derives the group from the
 	// post-match release/simpleReleaseTitle and the winning match's subgroup/hash.
-	// engine.go's raw.group is the old RE2-adapted port; it is no longer consumed
-	// (it stays only because the quality engine in engine.go is re-ported later).
 	//
 	// Languages are now parsed inside the domain-specific identity pass — Sonarr
 	// from result.ReleaseTokens (the post-S/E substring), Radarr from the
@@ -95,8 +93,7 @@ func Parse(input string, opts ...Option) ParsedRelease {
 
 	// Identity — title/year/numbering come from the domain-specific identity
 	// pass. Edition is movie-domain only and is set by parseMovieIdentity's
-	// faithful Radarr port (NOT by the quality engine's raw.edition, which stays
-	// quality-engine territory for a later phase); the series path leaves it empty.
+	// faithful Radarr port; the series path leaves it empty.
 	domain := cfg.domain
 	if domain == DomainAuto {
 		domain = detectDomain(input)

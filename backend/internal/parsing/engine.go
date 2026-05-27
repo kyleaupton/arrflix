@@ -6,13 +6,11 @@ import (
 	"strings"
 )
 
-// rawParse is the engine's internal result: the ported quality half plus the
-// release group and edition. Parse wraps it into the ParsedRelease model.
+// rawParse is the engine's internal result: the ported quality half (quality
+// bin + revision). Parse wraps it into the ParsedRelease model.
 type rawParse struct {
 	quality  Quality
 	revision Revision
-	group    *string
-	edition  *string
 }
 
 type Resolution string
@@ -223,61 +221,7 @@ var (
 
 	// High-def PDTV (HR WS = High Resolution Widescreen)
 	HighDefPdtvRegex = regexp.MustCompile(`(?i)hr[-_. ]ws`)
-
-	// Release Group Patterns (Radarr + Sonarr unified)
-	// Main release group regex - captures groups like -GROUP or [GROUP]
-	// Simplified for Go's RE2 engine (no lookahead/lookbehind support)
-	// Note: Dotted release groups like YTS.LT, YTS.MX are handled via exception lists
-	ReleaseGroupRegex = regexp.MustCompile(`(?i)-([a-z0-9]+(?:-[a-z0-9]+)?)(?:\b|[-._ ]|$)|[-._ ]\[([a-z0-9]+)\]$`)
-
-	// Anime-style release groups: [SubGroup] Title
-	// Simplified for Go's RE2 engine
-	AnimeReleaseGroupRegex = regexp.MustCompile(`(?i)^\[([^\]]+)\](?:_|-|\s|\.)?`)
-
-	// Invalid release groups to filter (season/episode codes, hex strings)
-	InvalidReleaseGroupRegex = regexp.MustCompile(`(?i)^([se]\d+|[0-9a-f]{8})$`)
-
-	// Clean suffixes before parsing (RP, postbot, Rakuv*, etc.)
-	CleanReleaseGroupRegex = regexp.MustCompile(`(?i)(-(RP|1|NZBGeek|Obfuscated|Obfuscation|Scrambled|sample|Pre|postbot|xpost|Rakuv[a-z0-9]*|WhiteRev|BUYMORE|AsRequested|AlternativeToRequested|GEROV|Z0iDS3N|Chamele0n|4P|4Planet|AlteZachen|RePACKPOST))+$`)
-
-	// Website prefix removal (www.site.com prefix)
-	WebsitePrefixRegex = regexp.MustCompile(`(?i)^(?:(?:\[|\()\s*)?(?:www\.)?[-a-z0-9]{1,256}\.(?:[a-z]{2,6}\.[a-z]{2,6}|[a-z]{2,})(?:\s*(?:\]|\))|[ -]{2,})[ -]*`)
-
-	// Torrent tracker suffix removal (including .com variants)
-	CleanTorrentSuffixRegex = regexp.MustCompile(`(?i)\[(?:ettv|rartv|rarbg|cttv|publichd)(?:\.com)?\]$`)
-
-	// Edition pattern from Radarr - simplified for Go's RE2 engine
-	// Captures Director's Cut, Extended, IMAX, etc.
-	EditionRegex = regexp.MustCompile(`(?i)\(?\b((?:(?:Recut|Extended|Ultimate)[. ])?(?:Director.?s|Collector.?s|Theatrical|Ultimate|Extended|Despecialized|Special|Rouge|Final|Assembly|Imperial|Diamond|Signature|Hunter|Rekall|Uncensored|Remastered|Unrated|Uncut|IMAX|Fan[. ]?Edit|Restored|[23]in1|\d{2,3}(?:th)? Anniversary)[. ]?(?:Cut|Edition|Version)?(?:[. ](?:Extended|Uncensored|Remastered|Unrated|Uncut|Open[. ]?Matte|IMAX|Fan[. ]?Edit))?|(?:Open[. ]?Matte|4in1))\b\)?`)
 )
-
-// Exception groups that don't follow standard -GROUP pattern (exact matches)
-// Combined from Radarr and Sonarr
-var releaseGroupExceptionsExact = map[string]bool{
-	// Radarr exceptions
-	"KRaLiMaRKo": true, "E.N.D": true, "D-Z0N3": true, "Koten_Gars": true,
-	"BluDragon": true, "ZØNEHD": true, "HQMUX": true, "VARYG": true,
-	"YIFY": true, "YTS": true, "YTS.MX": true, "YTS.LT": true, "YTS.AG": true,
-	"TMd": true, "Eml HDTeam": true, "LMain": true, "DarQ": true,
-	"BEN THE MEN": true, "TAoE": true, "QxR": true, "Fight-BB": true,
-	"KCRT": true, "Vialle": true, "126811": true,
-}
-
-// Exception groups whose releases end with GROUP) or GROUP]
-// Combined from Radarr and Sonarr
-var releaseGroupExceptionsPattern = map[string]bool{
-	// Radarr exceptions
-	"Silence": true, "afm72": true, "Panda": true, "Ghost": true,
-	"MONOLITH": true, "Tigole": true, "Joy": true, "ImE": true,
-	"UTR": true, "t3nzin": true, "Anime Time": true, "Project Angel": true,
-	"Hakata Ramen": true, "HONE": true, "GiLG": true, "Vyndros": true,
-	"SEV": true, "Garshasp": true, "Kappa": true, "Natty": true,
-	"RCVR": true, "SAMPA": true, "YOGI": true, "r00t": true,
-	"EDGE2020": true, "RZeroX": true, "FreetheFish": true, "Anna": true,
-	"Bandi": true, "Qman": true, "theincognito": true, "HDO": true,
-	"DusIctv": true, "DHD": true, "CtrlHD": true, "-ZR-": true,
-	"ADC": true, "XZVN": true, "RH": true, "Kametsu": true,
-}
 
 // Extension-based quality mapping (Sonarr parity)
 var extensionQualityMap = map[string]Quality{
@@ -344,223 +288,6 @@ func getQualityForExtension(name string) Quality {
 		return q
 	}
 	return Unknown
-}
-
-// removeFileExtension removes common video file extensions
-func removeFileExtension(title string) string {
-	videoExts := []string{
-		".mkv", ".mp4", ".avi", ".m4v", ".mov", ".wmv", ".flv",
-		".ts", ".m2ts", ".vob", ".iso", ".img", ".mpg", ".mpeg",
-	}
-
-	titleLower := strings.ToLower(title)
-	for _, ext := range videoExts {
-		if strings.HasSuffix(titleLower, ext) {
-			return title[:len(title)-len(ext)]
-		}
-	}
-	return title
-}
-
-// parseReleaseGroup extracts the release group from a title
-// Returns pointer to group name, or nil if not found
-// Follows Radarr/Sonarr parsing logic with unified exception lists
-func parseReleaseGroup(title string) *string {
-	title = strings.TrimSpace(title)
-
-	// Remove file extension
-	title = removeFileExtension(title)
-
-	// Clean website prefixes and torrent suffixes
-	title = WebsitePrefixRegex.ReplaceAllString(title, "")
-	title = CleanTorrentSuffixRegex.ReplaceAllString(title, "")
-
-	// Priority 1: Check anime format [SubGroup] - highest priority
-	if match := AnimeReleaseGroupRegex.FindStringSubmatch(title); match != nil {
-		if len(match) > 1 && match[1] != "" {
-			group := strings.TrimSpace(match[1])
-			return &group
-		}
-	}
-
-	// Clean known suffixes
-	title = CleanReleaseGroupRegex.ReplaceAllString(title, "")
-
-	// Priority 2: Check exact exceptions (case-insensitive)
-	// Sort by length (longest first) to match YTS.LT before YTS, etc.
-	titleLower := strings.ToLower(title)
-	exceptions := make([]string, 0, len(releaseGroupExceptionsExact))
-	for exception := range releaseGroupExceptionsExact {
-		exceptions = append(exceptions, exception)
-	}
-	// Sort by length descending
-	for i := 0; i < len(exceptions); i++ {
-		for j := i + 1; j < len(exceptions); j++ {
-			if len(exceptions[j]) > len(exceptions[i]) {
-				exceptions[i], exceptions[j] = exceptions[j], exceptions[i]
-			}
-		}
-	}
-
-	for _, exception := range exceptions {
-		exceptionLower := strings.ToLower(exception)
-		// Find all occurrences
-		if strings.Contains(titleLower, exceptionLower) {
-			// Return last match (Radarr behavior)
-			lastIdx := strings.LastIndex(titleLower, exceptionLower)
-			group := title[lastIdx : lastIdx+len(exception)]
-			return &group
-		}
-	}
-
-	// Priority 3: Check pattern exceptions (groups ending with ) or ])
-	for exception := range releaseGroupExceptionsPattern {
-		// Look for pattern: [._ []GROUP[)\]]
-		pattern := regexp.MustCompile(`(?i)[._ \[]` + regexp.QuoteMeta(exception) + `(?:\)|\])`)
-		if matches := pattern.FindAllString(title, -1); len(matches) > 0 {
-			// Return last match, extract just the group name
-			group := exception
-			return &group
-		}
-	}
-
-	// Priority 4: Main regex pattern
-	// Filter list: patterns that look like release groups but aren't
-	invalidPatterns := []string{
-		"480p", "576p", "720p", "1080p", "1440p", "2160p", "4320p",
-		"WEB-DL", "WEBDL", "WEB-Rip", "WEBRip", "Blu-Ray", "BluRay",
-		"DTS-HD", "DTS-X", "DTS-MA", "DTS-ES", "DTS",
-		"HDTV", "SDTV", "PDTV",
-		"DL", "Rip", "HD", "MA", "ES", "X", "bit",
-		"REMUX", "AVC", "HEVC", "H264", "H265", "x264", "x265",
-		"DD", "DDP", "AAC", "FLAC", "TrueHD", "Atmos",
-		"HDR", "HDR10", "DV", "Dolby",
-	}
-
-	if matches := ReleaseGroupRegex.FindAllStringSubmatch(title, -1); len(matches) > 0 {
-		// Take last match (Radarr behavior)
-		lastMatch := matches[len(matches)-1]
-
-		// Check both capture groups (group 1 for -GROUP, group 2 for [GROUP])
-		var group string
-		var isBracketGroup bool
-		if len(lastMatch) > 1 && lastMatch[1] != "" {
-			group = lastMatch[1]
-			isBracketGroup = false
-		} else if len(lastMatch) > 2 && lastMatch[2] != "" {
-			group = lastMatch[2]
-			isBracketGroup = true
-		}
-
-		if group != "" {
-			// Filter: reject if all numeric
-			if _, err := strconv.Atoi(group); err == nil {
-				return nil
-			}
-
-			// Filter: reject if invalid pattern (s01, e04, hex hashes)
-			if InvalidReleaseGroupRegex.MatchString(group) {
-				return nil
-			}
-
-			// Filter: reject if it matches known invalid patterns
-			groupLower := strings.ToLower(group)
-			for _, invalid := range invalidPatterns {
-				if groupLower == strings.ToLower(invalid) {
-					return nil
-				}
-			}
-
-			// Filter: reject if it's a date pattern (MM-DD, YYYY-MM, or just MM)
-			if matched, _ := regexp.MatchString(`^\d{1,4}-\d{1,2}$`, group); matched {
-				return nil
-			}
-			if matched, _ := regexp.MatchString(`^\d{1,2}$`, group); matched {
-				return nil
-			}
-
-			// Filter: reject if it's a language code (EN, ES, FR, etc.)
-			if matched, _ := regexp.MatchString(`^(?:EN|ES|CAT|ENG|JAP|GER|FRA|FRE|ITA)$`, strings.ToUpper(group)); matched {
-				return nil
-			}
-
-			// Filter: reject if it's a bit depth (10-bit, 8-bit, etc.)
-			if matched, _ := regexp.MatchString(`^\d{1,2}-bit$`, strings.ToLower(group)); matched {
-				return nil
-			}
-
-			// Filter: reject single or two letter groups (too ambiguous)
-			// But allow bracket groups since they're more explicit
-			if !isBracketGroup && len(group) <= 2 {
-				return nil
-			}
-
-			return &group
-		}
-	}
-
-	return nil
-}
-
-// parseEdition extracts movie edition from title
-// Returns pointer to edition string, or nil if not found
-// Follows Radarr implementation - movies only
-func parseEdition(title string) *string {
-	matches := EditionRegex.FindAllStringSubmatchIndex(title, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-
-	// Check the last match (Radarr behavior - take last occurrence)
-	lastMatch := matches[len(matches)-1]
-	if len(lastMatch) > 3 {
-		edition := title[lastMatch[2]:lastMatch[3]] // capture group 1
-
-		// Replace dots with spaces and trim (Radarr behavior)
-		edition = strings.ReplaceAll(edition, ".", " ")
-		edition = strings.TrimSpace(edition)
-
-		// Reject if edition words appear at the very start of title
-		// (e.g., "Directors.Cut.German.2006" - Directors Cut is the title, not edition)
-		titleStart := strings.TrimSpace(title)
-		editionNorm := strings.ToLower(strings.ReplaceAll(edition, " ", ""))
-		titleNorm := strings.ToLower(strings.ReplaceAll(titleStart[:min(len(titleStart), len(edition)+5)], ".", ""))
-		titleNorm = strings.ReplaceAll(titleNorm, " ", "")
-
-		if strings.HasPrefix(titleNorm, editionNorm) {
-			// Edition appears at the start - likely part of title, not edition tag
-			return nil
-		}
-
-		// Reject if standalone single-word edition (without Cut/Edition/Version) is immediately
-		// followed by a year AND preceded by another word connected by a dot
-		// e.g., "Movie.Holiday.Special.1978" - "Special" is part of "Holiday Special" title
-		// But allow "Movie Title Extended 2012" - space-separated, Extended is edition
-		hasEditionSuffix := strings.Contains(strings.ToLower(edition), "cut") ||
-			strings.Contains(strings.ToLower(edition), "edition") ||
-			strings.Contains(strings.ToLower(edition), "version")
-
-		if !hasEditionSuffix {
-			// Check if followed by year
-			afterMatch := title[lastMatch[3]:]
-			if matched, _ := regexp.MatchString(`^[.\s]*(19|20)\d{2}`, afterMatch); matched {
-				// Check if preceded by a word connected by a DOT (not space)
-				beforeMatch := ""
-				if lastMatch[2] > 0 {
-					beforeMatch = title[:lastMatch[2]]
-				}
-				// Only reject if there's a word.dot pattern immediately before
-				// (like "Holiday." in "Holiday.Special")
-				if matched, _ := regexp.MatchString(`[a-zA-Z]+\.\s*$`, beforeMatch); matched {
-					return nil
-				}
-			}
-		}
-
-		return &edition
-	}
-
-	return nil
 }
 
 func ParseResolution(name string) int {
@@ -631,12 +358,6 @@ func parseRaw(name string) rawParse {
 			result.revision.Version++
 		}
 	}
-
-	// Parse release group (use original name to preserve formatting)
-	result.group = parseReleaseGroup(name)
-
-	// Parse edition (movies only - parsed for all but primarily used for movies)
-	result.edition = parseEdition(normalizedName)
 
 	resolution := ParseResolution(normalizedName)
 	remuxMatch := RemuxRegex.MatchString(normalizedName)
