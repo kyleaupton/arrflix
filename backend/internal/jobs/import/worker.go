@@ -19,8 +19,8 @@ import (
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/mediainfo"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/pathmapping"
-	"github.com/kyleaupton/arrflix/internal/release"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 	"github.com/kyleaupton/arrflix/internal/template"
@@ -279,7 +279,7 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 		candidateTitle = *details.CandidateTitle
 	}
 
-	q := release.Parse(candidateTitle)
+	q := parsing.Parse(candidateTitle)
 	candidate := model.DownloadCandidate{
 		Title: candidateTitle,
 	}

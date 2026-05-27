@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kyleaupton/arrflix/internal/release"
+	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/template"
 )
 
@@ -21,12 +21,14 @@ const (
 // EvaluationContext is the unified context available to both the policy engine
 // and name template system. It uses prefixed namespaces:
 //   - candidate.* - Torrent/release metadata (available at policy time)
+//   - identity.*  - Parsed identity: title, year, edition, season/episode numbering (policy time)
 //   - quality.*   - Parsed quality info (available at policy time)
-//   - release.*   - Release metadata like group and edition (available at policy time)
+//   - release.*   - Release metadata like group and hardcoded-subs (available at policy time)
 //   - media.*     - TMDB/media metadata (available at policy time)
 //   - mediainfo.* - Video file analysis (available only post-download)
 type EvaluationContext struct {
 	Candidate CandidateFields  `namespace:"candidate"`
+	Identity  IdentityFields   `namespace:"identity"`
 	Quality   QualityFields    `namespace:"quality"`
 	Release   ReleaseFields    `namespace:"release"`
 	Media     MediaFields      `namespace:"media"`
@@ -61,10 +63,47 @@ type QualityFields struct {
 	Version    int    `path:"quality.version" label:"Version" type:"number" phase:"pre_download"`
 }
 
-// ReleaseFields contains release metadata (not quality-related)
+// ReleaseFields contains release metadata (not quality-related, not identity).
+// Hardcoded-subs is a property of this particular encode (like languages /
+// dual-audio), not of which work or cut the release is — so it lives here, not
+// under identity.
 type ReleaseFields struct {
-	ReleaseGroup string `path:"release.release_group" label:"Release Group" type:"text" phase:"pre_download"`
-	Edition      string `path:"release.edition" label:"Edition" type:"text" phase:"pre_download"`
+	ReleaseGroup  string `path:"release.release_group" label:"Release Group" type:"text" phase:"pre_download"`
+	HardcodedSubs string `path:"release.hardcoded_subs" label:"Hardcoded Subs" type:"text" phase:"pre_download"`
+}
+
+// IdentityFields contains parsed identity hints from the release title: the
+// work's title/year/edition and (for series) the season/episode numbering.
+// These are advertised values from the parse — matching resolves the canonical
+// identity into media.*. Edition lives here (mirroring the parse model and the
+// *arr stack): like year, it identifies which cut of the work the release is.
+type IdentityFields struct {
+	Title     string   `path:"identity.title" label:"Title" type:"text" phase:"pre_download"`
+	Year      int      `path:"identity.year" label:"Year" type:"number" phase:"pre_download"`
+	TypeHint  string   `path:"identity.type_hint" label:"Type Hint" type:"enum" enumValues:"movie,series" phase:"pre_download"`
+	Edition   string   `path:"identity.edition" label:"Edition" type:"text" phase:"pre_download"`
+	AllTitles []string `path:"identity.all_titles" label:"All Titles (AKA)" type:"text" phase:"pre_download"`
+
+	// Numbering (series) — the release's own numbering, flattened into identity.
+	Season          int    `path:"identity.season" label:"Season" type:"number" phase:"pre_download"`
+	EpisodeNumbers  []int  `path:"identity.episode_numbers" label:"Episode Numbers" type:"number" phase:"pre_download"`
+	AbsoluteNumbers []int  `path:"identity.absolute_numbers" label:"Absolute Numbers" type:"number" phase:"pre_download"`
+	AirDate         string `path:"identity.air_date" label:"Air Date" type:"text" phase:"pre_download"`
+	FullSeason      bool   `path:"identity.full_season" label:"Full Season" type:"boolean" phase:"pre_download"`
+	SeasonPart      int    `path:"identity.season_part" label:"Season Part" type:"number" phase:"pre_download"`
+	IsPartialSeason bool   `path:"identity.is_partial_season" label:"Is Partial Season" type:"boolean" phase:"pre_download"`
+	IsMultiSeason   bool   `path:"identity.is_multi_season" label:"Is Multi Season" type:"boolean" phase:"pre_download"`
+	IsMiniSeries    bool   `path:"identity.is_mini_series" label:"Is Mini Series" type:"boolean" phase:"pre_download"`
+	Special         bool   `path:"identity.special" label:"Special" type:"boolean" phase:"pre_download"`
+	IsSplitEpisode  bool   `path:"identity.is_split_episode" label:"Is Split Episode" type:"boolean" phase:"pre_download"`
+	IsSeasonExtra   bool   `path:"identity.is_season_extra" label:"Is Season Extra" type:"boolean" phase:"pre_download"`
+	DailyPart       int    `path:"identity.daily_part" label:"Daily Part" type:"number" phase:"pre_download"`
+
+	// Derived (computed by the parser, mirroring *arr's computed properties).
+	IsDaily                  bool   `path:"identity.is_daily" label:"Is Daily" type:"boolean" phase:"pre_download"`
+	IsAbsoluteNumbering      bool   `path:"identity.is_absolute_numbering" label:"Is Absolute Numbering" type:"boolean" phase:"pre_download"`
+	IsPossibleSpecialEpisode bool   `path:"identity.is_possible_special" label:"Is Possible Special" type:"boolean" phase:"pre_download"`
+	ReleaseType              string `path:"identity.release_type" label:"Release Type" type:"enum" enumValues:"unknown,singleEpisode,multiEpisode,fullSeason,partialSeason" phase:"pre_download"`
 }
 
 // MediaFields contains TMDB/media metadata
@@ -108,8 +147,15 @@ type MediaInfoFields struct {
 	VideoMultiViewCount int      `path:"mediainfo.video_multi_view_count" label:"Video Multi-View Count" type:"number" phase:"post_download"`
 }
 
-// NewEvaluationContext creates an EvaluationContext from a DownloadCandidate and parse result
-func NewEvaluationContext(candidate DownloadCandidate, result release.ParseResult) EvaluationContext {
+// NewEvaluationContext creates an EvaluationContext from a DownloadCandidate
+// and a parsed release. It fills the advertised namespaces (Identity, Quality,
+// Release) from the parse via its flat Values() projection; Media is populated
+// later by matching (WithMedia/WithSeriesInfo) and MediaInfo by the ffprobe
+// extractor (WithMediaInfo). The Identity/Quality/Release split here mirrors the
+// parse model 1:1 — notably Edition lives under identity.* (it identifies the
+// cut) and hardcoded-subs under release.* (an encode property).
+func NewEvaluationContext(candidate DownloadCandidate, parsed parsing.ParsedRelease) EvaluationContext {
+	v := parsed.Values()
 	return EvaluationContext{
 		Candidate: CandidateFields{
 			Size:        candidate.Size,
@@ -127,17 +173,41 @@ func NewEvaluationContext(candidate DownloadCandidate, result release.ParseResul
 			Link:        candidate.Link,
 			GUID:        candidate.GUID,
 		},
+		Identity: IdentityFields{
+			Title:                    v.Identity.Title,
+			Year:                     v.Identity.Year,
+			TypeHint:                 v.Identity.TypeHint,
+			Edition:                  v.Identity.Edition,
+			AllTitles:                v.Identity.AllTitles,
+			Season:                   v.Identity.Numbering.Season,
+			EpisodeNumbers:           v.Identity.Numbering.EpisodeNumbers,
+			AbsoluteNumbers:          v.Identity.Numbering.AbsoluteNumbers,
+			AirDate:                  v.Identity.Numbering.AirDate,
+			FullSeason:               v.Identity.Numbering.FullSeason,
+			SeasonPart:               v.Identity.Numbering.SeasonPart,
+			IsPartialSeason:          v.Identity.Numbering.IsPartialSeason,
+			IsMultiSeason:            v.Identity.Numbering.IsMultiSeason,
+			IsMiniSeries:             v.Identity.Numbering.IsMiniSeries,
+			Special:                  v.Identity.Numbering.Special,
+			IsSplitEpisode:           v.Identity.Numbering.IsSplitEpisode,
+			IsSeasonExtra:            v.Identity.Numbering.IsSeasonExtra,
+			DailyPart:                v.Identity.Numbering.DailyPart,
+			IsDaily:                  v.Identity.Numbering.IsDaily,
+			IsAbsoluteNumbering:      v.Identity.Numbering.IsAbsoluteNumbering,
+			IsPossibleSpecialEpisode: v.Identity.Numbering.IsPossibleSpecialEpisode,
+			ReleaseType:              v.Identity.Numbering.ReleaseType,
+		},
 		Quality: QualityFields{
-			Full:       result.Quality.Full(),
-			Resolution: result.Quality.Resolution(),
-			Source:     result.Quality.Source(),
-			IsRemux:    result.Quality.IsRemux(),
-			IsRepack:   result.Quality.Revision.IsRepack,
-			Version:    result.Quality.Version(),
+			Full:       v.Quality.Full,
+			Resolution: v.Quality.Resolution,
+			Source:     v.Quality.Source,
+			IsRemux:    v.Quality.IsRemux,
+			IsRepack:   v.Quality.IsRepack,
+			Version:    v.Quality.Version,
 		},
 		Release: ReleaseFields{
-			ReleaseGroup: result.Release.GetReleaseGroup(),
-			Edition:      result.Release.GetEdition(),
+			ReleaseGroup:  v.Release.ReleaseGroup,
+			HardcodedSubs: v.Release.HardcodedSubs,
 		},
 		Media:     MediaFields{},
 		MediaInfo: nil,
@@ -183,6 +253,8 @@ func (ctx *EvaluationContext) GetField(path string) (any, error) {
 	switch namespace {
 	case "candidate":
 		return getFieldByPath(&ctx.Candidate, "candidate."+fieldPath)
+	case "identity":
+		return getFieldByPath(&ctx.Identity, "identity."+fieldPath)
 	case "quality":
 		return getFieldByPath(&ctx.Quality, "quality."+fieldPath)
 	case "media":
@@ -243,6 +315,7 @@ func ListContextFields() []ContextFieldInfo {
 
 	// Collect fields from each namespace struct
 	fields = append(fields, extractFieldsFromStruct(reflect.TypeOf(CandidateFields{}))...)
+	fields = append(fields, extractFieldsFromStruct(reflect.TypeOf(IdentityFields{}))...)
 	fields = append(fields, extractFieldsFromStruct(reflect.TypeOf(QualityFields{}))...)
 	fields = append(fields, extractFieldsFromStruct(reflect.TypeOf(ReleaseFields{}))...)
 	fields = append(fields, extractFieldsFromStruct(reflect.TypeOf(MediaFields{}))...)
@@ -332,6 +405,7 @@ func (ctx *EvaluationContext) ToTemplateData() map[string]any {
 
 	data := map[string]any{
 		"Candidate": ctx.Candidate,
+		"Identity":  ctx.Identity,
 		"Quality":   ctx.Quality,
 		"Release":   ctx.Release,
 		"Media":     media,

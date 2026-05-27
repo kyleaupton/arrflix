@@ -69,6 +69,13 @@ backend-test: _ensure-up
 backend-test-integration: _ensure-up
     {{backend-exec}} go test -race -tags=integration ./internal/test/integration/...
 
+# Regenerate the parser parity goldens from live pinned Sonarr/Radarr
+# containers (Tier 2 — slow, spins up two containers via the docker socket).
+# On-demand only; the fast Tier-1 parity test reads the committed goldens.
+[group('backend')]
+parity-regen: _ensure-up
+    {{backend-exec}} go test -tags=parity -timeout=20m -run TestRegenerateGoldens -v ./internal/test/parity/...
+
 # Regenerate the OpenAPI spec from huma operation declarations.
 [group('backend')]
 backend-genspec: _ensure-up
