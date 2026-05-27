@@ -5,12 +5,13 @@ package parsing
 // captured from live pinned Sonarr/Radarr. No containers, no network — the
 // goldens are embedded.
 //
-// Enforced fields (a mismatch fails the test, modulo the allowlist): quality
-// bin, proper/repack revision, version, and (movies) edition. Reported-only
-// fields (compat measured but not enforced while the port stabilizes): release
-// group and the identity fields (title, year, season, episodes, absolute,
-// languages). The codec/audio/HDR/dual-audio fields have no parse-oracle and are
-// not compared here at all.
+// Enforced fields (a mismatch fails the test, modulo the allowlist): the
+// stabilized identity + group fields — Sonarr title/year/season/episodes/group
+// and Radarr title/year/edition/group. Reported-only fields (compat measured but
+// not enforced while the matching half stabilizes): quality bin / version /
+// isRepack (P6 quality re-port), languages (P5.5), and Sonarr absolute (anime,
+// out of the v1 claim). The codec/audio/HDR/dual-audio fields have no
+// parse-oracle and are not compared here at all.
 //
 // The test reports per-field/per-tool compat % and fails on any enforced-field
 // mismatch that is not in the intentional-divergence allowlist.
@@ -101,88 +102,59 @@ type allowlistKey struct {
 // allowlist holds divergences we accept on purpose. compat % = matches /
 // (total − allowlisted); the test fails only on un-allowlisted mismatches of an
 // enforced field. Each entry carries the reason it's expected.
-var allowlist = map[allowlistKey]string{
-	// Sonarr couples quality to a successful EPISODE parse: a title with no
-	// valid season/episode (movie-ish or malformed) comes back Unknown. arrflix
-	// extracts quality independent of identity, so it reports the real bin.
-	{"sonarr", "Sans.Series.De.Traces.FRENCH.720p.BluRay.x264-FHD", "bin"}:                             "no S/E → Sonarr Unknown; arrflix quality is identity-independent",
-	{"sonarr", "Series Away(2001) Bluray FHD Hi10P.mkv", "bin"}:                                        "no S/E → Sonarr Unknown; arrflix quality is identity-independent",
-	{"sonarr", "Series.Title.S05EO1.Episode.Title.2160p.BDRip.AAC.7.1.HDR10.x265.10bit-Markll", "bin"}: "malformed S05EO1 (letter O) → Sonarr Unknown; arrflix quality is identity-independent",
-	{"sonarr", "The.Series.The.Lost.Sonarr.Summer.HR.WS.PDTV.x264-DHD", "bin"}:                         "no S/E → Sonarr Unknown; arrflix quality is identity-independent",
-	{"sonarr", "[Vodes] Series Title - Other Title (2020) [BDRemux 1080p HEVC Dual-Audio]", "bin"}:     "no episode number → Sonarr Unknown; arrflix quality is identity-independent",
-	{"sonarr", "[coldhell] Series v2 [BD1080p][5A45EABE].mkv", "bin"}:                                  "no episode number → Sonarr Unknown; arrflix quality is identity-independent",
-	{"sonarr", "[coldhell] Series v3 [BD720p][03192D4C]", "bin"}:                                       "no episode number → Sonarr Unknown; arrflix quality is identity-independent",
-
-	// Radarr v6 uses a different movie quality vocabulary than the Sonarr-style
-	// names arrflix emits uniformly: a distinct Remux-1080p/2160p bin (vs
-	// "Bluray-Xp Remux") and BR-DISK for full discs.
-	{"radarr", "The Movie 2023 2160p BluRay REMUX HEVC DTS-HD MA TrueHD 7.1 Atmos-GROUP", "bin"}: "Radarr v6 'Remux-2160p' vs arrflix unified 'Bluray-2160p Remux'",
-	{"radarr", "The.Movie.2018.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-FraMeSToR", "bin"}:           "Radarr v6 'Remux-1080p' vs arrflix unified 'Bluray-1080p Remux'",
-	{"radarr", "The.Movie.2020.Hybrid.2160p.UHD.BluRay.Remux.DV.HDR.HEVC.Atmos-GROUP", "bin"}:    "Radarr v6 'Remux-2160p' vs arrflix unified 'Bluray-2160p Remux'",
-	{"radarr", "The.Movie.2018.1080p.BluRay.AVC.TrueHD.7.1.Atmos-GROUP", "bin"}:                  "Radarr v6 'BR-DISK' (full disc) vs arrflix 'Bluray-1080p'",
-
-	// Identity: Sonarr fed a movie-ish/yearless title splits the YEAR into a
-	// season+episode (2016 → S20E16, 2017 → season 2017) or reads a bundle's
-	// "Part 1" as S01E01. There is no real episode identity; arrflix correctly
-	// extracts none.
-	{"sonarr", "Death.Series.2017.German.DD51.DL.1080p.NetflixHD.x264-TVS", "season"}:      "Sonarr uses year 2017 as season; no real season",
-	{"sonarr", "S for Series 2005 1080p UHD BluRay DD+7.1 x264-LoRD.mkv", "season"}:        "Sonarr uses year 2005 as season; no real season",
-	{"sonarr", "Series 2016 German DD51 DL 720p NetflixHD x264-TVS", "season"}:             "Sonarr splits year 2016 into season 20; no real season",
-	{"sonarr", "Series.Title.2011.1080p.UHD.BluRay.DD5.1.HDR.x265-CtrlHD.mkv", "season"}:   "Sonarr splits year 2011 into season 20; no real season",
-	{"sonarr", "Series.Title.2014.2160p.UHD.BluRay.X265-IAMABLE.mkv", "season"}:            "Sonarr splits year 2014 into season 20; no real season",
-	{"sonarr", "[DameDesuYo] Series Bundle - Part 1 (BD 4K 8bit FLAC)", "season"}:          "Sonarr reads bundle 'Part 1' as season 1",
-	{"sonarr", "Series 2016 German DD51 DL 720p NetflixHD x264-TVS", "episodes"}:           "Sonarr splits year 2016 into episode 16; no real episode",
-	{"sonarr", "Series.Title.2011.1080p.UHD.BluRay.DD5.1.HDR.x265-CtrlHD.mkv", "episodes"}: "Sonarr splits year 2011 into episode 11; no real episode",
-	{"sonarr", "Series.Title.2014.2160p.UHD.BluRay.X265-IAMABLE.mkv", "episodes"}:          "Sonarr splits year 2014 into episode 14; no real episode",
-	{"sonarr", "[DameDesuYo] Series Bundle - Part 1 (BD 4K 8bit FLAC)", "episodes"}:        "Sonarr reads bundle 'Part 1' as episode 1",
-	{"sonarr", "Sans.Series.De.Traces.FRENCH.720p.BluRay.x264-FHD", "languages"}:           "Sonarr can't parse as series → Unknown; arrflix correctly detects French",
-
-	// Title divergences. Group 1: Sonarr force-parses a year as S/E and is left
-	// with a partial title; arrflix parses no series identity, so no title.
-	{"sonarr", "Death.Series.2017.German.DD51.DL.1080p.NetflixHD.x264-TVS", "title"}:    "Sonarr force-parses year-as-S/E (title 'Death'); arrflix parses no series identity",
-	{"sonarr", "S for Series 2005 1080p UHD BluRay DD+7.1 x264-LoRD.mkv", "title"}:      "Sonarr force-parses year-as-S/E; arrflix parses no series identity",
-	{"sonarr", "Series 2016 German DD51 DL 720p NetflixHD x264-TVS", "title"}:           "Sonarr force-parses year-as-S/E; arrflix parses no series identity",
-	{"sonarr", "Series.Title.2011.1080p.UHD.BluRay.DD5.1.HDR.x265-CtrlHD.mkv", "title"}: "Sonarr force-parses year-as-S/E; arrflix parses no series identity",
-	{"sonarr", "Series.Title.2014.2160p.UHD.BluRay.X265-IAMABLE.mkv", "title"}:          "Sonarr force-parses year-as-S/E; arrflix parses no series identity",
-	{"sonarr", "The Series (BD)(640x480(RAW) (BATCH 1) (1-13)", "title"}:                "malformed batch title; out of scope",
-	// Group 2: anime absolute numbering — best-effort and out of the v1 claim;
-	// title is affected where the absolute parse is partial.
-	{"sonarr", "Series Slayer 04 vostfr FHD.mkv", "title"}:                           "anime absolute (non-bracket); best-effort, out of v1 claim",
-	{"sonarr", "The Online Series Alicization 04 vostfr FHD", "title"}:               "anime absolute (non-bracket); best-effort, out of v1 claim",
-	{"sonarr", "[DameDesuYo] Series Bundle - Part 1 (BD 4K 8bit FLAC)", "title"}:     "anime bundle; absolute best-effort, out of v1 claim",
-	{"sonarr", "[Doremi].The.Series.5.Go.Go!.31.[1280x720].[C65D4B1F].mkv", "title"}: "anime absolute; best-effort, out of v1 claim",
-}
+//
+// Phase 5 rebuild: the entire prior allowlist is now INERT and was removed. The
+// faithful Sonarr/Radarr group re-port (group.go) and the clean.go CJK rune-bug
+// fix brought every previously-divergent ENFORCED field (Sonarr title/year/
+// season/episodes/group; Radarr title/year/edition/group) to 100% parity against
+// the goldens with NO masking required. Verified by an exhaustive liveness probe:
+// not one of the old title/season/episodes entries was still being hit. The only
+// remaining live divergences sit on still-REPORTED fields — bin (Sonarr couples
+// quality to a successful episode parse; Radarr v6 uses a different quality
+// vocabulary) and languages — both deliberately deferred (bin → P6 quality
+// re-port, languages → P5.5). Reported fields are not gated, so they need no
+// allowlist; their divergences surface honestly in the reported compat metric.
+//
+// Net: there is zero genuine two-sided disagreement left on any enforced field,
+// so the allowlist is intentionally empty.
+var allowlist = map[allowlistKey]string{}
 
 // fieldSpec names a compared field and whether a mismatch fails the test.
-// Enforced fields are the validated ones; group is reported-only for now — it
-// was never parity-tested before and its long-tail divergences (both tools
-// over/under-extracting) need a dedicated triage pass.
 type fieldSpec struct {
 	name     string
 	enforced bool
 }
 
-// NOTE (parser rebuild, Phase 1): every field below is temporarily reported-only
-// (enforced: false). The corpus was just expanded ~8x by harvesting the pinned
-// Sonarr/Radarr test fixtures (backend/cmd/corpusharvest), which surfaces many
-// known gaps in the current hand-written parser. The faithful RE2 port that
-// satisfies these lands in later phases; until then we keep per-field compat
-// REPORTING (the progress metric) but do not fail the build. These will be
-// re-promoted to enforced field-by-field as the port reaches parity. Do NOT add
-// per-input allowlist masks or tweak the parser to chase these numbers.
+// Promotion status (Phase 5). After the faithful Sonarr/Radarr group re-port
+// (group.go) and the clean.go CJK rune-slicing fix, the stabilized identity +
+// group fields hit 100% golden parity and are now ENFORCED:
+//
+//   - Sonarr: title, year, season, episodes, group
+//   - Radarr: title, year, edition, group
+//
+// Still REPORTED-only (deliberately deferred, NOT enforced):
+//   - bin / version / isRepack — the quality engine is re-ported in P6 (Radarr
+//     bin is only ~66% against the v6 oracle vocabulary).
+//   - languages — re-ported in P5.5.
+//   - absolute (Sonarr) — anime absolute numbering, ~99.8% but out of the v1
+//     enforced claim.
+//
+// The allowlist is empty: no enforced field has any genuine divergence to mask
+// (see the allowlist comment). Do NOT add allowlist masks or tweak the parser to
+// chase the remaining reported-field numbers — those belong to P5.5 / P6.
 
 func TestParitySonarr(t *testing.T) {
 	runParity(t, "sonarr", sonarrGolden, decodeSonarr, []fieldSpec{
-		{"bin", false}, {"version", false}, {"isRepack", false}, {"group", false},
-		{"title", false}, {"year", false}, {"season", false}, {"episodes", false}, {"languages", false},
+		{"bin", false}, {"version", false}, {"isRepack", false}, {"group", true},
+		{"title", true}, {"year", true}, {"season", true}, {"episodes", true}, {"languages", false},
 		{"absolute", false},
 	})
 }
 
 func TestParityRadarr(t *testing.T) {
 	runParity(t, "radarr", radarrGolden, decodeRadarr, []fieldSpec{
-		{"bin", false}, {"version", false}, {"isRepack", false}, {"edition", false}, {"group", false},
-		{"title", false}, {"year", false}, {"languages", false},
+		{"bin", false}, {"version", false}, {"isRepack", false}, {"edition", true}, {"group", true},
+		{"title", true}, {"year", true}, {"languages", false},
 	})
 }
 

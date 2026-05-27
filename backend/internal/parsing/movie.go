@@ -128,11 +128,29 @@ func parseMovieIdentity(p *ParsedRelease, input string) {
 			p.Identity.AllTitles = Field[[]string]{Value: res.allTitles, Confidence: confDetected, Evidence: "movie AKA parser"}
 		}
 
+		// simpleReleaseTitle (Parser.cs:246): the title-blanked working string used
+		// for release-group, language, and edition parsing.
+		simpleReleaseTitle := buildSimpleReleaseTitle(c.release, m, res.title)
+
+		// Release group / hash, mirroring Radarr ParseMovieTitle (Parser.cs:263-287):
+		// ReleaseGroupParser.ParseReleaseGroup over simpleReleaseTitle, then OVERRIDE
+		// with the match's subgroup if present, then the release hash off the match.
+		group := parseMovieGroup(simpleReleaseTitle)
+		if sub := getSubGroup(m); sub != "" {
+			group = sub
+		}
+		if group != "" {
+			p.Release.ReleaseGroup = Field[string]{Value: group, Confidence: confDetected, Evidence: "release-group parser"}
+		}
+		if hash := getReleaseHash(m); hash != "" {
+			p.Release.ReleaseHash = Field[string]{Value: hash, Confidence: confDetected, Evidence: "release-hash parser"}
+		}
+
 		// Edition (Parser.cs:281): use the match's edition group if present, else
 		// fall back to ParseEdition over the title-blanked working string.
 		edition := res.edition
 		if edition == "" {
-			edition = parseMovieEdition(buildSimpleReleaseTitle(c.release, m, res.title))
+			edition = parseMovieEdition(simpleReleaseTitle)
 		}
 		if edition != "" {
 			p.Identity.Edition = Field[string]{Value: edition, Confidence: confDetected, Evidence: "movie edition parser"}

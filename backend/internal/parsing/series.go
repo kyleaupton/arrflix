@@ -404,6 +404,20 @@ func parseSeriesIdentity(p *ParsedRelease, input string) {
 			continue
 		}
 		populateSeriesIdentity(p, res)
+
+		// Release group / hash, mirroring Sonarr ParseTitle (Parser.cs:787-797):
+		// ParseReleaseGroup over the releaseTitle, then OVERRIDE with the match's
+		// subgroup if present, then the release hash off the winning match.
+		group := parseSeriesGroup(c.release)
+		if sub := getSubGroup(m); sub != "" {
+			group = sub
+		}
+		if group != "" {
+			p.Release.ReleaseGroup = Field[string]{Value: group, Confidence: confDetected, Evidence: "release-group parser"}
+		}
+		if hash := getReleaseHash(m); hash != "" {
+			p.Release.ReleaseHash = Field[string]{Value: hash, Confidence: confDetected, Evidence: "release-hash parser"}
+		}
 		return
 	}
 }

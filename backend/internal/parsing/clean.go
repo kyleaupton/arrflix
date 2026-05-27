@@ -197,7 +197,9 @@ func removeFileExtensionClean(title string) string {
 	}
 	ext := strings.ToLower(m.String())
 	if mediaFileExtensions[ext] {
-		return title[:m.Index]
+		// m.Index is a RUNE offset (regexp2 semantics); slice in rune space so
+		// multibyte (CJK) input isn't corrupted by a byte-offset slice.
+		return string([]rune(title)[:m.Index])
 	}
 	return title
 }
@@ -233,7 +235,10 @@ func stripQualityBrackets(simple string) string {
 		return simple
 	}
 	if isRecognizedQuality(m.String()) {
-		return simple[:m.Index] + simple[m.Index+m.Length:]
+		// m.Index / m.Length are RUNE offsets (regexp2 semantics); splice in rune
+		// space so multibyte (CJK) input isn't corrupted by byte-offset slicing.
+		runes := []rune(simple)
+		return string(runes[:m.Index]) + string(runes[m.Index+m.Length:])
 	}
 	return simple
 }

@@ -81,8 +81,12 @@ func Parse(input string, opts ...Option) ParsedRelease {
 	p.Quality.Version = intField(raw.revision.Version, "version token")
 	p.Quality.Real = intField(raw.revision.Real, "real token")
 
-	// Release.
-	p.Release.ReleaseGroup = strPtrField(raw.group, "release-group parser")
+	// Release. ReleaseGroup / ReleaseHash are set by the domain-specific identity
+	// pass below (parseSeriesGroup / parseMovieGroup in group.go — the faithful
+	// Sonarr/Radarr ports), mirroring upstream which derives the group from the
+	// post-match release/simpleReleaseTitle and the winning match's subgroup/hash.
+	// engine.go's raw.group is the old RE2-adapted port; it is no longer consumed
+	// (it stays only because the quality engine in engine.go is re-ported later).
 	if langs := parseLanguages(input); len(langs) > 0 {
 		p.Release.Languages = Field[[]string]{Value: langs, Confidence: confDetected, Evidence: "language parser"}
 	}
@@ -121,12 +125,4 @@ func intField(v int, evidence string) Field[int] {
 		return Field[int]{Value: v, Confidence: confDetected, Evidence: evidence}
 	}
 	return Field[int]{}
-}
-
-// strPtrField maps a *string (nil = not found) to a Field[string].
-func strPtrField(v *string, evidence string) Field[string] {
-	if v != nil {
-		return Field[string]{Value: *v, Confidence: confDetected, Evidence: evidence}
-	}
-	return Field[string]{}
 }
