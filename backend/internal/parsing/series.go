@@ -371,6 +371,8 @@ type seriesMatch struct {
 	dailyPart       int
 	hasDailyPart    bool
 
+	releaseTokens string
+
 	kind NumberingKind
 }
 
@@ -404,6 +406,15 @@ func parseSeriesIdentity(p *ParsedRelease, input string) {
 			continue
 		}
 		populateSeriesIdentity(p, res)
+
+		// Languages, mirroring Sonarr ParseTitle (Parser.cs:781): parse from
+		// result.ReleaseTokens — the substring of releaseTitle AFTER the S/E
+		// portion (res.releaseTokens) — NOT the full title, so title words aren't
+		// misread as languages. Only the successful-match branch runs this; an
+		// unparsed title returns null upstream and never reaches LanguageParser.
+		if langs := parseSeriesLanguages(res.releaseTokens); len(langs) > 0 {
+			p.Release.Languages = Field[[]string]{Value: langs, Confidence: confDetected, Evidence: "language parser"}
+		}
 
 		// Release group / hash, mirroring Sonarr ParseTitle (Parser.cs:787-797):
 		// ParseReleaseGroup over the releaseTitle, then OVERRIDE with the match's
@@ -660,8 +671,18 @@ func parseSeriesMatchCollection(re *regexp2.Regexp, first *regexp2.Match, releas
 		}
 	}
 
-	_ = lastIdx // ReleaseTokens (tail after S/E) is consumed by the language path,
-	// which is parsed independently in this port; tracked for fidelity only.
+	// ReleaseTokens (Parser.cs:1245): releaseTitle.Substring(lastSeasonEpisodeStringIndex)
+	// when the index is within bounds, else the whole releaseTitle. lastIdx was
+	// accumulated as a rune offset over the simpleTitle the match ran on; upstream
+	// applies that same index to releaseTitle verbatim (the two strings differ when
+	// quality/codec tokens were stripped, but upstream substrings releaseTitle
+	// regardless). This feeds LanguageParser.ParseLanguages.
+	releaseRunes := []rune(releaseTitle)
+	if lastIdx >= 0 && lastIdx < len(releaseRunes) {
+		res.releaseTokens = string(releaseRunes[lastIdx:])
+	} else {
+		res.releaseTokens = releaseTitle
+	}
 
 	// Title / year / AKA (Parser.cs:1254 → GetSeriesTitleInfo).
 	getSeriesTitleInfo(res, m0)

@@ -87,9 +87,11 @@ func Parse(input string, opts ...Option) ParsedRelease {
 	// post-match release/simpleReleaseTitle and the winning match's subgroup/hash.
 	// engine.go's raw.group is the old RE2-adapted port; it is no longer consumed
 	// (it stays only because the quality engine in engine.go is re-ported later).
-	if langs := parseLanguages(input); len(langs) > 0 {
-		p.Release.Languages = Field[[]string]{Value: langs, Confidence: confDetected, Evidence: "language parser"}
-	}
+	//
+	// Languages are now parsed inside the domain-specific identity pass — Sonarr
+	// from result.ReleaseTokens (the post-S/E substring), Radarr from the
+	// group-blanked simpleReleaseTitle — faithfully matching upstream's input,
+	// rather than the old raw-input single parser.
 
 	// Identity — title/year/numbering come from the domain-specific identity
 	// pass. Edition is movie-domain only and is set by parseMovieIdentity's

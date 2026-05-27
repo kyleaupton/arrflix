@@ -173,9 +173,11 @@ just check-all
 just backend-test               # unit only
 just backend-test-integration   # integration only
 
-# Quality testing utility (one-off, not part of check)
-cd backend && go run cmd/quality-test/main.go
+# Parser parity (Tier 2 — regenerate goldens from live pinned Sonarr/Radarr containers)
+just parity-regen
 ```
+
+**Parser parity harness:** the parsing module (`backend/internal/parsing/`) is regression-gated against Sonarr/Radarr. Tier 1 is a hermetic `go test` (`internal/parsing/parity_test.go`, runs in `just check`) that diffs the parser against committed goldens. Tier 2 (`just parity-regen`) regenerates those goldens from live pinned `linuxserver/sonarr` + `linuxserver/radarr` containers (the versions are pinned as git submodules under `submodules/`). The corpus inputs live in `backend/internal/parsing/testdata/inputs.json` (harvest more via `go run ./cmd/corpusharvest`). This replaced the old `cmd/quality-test` utility.
 
 Test layering: unit tests live alongside the code they cover (`backend/internal/service/scan_test.go`, etc.) and run without external dependencies. Integration tests live in `backend/internal/test/integration/` behind a `//go:build integration` tag — they spin up a postgres testcontainer per `TestMain` and clone a per-test database from a migrated template (`backend/internal/test/dbtest/`).
 

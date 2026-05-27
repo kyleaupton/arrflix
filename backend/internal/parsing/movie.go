@@ -146,6 +146,19 @@ func parseMovieIdentity(p *ParsedRelease, input string) {
 			p.Release.ReleaseHash = Field[string]{Value: hash, Confidence: confDetected, Evidence: "release-hash parser"}
 		}
 
+		// Languages, mirroring Radarr ParseMovieTitle (Parser.cs:275): parse from
+		// simpleReleaseTitle with the (non-empty) release group replaced by
+		// "RlsGrp", so the group token isn't misread as a language. Only the
+		// successful-match branch runs this; an unparsed title returns null
+		// upstream and never reaches LanguageParser.
+		languageTitle := simpleReleaseTitle
+		if group != "" {
+			languageTitle = strings.ReplaceAll(languageTitle, group, "RlsGrp")
+		}
+		if langs := parseMovieLanguages(languageTitle); len(langs) > 0 {
+			p.Release.Languages = Field[[]string]{Value: langs, Confidence: confDetected, Evidence: "language parser"}
+		}
+
 		// Edition (Parser.cs:281): use the match's edition group if present, else
 		// fall back to ParseEdition over the title-blanked working string.
 		edition := res.edition
