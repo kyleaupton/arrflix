@@ -131,6 +131,9 @@ export type ContextSnapshot = {
     candidate: {
         [key: string]: unknown;
     };
+    identity: {
+        [key: string]: unknown;
+    };
     media: {
         [key: string]: unknown;
     };

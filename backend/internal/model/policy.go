@@ -104,6 +104,7 @@ type EvaluationTrace struct {
 // Used to expose all available variables to the UI for debugging/transparency
 type ContextSnapshot struct {
 	Candidate map[string]any `json:"candidate"`
+	Identity  map[string]any `json:"identity"`
 	Quality   map[string]any `json:"quality"`
 	Release   map[string]any `json:"release"`
 	Media     map[string]any `json:"media"`

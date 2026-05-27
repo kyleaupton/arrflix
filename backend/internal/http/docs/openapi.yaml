@@ -261,6 +261,9 @@ components:
         candidate:
           additionalProperties: {}
           type: object
+        identity:
+          additionalProperties: {}
+          type: object
         media:
           additionalProperties: {}
           type: object
@@ -275,6 +278,7 @@ components:
           type: object
       required:
         - candidate
+        - identity
         - quality
         - release
         - media
