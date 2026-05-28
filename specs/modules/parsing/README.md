@@ -8,12 +8,13 @@ Parsing is **advertised-only**. It never opens the file. The ground-truth counte
 
 ## TL;DR
 
-- Parsing is a **pure, deterministic, Go-native function**: `Parse(input) → ParsedRelease`. No DB, no network, no sidecar. One engine, two input flavors (release title, on-disk path).
+- Parsing is a **pure, deterministic, Go-native function**: `Parse(input, domain) → ParsedRelease`. No DB, no network, no sidecar. One engine per domain (series / movie), two input flavors (release title, on-disk path).
 - It is a **layer below** [matching](../matching/README.md), [quality profiles](../quality-profiles/README.md), [name templates](../name-templates/README.md), [routing](../routing/README.md), and the [importer](../importer/README.md) — all of them consume the parse; none of them own it.
+- **Domain is required at the call site.** Every consumer already knows it: candidate searches are TMDB-id-anchored, the importer reads the job's media type, scan inherits from the library, the policy test endpoint inherits from the UI tab. So parsing takes `Domain` as an argument, not a hint. The auto-detect path is removed.
 - **One parser, finished — not two patched together.** v0 ported the _quality half_ of Sonarr/Radarr's parser (`internal/release/`) for name templates, then bolted on a **guessit** Python sidecar for the identity half. Green-field, we finish the port into a single engine and **retire guessit**.
-- The output is the **canonical advertised attribute model** — identity hints (title, year, season/episode, absolute, edition), quality (resolution, source, bin, remux, proper/repack), and release attributes (group, codec, audio, HDR-claim, languages). It populates the advertised namespaces of the shared `EvaluationContext`.
+- The output is the **canonical advertised attribute model** — identity hints (title, year, season/episode, absolute, edition), quality (source, resolution, modifier, the rendered **bin name**, proper/repack), and release attributes (group, codec, audio, HDR-claim, languages). It populates the advertised namespaces of the shared `EvaluationContext`.
 - **Every field carries confidence + provenance.** Not "source = BluRay" but "source = BluRay (0.9), token `BluRay` @ idx 6". This feeds the matcher's confidence bands, the advertised-vs-asserted check, and an explainable "why did we parse it this way" UI.
-- **Parity is a CI gate and a published number.** A version-stamped, labeled **corpus** is the source of truth. Tier-1 CI diffs the parser against committed **golden** expected-output every PR (hermetic, fast). Tier-2 regenerates goldens from **pinned live Sonarr/Radarr** containers on a schedule. An **intentional-divergence allowlist** keeps "we differ on purpose" from breaking the build.
+- **Parity is a CI gate and a published number.** A version-stamped, labeled **corpus** is the source of truth. Tier-1 CI diffs the parser against committed **golden** expected-output every PR (hermetic, fast). Tier-2 regenerates goldens from **pinned live Sonarr/Radarr** containers on a schedule. An **intentional-divergence allowlist** keeps "we differ on purpose" from breaking the build — and per-domain dispatch shrinks that allowlist to one principled class (identity-independent quality, OQ#13).
 - **Sonarr and Radarr are separate codebases** with shared quality heritage and diverged domain parsing. We test both, by domain: series releases → Sonarr, movie releases → Radarr.
 
 ## Why parsing is its own module
@@ -38,18 +39,20 @@ Sonarr/Radarr's parser is **one engine** that extracts everything. We ported a s
 
 ## What parsing owns
 
-- The **string → attributes** transformation, for both release titles and filenames.
+- The **string → attributes** transformation, for both release titles and filenames, dispatched per domain.
 - The **canonical advertised attribute model** (`ParsedRelease`) and its per-field confidence + provenance.
-- **Quality detection** — the canonical quality **attribute core**: resolution, source, modifier (`REMUX` / `BR-DISK` / `RAWHD` / …), and revision (proper / repack / real). Parsing owns the shared, domain-agnostic _attributes_; the per-domain **bin** they render into (`Bluray-1080p Remux` for a series vs `Remux-1080p` for a movie) is a derived projection owned by [quality profiles](../quality-profiles/README.md#per-domain-quality-vocabulary), not a parsed field. See [The quality attribute core](#the-quality-attribute-core).
-- **Identity-hint extraction** (parsed title, year, type hint, season, episode(s), absolute number, daily/air-date, multi-episode range, edition) — the port that replaces guessit.
-- **Release-attribute extraction** (release group, codec, audio format/channels, HDR _claim_, dual-audio _claim_, language(s)). Dual-audio is reserved as an advertised attribute now because it's a first-class anime quality axis (sub/dub) and, unlike source/edition, `ffprobe` can _assert_ it — so it slots cleanly into the advertised-vs-asserted model. Fansub group is the anime case of `release group`; no separate field.
+- **Quality detection AND bin rendering**, both per domain. The internal representation is the orthogonal **attribute core**: source, resolution, modifier (`REMUX` / `BR-DISK` / `RAWHD` / …), and revision (proper / repack / real). The per-domain **bin** (`Bluray-1080p Remux` for series, `Remux-1080p` for movies) is rendered from `(core, domain)` at parse time and populated on `ParsedRelease.Quality.Name`. See [The quality attribute core](#the-quality-attribute-core).
+- **Per-domain detection latitude.** Each domain's detection logic can follow its upstream's `QualityParser` / `Parser` verbatim — series follows Sonarr, movies follow Radarr. Both still terminate in the same orthogonal core (Sonarr's flattened pair is a lossy projection of Radarr's triple — see [Why the core stays orthogonal](#why-the-core-stays-orthogonal-even-with-per-domain-detection)).
+- **Identity-hint extraction** (parsed title, year, season, episode(s), absolute number, daily/air-date, multi-episode range, edition) — the port that replaces guessit.
+- **Release-attribute extraction** (release group, codec, audio format/channels, HDR _claim_, dual-audio _claim_, language(s), hardcoded-subs claim — movie-only). Dual-audio is reserved as an advertised attribute now because it's a first-class anime quality axis (sub/dub) and, unlike source/edition, `ffprobe` can _assert_ it. Fansub group is the anime case of `release group`; no separate field. Hardcoded-subs is movie-domain only and is fed by Radarr's `ParseHardcodeSubs`.
 - The **labeled corpus** and the **parity-harness contract** (Tier-1 golden diff, Tier-2 live regeneration).
+- The **per-domain bin vocabulary tables** (Sonarr `Quality.cs` for series, Radarr `Quality.cs` for movies). Verbatim ports of the upstream tables; their ordering matches upstream so default quality lists drawn from them stay faithful.
 
 ## What parsing does NOT own
 
 - **Identity resolution** — turning a parsed title into a real `media_item` / TMDB entity. That's [matching](../matching/README.md); parsing supplies the hint, matching validates and bands it.
 - **Asserted file analysis** — `ffprobe`/mediainfo reading the actual bytes. Separate extractor; see below. It fills the `MediaInfo` namespace, not parsing.
-- **Gating and scoring** — [quality profiles](../quality-profiles/README.md) consume the parse; they don't parse.
+- **Gating and scoring** — [quality profiles](../quality-profiles/README.md) consume the parse (including the rendered bin); they don't parse and don't own the bin vocabulary tables.
 - **The advertised-vs-asserted re-gate** — comparing parse to ffprobe at import. Owned by [quality profiles](../quality-profiles/README.md) (logic) and [acquisition](../acquisition/README.md) (orchestration); parsing only defines the advertised half of the comparison.
 - **Path/folder mechanics, name rendering, routing decisions** — downstream consumers.
 
@@ -60,7 +63,7 @@ Sonarr/Radarr's parser is **one engine** that extracts everything. We ported a s
 | Group        | Fields (directional)                                                                 | Maps to                          |
 | ------------ | ------------------------------------------------------------------------------------ | -------------------------------- |
 | **Identity** | parsed title, year, type hint (movie/series), season, episode(s), absolute #, daily/air-date, multi-ep range, edition | feeds [matching](../matching/README.md) → `Media`; feeds importer assignment |
-| **Quality**  | resolution, source, modifier (`REMUX`/`BR-DISK`/`RAWHD`/…), revision (`version`/`real`/`isRepack`) — the **attribute core**; the per-domain **bin** is derived downstream, not parsed | `Quality` namespace (attributes; bin projected by [quality profiles](../quality-profiles/README.md#per-domain-quality-vocabulary)) |
+| **Quality**  | source, resolution, modifier (`REMUX`/`BR-DISK`/`RAWHD`/…), revision (`version`/`real`/`isRepack`) — the orthogonal **attribute core** — plus **bin name** (`name`, e.g. `"Bluray-1080p"`) and **full** (`name` + revision render, e.g. `"Bluray-1080p Proper"`) rendered from `(core, domain)` at parse time | `Quality` namespace; `quality.name` mirrors *arr's `Quality.Name` API field, `quality.full` mirrors *arr's `{Quality Full}` naming-token semantics |
 | **Release**  | release group, codec, audio format, audio channels, HDR-claim, dual-audio-claim, languages | `Release` namespace (+ extensions) |
 
 Three boundary notes:
@@ -71,7 +74,7 @@ Three boundary notes:
 
 ### The quality attribute core
 
-Parsing emits a **single canonical quality core**, shared by both domains, and never a domain-specific bin name. The core is three orthogonal axes plus a revision:
+The internal representation of quality is the orthogonal **core** — three independent axes plus a revision:
 
 ```
 QualityCore = (Source, Resolution, Modifier, Revision)
@@ -81,16 +84,24 @@ QualityCore = (Source, Resolution, Modifier, Revision)
   Revision   — version (proper count) | real | isRepack
 ```
 
-**Why these axes, and why Radarr's model is the base.** Sonarr and Radarr both descend from the same quality heritage but decompose it differently, and one is strictly richer:
+**Why orthogonal.** Sonarr and Radarr both descend from the same quality heritage but decompose it differently, and one is strictly richer:
 
 - **Radarr** keeps three orthogonal axes: `Remux-2160p` is `(BluRay, 2160p, REMUX)`, `BR-DISK` is `(BluRay, _, BR-DISK)`, `Raw-HD` is `(HDTV, _, RAWHD)`.
 - **Sonarr** has no modifier axis — it folds "raw/remux-ness" into extra _source_ values (`BlurayRaw` for remux, `TelevisionRaw` for raw-HD), so `Bluray-2160p Remux` is just `(BlurayRaw, 2160p)`.
 
-Sonarr's model is therefore a **degenerate projection** of Radarr's: the orthogonal `(Source, Resolution, Modifier)` core can render _both_ vocabularies losslessly, but Sonarr's flattened pair cannot reconstruct Radarr's. So the core adopts **Radarr's decomposition**, and the quality re-port follows **Radarr's `QualityParser` as its base** (not the v0 Sonarr slice). The two missing axes this adds over v0 — a first-class `Modifier` (generalizing the old `IsRemux` bool) and **`BR-DISK` / full-disc detection** (absent in v0) — are exactly what Radarr's parser already detects.
+Sonarr's model is a **degenerate projection** of Radarr's: the orthogonal core can render *both* vocabularies losslessly, but Sonarr's flattened pair cannot reconstruct Radarr's. So the core adopts **Radarr's decomposition** internally, regardless of which domain a parse is running for. The two missing axes this adds over v0 — a first-class `Modifier` (generalizing the old `IsRemux` bool) and **`BR-DISK` / full-disc detection** (absent in v0) — are exactly what Radarr's parser already detects.
 
-**The bin is derived, not parsed.** A *bin* — `Bluray-1080p Remux` (Sonarr vocabulary) vs `Remux-1080p` (Radarr vocabulary) — is a render of `(core × domain)`. Parsing does not know the domain authoritatively (its type hint is just a hint; see below), and the consumers that need a bin already do (a quality profile is `(tier, media_type)`-scoped). So parsing emits only the core; the per-domain projection `bin(core, domain)` and the two vocabulary tables live with [quality profiles](../quality-profiles/README.md#per-domain-quality-vocabulary). This also keeps the [persisted parse](#persisted-parse) domain-agnostic: a `media_file` stores the core, and a library re-type or a vocabulary revision needs no backfill of frozen bin strings.
+**The bin IS parsed, at the end.** A *bin* — `Bluray-1080p Remux` (series vocabulary) vs `Remux-1080p` (movie vocabulary) — is a render of `(core, domain)`. Because the caller passes the domain to `Parse`, parsing knows it authoritatively and can render the bin name at parse time. The output `ParsedRelease.Quality.Name` is the rendered bin; the orthogonal axes (`Source`, `Resolution`, `Modifier`) remain available alongside it as the underlying truth. The bin vocabulary tables (`seriesBins`, `movieBins`) are verbatim ports of upstream `Quality.cs` and live in the parsing package.
 
-**Methodology.** Quality detection is the one sub-parser still on Go's stdlib `regexp` (lookarounds unrolled into Go branching); the re-port brings it onto `regexp2` with `Field[T]` provenance, matching the rest of the engine. `BR-DISK`'s lookahead-heavy regex is itself a reason the re-port needs `regexp2`.
+#### Why the core stays orthogonal even with per-domain detection
+
+Detection can follow each upstream verbatim (and probably should, for parity), but the **internal representation** stays unified on Radarr's orthogonal triple for three reasons:
+
+1. **Rule schema uniformity.** A routing rule like `quality.source == "BluRay"` should work identically across domains. Sonarr's flat model would force series rules to enumerate `[BluRay, BlurayRaw]` and movie rules `[BluRay]` — same concept, different syntax per domain. The orthogonal core keeps the rule surface uniform.
+2. **Modifier axis preservation for series.** A series `BR-DISK` release has nowhere to live in Sonarr's flat model (Sonarr folds it into plain Bluray). The orthogonal core preserves the distinction on the `Modifier` axis even when the bin can't express it.
+3. **Persistence shape.** The persisted parse is the orthogonal triple, never a rendered bin string. A vocabulary tweak or a hypothetical library re-type needs no backfill.
+
+**Methodology.** Quality detection is the one sub-parser still on Go's stdlib `regexp` (lookarounds unrolled into Go branching); the re-port brings it onto `regexp2` with `Field[T]` provenance, matching the rest of the engine. `BR-DISK`'s lookahead-heavy regex is itself a reason the re-port needs `regexp2`. Per-domain dispatch splits the extension-fallback table (`extensionQualityMap`) into Sonarr-faithful and Radarr-faithful variants — the table mismatch was the dominant class in today's intentional-divergence allowlist, and per-domain dispatch eliminates it by construction.
 
 ### Per-field confidence + provenance
 
@@ -131,7 +142,7 @@ This taxonomy bounds both the mismatch feature and how much trust each advertise
 The parse is computed pre-download, but consumers need it long after — most importantly to **re-render name templates over an existing library** (a template change, a mass-rename) without re-downloading. The advertised side is the only re-render input that isn't already durable: `Media` lives in the DB, `MediaInfo` lives in the [probe table](../scan/README.md#ffprobe-metadata--lazy-out-of-band), but `Quality`/`Release` are derived from a release title the `download_job` eventually purges. So Arrflix persists the parse, per `media_file`:
 
 - **Raw source string** — the release title (grabbed) or the filename (scanned). The source of truth: enables re-parse, and is the audit trail for "what produced this file."
-- **Parsed fields** — the advertised `Quality` (the domain-agnostic [attribute core](#the-quality-attribute-core), **not** a rendered bin) + `Release`, as a snapshot. Redundant with re-parsing, but cheap, and it's the working value for fast render/list, a stable record across parser versions, and the home for [correction-loop](#open-questions) overrides. The per-domain bin is projected from the stored core at read time, so it isn't frozen here.
+- **Parsed fields** — the advertised `Quality` (the orthogonal [attribute core](#the-quality-attribute-core) — `Source`, `Resolution`, `Modifier`, `Revision` — **not** a rendered bin string) + `Release`, as a snapshot. Redundant with re-parsing, but cheap, and it's the working value for fast render/list, a stable record across parser versions, and the home for [correction-loop](#open-questions) overrides. The per-domain bin (`name`, `full`) is re-rendered from the stored core + the media item's known domain at read time, so it isn't frozen here — a vocabulary tweak (renaming a bin, adding a bin) needs no backfill.
 - **`parser_version`** — so we know whether a re-parse would differ, and can offer an explicit "re-parse" (to pick up parser improvements) rather than silently changing output on every read.
 - **`origin`** — `grabbed` | `scanned` | `manual`. Tells consumers how much to trust the parse and whether the raw string is a release title or a filename.
 
@@ -141,13 +152,16 @@ This — plus `MediaInfo` (probe table) and `Media` (DB) — is the complete set
 
 ## The engine
 
-One pure function, two input flavors:
+One pure function, domain-dispatched:
 
 ```go
-func Parse(input string, opts ...Option) ParsedRelease   // AsPath() switches to filename + folder-context mode
+func Parse(input string, domain Domain, opts ...Option) ParsedRelease
+//                       ^^^^^^^^^^^^^                                   required
+//                                       ^^^^^^^^^^^^                    AsPath() switches to filename + folder-context mode
 ```
 
 - **No DB, no network, no sidecar.** Pure and deterministic — the cheapest, most valuable unit-test surface in the system (the [importer](../importer/README.md#file-assignment--closed-world) already prizes this property for its filename-marker parser; here it covers the whole engine).
+- **Domain is a required argument.** Every production consumer knows the domain at the call site (TMDB-anchored search, importer's media-type-typed job, library-scoped scan, UI-scoped policy test endpoint). There is no auto-detect path. The series patterns and Sonarr-faithful detection run for `DomainSeries`; the movie patterns and Radarr-faithful detection run for `DomainMovie`.
 - **Two input flavors, one output.** A release title from an indexer and an on-disk path go through the same code. Path mode additionally reads **folder context** (series name from the show folder, season from the season folder) — exactly how Sonarr reuses one parser for releases and filenames.
 - **Embeddable.** A single Go binary's worth of parsing. Removing the Python sidecar is also a deployment win for the [first-run experience](../../docs/guide/) — one fewer process to run, crash, and health-check.
 
@@ -155,25 +169,32 @@ func Parse(input string, opts ...Option) ParsedRelease   // AsPath() switches to
 
 ```
 backend/internal/parsing/
-  parsing.go      // Parse(input, ...opt) ParsedRelease — public surface
-  title.go        // title + year                         (NEW: port Radarr movie / Sonarr series)
-  episode.go      // season/episode/daily/absolute/multi-ep (NEW: port Sonarr)
-  quality.go      // resolution / source / modifier / revision — the attribute core (RE-PORT: regexp2, Radarr QualityParser base; no bin)
-  group.go        // release group                         (split from internal/release)
-  edition.go      // edition (movies)                      (from internal/release)
-  language.go     // languages                             (NEW: port LanguageParser)
+  parsing.go      // Parse(input, domain, ...opt) ParsedRelease — public surface
+  domain.go       // Domain enum (Series | Movie); the only typed dispatcher
+  series.go       // series identity (Sonarr port: title, season, episode, daily, absolute)
+  movie.go        // movie identity (Radarr port: title, year, edition, hardcoded-subs)
+  quality.go      // detection per domain → orthogonal core (Source, Resolution, Modifier, Revision)
+  bin.go          // bin(core, domain) → name + full (formerly internal/quality.BinFor)
+  vocab.go        // seriesBins / movieBins — verbatim Quality.cs ports
+  group.go        // release group (split per domain — Sonarr vs Radarr exception lists)
+  language.go     // languages (split per domain — Sonarr vs Radarr LanguageParser)
+  clean.go        // simplify pipeline per domain
   attributes.go   // codec / audio / channels / HDR-claim / proper / repack (EXTEND)
   types.go        // ParsedRelease + Field[T] (confidence + provenance)
-  corpus/         // labeled corpus + sonarr.golden.json / radarr.golden.json
+  testdata/       // labeled corpus + sonarr.golden.json / radarr.golden.json
 ```
 
-`internal/release/` folds into `parsing/`; `internal/identity/`'s embedded-ID regex relocates to [matching](../matching/README.md)'s `pathembed` resolver (per the matching spec); the importer's private filename-marker copy is replaced by a call into this package.
+`internal/release/` folds into `parsing/`; `internal/identity/`'s embedded-ID regex relocates to [matching](../matching/README.md)'s `pathembed` resolver (per the matching spec); the importer's private filename-marker copy is replaced by a call into this package. **`internal/quality/` folds into `parsing/` as `bin.go` + `vocab.go`** — the projection now lives where the detection does, and consumers stop having to import two packages.
 
 ### What's already done vs. to port
 
 | Area                                   | Status                                                              |
 | -------------------------------------- | ------------------------------------------------------------------- |
-| Quality core (resolution/source/modifier/revision) | **Re-port** — v0 is a Sonarr-keyed stdlib-`regexp` port; re-port to `regexp2` following Radarr's `QualityParser`, emit the orthogonal [attribute core](#the-quality-attribute-core) (adds the `Modifier` axis + `BR-DISK` detection, drops the fused bin) |
+| Quality core (source/resolution/modifier/revision) | **Done** — `regexp2`, Radarr-faithful base, emits the orthogonal core with `Modifier` axis + `BR-DISK` detection |
+| Quality bin rendering (`name`, `full`) | **To port** — `bin(core, domain)` + the two vocabulary tables, folded in from `internal/quality/` |
+| Per-domain dispatch | **To port** — splits detection (extension table, source regex precedence) and the rest of the engine; eliminates ~17 allowlist entries by construction |
+| HardcodedSubs (movie-only) | **To port** — Radarr `ParseHardcodeSubs`; field exists today but never populates |
+| Sonarr reversed-path recovery | **To port** — closes 3 remaining Sonarr allowlist entries |
 | Release group, edition, proper/repack  | **Mostly done** — present, not yet diffed against Sonarr per-field  |
 | Title + year                           | **To port** (Sonarr series / Radarr movie title extraction)        |
 | Season/episode, daily, **absolute (anime)**, multi-ep | **To port** (Sonarr); replaces guessit                  |
@@ -237,14 +258,15 @@ The published parity number ("99.x% with Sonarr 4.0.x / Radarr 5.x") falls out o
 7. **Path-flavor folder context shape.** How much directory context does path mode consume (immediate parent only, or full ancestry)? Sonarr uses limited context. Pin against the [scan](../scan/README.md) / [matching](../matching/README.md) needs.
 8. **`Field[T]` ergonomics.** Generics make per-field confidence clean but ripple through every consumer that reads a value. Do consumers see `ParsedRelease.Quality.Resolution.Value` or a flattened view with confidence on the side? Lean: a flattened "values" view for consumers + a parallel provenance map, so most call sites stay simple.
 9. **Correction loop.** User overrides ("this PROPER is fake", "this group always ships x265") improving future parses — keyed on group/pattern. In scope for the parsing module or a matching/hygiene concern? Lean: design the override store here (it's parse-shaped), surface it via matching's re-match UI.
-10. **Persisted-parse storage shape.** Raw string + parsed snapshot + `parser_version` + `origin`, per `media_file` — a 1:1 companion table (`media_file_parse`) or columns on `media_file`? Lean: companion table, so the advertised namespaces stay grouped and nullable for pre-existing rows. Shape lands with [libraries](../libraries/README.md) / [matching](../matching/README.md) data-shape work.
+10. **Persisted-parse storage shape.** Raw string + orthogonal parsed snapshot + `parser_version` + `origin`, per `media_file` — a 1:1 companion table (`media_file_parse`) or columns on `media_file`? Lean: companion table, so the advertised namespaces stay grouped and nullable for pre-existing rows. The bin (`name`, `full`) is **not** persisted; it is re-rendered from the core + the media item's known domain on read. Shape lands with [libraries](../libraries/README.md) / [matching](../matching/README.md) data-shape work.
 11. **Modifier set scope.** **Resolved.** The [core](#the-quality-attribute-core) detects the full Radarr modifier set: `REMUX`, `BR-DISK`, `RAWHD`, `SCREENER`, `REGIONAL`. The Sonarr-flavored NTSC/PAL → DVD source signal is also wired into the shared source regex.
 12. **Pre-release sources.** **Resolved.** Ported and wired: `CAM` / `Telesync` / `Telecine` / `Workprint` are first-class sources matching Radarr; Sonarr's `NTSC` / `PAL` DVD-source signal is applied as a fallback when no stronger source matched (kept out of the shared SourceRegex so a trailing NTSC token doesn't override an earlier explicit `DVD-R` / `DVD5` / `DVD9` match).
-13. **Identity-independent quality.** Arrflix extracts quality even when no title/episode parses; Sonarr returns `Unknown` quality on episode-parse failure. Keep ours (strictly more information; matching is a separate layer) as a documented, allowlisted parity divergence, or match Sonarr? Lean: keep ours. Decided alongside the [quality-profiles parity flip](../quality-profiles/README.md#per-domain-quality-vocabulary).
+13. **Identity-independent quality. Resolved.** Arrflix extracts quality even when no title/episode parses; Sonarr/Radarr return `Unknown` on identity-parse failure. We keep ours (strictly more information; matching is a separate layer downstream) as the single principled parity divergence, retained as a class-shaped `allowlistPredicate`. With per-domain dispatch, this becomes the *only* remaining bin allowlist class.
 
 ## What we're explicitly not deciding here
 
-- Exact `ParsedRelease` / `Field[T]` field names, types, and the regex tables themselves.
+- Exact `ParsedRelease` / `Field[T]` field names beyond `quality.name` and `quality.full`, and the regex tables themselves.
+- User-customizable per-bin titles (`QualityDefinition.Title` in *arr). Deferred until that feature is built; for now `quality.name` is both the stable identifier and the rendered display value.
 - The advertised-vs-asserted **re-gate** mechanism and the mismatch hygiene rule (parked; owned by [quality profiles](../quality-profiles/README.md) / [acquisition](../acquisition/README.md) / [hygiene](../hygiene/README.md)).
 - The `ffprobe` extractor's field schema (owned with [scan](../scan/README.md) / hygiene's data-shape pass).
 - The Parse Inspector UI.

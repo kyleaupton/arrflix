@@ -11,7 +11,7 @@ This doc is the companion to [tracking](../tracking/README.md). Tracking decides
 - Two concepts: a **tier** is the user-facing simple choice (HD, 4K); a **profile** is the admin-managed config behind it.
 - A tier resolves to a profile **per media type** — an HD-movie profile and an HD-series profile are distinct, because movie and episode releases have incompatible size ranges, release-group ecosystems, and quality lists. One user-facing label, type-scoped configs behind it. Profiles can also exist outside of tier designation, for admin / tracking use.
 - Profile owns: quality list + ordering, cutoff, hard gates, soft scoring (custom formats), indexer scoping.
-- **Bin vocabulary is per domain.** [Parsing](../parsing/README.md#the-quality-attribute-core) emits one shared attribute core; the profile projects it to a **movie** bin (Radarr names — `Remux-2160p`, `BR-DISK` as top-level tiers) or a **series** bin (Sonarr names — `Bluray-2160p Remux`). Same detection, two vocabularies; safe because profiles are already type-scoped. See [Per-domain quality vocabulary](#per-domain-quality-vocabulary).
+- **Bin vocabulary is per domain, rendered by parsing.** [Parsing](../parsing/README.md#the-quality-attribute-core) is now domain-dispatched, so it both detects the quality core AND renders the bin (`Bluray-2160p Remux` for series, `Remux-2160p` / `BR-DISK` for movies). The profile consumes the rendered bin; it doesn't own the vocabulary tables. Same detection, two vocabularies; safe because every consumer (and parsing itself) is now domain-scoped. See [Per-domain quality vocabulary](#per-domain-quality-vocabulary).
 - Three admin-UX tiers: **preset** (90% of users), **profile editor** (power), **custom formats** (advanced). Defaults must be great; advanced surfaces stay hidden.
 - Selection algorithm: filter by hard gates → pick best allowed quality bin with a release → pick highest-scored release in that bin → deterministic tie-break.
 - **Hard gates remove**, **soft scores order**. Mixing them is the TRaSH-guides trap.
@@ -53,7 +53,7 @@ The profile editor should be expressive enough that the "Custom formats" tier is
 
 A profile encodes the following concerns:
 
-1. **Quality list with ordering** — a ranked list of acceptable qualities (e.g., `2160p Bluray > 2160p WEB-DL > 1080p Bluray > 1080p WEB-DL > 1080p WEBRip`). Position = preference; first match wins. The list is drawn from the profile's **domain bin vocabulary** — a movie profile orders `Remux-2160p` / `BR-DISK`, a series profile orders `Bluray-2160p Remux`; see [Per-domain quality vocabulary](#per-domain-quality-vocabulary).
+1. **Quality list with ordering** — a ranked list of acceptable bins (e.g., `2160p Bluray > 2160p WEB-DL > 1080p Bluray > 1080p WEB-DL > 1080p WEBRip`). Position = preference; first match wins. The list is drawn from the profile's domain bin vocabulary — a movie profile orders `Remux-2160p` / `BR-DISK`, a series profile orders `Bluray-2160p Remux`; the vocabularies themselves live in [parsing](../parsing/README.md#the-quality-attribute-core) and the profile just references entries by name.
 2. **Cutoff** — the quality at which we stop searching for upgrades. Once we have a file at or above cutoff, no further auto-search for this item.
 3. **Hard gates** — filters that reject a release outright (min seeders, min/max size, blocklisted groups, indexer eligibility). See [Hard gates vs soft scoring](#hard-gates-vs-soft-scoring).
 4. **Soft scoring** — preferences that contribute to a release's score within its quality bin (preferred release groups, codec preferences, audio, HDR variants, proper/repack). See same section.
@@ -81,17 +81,20 @@ Requesters select tier at request time, gated by their permissions (`can_request
 
 ## Per-domain quality vocabulary
 
-Movies and series **name the same release differently** — and the difference is domain-meaningful, not cosmetic. [Parsing](../parsing/README.md#the-quality-attribute-core) produces one canonical, domain-agnostic **attribute core** `(Source, Resolution, Modifier, Revision)`. The profile's quality list, by contrast, speaks a **bin vocabulary**, and that vocabulary is **per domain**. Quality profiles own the projection that turns the shared core into a domain bin:
+Movies and series **name the same release differently** — and the difference is domain-meaningful, not cosmetic. [Parsing](../parsing/README.md#the-quality-attribute-core) is domain-dispatched: it takes the domain at the call site, runs the domain-appropriate detection logic (Sonarr's for series, Radarr's for movies), produces the orthogonal **attribute core** `(Source, Resolution, Modifier, Revision)` as its internal representation, and renders the per-domain **bin name** as a parse output. The profile consumes the rendered bin to build its quality list:
 
 ```
-parsing  ──►  QualityCore (Source, Resolution, Modifier, Revision)   [shared, domain-agnostic]
-                     │
-   quality profiles: bin(core, domain)
-                     ├──► series bin vocabulary (Sonarr names/structure)  ──► series quality lists
-                     └──► movie  bin vocabulary (Radarr names/structure)  ──► movie  quality lists
+input + domain  ──►  parsing detection (per upstream, verbatim)
+                          │
+                          ▼
+                     QualityCore (Source, Resolution, Modifier, Revision)   [orthogonal, lossless]
+                          │
+                     parsing: bin(core, domain)  (rendered at parse time)
+                          ├──► series bin vocabulary (Sonarr names)  ──► series quality lists
+                          └──► movie  bin vocabulary (Radarr names)  ──► movie  quality lists
 ```
 
-This is **not two quality systems** — detection is shared and faithful. It's a presentation/binning layer: the same core, two vocabulary tables.
+This is **not two quality systems** — the orthogonal core is the lossless interlingua (Sonarr's flat model is a degenerate projection of it). It's a presentation/binning layer: same core, two vocabulary tables, domain selected at parse time.
 
 ### Why the vocabularies diverge
 
@@ -114,25 +117,25 @@ Same core, projected two ways. The rows that **agree** (shared heritage — WEB-
 
 ### Why per-domain bins are safe
 
-Quality profiles are already `(tier, media_type)`-scoped — a profile applies to a movie library or a series library, never both (see [Tiers](#tiers)). So per-domain bins create **zero** cross-domain inconsistency: a movie profile speaks `Remux-2160p`, a series profile speaks `Bluray-1080p`, and that's exactly what a Sonarr + Radarr user expects. The bin is computed where the domain is **certain** (the profile knows its `media_type`), not in the parser, whose type hint is only a hint.
+Quality profiles are already `(tier, media_type)`-scoped — a profile applies to a movie library or a series library, never both (see [Tiers](#tiers)). And parsing is now also domain-scoped at the call site. So per-domain bins create **zero** cross-domain inconsistency: every step from search candidate to import knows the domain authoritatively. A movie profile speaks `Remux-2160p`, a series profile speaks `Bluray-1080p`, the parse already rendered the right one, and that's exactly what a Sonarr + Radarr user expects.
 
 ### Bins as keys, not strings
 
 A profile **references** bins to order and gate them, so a bin is a stable per-domain **key** (with a display name as a separate render), mirroring Sonarr/Radarr's quality-definition tables — not a free string the parser emits. The two vocabulary tables (the bin set + default ordering per domain) are profile-owned data, and they are what makes **per-tool community config interop** (TRaSH-style custom formats, written separately for Sonarr and Radarr) possible at all.
 
-### Ownership and the parity flip
+### Ownership
 
-- **Parsing owns** the attribute core and its detection (the re-port adds the `Modifier` axis + `BR-DISK`; see [parsing](../parsing/README.md#the-quality-attribute-core)). It never emits a bin.
-- **Quality profiles own** `bin(core, domain)`, the two vocabulary tables, and the per-domain ordering.
+- **Parsing owns** the attribute core (`Source`, `Resolution`, `Modifier`, `Revision`), its per-domain detection logic, the bin rendering `bin(core, domain)`, and the two vocabulary tables (`seriesBins`, `movieBins`).
+- **Quality profiles own** the ranked allowed-bin list, the cutoff, hard gates, soft scoring (custom formats), and indexer scoping. The profile consumes a `ParsedRelease` and reads `Quality.Name` / `Quality.Source` / etc. directly — it doesn't project, it doesn't own the vocabulary.
 
-Until this lands, parsing emits the Sonarr vocabulary for everything, so the parity harness **reports but does not enforce** `bin` against Radarr (the `Remux-*` / `BR-DISK` rows are an allowlisted intentional divergence). When the projection ships, `movieBin` emits Radarr's vocabulary natively, the harness **promotes `bin` to enforced on both tools**, and those allowlist entries are removed.
+Per-domain dispatch shrinks the static parity allowlist to one principled class: identity-independent quality (parsing OQ#13, retained as a class-shaped `allowlistPredicate`). The ~17 Radarr `.mkv` extension-default entries disappear by construction (per-domain extension tables); the bin field is `enforced=true` against both tools.
 
 ## The selection algorithm
 
 Given a list of indexer search results for one want, the quality engine runs:
 
 1. **Hard-gate filter.** Each release is checked against the profile's hard gates (seeders, size, blocklist, indexer eligibility). Any failure → reject, log reason.
-2. **Quality detection.** Each surviving release carries a parsed [attribute core](../parsing/README.md#the-quality-attribute-core); the profile projects it to its domain bin (`bin(core, media_type)` — see [Per-domain quality vocabulary](#per-domain-quality-vocabulary)). Releases whose bin isn't in the allowed list → reject.
+2. **Quality detection.** Each surviving release carries a parsed [attribute core](../parsing/README.md#the-quality-attribute-core) AND a pre-rendered bin name (parsing knew the domain at the call site). Releases whose bin isn't in the profile's allowed list → reject. The profile reads `quality.name`; no projection step here.
 3. **Bin grouping.** Surviving releases are grouped by quality bin per the profile's ranked list.
 4. **Soft scoring.** Within each bin, every release gets a score from the custom format rules.
 5. **Pick best bin.** Highest-ranked bin (per the profile's ordering) that contains at least one release.
