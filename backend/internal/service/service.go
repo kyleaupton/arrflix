@@ -10,6 +10,9 @@ import (
 	"github.com/kyleaupton/arrflix/internal/guessit"
 	prowlarradapter "github.com/kyleaupton/arrflix/internal/indexer/prowlarr"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/matcher"
+	"github.com/kyleaupton/arrflix/internal/matcher/resolvers"
+	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/policy"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
@@ -27,6 +30,7 @@ type Services struct {
 	ImportTasks        *ImportTasksService
 	Indexer            *IndexerService
 	Libraries          *LibrariesService
+	Matcher            *matcher.MatcherService
 	Media              *MediaService
 	NameTemplates      *NameTemplatesService
 	Policies           *PoliciesService
@@ -81,6 +85,20 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	invites := NewInvitesService(r)
 	enrichment := NewEnrichmentService(r, l, tmdb)
 
+	// Matcher: wired in Phase 2; consumed in Phase 3 (scan.go's current
+	// guessit + identity.Resolve path is what MatchBatch will replace).
+	// The DefaultRegistry helper is the single source of truth for which
+	// resolvers ship in v1 (path-embed, name-parse); per-library toggle
+	// is v2 and filters this set rather than rebuilding it.
+	metadataProvider := metadata.NewTmdbProvider(tmdb)
+	matcherSvc := matcher.NewMatcherService(
+		l,
+		matcher.NewRepoAdapter(r),
+		metadataProvider,
+		resolvers.DefaultRegistry(metadataProvider),
+		matcher.DefaultConfig(),
+	)
+
 	return &Services{
 		Auth:               NewAuthService(r, cfg, settings, invites),
 		Downloaders:        NewDownloadersService(r),
@@ -94,6 +112,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		ImportTasks:        NewImportTasksService(r),
 		Indexer:            indexer,
 		Libraries:          NewLibrariesService(r, l),
+		Matcher:            matcherSvc,
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
 		Policies:           policies,

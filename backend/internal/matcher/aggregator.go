@@ -158,7 +158,16 @@ func (a *Aggregator) runTier(ctx context.Context, file FileRef, tier Tier) ([]Ca
 // candidate's external ID is looked up; valid IDs scale by the valid
 // multiplier, redirects scale by the redirect multiplier and have their
 // ID rewritten, 404s drop the candidate entirely. The
-// validation_redirects audit slot in evidence records any redirects.
+// validation_redirects and validation_cross_provider audit slots in
+// evidence record any rewrites.
+//
+// Cross-provider candidates (Source=imdb/tvdb) come back from the
+// provider with Source=tmdb and ExternalID rewritten to the resolved
+// TMDB id; the original ref is preserved in the cross-provider audit
+// slot so the decision log keeps both ends of the mapping. This is the
+// spec's "cross-provider ID resolution" bullet — moving the source-swap
+// into the aggregator (rather than each resolver) keeps non-TMDB
+// resolvers pure.
 //
 // Provider absence is non-fatal — when validation can't run, candidates
 // pass through unchanged. The lower-band fallthrough still catches
@@ -172,7 +181,16 @@ func (a *Aggregator) validateAgainstProvider(ctx context.Context, cands []Candid
 		From string `json:"from"`
 		To   string `json:"to"`
 	}
-	var redirects []redirectLog
+	type crossLog struct {
+		FromSource string `json:"fromSource"`
+		FromID     string `json:"fromId"`
+		ToSource   string `json:"toSource"`
+		ToID       string `json:"toId"`
+	}
+	var (
+		redirects     []redirectLog
+		crossProvider []crossLog
+	)
 
 	out := make([]Candidate, 0, len(cands))
 	for _, c := range cands {
@@ -190,8 +208,29 @@ func (a *Aggregator) validateAgainstProvider(ctx context.Context, cands []Candid
 			// 404: the ID is dead. Drop the candidate.
 			continue
 		}
-		if item.Redirected {
-			redirects = append(redirects, redirectLog{From: c.Ref.ExternalID, To: item.ExternalID})
+		// Cross-provider rewrite: the provider returned a record in a
+		// different source namespace (today that's always TMDB, since
+		// the only non-TMDB inputs are IMDb/TVDB and the TMDB adapter
+		// resolves both to TMDB). Persist the swap in evidence so the
+		// decision log keeps both ends of the mapping; downstream
+		// consumers (and any future per-provider write path) see the
+		// canonical TMDB ref.
+		origRef := c.Ref
+		if item.Source != "" && item.Source != c.Ref.Source {
+			crossProvider = append(crossProvider, crossLog{
+				FromSource: string(origRef.Source),
+				FromID:     origRef.ExternalID,
+				ToSource:   string(item.Source),
+				ToID:       item.ExternalID,
+			})
+			c.Ref.Source = item.Source
+			c.Ref.ExternalID = item.ExternalID
+			c.Confidence *= validatedMultiplierValid
+		} else if item.Redirected {
+			redirects = append(redirects, redirectLog{
+				From: origRef.ExternalID,
+				To:   item.ExternalID,
+			})
 			c.Ref.ExternalID = item.ExternalID
 			c.Confidence *= validatedMultiplierRedirect
 		} else {
@@ -200,12 +239,22 @@ func (a *Aggregator) validateAgainstProvider(ctx context.Context, cands []Candid
 		out = append(out, c)
 	}
 
-	if len(redirects) > 0 && evidence != nil {
-		if raw, err := json.Marshal(redirects); err == nil {
-			if *evidence == nil {
-				*evidence = make(map[string]json.RawMessage)
+	if evidence != nil {
+		if len(redirects) > 0 {
+			if raw, err := json.Marshal(redirects); err == nil {
+				if *evidence == nil {
+					*evidence = make(map[string]json.RawMessage)
+				}
+				(*evidence)["validation_redirects"] = raw
 			}
-			(*evidence)["validation_redirects"] = raw
+		}
+		if len(crossProvider) > 0 {
+			if raw, err := json.Marshal(crossProvider); err == nil {
+				if *evidence == nil {
+					*evidence = make(map[string]json.RawMessage)
+				}
+				(*evidence)["validation_cross_provider"] = raw
+			}
 		}
 	}
 
