@@ -492,9 +492,10 @@ func (e *Engine) buildContextSnapshot(evalCtx model.EvaluationContext) *model.Co
 			"full":       evalCtx.Quality.Full,
 			"resolution": evalCtx.Quality.Resolution,
 			"source":     evalCtx.Quality.Source,
-			"is_remux":   evalCtx.Quality.IsRemux,
+			"modifier":   evalCtx.Quality.Modifier,
 			"is_repack":  evalCtx.Quality.IsRepack,
 			"version":    evalCtx.Quality.Version,
+			"real":       evalCtx.Quality.Real,
 		},
 		Release: map[string]any{
 			"release_group":  evalCtx.Release.ReleaseGroup,

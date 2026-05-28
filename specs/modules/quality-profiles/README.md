@@ -11,6 +11,7 @@ This doc is the companion to [tracking](../tracking/README.md). Tracking decides
 - Two concepts: a **tier** is the user-facing simple choice (HD, 4K); a **profile** is the admin-managed config behind it.
 - A tier resolves to a profile **per media type** — an HD-movie profile and an HD-series profile are distinct, because movie and episode releases have incompatible size ranges, release-group ecosystems, and quality lists. One user-facing label, type-scoped configs behind it. Profiles can also exist outside of tier designation, for admin / tracking use.
 - Profile owns: quality list + ordering, cutoff, hard gates, soft scoring (custom formats), indexer scoping.
+- **Bin vocabulary is per domain, rendered by parsing.** [Parsing](../parsing/README.md#the-quality-attribute-core) is now domain-dispatched, so it both detects the quality core AND renders the bin (`Bluray-2160p Remux` for series, `Remux-2160p` / `BR-DISK` for movies). The profile consumes the rendered bin; it doesn't own the vocabulary tables. Same detection, two vocabularies; safe because every consumer (and parsing itself) is now domain-scoped. See [Per-domain quality vocabulary](#per-domain-quality-vocabulary).
 - Three admin-UX tiers: **preset** (90% of users), **profile editor** (power), **custom formats** (advanced). Defaults must be great; advanced surfaces stay hidden.
 - Selection algorithm: filter by hard gates → pick best allowed quality bin with a release → pick highest-scored release in that bin → deterministic tie-break.
 - **Hard gates remove**, **soft scores order**. Mixing them is the TRaSH-guides trap.
@@ -52,7 +53,7 @@ The profile editor should be expressive enough that the "Custom formats" tier is
 
 A profile encodes the following concerns:
 
-1. **Quality list with ordering** — a ranked list of acceptable qualities (e.g., `2160p Bluray > 2160p WEB-DL > 1080p Bluray > 1080p WEB-DL > 1080p WEBRip`). Position = preference; first match wins.
+1. **Quality list with ordering** — a ranked list of acceptable bins (e.g., `2160p Bluray > 2160p WEB-DL > 1080p Bluray > 1080p WEB-DL > 1080p WEBRip`). Position = preference; first match wins. The list is drawn from the profile's domain bin vocabulary — a movie profile orders `Remux-2160p` / `BR-DISK`, a series profile orders `Bluray-2160p Remux`; the vocabularies themselves live in [parsing](../parsing/README.md#the-quality-attribute-core) and the profile just references entries by name.
 2. **Cutoff** — the quality at which we stop searching for upgrades. Once we have a file at or above cutoff, no further auto-search for this item.
 3. **Hard gates** — filters that reject a release outright (min seeders, min/max size, blocklisted groups, indexer eligibility). See [Hard gates vs soft scoring](#hard-gates-vs-soft-scoring).
 4. **Soft scoring** — preferences that contribute to a release's score within its quality bin (preferred release groups, codec preferences, audio, HDR variants, proper/repack). See same section.
@@ -78,12 +79,63 @@ Tier registry is extensible (admins may want SD, 8K, "Source" eventually), but i
 
 Requesters select tier at request time, gated by their permissions (`can_request_movie_hd`, `can_request_4k`, etc. — see [Story 1](../../stories/01-happy-path-auto-approve.md)).
 
+## Per-domain quality vocabulary
+
+Movies and series **name the same release differently** — and the difference is domain-meaningful, not cosmetic. [Parsing](../parsing/README.md#the-quality-attribute-core) is domain-dispatched: it takes the domain at the call site, runs the domain-appropriate detection logic (Sonarr's for series, Radarr's for movies), produces the orthogonal **attribute core** `(Source, Resolution, Modifier, Revision)` as its internal representation, and renders the per-domain **bin name** as a parse output. The profile consumes the rendered bin to build its quality list:
+
+```
+input + domain  ──►  parsing detection (per upstream, verbatim)
+                          │
+                          ▼
+                     QualityCore (Source, Resolution, Modifier, Revision)   [orthogonal, lossless]
+                          │
+                     parsing: bin(core, domain)  (rendered at parse time)
+                          ├──► series bin vocabulary (Sonarr names)  ──► series quality lists
+                          └──► movie  bin vocabulary (Radarr names)  ──► movie  quality lists
+```
+
+This is **not two quality systems** — the orthogonal core is the lossless interlingua (Sonarr's flat model is a degenerate projection of it). It's a presentation/binning layer: same core, two vocabulary tables, domain selected at parse time.
+
+### Why the vocabularies diverge
+
+Movies have tiers TV effectively doesn't. **Remux** is the sweet-spot tier for movie collectors (disc quality, no full-disc bloat), so Radarr promotes it to a **first-class top-level bin** that movie profiles routinely order on (`Remux-2160p > Bluray-2160p > …`); **BR-DISK** (full untouched disc) is likewise a real movie tier. TV rarely ships as remux or full disc, so Sonarr nests remux as a **modifier suffix** on the Bluray bin and never foregrounds either. So the two bin *structures* track what each domain's collectors actually gate on — flattening movies into Sonarr's nested naming loses information movie profiles need.
+
+### The two vocabularies
+
+Same core, projected two ways. The rows that **agree** (shared heritage — WEB-DL, WEBRip, HDTV, plain Bluray, resolutions) are most of the corpus; the divergence is concentrated in the disc modifiers:
+
+| `QualityCore` | Series bin (Sonarr) | Movie bin (Radarr) |
+| --- | --- | --- |
+| `(BluRay, 2160p, REMUX)` | `Bluray-2160p Remux` | `Remux-2160p` |
+| `(BluRay, 1080p, REMUX)` | `Bluray-1080p Remux` | `Remux-1080p` |
+| `(BluRay, 2160p, BR-DISK)` | `Bluray-2160p` *(folded)* | `BR-DISK` *(own tier)* |
+| `(BluRay, 1080p, NONE)` | `Bluray-1080p` | `Bluray-1080p` *(agree)* |
+| `(WEB-DL, 1080p, NONE)` | `WEBDL-1080p` | `WEBDL-1080p` *(agree)* |
+| `(HDTV, 1080p, RAWHD)` | `Raw-HD` | `Raw-HD` *(agree)* |
+
+`seriesBin` appends the modifier as a suffix and folds `BR-DISK` into plain Bluray; `movieBin` promotes `REMUX` and `BR-DISK` to top-level bins. Both are pure functions of `(core, domain)`.
+
+### Why per-domain bins are safe
+
+Quality profiles are already `(tier, media_type)`-scoped — a profile applies to a movie library or a series library, never both (see [Tiers](#tiers)). And parsing is now also domain-scoped at the call site. So per-domain bins create **zero** cross-domain inconsistency: every step from search candidate to import knows the domain authoritatively. A movie profile speaks `Remux-2160p`, a series profile speaks `Bluray-1080p`, the parse already rendered the right one, and that's exactly what a Sonarr + Radarr user expects.
+
+### Bins as keys, not strings
+
+A profile **references** bins to order and gate them, so a bin is a stable per-domain **key** (with a display name as a separate render), mirroring Sonarr/Radarr's quality-definition tables — not a free string the parser emits. The two vocabulary tables (the bin set + default ordering per domain) are profile-owned data, and they are what makes **per-tool community config interop** (TRaSH-style custom formats, written separately for Sonarr and Radarr) possible at all.
+
+### Ownership
+
+- **Parsing owns** the attribute core (`Source`, `Resolution`, `Modifier`, `Revision`), its per-domain detection logic, the bin rendering `bin(core, domain)`, and the two vocabulary tables (`seriesBins`, `movieBins`).
+- **Quality profiles own** the ranked allowed-bin list, the cutoff, hard gates, soft scoring (custom formats), and indexer scoping. The profile consumes a `ParsedRelease` and reads `Quality.Name` / `Quality.Source` / etc. directly — it doesn't project, it doesn't own the vocabulary.
+
+Per-domain dispatch shrinks the static parity allowlist to one principled class: identity-independent quality (parsing OQ#13, retained as a class-shaped `allowlistPredicate`). The ~17 Radarr `.mkv` extension-default entries disappear by construction (per-domain extension tables); the bin field is `enforced=true` against both tools.
+
 ## The selection algorithm
 
 Given a list of indexer search results for one want, the quality engine runs:
 
 1. **Hard-gate filter.** Each release is checked against the profile's hard gates (seeders, size, blocklist, indexer eligibility). Any failure → reject, log reason.
-2. **Quality detection.** Each surviving release is parsed (release title → quality bin). Releases that don't match any allowed quality bin → reject.
+2. **Quality detection.** Each surviving release carries a parsed [attribute core](../parsing/README.md#the-quality-attribute-core) AND a pre-rendered bin name (parsing knew the domain at the call site). Releases whose bin isn't in the profile's allowed list → reject. The profile reads `quality.name`; no projection step here.
 3. **Bin grouping.** Surviving releases are grouped by quality bin per the profile's ranked list.
 4. **Soft scoring.** Within each bin, every release gets a score from the custom format rules.
 5. **Pick best bin.** Highest-ranked bin (per the profile's ordering) that contains at least one release.
@@ -190,7 +242,7 @@ To keep scope tight, these adjacent concerns live elsewhere:
 - **Tracking lifecycle** — tracking owns `active / paused / archived / canceled`.
 - **Upgrade behavior strategy** — tracking decides `auto / propose / none`.
 - **Notification routing** — when an upgrade is proposed or a grab happens, [notifications](../notifications/README.md) routes the event. Profile just provides the data ("here's the proposed release").
-- **Quality detection / release-name parsing** — owned by [parsing](../parsing/README.md). The profile consumes parsed (advertised) quality and asserted (`ffprobe`) attributes; it parses neither.
+- **Quality detection / release-name parsing** — owned by [parsing](../parsing/README.md), which produces the domain-agnostic [attribute core](../parsing/README.md#the-quality-attribute-core). The profile consumes that core (and asserted `ffprobe` attributes); it parses neither. The profile **does** own the per-domain [bin projection](#per-domain-quality-vocabulary) on top of the core — parsing emits no bin.
 - **The asserted-attributes extractor** (`ffprobe`/mediainfo) — a sibling extractor ([importer](../importer/README.md) / [scan](../scan/README.md)); the profile consumes `MediaInfo`, it doesn't probe.
 - **Re-gate orchestration and want recovery** — the import-time re-gate's _logic_ lives here, but the _pipeline step_, the blocklist, and the want-back-to-`searching` transition are [acquisition](../acquisition/README.md)'s.
 - **The advertised-vs-asserted mismatch finding** — surfaced by [hygiene](../hygiene/README.md) (`quality/advertised-mismatch`); the profile produces the delta, hygiene presents it.
@@ -223,7 +275,7 @@ User-facing UI: requesters see "**Quality**" with options "HD" / "4K"; admins se
 
 1. **Custom format syntax.** Sonarr-style regex strings vs higher-level structured rules (group: X, codec: Y, audio: Z) vs both? Regex is most flexible but writes UX off; structured is most usable. Probably ship structured-first with a regex escape hatch; structured rules compile to regex under the hood.
 2. **Profile scoping per library.** Are profiles global, or do they scope to a library (e.g., the kids library uses a different HD profile)? Tracking already references profiles by ID, so per-library could just be a default mapping. Decide when multi-library UX gets more attention.
-3. **Predefined vs admin-editable quality list.** Ship a predefined set (Bluray-2160p, Bluray-1080p, WEB-DL-1080p, etc.) and allow admins to add. Sonarr does this. Probably correct; confirm in iteration 2.
+3. **Predefined vs admin-editable quality list.** Ship a predefined set (Bluray-2160p, Bluray-1080p, WEB-DL-1080p, etc.) and allow admins to add. Sonarr does this. Probably correct; confirm in iteration 2. The predefined set is **per domain** now — the movie default list includes `Remux-*` / `BR-DISK`, the series default doesn't (see [Per-domain quality vocabulary](#per-domain-quality-vocabulary)).
 4. **Quality detection (release-name parsing).** How robust is our parser? Sonarr's gets it wrong sometimes; users override individual releases manually. We likely need the same fallback ("mark this release as 1080p Bluray even though we parsed it as 1080p WEB-DL"). Surface in UI.
 5. **Score-based selection mode (Radarr-style).** Some users want "format preferred over quality" — a high-scored 720p beats a low-scored 1080p. Default is bin-first; this is an opt-in mode. Add later if demand emerges.
 6. **Indexer health and tier interaction.** What if all indexers for the 4K tier are unhealthy? Pause 4K tier searches? Notify admin? Or just keep retrying with back-off? Cross-cutting concern with indexer-health subsystem.

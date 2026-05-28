@@ -493,7 +493,7 @@ func (s *DownloadCandidatesService) cleanExpiredCache() {
 
 // buildMovieEvaluationContext creates an EvaluationContext for a movie candidate
 func (s *DownloadCandidatesService) buildMovieEvaluationContext(ctx context.Context, candidate model.DownloadCandidate, movieID int64) model.EvaluationContext {
-	q := parsing.Parse(candidate.Title)
+	q := parsing.Parse(candidate.Title, parsing.DomainMovie)
 	evalCtx := model.NewEvaluationContext(candidate, q)
 
 	// Try to get movie details from TMDB to populate media fields
@@ -513,7 +513,7 @@ func (s *DownloadCandidatesService) buildMovieEvaluationContext(ctx context.Cont
 
 // buildSeriesEvaluationContext creates an EvaluationContext for a series candidate
 func (s *DownloadCandidatesService) buildSeriesEvaluationContext(ctx context.Context, candidate model.DownloadCandidate, seriesID int64, seasonNumber *int, episodeNumber *int) model.EvaluationContext {
-	q := parsing.Parse(candidate.Title)
+	q := parsing.Parse(candidate.Title, parsing.DomainSeries)
 	evalCtx := model.NewEvaluationContext(candidate, q)
 
 	// Try to get series details from TMDB to populate media fields

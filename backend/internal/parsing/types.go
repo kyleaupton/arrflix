@@ -9,11 +9,10 @@
 // resolves. Parsing a file path is still advertised — it just sources the claim
 // from a filename rather than a release title.
 //
-// Parse (parsing.go) produces this model from the ported Sonarr/Radarr engine
-// (engine.go); this file defines the data model consumers read. Internally
-// every field is a Field[T] (value + confidence + provenance); consumers read
-// the flat Values() projection and, when they care, the parallel Provenance()
-// map.
+// Parse (parsing.go) produces this model from the ported Sonarr/Radarr parsers;
+// this file defines the data model consumers read. Internally every field is a
+// Field[T] (value + confidence + provenance); consumers read the flat Values()
+// projection and, when they care, the parallel Provenance() map (provenance.go).
 package parsing
 
 // Field wraps a parsed value with how confident the parser is and why. It is
@@ -121,18 +120,30 @@ type IdentityAttrs struct {
 	Numbering Numbering
 }
 
-// QualityAttrs are the advertised quality claims — the resolution+source bin
-// and its revision. These map onto the EvaluationContext Quality namespace.
+// QualityAttrs are the advertised quality claims — the orthogonal attribute
+// core (Source, Resolution, Modifier) plus the revision and the per-domain
+// rendered bin (Name / Full). Parse populates the bin from BinFor(core,
+// domain) at parse time; the domain is the required Parse argument.
 type QualityAttrs struct {
+	// Name is the rendered per-domain bin label (Sonarr's "Bluray-1080p Remux"
+	// / Radarr's "Remux-1080p"). Mirrors *arr's Quality.Name API field. Empty
+	// when the core didn't fire or the triple has no bin in the chosen
+	// vocabulary.
+	Name Field[string]
+	// Full is Name plus the {Quality Full} revision-render suffix (Radarr
+	// Organizer/FileNameBuilder.cs:359): "Proper" when version > 1, "Repack"
+	// when isRepack on an original revision, and "REAL" repeated `real` times
+	// for the REAL counter. Trailing whitespace is trimmed so a release with
+	// no proper/real renders identically to Name.
+	Full Field[string]
 	// Resolution is the advertised resolution ("1080p", "2160p", "SD").
 	Resolution Field[string]
-	// Source is the advertised source ("BluRay", "WEB-DL", "HDTV"). Note: the
-	// oracle reports a lowercased enum ("bluray"); the parity harness maps.
+	// Source is the advertised source — the medium axis ("BluRay", "WEB-DL",
+	// "HDTV", "TV", "DVD", …). Orthogonal: remux/raw-ness lives on Modifier.
 	Source Field[string]
-	// Full is the Sonarr/Radarr-style quality tag ("Bluray-1080p").
-	Full Field[string]
-	// IsRemux marks a remux.
-	IsRemux Field[bool]
+	// Modifier is the orthogonal modifier axis ("REMUX", "BR-DISK", "RAWHD", "").
+	// The canonical carrier of remux/full-disc/raw-ness.
+	Modifier Field[string]
 	// IsRepack marks a repack.
 	IsRepack Field[bool]
 	// Version is the proper/revision version (1 = original).
@@ -303,10 +314,11 @@ type NumberingValues struct {
 
 // QualityValues is the plain-value view of QualityAttrs.
 type QualityValues struct {
+	Name       string
+	Full       string
 	Resolution string
 	Source     string
-	Full       string
-	IsRemux    bool
+	Modifier   string
 	IsRepack   bool
 	Version    int
 	Real       int
@@ -358,10 +370,11 @@ func (p ParsedRelease) Values() Values {
 			},
 		},
 		Quality: QualityValues{
+			Name:       p.Quality.Name.Value,
+			Full:       p.Quality.Full.Value,
 			Resolution: p.Quality.Resolution.Value,
 			Source:     p.Quality.Source.Value,
-			Full:       p.Quality.Full.Value,
-			IsRemux:    p.Quality.IsRemux.Value,
+			Modifier:   p.Quality.Modifier.Value,
 			IsRepack:   p.Quality.IsRepack.Value,
 			Version:    p.Quality.Version.Value,
 			Real:       p.Quality.Real.Value,
@@ -380,52 +393,5 @@ func (p ParsedRelease) Values() Values {
 	}
 }
 
-// Provenance returns the per-field confidence and evidence, keyed by a dotted
-// path that matches the Values layout ("quality.source", "identity.title",
-// "identity.numbering.season"). It powers the Parse Inspector and the parity
-// harness; Numbering.Kind is a discriminant, not a parsed field, so it is
-// absent. Values are type-erased to Field[any].
-func (p ParsedRelease) Provenance() map[string]Field[any] {
-	return map[string]Field[any]{
-		"identity.title":                       eraseField(p.Identity.Title),
-		"identity.year":                        eraseField(p.Identity.Year),
-		"identity.type_hint":                   eraseField(p.Identity.TypeHint),
-		"identity.edition":                     eraseField(p.Identity.Edition),
-		"identity.all_titles":                  eraseField(p.Identity.AllTitles),
-		"identity.numbering.season":            eraseField(p.Identity.Numbering.Season),
-		"identity.numbering.episode_numbers":   eraseField(p.Identity.Numbering.EpisodeNumbers),
-		"identity.numbering.absolute_numbers":  eraseField(p.Identity.Numbering.AbsoluteNumbers),
-		"identity.numbering.air_date":          eraseField(p.Identity.Numbering.AirDate),
-		"identity.numbering.full_season":       eraseField(p.Identity.Numbering.FullSeason),
-		"identity.numbering.season_part":       eraseField(p.Identity.Numbering.SeasonPart),
-		"identity.numbering.is_partial_season": eraseField(p.Identity.Numbering.IsPartialSeason),
-		"identity.numbering.is_multi_season":   eraseField(p.Identity.Numbering.IsMultiSeason),
-		"identity.numbering.is_mini_series":    eraseField(p.Identity.Numbering.IsMiniSeries),
-		"identity.numbering.special":           eraseField(p.Identity.Numbering.Special),
-		"identity.numbering.is_split_episode":  eraseField(p.Identity.Numbering.IsSplitEpisode),
-		"identity.numbering.is_season_extra":   eraseField(p.Identity.Numbering.IsSeasonExtra),
-		"identity.numbering.daily_part":        eraseField(p.Identity.Numbering.DailyPart),
-		"identity.numbering.special_absolute":  eraseField(p.Identity.Numbering.SpecialAbsolute),
-		"quality.resolution":                   eraseField(p.Quality.Resolution),
-		"quality.source":                       eraseField(p.Quality.Source),
-		"quality.full":                         eraseField(p.Quality.Full),
-		"quality.is_remux":                     eraseField(p.Quality.IsRemux),
-		"quality.is_repack":                    eraseField(p.Quality.IsRepack),
-		"quality.version":                      eraseField(p.Quality.Version),
-		"quality.real":                         eraseField(p.Quality.Real),
-		"release.release_group":                eraseField(p.Release.ReleaseGroup),
-		"release.codec":                        eraseField(p.Release.Codec),
-		"release.audio_format":                 eraseField(p.Release.AudioFormat),
-		"release.audio_channels":               eraseField(p.Release.AudioChannels),
-		"release.hdr":                          eraseField(p.Release.HDR),
-		"release.dual_audio":                   eraseField(p.Release.DualAudio),
-		"release.languages":                    eraseField(p.Release.Languages),
-		"release.release_hash":                 eraseField(p.Release.ReleaseHash),
-		"release.hardcoded_subs":               eraseField(p.Release.HardcodedSubs),
-	}
-}
-
-// eraseField converts a typed Field[T] to Field[any] for the Provenance map.
-func eraseField[T any](f Field[T]) Field[any] {
-	return Field[any]{Value: f.Value, Confidence: f.Confidence, Evidence: f.Evidence}
-}
+// Provenance() lives in provenance.go to keep the data model here uncluttered
+// by the mechanical key→Field[any] mapping.

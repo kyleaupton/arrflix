@@ -162,10 +162,6 @@ export type CrewMember = {
 };
 
 export type DownloadCandidate = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
     age: number;
     ageHours: number;
     categories: Array<string> | null;
@@ -1131,6 +1127,21 @@ export type PlexExchangeResponse = {
     token: string;
 };
 
+export type PoliciesEvaluateBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * The download candidate to evaluate
+     */
+    candidate: DownloadCandidate;
+    /**
+     * Media type to evaluate against (movie or series). Required — parsing is now domain-dispatched.
+     */
+    mediaType: 'movie' | 'series';
+};
+
 export type Policy = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1659,25 +1670,6 @@ export type BootstrapResponseWritable = {
     user: BootstrapUser;
 };
 
-export type DownloadCandidateWritable = {
-    age: number;
-    ageHours: number;
-    categories: Array<string> | null;
-    filename: string;
-    grabs: number;
-    guid: string;
-    indexer: string;
-    indexerFlags: Array<string> | null;
-    indexerId: number;
-    link: string;
-    peers: number;
-    protocol: string;
-    publishDate: string;
-    seeders: number;
-    size: number;
-    title: string;
-};
-
 export type DownloadCandidateResponseWritable = {
     job: DownloadJob;
     trace: EvaluationTraceWritable;
@@ -2159,6 +2151,17 @@ export type PlexExchangeResponseWritable = {
      * JWT bearer token
      */
     token: string;
+};
+
+export type PoliciesEvaluateBodyWritable = {
+    /**
+     * The download candidate to evaluate
+     */
+    candidate: DownloadCandidate;
+    /**
+     * Media type to evaluate against (movie or series). Required — parsing is now domain-dispatched.
+     */
+    mediaType: 'movie' | 'series';
 };
 
 export type PolicyWritable = {
@@ -5091,7 +5094,7 @@ export type PoliciesCreateResponses = {
 export type PoliciesCreateResponse = PoliciesCreateResponses[keyof PoliciesCreateResponses];
 
 export type PoliciesEvaluateData = {
-    body: DownloadCandidateWritable;
+    body: PoliciesEvaluateBodyWritable;
     path?: never;
     query?: never;
     url: '/api/v1/policies/evaluate';

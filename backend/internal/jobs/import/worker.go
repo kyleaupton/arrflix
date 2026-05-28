@@ -279,7 +279,14 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 		candidateTitle = *details.CandidateTitle
 	}
 
-	q := parsing.Parse(candidateTitle)
+	// Domain is known: the task is scoped to a single media type. Pass it to
+	// Parse — it drives both the identity pattern set and the bin vocabulary
+	// the rendered quality.name / quality.full use.
+	domain := parsing.DomainSeries
+	if task.MediaType == "movie" {
+		domain = parsing.DomainMovie
+	}
+	q := parsing.Parse(candidateTitle, domain)
 	candidate := model.DownloadCandidate{
 		Title: candidateTitle,
 	}

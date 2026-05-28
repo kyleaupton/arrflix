@@ -6,8 +6,31 @@ import (
 	"github.com/kyleaupton/arrflix/internal/parsing"
 )
 
+// quality_map mirrors the QualityFields shape EvaluationContext.ToTemplateData
+// exposes. Parse already rendered the per-domain bin onto Quality.Name /
+// Quality.Full, so this map is a direct copy — `{{.Quality.Full}}` resolves
+// the same way a real evaluation would. Built here (not via
+// model.NewEvaluationContext) to keep this test out of the model → template
+// import cycle.
+func quality_map(q parsing.QualityValues) map[string]any {
+	return map[string]any{
+		"Name":       q.Name,
+		"Full":       q.Full,
+		"Resolution": q.Resolution,
+		"Source":     q.Source,
+		"Modifier":   q.Modifier,
+		"IsRepack":   q.IsRepack,
+		"Version":    q.Version,
+		"Real":       q.Real,
+	}
+}
+
 func TestRender(t *testing.T) {
-	result := parsing.Parse("21.Jump.Street.2012.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.Atmos-GROUP").Values()
+	// Quality.Full is the per-domain bin Parse rendered onto the result;
+	// passing DomainSeries yields "Bluray-2160p Remux" for this 2160p Bluray
+	// remux release.
+	q := parsing.Parse("21.Jump.Street.2012.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.Atmos-GROUP", parsing.DomainSeries).Values().Quality
+	qualityMap := quality_map(q)
 
 	// Create a namespaced context structure matching EvaluationContext.ToTemplateData()
 	media := map[string]any{
@@ -18,7 +41,7 @@ func TestRender(t *testing.T) {
 
 	ctx := map[string]any{
 		"Media":   media,
-		"Quality": result.Quality,
+		"Quality": qualityMap,
 	}
 
 	tests := []struct {
@@ -72,7 +95,8 @@ func TestRender(t *testing.T) {
 }
 
 func TestRenderZeroPaddedSeasonEpisode(t *testing.T) {
-	result := parsing.Parse("Breaking.Bad.S01E05.720p.BluRay.x264-GROUP").Values()
+	q := parsing.Parse("Breaking.Bad.S01E05.720p.BluRay.x264-GROUP", parsing.DomainSeries).Values().Quality
+	qualityMap := quality_map(q)
 
 	media := map[string]any{
 		"Title":        "Breaking Bad",
@@ -85,7 +109,7 @@ func TestRenderZeroPaddedSeasonEpisode(t *testing.T) {
 
 	ctx := map[string]any{
 		"Media":   media,
-		"Quality": result.Quality,
+		"Quality": qualityMap,
 	}
 
 	tests := []struct {

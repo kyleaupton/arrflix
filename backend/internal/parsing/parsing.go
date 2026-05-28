@@ -1,39 +1,32 @@
 package parsing
 
-// Domain selects which identity pattern set Parse applies. Quality and release
-// metadata are domain-free and always parsed; only identity (title, year,
-// numbering) is domain-specific.
+import "strings"
+
+// Domain selects which identity pattern set Parse applies and which bin
+// vocabulary Parse renders the quality result into. Every production consumer
+// knows the domain at the call site (TMDB-anchored search, importer's
+// media-type-typed job, library-scoped scan, UI-scoped policy test endpoint),
+// so Parse takes it as a required positional argument — there is no
+// auto-detect.
 type Domain string
 
 const (
-	// DomainAuto lets Parse detect series vs movie from the title.
-	DomainAuto Domain = ""
-	// DomainSeries applies the Sonarr series patterns only.
+	// DomainSeries applies the Sonarr series patterns and renders the bin in
+	// Sonarr's vocabulary (e.g. "Bluray-1080p Remux").
 	DomainSeries Domain = "series"
-	// DomainMovie applies the Radarr movie patterns only.
+	// DomainMovie applies the Radarr movie patterns and renders the bin in
+	// Radarr's vocabulary (e.g. "Remux-1080p").
 	DomainMovie Domain = "movie"
 )
 
 // config holds the options Parse was called with.
 type config struct {
 	isPath bool
-	domain Domain
 }
 
-// Option configures a Parse call.
+// Option configures a Parse call. Domain is required positional; Option is
+// reserved for path-flavor and any future path-only switches.
 type Option func(*config)
-
-// AsSeries parses identity with the Sonarr series patterns (title, season,
-// episode, absolute, daily). Domain-aware callers — scan, download, matching —
-// pass this; they know the domain.
-func AsSeries() Option {
-	return func(c *config) { c.domain = DomainSeries }
-}
-
-// AsMovie parses identity with the Radarr movie patterns (title, year).
-func AsMovie() Option {
-	return func(c *config) { c.domain = DomainMovie }
-}
 
 // AsPath parses input as an on-disk path (filename + folder context) rather
 // than a release title. For now it only records the flavor on the result; the
@@ -52,34 +45,48 @@ const confDetected = 0.9
 // It is pure, deterministic, and total: unparseable input yields low-confidence
 // (zero) fields, never an error.
 //
-// Quality (resolution, source, bin, remux, proper/repack) is parsed for every
-// input by the ported Sonarr/Radarr quality engine. Identity (title, year,
-// numbering, edition), release group, and languages come from the
-// domain-specific pass selected by the Domain option, or by detection from the
-// title; fields a given input doesn't carry stay zero-valued.
-func Parse(input string, opts ...Option) ParsedRelease {
+// Quality (resolution, source, modifier, revision) and the rendered per-domain
+// bin (Quality.Name / Quality.Full) come from the ported Sonarr/Radarr quality
+// engine. Identity (title, year, numbering, edition), release group, and
+// languages come from the domain-specific pass selected by the Domain argument;
+// fields a given input doesn't carry stay zero-valued.
+func Parse(input string, domain Domain, opts ...Option) ParsedRelease {
 	var cfg config
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
-	raw := parseRaw(input)
+	raw := parseQuality(input)
 	p := ParsedRelease{Input: input, IsPath: cfg.isPath}
 
-	// Quality — the bin-derived fields share the bin's detection confidence.
-	binConf := 0.0
-	if raw.quality != Unknown {
-		binConf = confDetected
+	// Quality — the orthogonal core (source, resolution, modifier) plus
+	// revision. The core's detection confidence is shared across its three
+	// axes; a core is "detected" when any axis fired.
+	detected := raw.source != SourceUnknown || raw.resolution != ResUnknown || raw.modifier != ModNone
+	coreConf := 0.0
+	if detected {
+		coreConf = confDetected
 	}
-	p.Quality.Resolution = Field[string]{Value: string(raw.quality.Resolution()), Confidence: binConf, Evidence: "quality bin"}
-	p.Quality.Source = Field[string]{Value: string(raw.quality.Source()), Confidence: binConf, Evidence: "quality bin"}
-	p.Quality.Full = Field[string]{Value: raw.quality.String(), Confidence: binConf, Evidence: "quality bin"}
-	p.Quality.IsRemux = Field[bool]{Value: raw.quality.IsRemux(), Confidence: binConf, Evidence: "quality bin"}
+	p.Quality.Source = Field[string]{Value: string(raw.source), Confidence: coreConf, Evidence: "quality core"}
+	p.Quality.Resolution = Field[string]{Value: string(raw.resolution), Confidence: coreConf, Evidence: "quality core"}
+	p.Quality.Modifier = Field[string]{Value: string(raw.modifier), Confidence: coreConf, Evidence: "quality core"}
 
 	// Revision — presence-based confidence.
 	p.Quality.IsRepack = boolField(raw.revision.IsRepack, "repack token")
 	p.Quality.Version = intField(raw.revision.Version, "version token")
 	p.Quality.Real = intField(raw.revision.Real, "real token")
+
+	// Quality.Name / Quality.Full — the per-domain bin rendered at parse time.
+	// Name is the bin's stable display label (Sonarr's "Bluray-1080p Remux" /
+	// Radarr's "Remux-1080p"); Full is Name plus the revision-render suffix
+	// (FileNameBuilder.cs:359 {Quality Full} semantics).
+	bin := BinFor(raw.source, raw.resolution, raw.modifier, domain)
+	binConf := 0.0
+	if detected && bin.Name != "" {
+		binConf = confDetected
+	}
+	p.Quality.Name = Field[string]{Value: bin.Name, Confidence: binConf, Evidence: "bin render"}
+	p.Quality.Full = Field[string]{Value: renderQualityFull(bin.Name, raw.revision), Confidence: binConf, Evidence: "bin render + revision"}
 
 	// Release. ReleaseGroup / ReleaseHash come from the domain-specific identity
 	// pass below (parseSeriesGroup / parseMovieGroup in group.go — the faithful
@@ -92,10 +99,6 @@ func Parse(input string, opts ...Option) ParsedRelease {
 	// Identity — title/year/numbering come from the domain-specific identity
 	// pass. Edition is movie-domain only and is set by parseMovieIdentity's
 	// faithful Radarr port; the series path leaves it empty.
-	domain := cfg.domain
-	if domain == DomainAuto {
-		domain = detectDomain(input)
-	}
 	switch domain {
 	case DomainSeries:
 		parseSeriesIdentity(&p, input)
@@ -105,6 +108,35 @@ func Parse(input string, opts ...Option) ParsedRelease {
 	p.Identity.TypeHint = Field[string]{Value: string(domain), Confidence: confDetected, Evidence: "domain dispatch"}
 
 	return p
+}
+
+// renderQualityFull renders the {Quality Full} naming-token (Radarr
+// Organizer/FileNameBuilder.cs:359):
+//
+//	string.Format("{0} {1} {2}", title, proper, real)
+//
+// where title is the quality bin name; proper resolves to "Proper" when the
+// revision version is >1, "Repack" when isRepack is set on an original
+// revision, otherwise empty; and real is "REAL" repeated `real` times (a single
+// "REAL" upstream — Radarr only carries a 0/1 counter, but the loop keeps
+// repeats faithful for future-proofing). Trailing whitespace is trimmed so a
+// release with no proper/real renders as just the bin name.
+func renderQualityFull(name string, rev Revision) string {
+	if name == "" {
+		return ""
+	}
+	var proper string
+	switch {
+	case rev.Version > 1:
+		proper = "Proper"
+	case rev.IsRepack:
+		proper = "Repack"
+	}
+	var real string
+	if rev.Real > 0 {
+		real = strings.TrimSpace(strings.Repeat("REAL ", rev.Real))
+	}
+	return strings.TrimRight(name+" "+proper+" "+real, " ")
 }
 
 // boolField sets confidence only when the flag is true (a positive detection);

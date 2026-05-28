@@ -334,8 +334,7 @@ func buildSimpleReleaseTitle(releaseTitle string, m *regexp2.Match, primaryTitle
 
 // parseMovieEdition ports Radarr's ParseEdition (Parser.cs:354): runs
 // ReportEditionRegex over the title-blanked working string and returns the
-// "edition" group with dots replaced by spaces, or "" when absent. (Named to
-// avoid colliding with engine.go's quality-path parseEdition, which is untouched.)
+// "edition" group with dots replaced by spaces, or "" when absent.
 func parseMovieEdition(languageTitle string) string {
 	m, err := reportEditionRegex.FindStringMatch(languageTitle)
 	if err != nil || m == nil {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/service"
@@ -313,8 +314,20 @@ func (h *Policies) GetFields(ctx context.Context, _ *PoliciesGetFieldsInput) (*P
 
 // ----- Evaluate -----
 
+// policiesEvaluateBody is the rule-test request shape: the raw candidate plus
+// the explicit media type the caller wants the rules evaluated against. Parse
+// requires a domain, so the caller has to commit to one — the previous
+// implicit "fall back to auto-detect" path is gone (parsing spec §"The
+// engine"). MediaType is validated below; the candidate's Categories field
+// remains the inferred-fallback when the caller forwards a real indexer
+// result, but the explicit field is the contract.
+type policiesEvaluateBody struct {
+	MediaType string                  `json:"mediaType" required:"true" enum:"movie,series" doc:"Media type to evaluate against (movie or series). Required — parsing is now domain-dispatched."`
+	Candidate model.DownloadCandidate `json:"candidate" doc:"The download candidate to evaluate"`
+}
+
 type PoliciesEvaluateInput struct {
-	Body model.DownloadCandidate
+	Body policiesEvaluateBody
 }
 
 type PoliciesEvaluateOutput struct {
@@ -322,8 +335,24 @@ type PoliciesEvaluateOutput struct {
 }
 
 func (h *Policies) Evaluate(ctx context.Context, input *PoliciesEvaluateInput) (*PoliciesEvaluateOutput, error) {
-	q := parsing.Parse(input.Body.Title)
-	evalCtx := model.NewEvaluationContext(input.Body, q)
+	// Map the explicit media type onto a parsing domain. The enum tag on the
+	// body field rejects anything other than movie/series before we get here;
+	// this switch is the belt to that suspenders, surfacing the same 422 with
+	// an explicit detail message if a future code path bypasses the tag.
+	var domain parsing.Domain
+	switch model.MediaType(input.Body.MediaType) {
+	case model.MediaTypeMovie:
+		domain = parsing.DomainMovie
+	case model.MediaTypeSeries:
+		domain = parsing.DomainSeries
+	default:
+		return nil, apperrors.Validation("media type is required to evaluate this rule — pick movie or series",
+			apperrors.Field("body.mediaType", "must be 'movie' or 'series'"),
+		).Op("PoliciesHandler.Evaluate")
+	}
+
+	q := parsing.Parse(input.Body.Candidate.Title, domain)
+	evalCtx := model.NewEvaluationContext(input.Body.Candidate, q)
 
 	trace, err := h.svc.Policies.Evaluate(ctx, evalCtx)
 	if err != nil {

@@ -186,7 +186,7 @@ func isMatch(re *regexp2.Regexp, s string) bool {
 
 // removeFileExtensionClean mirrors Sonarr RemoveFileExtension (Parser.cs:968) /
 // Radarr FileExtensions.RemoveFileExtension: it strips a trailing .ext only when
-// the extension is a recognized media or usenet extension. The engine.go
+// the extension is a recognized media or usenet extension. The quality.go
 // removeFileExtension is a coarser stdlib variant used by the quality path; this
 // is the faithful FileExtensionRegex-driven port the simplify pipeline needs.
 func removeFileExtensionClean(title string) string {
@@ -224,7 +224,7 @@ func stripWebsiteAndTorrent(simple string) string {
 
 // stripQualityBrackets removes a trailing [..] from simple ONLY when it is NOT a
 // recognized quality, mirroring Sonarr Parser.cs:737 / Radarr Parser.cs:215. The
-// quality recognizer is engine.go's parseRaw: a non-Unknown result is the
+// quality recognizer is quality.go's parseQuality: a non-Unknown result is the
 // analogue of upstream's QualityParser.ParseQualityName(m.Value).Quality !=
 // Quality.Unknown. This is the intended seam — when quality is re-ported, only
 // the body of isRecognizedQuality changes, not this call site.
@@ -245,7 +245,8 @@ func stripQualityBrackets(simple string) string {
 // isRecognizedQuality reports whether s names a real quality, standing in for
 // upstream QualityParser.ParseQualityName(s).Quality != Quality.Unknown.
 func isRecognizedQuality(s string) bool {
-	return parseRaw(s).quality != Unknown
+	r := parseQuality(s)
+	return r.source != SourceUnknown || r.resolution != ResUnknown || r.modifier != ModNone
 }
 
 // normalizeSixDigitAirDate rewrites a YYMMDD token between separators to

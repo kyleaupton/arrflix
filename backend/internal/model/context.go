@@ -53,14 +53,22 @@ type CandidateFields struct {
 	GUID        string    `path:"candidate.guid" label:"GUID" type:"text" phase:"pre_download"`
 }
 
-// QualityFields contains parsed quality information from the release title
+// QualityFields contains the parsed quality core (Source, Resolution, Modifier,
+// Revision) plus the rendered per-domain bin (Name / Full) parsing produces
+// once the domain is known. Source, Resolution, and Modifier are the orthogonal
+// axes; Name is the bin label ("Bluray-1080p Remux" for series, "Remux-1080p"
+// for movies — mirrors *arr's Quality.Name API field), and Full is Name plus
+// the {Quality Full} revision-render suffix (mirrors *arr's {Quality Full}
+// naming token).
 type QualityFields struct {
+	Name       string `path:"quality.name" label:"Quality Name" type:"text" phase:"pre_download"`
 	Full       string `path:"quality.full" label:"Full Quality" type:"text" phase:"pre_download"`
-	Resolution string `path:"quality.resolution" label:"Resolution" type:"enum" enumValues:"Unknown,SD,480p,576p,720p,1080p,1440p,2160p,4320p" phase:"pre_download"`
-	Source     string `path:"quality.source" label:"Source" type:"enum" enumValues:"Unknown,SDTV,CAM,Telesync,Telecine,Screener,DVD,DVD-Rip,HDTV,WEBRip,WEB-DL,BluRay,REMUX,Raw-HD" phase:"pre_download"`
-	IsRemux    bool   `path:"quality.is_remux" label:"Is Remux" type:"boolean" phase:"pre_download"`
+	Resolution string `path:"quality.resolution" label:"Resolution" type:"enum" enumValues:"Unknown,SD,480p,576p,720p,1080p,2160p" phase:"pre_download"`
+	Source     string `path:"quality.source" label:"Source" type:"enum" enumValues:"Unknown,CAM,Telesync,Telecine,Workprint,DVD,TV,WEBRip,WEB-DL,BluRay" phase:"pre_download"`
+	Modifier   string `path:"quality.modifier" label:"Modifier" type:"enum" enumValues:"NONE,REMUX,BR-DISK,RAWHD" phase:"pre_download"`
 	IsRepack   bool   `path:"quality.is_repack" label:"Is Repack" type:"boolean" phase:"pre_download"`
 	Version    int    `path:"quality.version" label:"Version" type:"number" phase:"pre_download"`
+	Real       int    `path:"quality.real" label:"Real" type:"number" phase:"pre_download"`
 }
 
 // ReleaseFields contains release metadata (not quality-related, not identity).
@@ -151,11 +159,22 @@ type MediaInfoFields struct {
 // and a parsed release. It fills the advertised namespaces (Identity, Quality,
 // Release) from the parse via its flat Values() projection; Media is populated
 // later by matching (WithMedia/WithSeriesInfo) and MediaInfo by the ffprobe
-// extractor (WithMediaInfo). The Identity/Quality/Release split here mirrors the
+// extractor (WithMediaInfo). The Identity/Quality/Release split mirrors the
 // parse model 1:1 — notably Edition lives under identity.* (it identifies the
 // cut) and hardcoded-subs under release.* (an encode property).
+//
+// Quality.Name / Quality.Full are taken straight from the parse — Parse
+// rendered them in the domain's vocabulary because the caller passed the
+// domain to Parse.
 func NewEvaluationContext(candidate DownloadCandidate, parsed parsing.ParsedRelease) EvaluationContext {
 	v := parsed.Values()
+	// Parsing's ModNone is the empty string (mirroring Radarr's Modifier.NONE
+	// being its zero enum value). Surface it to rules and the routing UI as the
+	// canonical "NONE" label so the enum stays closed.
+	modifier := v.Quality.Modifier
+	if modifier == "" {
+		modifier = "NONE"
+	}
 	return EvaluationContext{
 		Candidate: CandidateFields{
 			Size:        candidate.Size,
@@ -198,12 +217,14 @@ func NewEvaluationContext(candidate DownloadCandidate, parsed parsing.ParsedRele
 			ReleaseType:              v.Identity.Numbering.ReleaseType,
 		},
 		Quality: QualityFields{
+			Name:       v.Quality.Name,
 			Full:       v.Quality.Full,
 			Resolution: v.Quality.Resolution,
 			Source:     v.Quality.Source,
-			IsRemux:    v.Quality.IsRemux,
+			Modifier:   modifier,
 			IsRepack:   v.Quality.IsRepack,
 			Version:    v.Quality.Version,
+			Real:       v.Quality.Real,
 		},
 		Release: ReleaseFields{
 			ReleaseGroup:  v.Release.ReleaseGroup,
