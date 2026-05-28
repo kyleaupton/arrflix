@@ -1,6 +1,6 @@
 package parsing
 
-// engine.go is the quality-detection half of the parser, ported from Radarr's
+// quality.go is the quality-detection half of the parser, ported from Radarr's
 // QualityParser (submodules/radarr/src/NzbDrone.Core/Parser/QualityParser.cs).
 // Radarr's model is the superset: it decomposes quality into three orthogonal
 // axes plus a revision — (Source, Resolution, Modifier, Revision) — where Sonarr
@@ -80,10 +80,10 @@ type Revision struct {
 	IsRepack bool
 }
 
-// rawParse is the engine's internal result: the orthogonal quality core
+// qualityCore is the internal result of quality detection: the orthogonal
 // (Source, Resolution, Modifier) plus the Revision. Parse wraps it into the
 // ParsedRelease model.
-type rawParse struct {
+type qualityCore struct {
 	source     Source
 	resolution Resolution
 	modifier   Modifier
@@ -348,16 +348,16 @@ func countMatches(re *regexp2.Regexp, s string) int {
 	return n
 }
 
-// parseRaw extracts the orthogonal quality core (source, resolution, modifier)
+// parseQuality extracts the orthogonal quality core (source, resolution, modifier)
 // and revision from a release title or filename, ported from Radarr's
 // QualityParser.ParseQualityName (QualityParser.cs:112) and the extension
 // fallback in ParseQuality (QualityParser.cs:79). The detection ordering and
 // precedence mirror upstream exactly; Parse wraps the result into ParsedRelease.
-func parseRaw(name string) rawParse {
+func parseQuality(name string) qualityCore {
 	name = strings.TrimSpace(name)
 	normalizedName := strings.TrimSpace(strings.ReplaceAll(name, "_", " "))
 
-	result := rawParse{source: SourceUnknown, resolution: ResUnknown, modifier: ModNone}
+	result := qualityCore{source: SourceUnknown, resolution: ResUnknown, modifier: ModNone}
 	result.revision = parseRevision(name, normalizedName)
 
 	sourceGroup := detectSource(normalizedName)
