@@ -32,6 +32,8 @@ func (p ParsedRelease) Provenance() map[string]Field[any] {
 		"identity.numbering.is_season_extra":   eraseField(p.Identity.Numbering.IsSeasonExtra),
 		"identity.numbering.daily_part":        eraseField(p.Identity.Numbering.DailyPart),
 		"identity.numbering.special_absolute":  eraseField(p.Identity.Numbering.SpecialAbsolute),
+		"quality.name":                         eraseField(p.Quality.Name),
+		"quality.full":                         eraseField(p.Quality.Full),
 		"quality.resolution":                   eraseField(p.Quality.Resolution),
 		"quality.source":                       eraseField(p.Quality.Source),
 		"quality.modifier":                     eraseField(p.Quality.Modifier),

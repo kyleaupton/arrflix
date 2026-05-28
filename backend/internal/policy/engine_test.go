@@ -9,7 +9,6 @@ import (
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
-	"github.com/kyleaupton/arrflix/internal/quality"
 )
 
 func TestEngine_Evaluate(t *testing.T) {
@@ -33,8 +32,8 @@ func TestEngine_Evaluate(t *testing.T) {
 		Age:       1000,
 		AgeHours:  10,
 	}
-	q := parsing.Parse(candidate.Title)
-	evalCtx := model.NewEvaluationContext(candidate, q, quality.DomainUnknown)
+	q := parsing.Parse(candidate.Title, parsing.DomainMovie)
+	evalCtx := model.NewEvaluationContext(candidate, q)
 
 	trace, err := engine.Evaluate(context.Background(), evalCtx)
 

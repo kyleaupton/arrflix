@@ -4,18 +4,18 @@ import (
 	"testing"
 
 	"github.com/kyleaupton/arrflix/internal/parsing"
-	"github.com/kyleaupton/arrflix/internal/quality"
 )
 
 // quality_map mirrors the QualityFields shape EvaluationContext.ToTemplateData
-// exposes, projecting the parsed core into the given domain's bin so
-// `{{.Quality.Full}}` resolves the same way a real evaluation would. Built here
-// (not via model.NewEvaluationContext) to keep this test out of the model →
-// template import cycle.
-func quality_map(q parsing.QualityValues, domain quality.Domain) map[string]any {
-	bin := quality.BinFor(parsing.Source(q.Source), parsing.Resolution(q.Resolution), parsing.Modifier(q.Modifier), domain)
+// exposes. Parse already rendered the per-domain bin onto Quality.Name /
+// Quality.Full, so this map is a direct copy — `{{.Quality.Full}}` resolves
+// the same way a real evaluation would. Built here (not via
+// model.NewEvaluationContext) to keep this test out of the model → template
+// import cycle.
+func quality_map(q parsing.QualityValues) map[string]any {
 	return map[string]any{
-		"Full":       bin.Name,
+		"Name":       q.Name,
+		"Full":       q.Full,
 		"Resolution": q.Resolution,
 		"Source":     q.Source,
 		"Modifier":   q.Modifier,
@@ -26,11 +26,11 @@ func quality_map(q parsing.QualityValues, domain quality.Domain) map[string]any 
 }
 
 func TestRender(t *testing.T) {
-	// Quality.Full is the per-domain bin name, projected from the parsed core
-	// by internal/quality; rendering against the series vocabulary yields
-	// "Bluray-2160p Remux" for this 2160p Bluray remux release.
-	q := parsing.Parse("21.Jump.Street.2012.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.Atmos-GROUP", parsing.AsSeries()).Values().Quality
-	qualityMap := quality_map(q, quality.DomainSeries)
+	// Quality.Full is the per-domain bin Parse rendered onto the result;
+	// passing DomainSeries yields "Bluray-2160p Remux" for this 2160p Bluray
+	// remux release.
+	q := parsing.Parse("21.Jump.Street.2012.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.Atmos-GROUP", parsing.DomainSeries).Values().Quality
+	qualityMap := quality_map(q)
 
 	// Create a namespaced context structure matching EvaluationContext.ToTemplateData()
 	media := map[string]any{
@@ -95,8 +95,8 @@ func TestRender(t *testing.T) {
 }
 
 func TestRenderZeroPaddedSeasonEpisode(t *testing.T) {
-	q := parsing.Parse("Breaking.Bad.S01E05.720p.BluRay.x264-GROUP", parsing.AsSeries()).Values().Quality
-	qualityMap := quality_map(q, quality.DomainSeries)
+	q := parsing.Parse("Breaking.Bad.S01E05.720p.BluRay.x264-GROUP", parsing.DomainSeries).Values().Quality
+	qualityMap := quality_map(q)
 
 	media := map[string]any{
 		"Title":        "Breaking Bad",

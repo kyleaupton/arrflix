@@ -21,7 +21,6 @@ import (
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/pathmapping"
-	"github.com/kyleaupton/arrflix/internal/quality"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 	"github.com/kyleaupton/arrflix/internal/template"
@@ -281,22 +280,17 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 	}
 
 	// Domain is known: the task is scoped to a single media type. Pass it to
-	// the parser (so identity uses the right pattern set) and to the
-	// projection (so quality.Full renders in the right vocabulary).
-	var parseOpt parsing.Option
-	var domain quality.Domain
+	// Parse — it drives both the identity pattern set and the bin vocabulary
+	// the rendered quality.name / quality.full use.
+	domain := parsing.DomainSeries
 	if task.MediaType == "movie" {
-		parseOpt = parsing.AsMovie()
-		domain = quality.DomainMovie
-	} else {
-		parseOpt = parsing.AsSeries()
-		domain = quality.DomainSeries
+		domain = parsing.DomainMovie
 	}
-	q := parsing.Parse(candidateTitle, parseOpt)
+	q := parsing.Parse(candidateTitle, domain)
 	candidate := model.DownloadCandidate{
 		Title: candidateTitle,
 	}
-	evalCtx := model.NewEvaluationContext(candidate, q, domain)
+	evalCtx := model.NewEvaluationContext(candidate, q)
 
 	// Add media metadata
 	year := 0

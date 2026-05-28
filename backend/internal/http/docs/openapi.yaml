@@ -325,13 +325,6 @@ components:
     DownloadCandidate:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/DownloadCandidate.json
-          format: uri
-          readOnly: true
-          type: string
         age:
           format: int64
           type: integer
@@ -2821,6 +2814,29 @@ components:
           type: string
       required:
         - token
+      type: object
+    PoliciesEvaluateBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/PoliciesEvaluateBody.json
+          format: uri
+          readOnly: true
+          type: string
+        candidate:
+          $ref: "#/components/schemas/DownloadCandidate"
+          description: The download candidate to evaluate
+        mediaType:
+          description: Media type to evaluate against (movie or series). Required — parsing is now domain-dispatched.
+          enum:
+            - movie
+            - series
+          type: string
+      required:
+        - mediaType
+        - candidate
       type: object
     Policy:
       additionalProperties: false
@@ -6735,7 +6751,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/DownloadCandidate"
+              $ref: "#/components/schemas/PoliciesEvaluateBody"
         required: true
       responses:
         "200":

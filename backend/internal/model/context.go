@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/kyleaupton/arrflix/internal/parsing"
-	"github.com/kyleaupton/arrflix/internal/quality"
 	"github.com/kyleaupton/arrflix/internal/template"
 )
 
@@ -55,12 +54,14 @@ type CandidateFields struct {
 }
 
 // QualityFields contains the parsed quality core (Source, Resolution, Modifier,
-// Revision) plus Full — the per-domain bin name projected from the core by
-// internal/quality at context-build time. Source, Resolution, and Modifier are
-// the orthogonal axes parsing emits; Full is the domain-shaped render
-// ("Bluray-1080p Remux" for series, "Remux-1080p" for movies) and is the
-// user-facing display value rules and templates read.
+// Revision) plus the rendered per-domain bin (Name / Full) parsing produces
+// once the domain is known. Source, Resolution, and Modifier are the orthogonal
+// axes; Name is the bin label ("Bluray-1080p Remux" for series, "Remux-1080p"
+// for movies — mirrors *arr's Quality.Name API field), and Full is Name plus
+// the {Quality Full} revision-render suffix (mirrors *arr's {Quality Full}
+// naming token).
 type QualityFields struct {
+	Name       string `path:"quality.name" label:"Quality Name" type:"text" phase:"pre_download"`
 	Full       string `path:"quality.full" label:"Full Quality" type:"text" phase:"pre_download"`
 	Resolution string `path:"quality.resolution" label:"Resolution" type:"enum" enumValues:"Unknown,SD,480p,576p,720p,1080p,2160p" phase:"pre_download"`
 	Source     string `path:"quality.source" label:"Source" type:"enum" enumValues:"Unknown,CAM,Telesync,Telecine,Workprint,DVD,TV,WEBRip,WEB-DL,BluRay" phase:"pre_download"`
@@ -154,27 +155,19 @@ type MediaInfoFields struct {
 	VideoMultiViewCount int      `path:"mediainfo.video_multi_view_count" label:"Video Multi-View Count" type:"number" phase:"post_download"`
 }
 
-// NewEvaluationContext creates an EvaluationContext from a DownloadCandidate, a
-// parsed release, and the domain whose vocabulary the quality bin should render
-// in. It fills the advertised namespaces (Identity, Quality, Release) from the
-// parse via its flat Values() projection; Media is populated later by matching
-// (WithMedia/WithSeriesInfo) and MediaInfo by the ffprobe extractor
-// (WithMediaInfo). The Identity/Quality/Release split mirrors the parse model
-// 1:1 — notably Edition lives under identity.* (it identifies the cut) and
-// hardcoded-subs under release.* (an encode property).
+// NewEvaluationContext creates an EvaluationContext from a DownloadCandidate
+// and a parsed release. It fills the advertised namespaces (Identity, Quality,
+// Release) from the parse via its flat Values() projection; Media is populated
+// later by matching (WithMedia/WithSeriesInfo) and MediaInfo by the ffprobe
+// extractor (WithMediaInfo). The Identity/Quality/Release split mirrors the
+// parse model 1:1 — notably Edition lives under identity.* (it identifies the
+// cut) and hardcoded-subs under release.* (an encode property).
 //
-// Quality.Full is the per-domain bin name projected from the orthogonal core by
-// internal/quality. Pass quality.DomainSeries / quality.DomainMovie when the
-// caller knows the domain; quality.DomainUnknown yields an empty bin (the same
-// "no matching bin" sentinel BinFor produces for an undetected core).
-func NewEvaluationContext(candidate DownloadCandidate, parsed parsing.ParsedRelease, domain quality.Domain) EvaluationContext {
+// Quality.Name / Quality.Full are taken straight from the parse — Parse
+// rendered them in the domain's vocabulary because the caller passed the
+// domain to Parse.
+func NewEvaluationContext(candidate DownloadCandidate, parsed parsing.ParsedRelease) EvaluationContext {
 	v := parsed.Values()
-	bin := quality.BinFor(
-		parsing.Source(v.Quality.Source),
-		parsing.Resolution(v.Quality.Resolution),
-		parsing.Modifier(v.Quality.Modifier),
-		domain,
-	)
 	// Parsing's ModNone is the empty string (mirroring Radarr's Modifier.NONE
 	// being its zero enum value). Surface it to rules and the routing UI as the
 	// canonical "NONE" label so the enum stays closed.
@@ -224,7 +217,8 @@ func NewEvaluationContext(candidate DownloadCandidate, parsed parsing.ParsedRele
 			ReleaseType:              v.Identity.Numbering.ReleaseType,
 		},
 		Quality: QualityFields{
-			Full:       bin.Name,
+			Name:       v.Quality.Name,
+			Full:       v.Quality.Full,
 			Resolution: v.Quality.Resolution,
 			Source:     v.Quality.Source,
 			Modifier:   modifier,

@@ -1,10 +1,8 @@
-package quality
+package parsing
 
 import (
 	"reflect"
 	"testing"
-
-	"github.com/kyleaupton/arrflix/internal/parsing"
 )
 
 // TestBinFor_SpecWorkedExamples enforces every row of the worked-example table
@@ -14,49 +12,49 @@ import (
 func TestBinFor_SpecWorkedExamples(t *testing.T) {
 	cases := []struct {
 		name       string
-		source     parsing.Source
-		resolution parsing.Resolution
-		modifier   parsing.Modifier
+		source     Source
+		resolution Resolution
+		modifier   Modifier
 		seriesName string
 		movieName  string
 	}{
 		{
 			name:       "(BluRay, 2160p, REMUX)",
-			source:     parsing.SourceBluRay,
-			resolution: parsing.Res2160p,
-			modifier:   parsing.ModRemux,
+			source:     SourceBluRay,
+			resolution: Res2160p,
+			modifier:   ModRemux,
 			seriesName: "Bluray-2160p Remux",
 			movieName:  "Remux-2160p",
 		},
 		{
 			name:       "(BluRay, 1080p, REMUX)",
-			source:     parsing.SourceBluRay,
-			resolution: parsing.Res1080p,
-			modifier:   parsing.ModRemux,
+			source:     SourceBluRay,
+			resolution: Res1080p,
+			modifier:   ModRemux,
 			seriesName: "Bluray-1080p Remux",
 			movieName:  "Remux-1080p",
 		},
 		{
 			name:       "(BluRay, 2160p, BR-DISK)",
-			source:     parsing.SourceBluRay,
-			resolution: parsing.Res2160p,
-			modifier:   parsing.ModBRDisk,
+			source:     SourceBluRay,
+			resolution: Res2160p,
+			modifier:   ModBRDisk,
 			seriesName: "Bluray-2160p", // folded
 			movieName:  "BR-DISK",      // own tier
 		},
 		{
 			name:       "(BluRay, 1080p, NONE)",
-			source:     parsing.SourceBluRay,
-			resolution: parsing.Res1080p,
-			modifier:   parsing.ModNone,
+			source:     SourceBluRay,
+			resolution: Res1080p,
+			modifier:   ModNone,
 			seriesName: "Bluray-1080p",
 			movieName:  "Bluray-1080p",
 		},
 		{
 			name:       "(WEB-DL, 1080p, NONE)",
-			source:     parsing.SourceWEBDL,
-			resolution: parsing.Res1080p,
-			modifier:   parsing.ModNone,
+			source:     SourceWEBDL,
+			resolution: Res1080p,
+			modifier:   ModNone,
 			seriesName: "WEBDL-1080p",
 			movieName:  "WEBDL-1080p",
 		},
@@ -65,9 +63,9 @@ func TestBinFor_SpecWorkedExamples(t *testing.T) {
 			// Orthogonal core: source TV (Radarr's TV / Sonarr's TV;
 			// Sonarr's RAWHD upstream is TelevisionRaw, the modifier
 			// disambiguates here).
-			source:     parsing.SourceTV,
-			resolution: parsing.Res1080p,
-			modifier:   parsing.ModRawHD,
+			source:     SourceTV,
+			resolution: Res1080p,
+			modifier:   ModRawHD,
 			seriesName: "Raw-HD",
 			movieName:  "Raw-HD",
 		},
@@ -226,14 +224,13 @@ func TestMovieVocabularyMatchesRadarr(t *testing.T) {
 	}
 }
 
-// TestBinFor_UnknownDomain returns the zero Bin for DomainUnknown regardless of
-// the input core. Quality profiles always know their domain (they're (tier,
-// media_type)-scoped), so this path is the safety net for an uninitialized
-// caller, not a real lookup.
+// TestBinFor_UnknownDomain returns the zero Bin for a domain outside the
+// {series, movie} set. Parse never calls BinFor with anything else (its domain
+// argument is required), but the safety net keeps direct callers honest.
 func TestBinFor_UnknownDomain(t *testing.T) {
-	got := BinFor(parsing.SourceBluRay, parsing.Res1080p, parsing.ModNone, DomainUnknown)
+	got := BinFor(SourceBluRay, Res1080p, ModNone, Domain(""))
 	if got != (Bin{}) {
-		t.Errorf("BinFor with DomainUnknown returned %+v, want zero Bin", got)
+		t.Errorf("BinFor with unknown domain returned %+v, want zero Bin", got)
 	}
 }
 
@@ -243,37 +240,37 @@ func TestBinFor_UnknownDomain(t *testing.T) {
 func TestBinFor_NoMatch(t *testing.T) {
 	cases := []struct {
 		name       string
-		source     parsing.Source
-		resolution parsing.Resolution
-		modifier   parsing.Modifier
+		source     Source
+		resolution Resolution
+		modifier   Modifier
 		domain     Domain
 	}{
 		{
 			name:       "unknown source, series",
-			source:     parsing.SourceUnknown,
-			resolution: parsing.Res1080p,
-			modifier:   parsing.ModNone,
+			source:     SourceUnknown,
+			resolution: Res1080p,
+			modifier:   ModNone,
 			domain:     DomainSeries,
 		},
 		{
 			name:       "unknown source, movie",
-			source:     parsing.SourceUnknown,
-			resolution: parsing.Res1080p,
-			modifier:   parsing.ModNone,
+			source:     SourceUnknown,
+			resolution: Res1080p,
+			modifier:   ModNone,
 			domain:     DomainMovie,
 		},
 		{
 			name:       "unknown resolution on TV source, series",
-			source:     parsing.SourceTV,
-			resolution: parsing.ResUnknown,
-			modifier:   parsing.ModNone,
+			source:     SourceTV,
+			resolution: ResUnknown,
+			modifier:   ModNone,
 			domain:     DomainSeries,
 		},
 		{
 			name:       "CAM in series vocabulary (no Sonarr bin)",
-			source:     parsing.SourceCAM,
-			resolution: parsing.ResUnknown,
-			modifier:   parsing.ModNone,
+			source:     SourceCAM,
+			resolution: ResUnknown,
+			modifier:   ModNone,
 			domain:     DomainSeries,
 		},
 	}
@@ -292,15 +289,15 @@ func TestBinFor_NoMatch(t *testing.T) {
 // downstream profile code depends on.
 func TestBinFor_Pure(t *testing.T) {
 	cases := []struct {
-		source     parsing.Source
-		resolution parsing.Resolution
-		modifier   parsing.Modifier
+		source     Source
+		resolution Resolution
+		modifier   Modifier
 		domain     Domain
 	}{
-		{parsing.SourceBluRay, parsing.Res1080p, parsing.ModRemux, DomainSeries},
-		{parsing.SourceBluRay, parsing.Res2160p, parsing.ModBRDisk, DomainMovie},
-		{parsing.SourceWEBDL, parsing.Res720p, parsing.ModNone, DomainSeries},
-		{parsing.SourceTV, parsing.Res1080p, parsing.ModRawHD, DomainMovie},
+		{SourceBluRay, Res1080p, ModRemux, DomainSeries},
+		{SourceBluRay, Res2160p, ModBRDisk, DomainMovie},
+		{SourceWEBDL, Res720p, ModNone, DomainSeries},
+		{SourceTV, Res1080p, ModRawHD, DomainMovie},
 	}
 	for _, tc := range cases {
 		first := BinFor(tc.source, tc.resolution, tc.modifier, tc.domain)
@@ -319,97 +316,97 @@ func TestBinFor_Pure(t *testing.T) {
 func TestBinFor_ModifierProjections(t *testing.T) {
 	cases := []struct {
 		name       string
-		source     parsing.Source
-		resolution parsing.Resolution
-		modifier   parsing.Modifier
+		source     Source
+		resolution Resolution
+		modifier   Modifier
 		domain     Domain
 		wantName   string
 	}{
 		// Series: BR-DISK folds into plain Bluray at the input resolution.
 		{
 			name:       "series BR-DISK at 1080p folds to Bluray-1080p",
-			source:     parsing.SourceBluRay,
-			resolution: parsing.Res1080p,
-			modifier:   parsing.ModBRDisk,
+			source:     SourceBluRay,
+			resolution: Res1080p,
+			modifier:   ModBRDisk,
 			domain:     DomainSeries,
 			wantName:   "Bluray-1080p",
 		},
 		// Movie: BR-DISK is a single bin regardless of input resolution.
 		{
 			name:       "movie BR-DISK at 2160p still maps to BR-DISK",
-			source:     parsing.SourceBluRay,
-			resolution: parsing.Res2160p,
-			modifier:   parsing.ModBRDisk,
+			source:     SourceBluRay,
+			resolution: Res2160p,
+			modifier:   ModBRDisk,
 			domain:     DomainMovie,
 			wantName:   "BR-DISK",
 		},
 		// Movie: RAWHD overrides whatever else and renders Raw-HD.
 		{
 			name:       "movie RAWHD at any resolution renders Raw-HD",
-			source:     parsing.SourceTV,
-			resolution: parsing.Res720p,
-			modifier:   parsing.ModRawHD,
+			source:     SourceTV,
+			resolution: Res720p,
+			modifier:   ModRawHD,
 			domain:     DomainMovie,
 			wantName:   "Raw-HD",
 		},
 		// Series: RAWHD is resolution-agnostic.
 		{
 			name:       "series RAWHD at 720p renders Raw-HD",
-			source:     parsing.SourceTV,
-			resolution: parsing.Res720p,
-			modifier:   parsing.ModRawHD,
+			source:     SourceTV,
+			resolution: Res720p,
+			modifier:   ModRawHD,
 			domain:     DomainSeries,
 			wantName:   "Raw-HD",
 		},
 		// Movie: DVDR is the (DVD, 480p, REMUX) bin.
 		{
 			name:       "movie REMUX on DVD/480p renders DVD-R",
-			source:     parsing.SourceDVD,
-			resolution: parsing.Res480p,
-			modifier:   parsing.ModRemux,
+			source:     SourceDVD,
+			resolution: Res480p,
+			modifier:   ModRemux,
 			domain:     DomainMovie,
 			wantName:   "DVD-R",
 		},
 		// Pre-release sources are first-class movie bins, absent from series.
 		{
 			name:       "movie CAM source renders CAM bin",
-			source:     parsing.SourceCAM,
-			resolution: parsing.ResUnknown,
-			modifier:   parsing.ModNone,
+			source:     SourceCAM,
+			resolution: ResUnknown,
+			modifier:   ModNone,
 			domain:     DomainMovie,
 			wantName:   "CAM",
 		},
 		// HDTV-{res} agree between domains.
 		{
 			name:       "series HDTV-1080p",
-			source:     parsing.SourceTV,
-			resolution: parsing.Res1080p,
-			modifier:   parsing.ModNone,
+			source:     SourceTV,
+			resolution: Res1080p,
+			modifier:   ModNone,
 			domain:     DomainSeries,
 			wantName:   "HDTV-1080p",
 		},
 		{
 			name:       "movie HDTV-1080p",
-			source:     parsing.SourceTV,
-			resolution: parsing.Res1080p,
-			modifier:   parsing.ModNone,
+			source:     SourceTV,
+			resolution: Res1080p,
+			modifier:   ModNone,
 			domain:     DomainMovie,
 			wantName:   "HDTV-1080p",
 		},
 		// SDTV agrees between domains for sub-720 TV.
 		{
 			name:       "series TV 480p renders SDTV",
-			source:     parsing.SourceTV,
-			resolution: parsing.Res480p,
-			modifier:   parsing.ModNone,
+			source:     SourceTV,
+			resolution: Res480p,
+			modifier:   ModNone,
 			domain:     DomainSeries,
 			wantName:   "SDTV",
 		},
 		{
 			name:       "movie TV 480p renders SDTV",
-			source:     parsing.SourceTV,
-			resolution: parsing.Res480p,
-			modifier:   parsing.ModNone,
+			source:     SourceTV,
+			resolution: Res480p,
+			modifier:   ModNone,
 			domain:     DomainMovie,
 			wantName:   "SDTV",
 		},

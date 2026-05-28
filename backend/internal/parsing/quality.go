@@ -200,8 +200,8 @@ type extQuality struct {
 // the Sonarr `.mkv`/`.ts` bins. The QualityParser *logic* is the faithful Radarr
 // port; only this data table tracks Sonarr.
 //
-// TEMPORARY: Sonarr extension table; the internal/quality projection picks the
-// per-domain table in a later step.
+// TEMPORARY: Sonarr extension table; per-domain dispatch picks the per-domain
+// table in a later step.
 var extensionQualityMap = map[string]extQuality{
 	// SDTV
 	".avi": {SourceTV, Res480p}, ".m4v": {SourceTV, Res480p}, ".3gp": {SourceTV, Res480p},

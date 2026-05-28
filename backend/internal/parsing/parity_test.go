@@ -13,10 +13,9 @@ package parsing_test
 // The codec/audio/HDR/dual-audio fields have no parse-oracle and are not
 // compared here at all.
 //
-// Lives in the external test package (parsing_test) so it can import the
-// internal/quality projection without forming a cycle: quality imports parsing
-// at the package level, and the parity harness layers on top to render the
-// parsed core into each tool's bin vocabulary.
+// Lives in the external test package (parsing_test) so the harness reads
+// parsing as a consumer would, layering on top to render the parsed core into
+// each tool's bin vocabulary.
 //
 // The test reports per-field/per-tool compat % and fails on any enforced-field
 // mismatch that is not in the intentional-divergence allowlist.
@@ -31,7 +30,6 @@ import (
 	"testing"
 
 	"github.com/kyleaupton/arrflix/internal/parsing"
-	"github.com/kyleaupton/arrflix/internal/quality"
 )
 
 // parityMiss is one field disagreement between Parse and the oracle.
@@ -156,24 +154,24 @@ var allowlist = map[allowlistKey]string{
 	// resolution token in the release name; the oracle's QualityParser falls
 	// back to Radarr's extension default (`.mkv` → WEBDL-720p), ours falls back
 	// to Sonarr's (`.mkv` → HDTV-720p). Reason is shared.
-	{"radarr", "2021 A Movie (1968) Director's Cut .mkv", "bin"}:                    extDefaultsReason,
-	{"radarr", "A Fake Movie 2035 2012 Directors.mkv", "bin"}:                       extDefaultsReason,
-	{"radarr", "A Fake Movie 2035 Directors 2012.mkv", "bin"}:                       extDefaultsReason,
-	{"radarr", "Movie 2012 2in1.mkv", "bin"}:                                        extDefaultsReason,
-	{"radarr", "Movie 2012 IMAX.mkv", "bin"}:                                        extDefaultsReason,
-	{"radarr", "Movie 2012 Restored.mkv", "bin"}:                                    extDefaultsReason,
-	{"radarr", "Movie 2049 Director's Cut.mkv", "bin"}:                              extDefaultsReason,
-	{"radarr", "Movie 2in1 2012.mkv", "bin"}:                                        extDefaultsReason,
-	{"radarr", "Movie Director's Cut (1968).mkv", "bin"}:                            extDefaultsReason,
-	{"radarr", "Movie Director's Cut 2049.mkv", "bin"}:                              extDefaultsReason,
-	{"radarr", "Movie IMAX 2012.mkv", "bin"}:                                        extDefaultsReason,
-	{"radarr", "Movie Title (Despecialized) 1999.mkv", "bin"}:                       extDefaultsReason,
-	{"radarr", "Movie Title 1999 (Despecialized).mkv", "bin"}:                       extDefaultsReason,
-	{"radarr", "Movie Title 2012 50th Anniversary Edition.mkv", "bin"}:              extDefaultsReason,
-	{"radarr", "Movie Title 50th Anniversary Edition 2012.mkv", "bin"}:              extDefaultsReason,
-	{"radarr", "We Are the Movie!.2013.720p.H264.mkv", "bin"}:                       extDefaultsReason,
+	{"radarr", "2021 A Movie (1968) Director's Cut .mkv", "bin"}:                           extDefaultsReason,
+	{"radarr", "A Fake Movie 2035 2012 Directors.mkv", "bin"}:                              extDefaultsReason,
+	{"radarr", "A Fake Movie 2035 Directors 2012.mkv", "bin"}:                              extDefaultsReason,
+	{"radarr", "Movie 2012 2in1.mkv", "bin"}:                                               extDefaultsReason,
+	{"radarr", "Movie 2012 IMAX.mkv", "bin"}:                                               extDefaultsReason,
+	{"radarr", "Movie 2012 Restored.mkv", "bin"}:                                           extDefaultsReason,
+	{"radarr", "Movie 2049 Director's Cut.mkv", "bin"}:                                     extDefaultsReason,
+	{"radarr", "Movie 2in1 2012.mkv", "bin"}:                                               extDefaultsReason,
+	{"radarr", "Movie Director's Cut (1968).mkv", "bin"}:                                   extDefaultsReason,
+	{"radarr", "Movie Director's Cut 2049.mkv", "bin"}:                                     extDefaultsReason,
+	{"radarr", "Movie IMAX 2012.mkv", "bin"}:                                               extDefaultsReason,
+	{"radarr", "Movie Title (Despecialized) 1999.mkv", "bin"}:                              extDefaultsReason,
+	{"radarr", "Movie Title 1999 (Despecialized).mkv", "bin"}:                              extDefaultsReason,
+	{"radarr", "Movie Title 2012 50th Anniversary Edition.mkv", "bin"}:                     extDefaultsReason,
+	{"radarr", "Movie Title 50th Anniversary Edition 2012.mkv", "bin"}:                     extDefaultsReason,
+	{"radarr", "We Are the Movie!.2013.720p.H264.mkv", "bin"}:                              extDefaultsReason,
 	{"radarr", "[Arid] Cowboy Bebop - Knockin' on Heaven's Door v2 [00F4CDA0].mkv", "bin"}: extDefaultsReason,
-	{"radarr", "[MTBB] Kimi no Na wa. (2016) v2 [97681524].mkv", "bin"}:             extDefaultsReason,
+	{"radarr", "[MTBB] Kimi no Na wa. (2016) v2 [97681524].mkv", "bin"}:                    extDefaultsReason,
 
 	// Sonarr — extension-table defaults. The two reversed-path corpus inputs
 	// flow through Sonarr's "if the parsed token is in the last folder, try
@@ -181,7 +179,7 @@ var allowlist = map[allowlistKey]string{
 	// engine doesn't reverse, so it falls back to the `.mkv` extension default
 	// (HDTV-720p). Same class as the Radarr extension-default cases.
 	{"sonarr", `C:\Test\Fake.Dir.S01E01-Test\yrucreM-462.H.0.2CAA.LD-BEW.p027.10E10S.esaeleR.dehsaH.emoS.mkv`, "bin"}: extDefaultsReason,
-	{"sonarr", `C:\Test\Fake.Dir.S01E01-Test\yrucreM-LN 1.5DD LD-BEW P0801 10E10S esaeleR dehsaH emoS.mkv`, "bin"}:   extDefaultsReason,
+	{"sonarr", `C:\Test\Fake.Dir.S01E01-Test\yrucreM-LN 1.5DD LD-BEW P0801 10E10S esaeleR dehsaH emoS.mkv`, "bin"}:    extDefaultsReason,
 	// Sonarr — `720p-web-handbrake.mkv`: the oracle picks up "web" as WEB-DL,
 	// our regex requires a more explicit "WEB" / "WEB-DL" / "WEBRip" form (the
 	// freestanding lowercase "web" in a hyphen-separated path segment doesn't
@@ -219,12 +217,12 @@ type fieldSpec struct {
 //   - Radarr: title, year, edition, group, languages, bin
 //
 // The bin field is the per-domain projection of parsing's quality attribute
-// core through internal/quality.BinFor — Sonarr's flattened "Bluray-1080p
-// Remux" for series, Radarr's modifier-promoted "Remux-1080p" / "BR-DISK" for
-// movies. It is enforced against the goldens via the intentional-divergence
-// allowlist above: one predicate covers Class A (identity-independent quality —
-// parsing OQ#13), and static entries enumerate Class B (the residual extension-
-// table defaults and the deferred pre-release-source modifier).
+// core through parsing.BinFor — Sonarr's flattened "Bluray-1080p Remux" for
+// series, Radarr's modifier-promoted "Remux-1080p" / "BR-DISK" for movies. It
+// is enforced against the goldens via the intentional-divergence allowlist
+// above: one predicate covers Class A (identity-independent quality — parsing
+// OQ#13), and static entries enumerate Class B (the residual extension-table
+// defaults and the deferred pre-release-source modifier).
 //
 // Reported-only (measured, not gated), deliberately deferred:
 //   - version / isRepack — revision modeling is still a v0-shaped counter and
@@ -344,21 +342,19 @@ func runParity(t *testing.T, tool string, golden []byte, decode func(json.RawMes
 
 	// Parse in the tool's domain: series inputs → Sonarr patterns, movie →
 	// Radarr. The same domain selects which quality vocabulary the bin
-	// projection renders into — Sonarr's flattened "Bluray-1080p Remux" vs
-	// Radarr's modifier-promoted "Remux-1080p" / "BR-DISK".
-	domainOpt := parsing.AsSeries()
-	binDomain := quality.DomainSeries
+	// rendered onto Quality.Name uses — Sonarr's flattened "Bluray-1080p
+	// Remux" vs Radarr's modifier-promoted "Remux-1080p" / "BR-DISK".
+	domain := parsing.DomainSeries
 	if tool == "radarr" {
-		domainOpt = parsing.AsMovie()
-		binDomain = quality.DomainMovie
+		domain = parsing.DomainMovie
 	}
 
 	for _, e := range entries {
 		want := decode(e.Output)
-		got := parsing.Parse(e.Input, domainOpt).Values()
+		got := parsing.Parse(e.Input, domain).Values()
 
 		for _, f := range fields {
-			expected, actual := compareField(f.name, want, got, binDomain)
+			expected, actual := compareField(f.name, want, got)
 			st := stats[f.name]
 			st.compared++
 			if expected == actual {
@@ -422,23 +418,15 @@ func formatMisses(misses []parityMiss) string {
 }
 
 // compareField returns the (expected, actual) string pair for a field, with the
-// oracle→ours normalizations applied. The bin field is projected from the
-// parsed core (Source, Resolution, Modifier) into the tool's vocabulary —
-// parsing itself is domain-agnostic and emits no bin.
-func compareField(field string, want oracleFields, got parsing.Values, binDomain quality.Domain) (string, string) {
+// oracle→ours normalizations applied. The bin field is the per-domain bin Parse
+// rendered onto Quality.Name (Parse takes the domain as a required argument).
+func compareField(field string, want oracleFields, got parsing.Values) (string, string) {
 	switch field {
 	case "bin":
-		bin := quality.BinFor(
-			parsing.Source(got.Quality.Source),
-			parsing.Resolution(got.Quality.Resolution),
-			parsing.Modifier(got.Quality.Modifier),
-			binDomain,
-		)
-		actual := bin.Name
+		actual := got.Quality.Name
 		if actual == "" {
 			// The oracle reports the not-detected case as "Unknown"; preserve
-			// that mapping so the per-tool compat % stays comparable across
-			// the projection switch.
+			// that mapping so the per-tool compat % stays comparable.
 			actual = "Unknown"
 		}
 		return want.bin, actual

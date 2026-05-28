@@ -121,11 +121,21 @@ type IdentityAttrs struct {
 }
 
 // QualityAttrs are the advertised quality claims — the orthogonal attribute
-// core (Source, Resolution, Modifier) plus the revision. Parsing is domain-
-// agnostic: it never names a bin. The per-domain bin (Sonarr's "Bluray-1080p
-// Remux" / Radarr's "Remux-1080p") is projected from this core by
-// internal/quality at the point the domain is known.
+// core (Source, Resolution, Modifier) plus the revision and the per-domain
+// rendered bin (Name / Full). Parse populates the bin from BinFor(core,
+// domain) at parse time; the domain is the required Parse argument.
 type QualityAttrs struct {
+	// Name is the rendered per-domain bin label (Sonarr's "Bluray-1080p Remux"
+	// / Radarr's "Remux-1080p"). Mirrors *arr's Quality.Name API field. Empty
+	// when the core didn't fire or the triple has no bin in the chosen
+	// vocabulary.
+	Name Field[string]
+	// Full is Name plus the {Quality Full} revision-render suffix (Radarr
+	// Organizer/FileNameBuilder.cs:359): "Proper" when version > 1, "Repack"
+	// when isRepack on an original revision, and "REAL" repeated `real` times
+	// for the REAL counter. Trailing whitespace is trimmed so a release with
+	// no proper/real renders identically to Name.
+	Full Field[string]
 	// Resolution is the advertised resolution ("1080p", "2160p", "SD").
 	Resolution Field[string]
 	// Source is the advertised source — the medium axis ("BluRay", "WEB-DL",
@@ -304,6 +314,8 @@ type NumberingValues struct {
 
 // QualityValues is the plain-value view of QualityAttrs.
 type QualityValues struct {
+	Name       string
+	Full       string
 	Resolution string
 	Source     string
 	Modifier   string
@@ -358,6 +370,8 @@ func (p ParsedRelease) Values() Values {
 			},
 		},
 		Quality: QualityValues{
+			Name:       p.Quality.Name.Value,
+			Full:       p.Quality.Full.Value,
 			Resolution: p.Quality.Resolution.Value,
 			Source:     p.Quality.Source.Value,
 			Modifier:   p.Quality.Modifier.Value,

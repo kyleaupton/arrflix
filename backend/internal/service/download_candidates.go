@@ -14,7 +14,6 @@ import (
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/policy"
-	"github.com/kyleaupton/arrflix/internal/quality"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -494,8 +493,8 @@ func (s *DownloadCandidatesService) cleanExpiredCache() {
 
 // buildMovieEvaluationContext creates an EvaluationContext for a movie candidate
 func (s *DownloadCandidatesService) buildMovieEvaluationContext(ctx context.Context, candidate model.DownloadCandidate, movieID int64) model.EvaluationContext {
-	q := parsing.Parse(candidate.Title, parsing.AsMovie())
-	evalCtx := model.NewEvaluationContext(candidate, q, quality.DomainMovie)
+	q := parsing.Parse(candidate.Title, parsing.DomainMovie)
+	evalCtx := model.NewEvaluationContext(candidate, q)
 
 	// Try to get movie details from TMDB to populate media fields
 	movie, err := s.media.GetMovie(ctx, movieID)
@@ -514,8 +513,8 @@ func (s *DownloadCandidatesService) buildMovieEvaluationContext(ctx context.Cont
 
 // buildSeriesEvaluationContext creates an EvaluationContext for a series candidate
 func (s *DownloadCandidatesService) buildSeriesEvaluationContext(ctx context.Context, candidate model.DownloadCandidate, seriesID int64, seasonNumber *int, episodeNumber *int) model.EvaluationContext {
-	q := parsing.Parse(candidate.Title, parsing.AsSeries())
-	evalCtx := model.NewEvaluationContext(candidate, q, quality.DomainSeries)
+	q := parsing.Parse(candidate.Title, parsing.DomainSeries)
+	evalCtx := model.NewEvaluationContext(candidate, q)
 
 	// Try to get series details from TMDB to populate media fields
 	series, err := s.media.GetSeries(ctx, seriesID)
