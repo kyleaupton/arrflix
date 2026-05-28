@@ -185,6 +185,52 @@ func (ns NullGrantSubject) Value() (driver.Value, error) {
 	return string(ns.GrantSubject), nil
 }
 
+type MatchOutcome string
+
+const (
+	MatchOutcomeConfident       MatchOutcome = "confident"
+	MatchOutcomeConfidentReview MatchOutcome = "confident_review"
+	MatchOutcomeLowConfidence   MatchOutcome = "low_confidence"
+	MatchOutcomeAmbiguous       MatchOutcome = "ambiguous"
+	MatchOutcomeNoMatch         MatchOutcome = "no_match"
+	MatchOutcomePartialSeries   MatchOutcome = "partial_series"
+)
+
+func (e *MatchOutcome) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = MatchOutcome(s)
+	case string:
+		*e = MatchOutcome(s)
+	default:
+		return fmt.Errorf("unsupported scan type for MatchOutcome: %T", src)
+	}
+	return nil
+}
+
+type NullMatchOutcome struct {
+	MatchOutcome MatchOutcome `json:"match_outcome"`
+	Valid        bool         `json:"valid"` // Valid is true if MatchOutcome is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullMatchOutcome) Scan(value interface{}) error {
+	if value == nil {
+		ns.MatchOutcome, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.MatchOutcome.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullMatchOutcome) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.MatchOutcome), nil
+}
+
 type Action struct {
 	ID        pgtype.UUID `json:"id"`
 	PolicyID  pgtype.UUID `json:"policy_id"`
@@ -335,6 +381,25 @@ type Library struct {
 	Default   bool        `json:"default"`
 	CreatedAt time.Time   `json:"created_at"`
 	UpdatedAt time.Time   `json:"updated_at"`
+}
+
+type MatchDecision struct {
+	ID                 int64              `json:"id"`
+	FileID             pgtype.UUID        `json:"file_id"`
+	Outcome            MatchOutcome       `json:"outcome"`
+	ChosenSource       *string            `json:"chosen_source"`
+	ChosenExternalID   *string            `json:"chosen_external_id"`
+	ChosenSeason       *int32             `json:"chosen_season"`
+	ChosenEpisode      *int32             `json:"chosen_episode"`
+	ChosenEdition      *string            `json:"chosen_edition"`
+	Confidence         float64            `json:"confidence"`
+	ResolversConsulted []byte             `json:"resolvers_consulted"`
+	Evidence           []byte             `json:"evidence"`
+	EvidenceTruncated  bool               `json:"evidence_truncated"`
+	DecidedBy          string             `json:"decided_by"`
+	DecidedAt          time.Time          `json:"decided_at"`
+	SupersededAt       pgtype.Timestamptz `json:"superseded_at"`
+	SupersededBy       *int64             `json:"superseded_by"`
 }
 
 type MediaEpisode struct {
