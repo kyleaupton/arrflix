@@ -11,6 +11,18 @@ container := "arrflix-dev"
 backend-exec := "docker compose exec -T -w /app/backend " + container
 web-exec := "docker compose exec -T -w /app/web " + container
 
+# The container runs as root, so files it writes into the bind mount land
+# root-owned on the host and break git ops. Recipes that WRITE (formatters,
+# generators) exec as the host uid/gid instead, so output is owned by whoever
+# ran `just`. HOME points at a per-uid temp dir so go/npm caches resolve for an
+# uid with no /etc/passwd entry (e.g. CI). Read-only recipes stay root to reuse
+# root's warm caches.
+host-uid := `id -u`
+host-gid := `id -g`
+exec-rw := "docker compose exec -T -u " + host-uid + ":" + host-gid + " -e HOME=/tmp/arrflix-dev-home-" + host-uid
+backend-exec-rw := exec-rw + " -w /app/backend " + container
+web-exec-rw := exec-rw + " -w /app/web " + container
+
 # Default recipe: list everything organized by group.
 default:
     @just --list --unsorted
@@ -47,12 +59,12 @@ rebuild:
 # Format Go code (gofmt -w).
 [group('backend')]
 backend-fmt: _ensure-up
-    {{backend-exec}} gofmt -w .
+    {{backend-exec-rw}} gofmt -w .
 
 # Lint Go code with golangci-lint (autofix where possible).
 [group('backend')]
 backend-lint: _ensure-up
-    {{backend-exec}} golangci-lint run --fix
+    {{backend-exec-rw}} golangci-lint run --fix
 
 # Run go vet.
 [group('backend')]
@@ -79,24 +91,24 @@ parity-regen: _ensure-up
 # Regenerate the OpenAPI spec from huma operation declarations.
 [group('backend')]
 backend-genspec: _ensure-up
-    {{backend-exec}} go run ./cmd/genspec
+    {{backend-exec-rw}} go run ./cmd/genspec
 
 # Regenerate sqlc Go code from queries + migrations.
 [group('backend')]
 backend-sqlc: _ensure-up
-    {{backend-exec}} sqlc generate
+    {{backend-exec-rw}} sqlc generate
 
 # --- frontend (in-container) -------------------------------------------------
 
 # Format frontend code with prettier (writes).
 [group('frontend')]
 web-fmt: _ensure-up
-    {{web-exec}} npm run format
+    {{web-exec-rw}} npm run format
 
 # Lint frontend code with eslint (autofix).
 [group('frontend')]
 web-lint: _ensure-up
-    {{web-exec}} npm run lint
+    {{web-exec-rw}} npm run lint
 
 # Run vue-tsc type-check.
 [group('frontend')]
@@ -111,7 +123,7 @@ web-build: _ensure-up
 # Regenerate the TypeScript API client from the OpenAPI spec.
 [group('frontend')]
 web-genclient: _ensure-up
-    {{web-exec}} npm run openapi-ts
+    {{web-exec-rw}} npm run openapi-ts
 
 # --- aggregates --------------------------------------------------------------
 
@@ -129,15 +141,15 @@ gen: backend-sqlc backend-genspec web-genclient
 [group('aggregate')]
 fix: _ensure-up
     @echo "→ formatting"
-    {{backend-exec}} gofmt -w .
-    {{web-exec}} npm run format
+    {{backend-exec-rw}} gofmt -w .
+    {{web-exec-rw}} npm run format
     @echo "→ lint --fix"
-    -{{backend-exec}} golangci-lint run --fix
-    -{{web-exec}} npm run lint
+    -{{backend-exec-rw}} golangci-lint run --fix
+    -{{web-exec-rw}} npm run lint
     @echo "→ regenerating"
-    {{backend-exec}} sqlc generate
-    {{backend-exec}} go run ./cmd/genspec
-    {{web-exec}} npm run openapi-ts
+    {{backend-exec-rw}} sqlc generate
+    {{backend-exec-rw}} go run ./cmd/genspec
+    {{web-exec-rw}} npm run openapi-ts
     @echo "Done. Run 'just check' to verify."
 
 # Read-only mirror of CI: lint + type-check + unit tests. Fails fast on the
