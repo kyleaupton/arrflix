@@ -75,10 +75,8 @@ var seriesBins = []Bin{
 // Raw-HD are all top-level bins with explicit Modifier values. The pre-release
 // sources (WORKPRINT/CAM/TELESYNC/TELECINE/DVDSCR/REGIONAL) are first-class
 // bins here; Sonarr has no analogue. DVDSCR (Modifier.SCREENER) and REGIONAL
-// (Modifier.REGIONAL) carry the deferred-modifier values from
-// submodules/radarr/.../Modifier.cs; parsing does not populate those today
-// (engine.go ModScreener/ModRegional are stubs), but the bins are present so
-// the vocabulary table is complete and the lookup is exhaustive.
+// (Modifier.REGIONAL) carry the modifier values from
+// submodules/radarr/.../Modifier.cs.
 //
 // "Unknown" is intentionally absent for the same reason as seriesBins.
 var movieBins = []Bin{

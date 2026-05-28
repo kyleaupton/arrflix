@@ -175,15 +175,6 @@ var allowlist = map[allowlistKey]string{
 	{"radarr", "[Arid] Cowboy Bebop - Knockin' on Heaven's Door v2 [00F4CDA0].mkv", "bin"}: extDefaultsReason,
 	{"radarr", "[MTBB] Kimi no Na wa. (2016) v2 [97681524].mkv", "bin"}:             extDefaultsReason,
 
-	// Radarr — pre-release source (parsing OQ#12). Oracle renders DVDSCR as a
-	// distinct bin via Modifier.SCREENER; our engine recognizes the SCR/DVDSCR
-	// token and emits source=DVD/res=480p but leaves the SCREENER modifier
-	// unset (the v0 parser's CAM/Telesync/Telecine/Screener consts are
-	// scaffolded but never wired), so the bin renders as plain "DVD". Wiring
-	// the SCREENER modifier through is deferred with the rest of the pre-
-	// release source detection.
-	{"radarr", "Movie Title (2018) Telugu DVDScr X264 AAC 700 MB", "bin"}: prereleaseSourceReason,
-
 	// Sonarr — extension-table defaults. The two reversed-path corpus inputs
 	// flow through Sonarr's "if the parsed token is in the last folder, try
 	// the reverse" recovery, picking up WEB-DL on the reversed string. Our
@@ -198,20 +189,11 @@ var allowlist = map[allowlistKey]string{
 	// extension-default trade as the cases above; the precise upstream regex
 	// (a looser WEB token) is deferred with the per-domain extension lookup.
 	{"sonarr", "into.the.Series.s03e16.h264.720p-web-handbrake.mkv", "bin"}: extDefaultsReason,
-
-	// Sonarr — NTSC as a DVD signal (parsing OQ#12-adjacent). Oracle's
-	// QualityParser maps NTSC to the DVD bin; our engine does not currently
-	// treat NTSC as a source token (no entry in sourceRegex), so the resolver
-	// falls through to the extension-less SDTV default. Wiring NTSC/PAL as
-	// DVD signals is the same shape as the pre-release sources OQ#12 work and
-	// is deferred with it.
-	{"sonarr", "The.Series.S01E13.NTSC.x264-CtrlSD", "bin"}: prereleaseSourceReason,
 }
 
 // Shared reason strings for the static allowlist entries above.
 const (
-	extDefaultsReason      = "shared extension-table defaults favor Sonarr; per-domain extension lookup deferred to future quality-engine tuning"
-	prereleaseSourceReason = "pre-release source detection (parsing OQ#12) deferred: SCREENER modifier and NTSC/PAL → DVD signals are scaffolded but not wired"
+	extDefaultsReason = "shared extension-table defaults favor Sonarr; per-domain extension lookup deferred to future quality-engine tuning"
 )
 
 // isPredicateAllowlisted reports whether any allowlistPredicate matches the

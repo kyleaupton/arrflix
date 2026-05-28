@@ -120,6 +120,15 @@ var (
 	// QualityParser.cs:39
 	rawHDRegex = mustCompile(`\b(?<rawhd>RawHD|Raw[-_. ]HD)\b`, regexp2.IgnoreCase)
 
+	// NTSC/PAL — DVD-origin source signal Sonarr's QualityParser carries in its
+	// dvd source group (Sonarr/.../QualityParser.cs:24 `(?<dvd>DVD|DVDRip|NTSC|
+	// PAL|xvidvd)`) but Radarr's does not. We keep our shared source regex
+	// Radarr-faithful and apply NTSC/PAL as a fallback inside parseQuality
+	// instead, so a trailing NTSC token doesn't override an earlier explicit
+	// DVD-R / DVD5 / DVD9 / DVDR match (the LastOrDefault precedence would
+	// otherwise demote DVD-R bins to plain DVD).
+	ntscPalRegex = mustCompile(`\b(?:NTSC|PAL)\b`, regexp2.IgnoreCase)
+
 	// QualityParser.cs:42
 	mpeg2Regex = mustCompile(`\b(?<mpeg2>MPEG[-_. ]?2)\b`, regexp2.None)
 
@@ -456,11 +465,10 @@ func parseQuality(name string) qualityCore {
 			return result
 
 		case "scr":
-			// QualityParser.cs:254 — Quality.DVDSCR (DVD/480p/SCREENER). SCREENER
-			// is a deferred modifier, so we record the DVD/480p source+resolution
-			// without setting the modifier.
+			// QualityParser.cs:254 — Quality.DVDSCR (DVD/480p/SCREENER).
 			result.source = SourceDVD
 			result.resolution = Res480p
+			result.modifier = ModScreener
 			return result
 
 		case "cam":
@@ -485,10 +493,10 @@ func parseQuality(name string) qualityCore {
 			return result
 
 		case "regional":
-			// QualityParser.cs:285 — Quality.REGIONAL (DVD/480p/REGIONAL). REGIONAL
-			// is a deferred modifier; record DVD/480p without setting it.
+			// QualityParser.cs:285 — Quality.REGIONAL (DVD/480p/REGIONAL).
 			result.source = SourceDVD
 			result.resolution = Res480p
+			result.modifier = ModRegional
 			return result
 
 		case "hdtv":
@@ -687,6 +695,18 @@ func parseQuality(name string) qualityCore {
 			}
 			return result
 		}
+	}
+
+	// NTSC/PAL fallback — Sonarr's QualityParser carries these tokens in its dvd
+	// source group. We apply them as an explicit fallback only when no stronger
+	// source signal fired and no resolution was inferred above, so an "S01E13.
+	// NTSC.x264" release routes to DVD/480p rather than the x264 → SDTV default.
+	// Placed after the resolution-known fallback so an "NTSC.1080p" release
+	// keeps its inferred source rather than being demoted to DVD/480p.
+	if matches(ntscPalRegex, normalizedName) {
+		result.source = SourceDVD
+		result.resolution = Res480p
+		return result
 	}
 
 	// QualityParser.cs:569 — x264 with nothing else → SDTV.

@@ -77,7 +77,7 @@ Parsing emits a **single canonical quality core**, shared by both domains, and n
 QualityCore = (Source, Resolution, Modifier, Revision)
   Source     — BluRay | WEB-DL | WEBRip | HDTV | DVD | CAM | Telesync | … (the medium)
   Resolution — 2160p | 1080p | 720p | 576p | 480p | SD
-  Modifier   — NONE | REMUX | BR-DISK | RAWHD | (SCREENER | REGIONAL, deferred)
+  Modifier   — NONE | REMUX | BR-DISK | RAWHD | SCREENER | REGIONAL
   Revision   — version (proper count) | real | isRepack
 ```
 
@@ -238,8 +238,8 @@ The published parity number ("99.x% with Sonarr 4.0.x / Radarr 5.x") falls out o
 8. **`Field[T]` ergonomics.** Generics make per-field confidence clean but ripple through every consumer that reads a value. Do consumers see `ParsedRelease.Quality.Resolution.Value` or a flattened view with confidence on the side? Lean: a flattened "values" view for consumers + a parallel provenance map, so most call sites stay simple.
 9. **Correction loop.** User overrides ("this PROPER is fake", "this group always ships x265") improving future parses — keyed on group/pattern. In scope for the parsing module or a matching/hygiene concern? Lean: design the override store here (it's parse-shaped), surface it via matching's re-match UI.
 10. **Persisted-parse storage shape.** Raw string + parsed snapshot + `parser_version` + `origin`, per `media_file` — a 1:1 companion table (`media_file_parse`) or columns on `media_file`? Lean: companion table, so the advertised namespaces stay grouped and nullable for pre-existing rows. Shape lands with [libraries](../libraries/README.md) / [matching](../matching/README.md) data-shape work.
-11. **Modifier set scope.** The [core](#the-quality-attribute-core) adds `REMUX` / `BR-DISK` / `RAWHD` (the ones we detect well and the corpus exercises). Radarr also has `SCREENER` / `REGIONAL` (SD / pre-release edge). Lean: defer those two — cheap to add later, no parity pressure now.
-12. **Pre-release sources.** v0 has `CAM` / `Telesync` / `Telecine` / `Screener` source consts defined but **unused** (never wired to detection). Port them as real sources (matches Radarr, a real movie-gate signal) or trim the dead consts and defer? Lean: port — half the enum already exists and they're genuine release types.
+11. **Modifier set scope.** **Resolved.** The [core](#the-quality-attribute-core) detects the full Radarr modifier set: `REMUX`, `BR-DISK`, `RAWHD`, `SCREENER`, `REGIONAL`. The Sonarr-flavored NTSC/PAL → DVD source signal is also wired into the shared source regex.
+12. **Pre-release sources.** **Resolved.** Ported and wired: `CAM` / `Telesync` / `Telecine` / `Workprint` are first-class sources matching Radarr; Sonarr's `NTSC` / `PAL` DVD-source signal is applied as a fallback when no stronger source matched (kept out of the shared SourceRegex so a trailing NTSC token doesn't override an earlier explicit `DVD-R` / `DVD5` / `DVD9` match).
 13. **Identity-independent quality.** Arrflix extracts quality even when no title/episode parses; Sonarr returns `Unknown` quality on episode-parse failure. Keep ours (strictly more information; matching is a separate layer) as a documented, allowlisted parity divergence, or match Sonarr? Lean: keep ours. Decided alongside the [quality-profiles parity flip](../quality-profiles/README.md#per-domain-quality-vocabulary).
 
 ## What we're explicitly not deciding here

@@ -173,12 +173,8 @@ func projectMovie(source parsing.Source, resolution parsing.Resolution, modifier
 		// Fall through: render as the plain-source bin below.
 	}
 
-	// Deferred modifiers carry their own dedicated bin in Radarr's table:
-	// SCREENER → DVDSCR, REGIONAL → REGIONAL. Parsing's engine never sets
-	// these today (ModScreener / ModRegional are stubs that mirror upstream's
-	// enum), but the projection accepts them so the vocabulary table is
-	// reachable end-to-end and a future detector wiring them up needs no
-	// further changes here.
+	// SCREENER / REGIONAL each carry their own dedicated bin in Radarr's
+	// table: SCREENER → DVDSCR, REGIONAL → REGIONAL.
 	if modifier == parsing.ModScreener {
 		return lookupMovie("DVDSCR")
 	}
