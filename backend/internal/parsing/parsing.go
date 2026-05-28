@@ -66,15 +66,19 @@ func Parse(input string, opts ...Option) ParsedRelease {
 	raw := parseRaw(input)
 	p := ParsedRelease{Input: input, IsPath: cfg.isPath}
 
-	// Quality — the bin-derived fields share the bin's detection confidence.
-	binConf := 0.0
-	if raw.quality != Unknown {
-		binConf = confDetected
+	// Quality — the orthogonal core (source, resolution, modifier) plus revision.
+	// The core's detection confidence is shared across its three axes; a core is
+	// "detected" when any axis fired. The per-domain bin (Sonarr's flattened
+	// "Bluray-1080p Remux" / Radarr's "Remux-1080p") is a downstream projection
+	// in internal/quality; parsing never names a bin.
+	detected := raw.source != SourceUnknown || raw.resolution != ResUnknown || raw.modifier != ModNone
+	coreConf := 0.0
+	if detected {
+		coreConf = confDetected
 	}
-	p.Quality.Resolution = Field[string]{Value: string(raw.quality.Resolution()), Confidence: binConf, Evidence: "quality bin"}
-	p.Quality.Source = Field[string]{Value: string(raw.quality.Source()), Confidence: binConf, Evidence: "quality bin"}
-	p.Quality.Full = Field[string]{Value: raw.quality.String(), Confidence: binConf, Evidence: "quality bin"}
-	p.Quality.IsRemux = Field[bool]{Value: raw.quality.IsRemux(), Confidence: binConf, Evidence: "quality bin"}
+	p.Quality.Source = Field[string]{Value: string(raw.source), Confidence: coreConf, Evidence: "quality core"}
+	p.Quality.Resolution = Field[string]{Value: string(raw.resolution), Confidence: coreConf, Evidence: "quality core"}
+	p.Quality.Modifier = Field[string]{Value: string(raw.modifier), Confidence: coreConf, Evidence: "quality core"}
 
 	// Revision — presence-based confidence.
 	p.Quality.IsRepack = boolField(raw.revision.IsRepack, "repack token")

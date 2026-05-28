@@ -245,7 +245,8 @@ func stripQualityBrackets(simple string) string {
 // isRecognizedQuality reports whether s names a real quality, standing in for
 // upstream QualityParser.ParseQualityName(s).Quality != Quality.Unknown.
 func isRecognizedQuality(s string) bool {
-	return parseRaw(s).quality != Unknown
+	r := parseRaw(s)
+	return r.source != SourceUnknown || r.resolution != ResUnknown || r.modifier != ModNone
 }
 
 // normalizeSixDigitAirDate rewrites a YYMMDD token between separators to

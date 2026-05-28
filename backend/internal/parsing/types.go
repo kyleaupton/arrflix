@@ -121,18 +121,20 @@ type IdentityAttrs struct {
 	Numbering Numbering
 }
 
-// QualityAttrs are the advertised quality claims — the resolution+source bin
-// and its revision. These map onto the EvaluationContext Quality namespace.
+// QualityAttrs are the advertised quality claims — the orthogonal attribute
+// core (Source, Resolution, Modifier) plus the revision. Parsing is domain-
+// agnostic: it never names a bin. The per-domain bin (Sonarr's "Bluray-1080p
+// Remux" / Radarr's "Remux-1080p") is projected from this core by
+// internal/quality at the point the domain is known.
 type QualityAttrs struct {
 	// Resolution is the advertised resolution ("1080p", "2160p", "SD").
 	Resolution Field[string]
-	// Source is the advertised source ("BluRay", "WEB-DL", "HDTV"). Note: the
-	// oracle reports a lowercased enum ("bluray"); the parity harness maps.
+	// Source is the advertised source — the medium axis ("BluRay", "WEB-DL",
+	// "HDTV", "TV", "DVD", …). Orthogonal: remux/raw-ness lives on Modifier.
 	Source Field[string]
-	// Full is the Sonarr/Radarr-style quality tag ("Bluray-1080p").
-	Full Field[string]
-	// IsRemux marks a remux.
-	IsRemux Field[bool]
+	// Modifier is the orthogonal modifier axis ("REMUX", "BR-DISK", "RAWHD", "").
+	// The canonical carrier of remux/full-disc/raw-ness.
+	Modifier Field[string]
 	// IsRepack marks a repack.
 	IsRepack Field[bool]
 	// Version is the proper/revision version (1 = original).
@@ -305,8 +307,7 @@ type NumberingValues struct {
 type QualityValues struct {
 	Resolution string
 	Source     string
-	Full       string
-	IsRemux    bool
+	Modifier   string
 	IsRepack   bool
 	Version    int
 	Real       int
@@ -360,8 +361,7 @@ func (p ParsedRelease) Values() Values {
 		Quality: QualityValues{
 			Resolution: p.Quality.Resolution.Value,
 			Source:     p.Quality.Source.Value,
-			Full:       p.Quality.Full.Value,
-			IsRemux:    p.Quality.IsRemux.Value,
+			Modifier:   p.Quality.Modifier.Value,
 			IsRepack:   p.Quality.IsRepack.Value,
 			Version:    p.Quality.Version.Value,
 			Real:       p.Quality.Real.Value,
@@ -408,8 +408,7 @@ func (p ParsedRelease) Provenance() map[string]Field[any] {
 		"identity.numbering.special_absolute":  eraseField(p.Identity.Numbering.SpecialAbsolute),
 		"quality.resolution":                   eraseField(p.Quality.Resolution),
 		"quality.source":                       eraseField(p.Quality.Source),
-		"quality.full":                         eraseField(p.Quality.Full),
-		"quality.is_remux":                     eraseField(p.Quality.IsRemux),
+		"quality.modifier":                     eraseField(p.Quality.Modifier),
 		"quality.is_repack":                    eraseField(p.Quality.IsRepack),
 		"quality.version":                      eraseField(p.Quality.Version),
 		"quality.real":                         eraseField(p.Quality.Real),

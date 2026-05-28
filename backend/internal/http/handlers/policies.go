@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
+	"github.com/kyleaupton/arrflix/internal/quality"
 	"github.com/kyleaupton/arrflix/internal/service"
 )
 
@@ -322,8 +323,30 @@ type PoliciesEvaluateOutput struct {
 }
 
 func (h *Policies) Evaluate(ctx context.Context, input *PoliciesEvaluateInput) (*PoliciesEvaluateOutput, error) {
-	q := parsing.Parse(input.Body.Title)
-	evalCtx := model.NewEvaluationContext(input.Body, q)
+	// The Evaluate endpoint is the policy-rule playground: the caller hands us a
+	// raw candidate and asks how the rules would fire. The domain comes from the
+	// indexer categories on the candidate; unrecognized categories leave the
+	// projection in DomainUnknown (empty bin) — the same display value an
+	// unparseable core would yield.
+	domain := quality.DomainUnknown
+	var parseOpt parsing.Option
+	if mt, err := input.Body.GetMediaType(); err == nil {
+		switch mt {
+		case model.MediaTypeMovie:
+			domain = quality.DomainMovie
+			parseOpt = parsing.AsMovie()
+		case model.MediaTypeSeries:
+			domain = quality.DomainSeries
+			parseOpt = parsing.AsSeries()
+		}
+	}
+	var q parsing.ParsedRelease
+	if parseOpt != nil {
+		q = parsing.Parse(input.Body.Title, parseOpt)
+	} else {
+		q = parsing.Parse(input.Body.Title)
+	}
+	evalCtx := model.NewEvaluationContext(input.Body, q, domain)
 
 	trace, err := h.svc.Policies.Evaluate(ctx, evalCtx)
 	if err != nil {

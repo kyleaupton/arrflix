@@ -1,18 +1,28 @@
 package parsing
 
+// engine.go is the quality-detection half of the parser, ported from Radarr's
+// QualityParser (submodules/radarr/src/NzbDrone.Core/Parser/QualityParser.cs).
+// Radarr's model is the superset: it decomposes quality into three orthogonal
+// axes plus a revision — (Source, Resolution, Modifier, Revision) — where Sonarr
+// folds remux/raw-ness into extra source values. Porting Radarr yields the
+// orthogonal core directly; Sonarr's flattened vocabulary is a lossy projection
+// of it, validated downstream.
+//
+// The patterns are transcribed verbatim through mustCompile (regexp2, .NET
+// semantics + ReDoS timeout) — the same engine the rest of the package uses.
+// BRDISKRegex in particular is lookahead-heavy and REQUIRES regexp2; stdlib RE2
+// cannot express it.
+
 import (
-	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/dlclark/regexp2"
 )
 
-// rawParse is the engine's internal result: the ported quality half (quality
-// bin + revision). Parse wraps it into the ParsedRelease model.
-type rawParse struct {
-	quality  Quality
-	revision Revision
-}
-
+// Resolution is the resolution axis of the quality core. Values mirror Radarr's
+// Resolution enum (QualityParser.cs:778) by pixel height; ResUnknown is the
+// not-detected zero state.
 type Resolution string
 
 const (
@@ -22,666 +32,760 @@ const (
 	Res576p    Resolution = "576p"
 	Res720p    Resolution = "720p"
 	Res1080p   Resolution = "1080p"
-	Res1440p   Resolution = "1440p"
 	Res2160p   Resolution = "2160p"
-	Res4320p   Resolution = "4320p"
 )
 
+// Source is the medium axis of the quality core, mirroring Radarr's
+// QualitySource (Qualities/QualitySource.cs). Note the orthogonal model: a
+// remux's source is BluRay and a Raw-HD's source is HDTV — remux/raw-ness lives
+// on the Modifier axis, never here.
 type Source string
 
 const (
-	SourceUnknown Source = "Unknown"
-	SourceSDTV    Source = "SDTV"
-	SourceCAM     Source = "CAM"
-	SourceTS      Source = "Telesync"
-	SourceTC      Source = "Telecine"
-	SourceSCR     Source = "Screener"
-	SourceDVD     Source = "DVD"
-	SourceDVDRip  Source = "DVD-Rip"
-	SourceHDTV    Source = "HDTV"
-	SourceWEBRip  Source = "WEBRip"
-	SourceWEBDL   Source = "WEB-DL"
-	SourceBluRay  Source = "BluRay"
-	SourceREMUX   Source = "REMUX"
-	SourceRAWHD   Source = "Raw-HD"
+	SourceUnknown   Source = "Unknown"
+	SourceCAM       Source = "CAM"
+	SourceTelesync  Source = "Telesync"
+	SourceTelecine  Source = "Telecine"
+	SourceWorkprint Source = "Workprint"
+	SourceDVD       Source = "DVD"
+	SourceTV        Source = "TV" // SDTV / HDTV / Raw-HD all share QualitySource.TV
+	SourceWEBDL     Source = "WEB-DL"
+	SourceWEBRip    Source = "WEBRip"
+	SourceBluRay    Source = "BluRay"
 )
 
-// Quality represents the Sonarr Quality ID
-type Quality int
+// Modifier is the orthogonal modifier axis of the quality core, mirroring
+// Radarr's Modifier enum (Qualities/Modifier.cs). It carries the remux/full-disc/
+// raw distinction that Sonarr instead bakes into extra source values.
+//
+// SCREENER and REGIONAL exist in Radarr's enum but are deferred (no detection)
+// for v1 — see the parsing spec's "Modifier set scope" open question. The stub
+// values are present so the enum mirrors upstream, but nothing populates them.
+type Modifier string
 
 const (
-	Unknown          Quality = 0
-	SDTV             Quality = 1
-	DVD              Quality = 2
-	WEBDL1080p       Quality = 3
-	HDTV720p         Quality = 4
-	WEBDL720p        Quality = 5
-	Bluray720p       Quality = 6
-	Bluray1080p      Quality = 7
-	WEBDL480p        Quality = 8
-	HDTV1080p        Quality = 9
-	RAWHD            Quality = 10
-	WEBRip480p       Quality = 12
-	Bluray480p       Quality = 13
-	WEBRip720p       Quality = 14
-	WEBRip1080p      Quality = 15
-	HDTV2160p        Quality = 16
-	WEBRip2160p      Quality = 17
-	WEBDL2160p       Quality = 18
-	Bluray2160p      Quality = 19
-	Bluray1080pRemux Quality = 20
-	Bluray2160pRemux Quality = 21
-	Bluray576p       Quality = 22
+	ModNone     Modifier = ""
+	ModRegional Modifier = "REGIONAL" // deferred: stub, never set
+	ModScreener Modifier = "SCREENER" // deferred: stub, never set
+	ModRawHD    Modifier = "RAWHD"
+	ModBRDisk   Modifier = "BR-DISK"
+	ModRemux    Modifier = "REMUX"
 )
 
-func (q Quality) String() string {
-	switch q {
-	case Unknown:
-		return "Unknown"
-	case SDTV:
-		return "SDTV"
-	case DVD:
-		return "DVD"
-	case WEBDL1080p:
-		return "WEBDL-1080p"
-	case HDTV720p:
-		return "HDTV-720p"
-	case WEBDL720p:
-		return "WEBDL-720p"
-	case Bluray720p:
-		return "Bluray-720p"
-	case Bluray1080p:
-		return "Bluray-1080p"
-	case WEBDL480p:
-		return "WEBDL-480p"
-	case HDTV1080p:
-		return "HDTV-1080p"
-	case RAWHD:
-		return "Raw-HD"
-	case WEBRip480p:
-		return "WEBRip-480p"
-	case Bluray480p:
-		return "Bluray-480p"
-	case WEBRip720p:
-		return "WEBRip-720p"
-	case WEBRip1080p:
-		return "WEBRip-1080p"
-	case HDTV2160p:
-		return "HDTV-2160p"
-	case WEBRip2160p:
-		return "WEBRip-2160p"
-	case WEBDL2160p:
-		return "WEBDL-2160p"
-	case Bluray2160p:
-		return "Bluray-2160p"
-	case Bluray1080pRemux:
-		return "Bluray-1080p Remux"
-	case Bluray2160pRemux:
-		return "Bluray-2160p Remux"
-	case Bluray576p:
-		return "Bluray-576p"
-	default:
-		return "Unknown"
-	}
-}
-
-func (q Quality) Source() string {
-	switch q {
-	case SDTV:
-		return string(SourceSDTV)
-	case DVD:
-		return string(SourceDVD)
-	case WEBDL1080p, WEBDL720p, WEBDL480p, WEBDL2160p:
-		return string(SourceWEBDL)
-	case HDTV720p, HDTV1080p, HDTV2160p:
-		return string(SourceHDTV)
-	case Bluray720p, Bluray1080p, Bluray480p, Bluray2160p, Bluray576p, Bluray1080pRemux, Bluray2160pRemux:
-		return string(SourceBluRay)
-	case WEBRip480p, WEBRip720p, WEBRip1080p, WEBRip2160p:
-		return string(SourceWEBRip)
-	case RAWHD:
-		return string(SourceRAWHD)
-	default:
-		return string(SourceUnknown)
-	}
-}
-
-func (q Quality) Resolution() string {
-	switch q {
-	case WEBDL1080p, HDTV1080p, Bluray1080p, WEBRip1080p, Bluray1080pRemux:
-		return string(Res1080p)
-	case HDTV720p, WEBDL720p, Bluray720p, WEBRip720p:
-		return string(Res720p)
-	case WEBDL480p, Bluray480p, WEBRip480p:
-		return string(Res480p)
-	case HDTV2160p, WEBRip2160p, WEBDL2160p, Bluray2160p, Bluray2160pRemux:
-		return string(Res2160p)
-	case Bluray576p:
-		return string(Res576p)
-	case SDTV, DVD:
-		return string(ResSD)
-	default:
-		return string(ResUnknown)
-	}
-}
-
-func (q Quality) IsRemux() bool {
-	return q == Bluray1080pRemux || q == Bluray2160pRemux
-}
-
+// Revision mirrors Radarr's Revision (Qualities/Revision.cs): a proper count
+// (Version), a REAL count, and the repack flag.
 type Revision struct {
 	Version  int
 	Real     int
 	IsRepack bool
 }
 
-var (
-	ResolutionRegex = regexp.MustCompile(`(?i)\b(?:(?P<R360p>360p)|(?P<R480p>480p|480i|640x480|848x480)|(?P<R540p>540p)|(?P<R576p>576p)|(?P<R720p>720p|1280x720|960p)|(?P<R1080p>1080p|1920x1080|1440p|FHD|1080i|4kto1080p)|(?P<R2160p>2160p|3840x2160|4k[-_. ](?:UHD|HEVC|BD|H265)|(?:UHD|HEVC|BD|H265)[-_. ]4k))\b`)
-
-	// Simplified sources for Go
-	// BD pattern: match BD followed by anything except end-of-string (Sonarr parity)
-	// Handles: BluRay, Blu-Ray, HD-DVD, HDDVD, BDMux, and BD followed by any character
-	BlurayRegex = regexp.MustCompile(`(?i)\b(BluRay|Blu-Ray|HD-?DVD|BDMux)\b|(?i)\bBD[^a-z]`)
-	WebDlRegex  = regexp.MustCompile(`(?i)\b(WEB[-_. ]DL(?:mux)?|WEBDL|AmazonHD|AmazonSD|iTunesHD|MaxdomeHD|NetflixU?HD|WebHD|HBOMaxHD|DisneyHD|[. ]WEB[. ](?:[xh][ .]?26[45]|AVC|HEVC|DDP?5[. ]1)|[. ]WEB$|(?:720|1080|2160)p[-. ]WEB[-. ]|[-. ]WEB[-. ](?:720|1080|2160)p|\b\s\/\sWEB\s\/\s\b|(?:AMZN|NF|DP)[. -]WEB[. -])`)
-	WebRipRegex = regexp.MustCompile(`(?i)\b(WebRip|Web-Rip|WEBMux)\b`)
-	HdtvRegex   = regexp.MustCompile(`(?i)\b(HDTV)\b`)
-	DvdRegex    = regexp.MustCompile(`(?i)\b(DVD|DVDRip|NTSC|PAL|xvidvd)\b`)
-
-	ProperRegex  = regexp.MustCompile(`(?i)\bproper\b`)
-	RepackRegex  = regexp.MustCompile(`(?i)\b(repack\d?|rerip\d?)\b`)
-	VersionRegex = regexp.MustCompile(`(?i)\d[-._ ]?v(?P<version>\d)[-._ ]|\[v(?P<version>\d)\]|repack(?P<version>\d)|rerip(?P<version>\d)|(?:480|576|720|1080|2160)p[._ ]v(?P<version>\d)`)
-
-	RemuxRegex = regexp.MustCompile(`(?i)(?:[_. ]|\d{4}p-|\bHybrid-)(?P<remux>(?:(BD|UHD)[-_. ]?)?Remux)\b|(?P<remux>(?:(BD|UHD)[-_. ]?)?Remux[_. ]\d{4}p)`)
-
-	// Raw-HD detection (Sonarr parity)
-	RawHDRegex = regexp.MustCompile(`(?i)\b(?:RawHD|Raw[-_. ]HD)\b`)
-	MPEG2Regex = regexp.MustCompile(`(?i)\bMPEG[-_. ]?2\b`)
-
-	// Additional source types (Sonarr parity)
-	BDRipRegex = regexp.MustCompile(`(?i)\b(?:BDRip|BDLight)\b`)
-	BRRipRegex = regexp.MustCompile(`(?i)\bBRRip\b`)
-	PDTVRegex  = regexp.MustCompile(`(?i)\bPDTV\b`)
-	DSRRegex   = regexp.MustCompile(`(?i)\b(?:WS[-_. ]DSR|DSR)\b`)
-	TVRipRegex = regexp.MustCompile(`(?i)\bTVRip\b`)
-	SDTVRegex  = regexp.MustCompile(`(?i)\bSDTV\b`)
-
-	// Alternative resolution detection (Sonarr parity)
-	// Used when primary resolution regex doesn't match
-	AltResolutionRegex = regexp.MustCompile(`(?i)\b(?:UHD)\b|\[4K\]`)
-
-	// Anime-specific patterns (Sonarr parity)
-	AnimeBlurayRegex = regexp.MustCompile(`(?i)bd(?:720|1080|2160)|[-_. (\[]bd[-_. )\]]`)
-	AnimeWebDlRegex  = regexp.MustCompile(`(?i)\[WEB\]|[\[\(]WEB[ .]`)
-
-	// Codec detection (Sonarr parity)
-	CodecRegex = regexp.MustCompile(`(?i)\b(?:(?P<x264>x264)|(?P<h264>h264)|(?P<xvidhd>XvidHD)|(?P<xvid>Xvid)|(?P<divx>divx))\b`)
-
-	// Other source patterns (HD TV with space, SD TV)
-	OtherSourceRegex = regexp.MustCompile(`(?i)(?P<hdtv>HD[-_. ]TV)|(?P<sdtv>SD[-_. ]TV)`)
-
-	// High-def PDTV (HR WS = High Resolution Widescreen)
-	HighDefPdtvRegex = regexp.MustCompile(`(?i)hr[-_. ]ws`)
-)
-
-// Extension-based quality mapping (Sonarr parity)
-var extensionQualityMap = map[string]Quality{
-	// SDTV extensions
-	".avi":    SDTV,
-	".m4v":    SDTV,
-	".3gp":    SDTV,
-	".nsv":    SDTV,
-	".ty":     SDTV,
-	".strm":   SDTV,
-	".rm":     SDTV,
-	".rmvb":   SDTV,
-	".m3u":    SDTV,
-	".ifo":    SDTV,
-	".mov":    SDTV,
-	".qt":     SDTV,
-	".divx":   SDTV,
-	".xvid":   SDTV,
-	".bivx":   SDTV,
-	".nrg":    SDTV,
-	".pva":    SDTV,
-	".wmv":    SDTV,
-	".asf":    SDTV,
-	".asx":    SDTV,
-	".ogm":    SDTV,
-	".ogv":    SDTV,
-	".m2v":    SDTV,
-	".bin":    SDTV,
-	".dat":    SDTV,
-	".dvr-ms": SDTV,
-	".mpg":    SDTV,
-	".mpeg":   SDTV,
-	".mp4":    SDTV,
-	".avc":    SDTV,
-	".vp3":    SDTV,
-	".svq3":   SDTV,
-	".nuv":    SDTV,
-	".viv":    SDTV,
-	".dv":     SDTV,
-	".fli":    SDTV,
-	".flv":    SDTV,
-	".wpl":    SDTV,
-	// DVD extensions
-	".img": DVD,
-	".iso": DVD,
-	".vob": DVD,
-	// HD extensions
-	".mkv": HDTV720p,
-	".ts":  HDTV720p,
-	".wtv": HDTV720p,
-	// Bluray extensions
-	".m2ts": Bluray720p,
+// rawParse is the engine's internal result: the orthogonal quality core
+// (Source, Resolution, Modifier) plus the Revision. Parse wraps it into the
+// ParsedRelease model.
+type rawParse struct {
+	source     Source
+	resolution Resolution
+	modifier   Modifier
+	revision   Revision
 }
 
-// getQualityForExtension returns quality based on file extension
-func getQualityForExtension(name string) Quality {
-	// Find extension
+// Quality patterns, ported verbatim from Radarr QualityParser.cs. RegexOptions
+// .IgnoreCase maps to regexp2.IgnoreCase; .IgnorePatternWhitespace maps to
+// regexp2.IgnorePatternWhitespace; .Compiled is dropped (no analogue).
+var (
+	// QualityParser.cs:17 — the unified source regex. Last match wins (see
+	// detectSource). IgnorePatternWhitespace keeps the multi-line layout 1:1.
+	sourceRegex = mustCompile(`\b(?:
+	                                (?<bluray>M?Blu[-_. ]?Ray|HD[-_. ]?DVD|BD(?!$)|UHD2?BD|BDISO|BDMux|BD25|BD50|BR[-_. ]?DISK)|
+	                                (?<webdl>WEB[-_. ]?DL(?:mux)?|AmazonHD|AmazonSD|iTunesHD|MaxdomeHD|NetflixU?HD|WebHD|HBOMaxHD|DisneyHD|[. ]WEB[. ](?:[xh][ .]?26[45]|AVC|HEVC|DDP?5[. ]1)|[. ](?-i:WEB)$|(?:\d{3,4}0p)[-. ](?:Hybrid[-_. ]?)?WEB[-. ]|[-. ]WEB[-. ]\d{3,4}0p|\b\s\/\sWEB\s\/\s\b|(?:AMZN|NF|DP)[. -]WEB[. -](?!Rip))|
+	                                (?<webrip>WebRip|Web-Rip|WEBMux)|
+	                                (?<hdtv>HDTV)|
+	                                (?<bdrip>BDRip|BDLight|HD[-_. ]?DVDRip|UHDBDRip)|
+	                                (?<brrip>BRRip)|
+	                                (?<dvdr>\d?x?M?DVD-?[R59])|
+	                                (?<dvd>DVD(?!-R)|DVDRip|xvidvd)|
+	                                (?<dsr>WS[-_. ]DSR|DSR)|
+	                                (?<regional>R[0-9]{1}|REGIONAL)|
+	                                (?<scr>SCR|SCREENER|DVDSCR|DVDSCREENER)|
+	                                (?<ts>TS[-_. ]|TELESYNCH?|HD-TS|HDTS|PDVD|TSRip|HDTSRip)|
+	                                (?<tc>TC|TELECINE|HD-TC|HDTC)|
+	                                (?<cam>CAMRIP|(?:NEW)?CAM|HD-?CAM(?:Rip)?|HQCAM)|
+	                                (?<wp>WORKPRINT|WP)|
+	                                (?<pdtv>PDTV)|
+	                                (?<sdtv>SDTV)|
+	                                (?<tvrip>TVRip)
+	                                )(?:\b|$|[ .])`, regexp2.IgnoreCase|regexp2.IgnorePatternWhitespace)
+
+	// QualityParser.cs:39
+	rawHDRegex = mustCompile(`\b(?<rawhd>RawHD|Raw[-_. ]HD)\b`, regexp2.IgnoreCase)
+
+	// QualityParser.cs:42
+	mpeg2Regex = mustCompile(`\b(?<mpeg2>MPEG[-_. ]?2)\b`, regexp2.None)
+
+	// QualityParser.cs:44 — full Blu-ray-disc detection. Lookahead-heavy; the
+	// disc is detected via codec/container tells (AVC/VC-1/MPEG-2/BDMV/ISO/BD
+	// sizes) alongside Blu-ray, NOT a literal "BR-DISK" token, with negative
+	// lookaheads excluding BDRip/720p/XviD/REMUX/etc. Requires regexp2.
+	brDiskRegex = mustCompile(`^(?!.*\b((?<!HD[._ -]|HD)DVD|BDRip|720p|MKV|XviD|WMV|d3g|(BD)?REMUX|^(?=.*1080p)(?=.*HEVC)|[xh][-_. ]?26[45]|German.*[DM]L|((?<=\d{4}).*German.*([DM]L)?)(?=.*\b(AVC|HEVC|VC[-_. ]?1|MVC|MPEG[-_. ]?2)\b))\b)(((?=.*\b(Blu[-_. ]?ray|BD|HD[-_. ]?DVD)\b)(?=.*\b(AVC|HEVC|VC[-_. ]?1|MVC|MPEG[-_. ]?2|BDMV|ISO)\b))|^((?=.*\b(((?=.*\b((.*_)?COMPLETE.*|Dis[ck])\b)(?=.*(Blu[-_. ]?ray|HD[-_. ]?DVD)))|3D[-_. ]?BD|BR[-_. ]?DISK|Full[-_. ]?Blu[-_. ]?ray|^((?=.*((BD|UHD)[-_. ]?(25|50|66|100|ISO)))))))).*`, regexp2.IgnoreCase)
+
+	// QualityParser.cs:47
+	properRegex = mustCompile(`\b(?<proper>proper)\b`, regexp2.IgnoreCase)
+
+	// QualityParser.cs:50
+	repackRegex = mustCompile(`\b(?<repack>repack\d?|rerip\d?)\b`, regexp2.IgnoreCase)
+
+	// QualityParser.cs:53
+	versionRegex = mustCompile(`\d[-._ ]?v(?<version>\d)[-._ ]|\[v(?<version>\d)\]|repack(?<version>\d)|rerip(?<version>\d)`, regexp2.IgnoreCase)
+
+	// QualityParser.cs:56
+	realRegex = mustCompile(`\b(?<real>REAL)\b`, regexp2.None)
+
+	// QualityParser.cs:59
+	resolutionRegex = mustCompile(`\b(?:(?<R360p>360p)|(?<R480p>480p|480i|640x480|848x480)|(?<R540p>540p)|(?<R576p>576p)|(?<R720p>720p|1280x720|960p)|(?<R1080p>1080p|1920x1080|1440p|FHD|1080i|4kto1080p)|(?<R2160p>2160p|3840x2160|4k[-_. ](?:UHD|HEVC|BD|H\.?265)|(?:UHD|HEVC|BD|H\.?265)[-_. ]4k))\b`, regexp2.IgnoreCase)
+
+	// QualityParser.cs:63
+	alternativeResolutionRegex = mustCompile(`\b(?<R2160p>UHD)\b|(?<R2160p>\[4K\])`, regexp2.IgnoreCase)
+
+	// QualityParser.cs:66
+	codecRegex = mustCompile(`\b(?:(?<x264>x264)|(?<h264>h264)|(?<xvidhd>XvidHD)|(?<xvid>X-?vid)|(?<divx>divx))\b`, regexp2.IgnoreCase)
+
+	// QualityParser.cs:69
+	otherSourceRegex = mustCompile(`(?<hdtv>HD[-_. ]TV)|(?<sdtv>SD[-_. ]TV)`, regexp2.IgnoreCase)
+
+	// QualityParser.cs:71
+	animeBlurayRegex = mustCompile(`bd(?:720|1080|2160)|(?<=[-_. (\[])bd(?=[-_. )\]])`, regexp2.IgnoreCase)
+	// QualityParser.cs:72
+	animeWebDlRegex = mustCompile(`\[WEB\]|[\[\(]WEB[ .]`, regexp2.IgnoreCase)
+
+	// QualityParser.cs:74
+	highDefPdtvRegex = mustCompile(`hr[-_. ]ws`, regexp2.IgnoreCase)
+
+	// QualityParser.cs:76
+	remuxRegex = mustCompile(`(?:[_. \[]|\d{4}p-|\bHybrid-)(?<remux>(?:(BD|UHD)[-_. ]?)?Remux)\b|(?<remux>(?:(BD|UHD)[-_. ]?)?Remux[_. ]\d{4}p)`, regexp2.IgnoreCase)
+	// QualityParser.cs:77
+	germanRemuxRegex = mustCompile(`((?<=\d{4}).*German.*([DM]L)?)(?=.*\b(AVC|HEVC|VC[_. -]?1|MVC|MPEG[_. -]?2))(?=.*Blu-?ray)`, regexp2.IgnoreCase)
+)
+
+// matches reports whether re matches s, failing closed on a timeout/engine error
+// (parsing is total). Mirrors regexp2's IsMatch where upstream uses it.
+func matches(re *regexp2.Regexp, s string) bool {
+	ok, err := re.MatchString(s)
+	return err == nil && ok
+}
+
+// extensionQualityMap ports Radarr's MediaFileExtensions map
+// (MediaFiles/MediaFileExtensions.cs:13) as the orthogonal (source, resolution)
+// the extension implies. Radarr's map differs from Sonarr's: .mkv → WEBDL720p,
+// disc images (.img/.iso/.vob) → DVD.
+type extQuality struct {
+	source     Source
+	resolution Resolution
+}
+
+// The extension map is the one quality data table where Sonarr and Radarr
+// genuinely diverge: Radarr maps .mkv → WEBDL720p and disc images → DVD, while
+// Sonarr maps .mkv → HDTV720p and keeps a finer SD/DVD split. We carry Sonarr's
+// values here because the temporary bin/source render emits Sonarr vocabulary
+// and the Tier-1 goldens are Sonarr-keyed — using Radarr's table would regress
+// the Sonarr `.mkv`/`.ts` bins. The QualityParser *logic* is the faithful Radarr
+// port; only this data table tracks Sonarr.
+//
+// TEMPORARY: Sonarr extension table; the internal/quality projection picks the
+// per-domain table in a later step.
+var extensionQualityMap = map[string]extQuality{
+	// SDTV
+	".avi": {SourceTV, Res480p}, ".m4v": {SourceTV, Res480p}, ".3gp": {SourceTV, Res480p},
+	".nsv": {SourceTV, Res480p}, ".ty": {SourceTV, Res480p}, ".strm": {SourceTV, Res480p},
+	".rm": {SourceTV, Res480p}, ".rmvb": {SourceTV, Res480p}, ".m3u": {SourceTV, Res480p},
+	".ifo": {SourceTV, Res480p}, ".mov": {SourceTV, Res480p}, ".qt": {SourceTV, Res480p},
+	".divx": {SourceTV, Res480p}, ".xvid": {SourceTV, Res480p}, ".bivx": {SourceTV, Res480p},
+	".nrg": {SourceTV, Res480p}, ".pva": {SourceTV, Res480p}, ".wmv": {SourceTV, Res480p},
+	".asf": {SourceTV, Res480p}, ".asx": {SourceTV, Res480p}, ".ogm": {SourceTV, Res480p},
+	".ogv": {SourceTV, Res480p}, ".m2v": {SourceTV, Res480p}, ".bin": {SourceTV, Res480p},
+	".dat": {SourceTV, Res480p}, ".dvr-ms": {SourceTV, Res480p}, ".mpg": {SourceTV, Res480p},
+	".mpeg": {SourceTV, Res480p}, ".mp4": {SourceTV, Res480p}, ".avc": {SourceTV, Res480p},
+	".vp3": {SourceTV, Res480p}, ".svq3": {SourceTV, Res480p}, ".nuv": {SourceTV, Res480p},
+	".viv": {SourceTV, Res480p}, ".dv": {SourceTV, Res480p}, ".fli": {SourceTV, Res480p},
+	".flv": {SourceTV, Res480p}, ".wpl": {SourceTV, Res480p},
+	// DVD (disc images)
+	".img": {SourceDVD, ResUnknown}, ".iso": {SourceDVD, ResUnknown}, ".vob": {SourceDVD, ResUnknown},
+	// HD — Sonarr buckets .mkv/.ts/.wtv as HDTV-720p
+	".mkv": {SourceTV, Res720p}, ".ts": {SourceTV, Res720p}, ".wtv": {SourceTV, Res720p},
+	// Bluray
+	".m2ts": {SourceBluRay, Res720p},
+}
+
+// getQualityForExtension returns the (source, resolution) the extension implies,
+// or (Unknown, Unknown) for an unmapped extension. Mirrors
+// MediaFileExtensions.GetQualityForExtension over the table above.
+func getQualityForExtension(name string) extQuality {
 	lastDot := strings.LastIndex(name, ".")
 	if lastDot == -1 || lastDot == len(name)-1 {
-		return Unknown
+		return extQuality{SourceUnknown, ResUnknown}
 	}
 	ext := strings.ToLower(name[lastDot:])
 	if q, ok := extensionQualityMap[ext]; ok {
 		return q
 	}
-	return Unknown
+	return extQuality{SourceUnknown, ResUnknown}
 }
 
-func ParseResolution(name string) int {
-	match := ResolutionRegex.FindStringSubmatch(name)
-	if match != nil {
-		for i, groupName := range ResolutionRegex.SubexpNames() {
-			if i != 0 && groupName != "" && match[i] != "" {
-				switch groupName {
-				case "R360p":
-					return 360
-				case "R480p":
-					return 480
-				case "R540p":
-					return 540
-				case "R576p":
-					return 576
-				case "R720p":
-					return 720
-				case "R1080p":
-					return 1080
-				case "R2160p":
-					return 2160
-				}
-			}
+// parseResolution ports QualityParser.cs:669 ParseResolution: the named-group
+// resolution regex with the UHD/[4K] alternative as a 2160p fallback.
+func parseResolution(name string) Resolution {
+	g := findFirst(resolutionRegex, name)
+	if len(g) > 0 {
+		switch {
+		case g["R360p"] != "":
+			return Res480p // Radarr R360p maps to the 480p quality bucket
+		case g["R480p"] != "":
+			return Res480p
+		case g["R540p"] != "":
+			return Res480p // R540p falls into the 480p bucket for FindBySourceAndResolution
+		case g["R576p"] != "":
+			return Res576p
+		case g["R720p"] != "":
+			return Res720p
+		case g["R1080p"] != "":
+			return Res1080p
+		case g["R2160p"] != "":
+			return Res2160p
 		}
 	}
-
-	// Fallback: check alternative resolution patterns (UHD, [4K])
-	if AltResolutionRegex.MatchString(name) {
-		return 2160
+	if matches(alternativeResolutionRegex, name) {
+		return Res2160p
 	}
-
-	return 0
+	return ResUnknown
 }
 
-// parseRaw extracts quality, revision, release group, and edition from a
-// release title or filename. It is the ported Sonarr/Radarr quality engine;
-// Parse wraps its output into the ParsedRelease model.
+// detectSource returns the LAST source-regex match's group name (QualityParser
+// .cs:117-118 takes Matches().LastOrDefault()), or "" for no match. regexp2 has
+// no Matches() helper, so we iterate FindNextMatch and keep the last.
+func detectSource(name string) string {
+	m, err := sourceRegex.FindStringMatch(name)
+	if err != nil {
+		return ""
+	}
+	var lastGroup string
+	for m != nil {
+		for _, g := range m.Groups() {
+			if g.Name == "" || isIndexName(g.Name) || g.Length == 0 {
+				continue
+			}
+			lastGroup = g.Name
+		}
+		m, err = sourceRegex.FindNextMatch(m)
+		if err != nil {
+			break
+		}
+	}
+	return lastGroup
+}
+
+// codecFlags is the subset of CodecRegex groups the quality logic branches on.
+type codecFlags struct {
+	x264, xvid, divx bool
+}
+
+func detectCodec(name string) codecFlags {
+	g := findFirst(codecRegex, name)
+	return codecFlags{x264: g["x264"] != "", xvid: g["xvid"] != "", divx: g["divx"] != ""}
+}
+
+// containsIgnoreCase mirrors the .NET ContainsIgnoreCase the parser leans on.
+func containsIgnoreCase(s, sub string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
+}
+
+// parseRevision ports QualityParser.cs:739 ParseQualityModifiers — version /
+// proper / repack / real, exactly as upstream sequences them.
+func parseRevision(name, normalizedName string) Revision {
+	var rev Revision
+	versionParsed := 0
+	hasVersion := false
+	if g := findFirst(versionRegex, normalizedName); g["version"] != "" {
+		versionParsed, _ = strconv.Atoi(g["version"])
+		rev.Version = versionParsed
+		hasVersion = true
+	}
+	if matches(properRegex, normalizedName) {
+		if hasVersion {
+			rev.Version = versionParsed + 1
+		} else {
+			rev.Version = 2
+		}
+	}
+	if matches(repackRegex, normalizedName) {
+		if hasVersion {
+			rev.Version = versionParsed + 1
+		} else {
+			rev.Version = 2
+		}
+		rev.IsRepack = true
+	}
+	// QualityParser.cs:766 — REAL is counted over the raw (non-normalized) name.
+	if n := countMatches(realRegex, name); n > 0 {
+		rev.Real = n
+	}
+	return rev
+}
+
+// countMatches counts non-overlapping matches of re in s.
+func countMatches(re *regexp2.Regexp, s string) int {
+	m, err := re.FindStringMatch(s)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for m != nil {
+		n++
+		m, err = re.FindNextMatch(m)
+		if err != nil {
+			break
+		}
+	}
+	return n
+}
+
+// parseRaw extracts the orthogonal quality core (source, resolution, modifier)
+// and revision from a release title or filename, ported from Radarr's
+// QualityParser.ParseQualityName (QualityParser.cs:112) and the extension
+// fallback in ParseQuality (QualityParser.cs:79). The detection ordering and
+// precedence mirror upstream exactly; Parse wraps the result into ParsedRelease.
 func parseRaw(name string) rawParse {
-	normalizedName := strings.ReplaceAll(name, "_", " ")
-	normalizedName = strings.TrimSpace(normalizedName)
+	name = strings.TrimSpace(name)
+	normalizedName := strings.TrimSpace(strings.ReplaceAll(name, "_", " "))
 
-	result := rawParse{quality: Unknown}
+	result := rawParse{source: SourceUnknown, resolution: ResUnknown, modifier: ModNone}
+	result.revision = parseRevision(name, normalizedName)
 
-	// Parse Revision
-	if vMatch := VersionRegex.FindStringSubmatch(normalizedName); vMatch != nil {
-		for i, groupName := range VersionRegex.SubexpNames() {
-			if groupName == "version" && vMatch[i] != "" {
-				v, _ := strconv.Atoi(vMatch[i])
-				result.revision.Version = v
-			}
-		}
-	}
+	sourceGroup := detectSource(normalizedName)
+	resolution := parseResolution(normalizedName)
+	codec := detectCodec(normalizedName)
+	remuxMatch := matches(remuxRegex, normalizedName) || matches(germanRemuxRegex, normalizedName)
+	brDiskMatch := matches(brDiskRegex, normalizedName)
 
-	if ProperRegex.MatchString(normalizedName) {
-		if result.revision.Version < 2 {
-			result.revision.Version = 2
-		} else {
-			result.revision.Version++
-		}
-	}
-
-	if RepackRegex.MatchString(normalizedName) {
-		result.revision.IsRepack = true
-		if result.revision.Version < 2 {
-			result.revision.Version = 2
-		} else {
-			result.revision.Version++
-		}
-	}
-
-	resolution := ParseResolution(normalizedName)
-	remuxMatch := RemuxRegex.MatchString(normalizedName)
-	codecMatch := CodecRegex.FindStringSubmatch(normalizedName)
-
-	// Check for xvid/divx codec
-	hasXvid := false
-	hasDivx := false
-	hasX264 := false
-	if codecMatch != nil {
-		for i, gn := range CodecRegex.SubexpNames() {
-			if codecMatch[i] != "" {
-				switch gn {
-				case "xvid":
-					hasXvid = true
-				case "divx":
-					hasDivx = true
-				case "x264":
-					hasX264 = true
-				}
-			}
-		}
-	}
-
-	// Raw-HD detection (check early, before source detection)
-	if RawHDRegex.MatchString(normalizedName) {
-		result.quality = RAWHD
+	// QualityParser.cs:124 — Raw-HD, but BR-DISK suppresses it.
+	if matches(rawHDRegex, normalizedName) && !brDiskMatch {
+		result.source = SourceTV
+		result.modifier = ModRawHD
+		result.resolution = ResUnknown
 		return result
 	}
 
-	// Source Detection
-	if BlurayRegex.MatchString(normalizedName) {
-		// XviD/DivX + Bluray = Bluray-480p (Sonarr parity)
-		if hasXvid || hasDivx {
-			result.quality = Bluray480p
-			return result
-		}
-		switch resolution {
-		case 2160:
-			if remuxMatch {
-				result.quality = Bluray2160pRemux
-			} else {
-				result.quality = Bluray2160p
+	if sourceGroup != "" {
+		switch sourceGroup {
+		case "bluray":
+			// QualityParser.cs:142
+			result.source = SourceBluRay
+			if brDiskMatch {
+				result.modifier = ModBRDisk
+				result.resolution = Res1080p // Radarr BRDISK is defined at 1080p
+				return result
 			}
-		case 1080:
-			if remuxMatch {
-				result.quality = Bluray1080pRemux
-			} else {
-				result.quality = Bluray1080p
+			if codec.xvid || codec.divx {
+				result.resolution = Res480p
+				return result
 			}
-		case 720:
-			result.quality = Bluray720p
-		case 576:
-			result.quality = Bluray576p
-		case 480, 360, 540:
-			result.quality = Bluray480p
-		default:
-			// Treat a remux without resolution as 1080p, not 720p
-			// 720p remux should fallback as 720p BluRay
-			if remuxMatch {
-				result.quality = Bluray1080pRemux
-			} else {
-				result.quality = Bluray720p
-			}
-		}
-		return result
-	}
-
-	if WebDlRegex.MatchString(normalizedName) && !WebRipRegex.MatchString(normalizedName) {
-		switch resolution {
-		case 2160:
-			result.quality = WEBDL2160p
-		case 1080:
-			result.quality = WEBDL1080p
-		case 720:
-			result.quality = WEBDL720p
-		default:
-			// [WEBDL] bracket without resolution defaults to 720p
-			if strings.Contains(name, "[WEBDL]") {
-				result.quality = WEBDL720p
-			} else {
-				result.quality = WEBDL480p
-			}
-		}
-		return result
-	}
-
-	if WebRipRegex.MatchString(normalizedName) {
-		switch resolution {
-		case 2160:
-			result.quality = WEBRip2160p
-		case 1080:
-			result.quality = WEBRip1080p
-		case 720:
-			result.quality = WEBRip720p
-		default:
-			result.quality = WEBRip480p
-		}
-		return result
-	}
-
-	if HdtvRegex.MatchString(normalizedName) {
-		// HDTV + MPEG2 = Raw-HD (uncompressed HDTV capture)
-		if MPEG2Regex.MatchString(normalizedName) {
-			result.quality = RAWHD
-			return result
-		}
-		switch resolution {
-		case 2160:
-			result.quality = HDTV2160p
-		case 1080:
-			result.quality = HDTV1080p
-		case 720:
-			result.quality = HDTV720p
-		default:
-			// [HDTV] bracket without resolution defaults to 720p
-			if strings.Contains(name, "[HDTV]") {
-				result.quality = HDTV720p
-			} else {
-				result.quality = SDTV
-			}
-		}
-		return result
-	}
-
-	if DvdRegex.MatchString(normalizedName) {
-		result.quality = DVD
-		return result
-	}
-
-	// BDRip/BRRip → Bluray (Sonarr parity)
-	if BDRipRegex.MatchString(normalizedName) || BRRipRegex.MatchString(normalizedName) {
-		switch resolution {
-		case 2160:
-			result.quality = Bluray2160p
-		case 1080:
-			result.quality = Bluray1080p
-		case 720:
-			result.quality = Bluray720p
-		default:
-			result.quality = Bluray480p
-		}
-		return result
-	}
-
-	// PDTV/SDTV/DSR/TVRip → SDTV or HDTV by resolution (Sonarr parity)
-	if PDTVRegex.MatchString(normalizedName) || SDTVRegex.MatchString(normalizedName) ||
-		DSRRegex.MatchString(normalizedName) || TVRipRegex.MatchString(normalizedName) {
-		switch resolution {
-		case 1080:
-			result.quality = HDTV1080p
-		case 720:
-			result.quality = HDTV720p
-		default:
-			// HR.WS (High Resolution Widescreen) PDTV = 720p
-			if HighDefPdtvRegex.MatchString(normalizedName) {
-				result.quality = HDTV720p
-			} else {
-				result.quality = SDTV
-			}
-		}
-		return result
-	}
-
-	// Remux without source detection (Sonarr parity)
-	// When remux is detected but no source, infer from resolution
-	if remuxMatch && resolution != 0 {
-		switch resolution {
-		case 480:
-			result.quality = Bluray480p
-		case 720:
-			result.quality = Bluray720p
-		case 1080:
-			result.quality = Bluray1080pRemux
-		case 2160:
-			result.quality = Bluray2160pRemux
-		}
-		if result.quality != Unknown {
-			return result
-		}
-	}
-
-	// Anime BluRay pattern (e.g., [Group] Title - 01 [BD 1080p])
-	if AnimeBlurayRegex.MatchString(normalizedName) {
-		switch resolution {
-		case 2160:
-			if remuxMatch {
-				result.quality = Bluray2160pRemux
-			} else {
-				result.quality = Bluray2160p
-			}
-		case 1080:
-			if remuxMatch {
-				result.quality = Bluray1080pRemux
-			} else {
-				result.quality = Bluray1080p
-			}
-		case 720:
-			result.quality = Bluray720p
-		case 360, 480, 540, 576:
-			result.quality = DVD
-		default:
-			if remuxMatch {
-				result.quality = Bluray1080pRemux
-			} else {
-				result.quality = Bluray720p
-			}
-		}
-		return result
-	}
-
-	// Anime WEB-DL pattern (e.g., [Group] Title - 01 [WEB 1080p])
-	if AnimeWebDlRegex.MatchString(normalizedName) {
-		switch resolution {
-		case 2160:
-			result.quality = WEBDL2160p
-		case 1080:
-			result.quality = WEBDL1080p
-		case 720:
-			result.quality = WEBDL720p
-		case 360, 480, 540, 576:
-			result.quality = WEBDL480p
-		default:
-			result.quality = WEBDL720p
-		}
-		return result
-	}
-
-	// Resolution-only fallback with extension-based source detection
-	if resolution != 0 {
-		// 540p without a recognized source returns Unknown (Sonarr parity)
-		// Extension fallback should NOT apply to 540p
-		if resolution == 540 {
-			// Leave as Unknown - Sonarr does not assign quality to 540p without source
-			return result
-		}
-
-		// Get source from extension
-		extQuality := getQualityForExtension(name)
-		switch resolution {
-		case 2160:
-			if extQuality == Bluray720p {
+			switch resolution {
+			case Res2160p:
+				result.resolution = Res2160p
 				if remuxMatch {
-					result.quality = Bluray2160pRemux
-				} else {
-					result.quality = Bluray2160p
+					result.modifier = ModRemux
 				}
-			} else {
-				result.quality = HDTV2160p
-			}
-		case 1080:
-			if extQuality == Bluray720p {
+				return result
+			case Res1080p:
+				result.resolution = Res1080p
 				if remuxMatch {
-					result.quality = Bluray1080pRemux
-				} else {
-					result.quality = Bluray1080p
+					result.modifier = ModRemux
 				}
-			} else {
-				result.quality = HDTV1080p
-			}
-		case 720:
-			if extQuality == Bluray720p {
-				result.quality = Bluray720p
-			} else {
-				result.quality = HDTV720p
-			}
-		case 360, 480, 576:
-			if extQuality == Bluray720p {
-				result.quality = Bluray480p
-			} else {
-				result.quality = SDTV
-			}
-		}
-		if result.quality != Unknown {
-			return result
-		}
-	}
-
-	// x264 codec fallback → SDTV (Sonarr parity)
-	if hasX264 {
-		result.quality = SDTV
-		return result
-	}
-
-	// Concatenated bluray patterns (bluray720p, bluray1080p, bluray2160p)
-	normalizedLower := strings.ToLower(normalizedName)
-	if strings.Contains(normalizedLower, "bluray720p") {
-		result.quality = Bluray720p
-		return result
-	}
-	if strings.Contains(normalizedLower, "bluray1080p") {
-		result.quality = Bluray1080p
-		return result
-	}
-	if strings.Contains(normalizedLower, "bluray2160p") {
-		result.quality = Bluray2160p
-		return result
-	}
-
-	// HD TV / SD TV patterns (with space/separator)
-	otherMatch := OtherSourceRegex.FindStringSubmatch(normalizedName)
-	if otherMatch != nil {
-		for i, gn := range OtherSourceRegex.SubexpNames() {
-			if otherMatch[i] != "" {
-				switch gn {
-				case "hdtv":
-					result.quality = HDTV720p
-					return result
-				case "sdtv":
-					result.quality = SDTV
+				return result
+			case Res720p:
+				result.resolution = Res720p
+				return result
+			case Res576p:
+				result.resolution = Res576p
+				return result
+			case Res480p:
+				result.resolution = Res480p
+				return result
+			default:
+				// Treat a remux without a resolution as 1080p, not 720p.
+				if remuxMatch && resolution != Res720p {
+					result.resolution = Res1080p
+					result.modifier = ModRemux
 					return result
 				}
+				result.resolution = Res720p
+				return result
 			}
+
+		case "webdl":
+			// QualityParser.cs:200
+			result.source = SourceWEBDL
+			switch resolution {
+			case Res2160p:
+				result.resolution = Res2160p
+			case Res1080p:
+				result.resolution = Res1080p
+			case Res720p:
+				result.resolution = Res720p
+			default:
+				if strings.Contains(name, "[WEBDL]") {
+					result.resolution = Res720p
+				} else {
+					result.resolution = Res480p
+				}
+			}
+			return result
+
+		case "webrip":
+			// QualityParser.cs:230
+			result.source = SourceWEBRip
+			switch resolution {
+			case Res2160p:
+				result.resolution = Res2160p
+			case Res1080p:
+				result.resolution = Res1080p
+			case Res720p:
+				result.resolution = Res720p
+			default:
+				result.resolution = Res480p
+			}
+			return result
+
+		case "scr":
+			// QualityParser.cs:254 — Quality.DVDSCR (DVD/480p/SCREENER). SCREENER
+			// is a deferred modifier, so we record the DVD/480p source+resolution
+			// without setting the modifier.
+			result.source = SourceDVD
+			result.resolution = Res480p
+			return result
+
+		case "cam":
+			// QualityParser.cs:260
+			result.source = SourceCAM
+			return result
+
+		case "ts":
+			// QualityParser.cs:266
+			result.source = SourceTelesync
+			result.resolution = resolution
+			return result
+
+		case "tc":
+			// QualityParser.cs:273
+			result.source = SourceTelecine
+			return result
+
+		case "wp":
+			// QualityParser.cs:279 — Quality.WORKPRINT
+			result.source = SourceWorkprint
+			return result
+
+		case "regional":
+			// QualityParser.cs:285 — Quality.REGIONAL (DVD/480p/REGIONAL). REGIONAL
+			// is a deferred modifier; record DVD/480p without setting it.
+			result.source = SourceDVD
+			result.resolution = Res480p
+			return result
+
+		case "hdtv":
+			// QualityParser.cs:291
+			if matches(mpeg2Regex, normalizedName) {
+				result.source = SourceTV
+				result.modifier = ModRawHD
+				return result
+			}
+			result.source = SourceTV
+			switch resolution {
+			case Res2160p:
+				result.resolution = Res2160p
+			case Res1080p:
+				result.resolution = Res1080p
+			case Res720p:
+				result.resolution = Res720p
+			default:
+				if strings.Contains(name, "[HDTV]") {
+					result.resolution = Res720p
+				} else {
+					result.resolution = Res480p // Quality.SDTV
+				}
+			}
+			return result
+
+		case "bdrip", "brrip":
+			// QualityParser.cs:327
+			result.source = SourceBluRay
+			switch resolution {
+			case Res720p:
+				result.resolution = Res720p
+			case Res1080p:
+				result.resolution = Res1080p
+			case Res2160p:
+				result.resolution = Res2160p
+			case Res576p:
+				result.resolution = Res576p
+			default:
+				result.resolution = Res480p
+			}
+			return result
+
+		case "dvdr":
+			// QualityParser.cs:350 — Quality.DVDR (DVD/480p/REMUX).
+			result.source = SourceDVD
+			result.resolution = Res480p
+			result.modifier = ModRemux
+			return result
+
+		case "dvd":
+			// QualityParser.cs:356
+			result.source = SourceDVD
+			return result
+
+		case "pdtv", "sdtv", "dsr", "tvrip":
+			// QualityParser.cs:362
+			result.source = SourceTV
+			if resolution == Res1080p || containsIgnoreCase(normalizedName, "1080p") {
+				result.resolution = Res1080p
+				return result
+			}
+			if resolution == Res720p || containsIgnoreCase(normalizedName, "720p") {
+				result.resolution = Res720p
+				return result
+			}
+			if matches(highDefPdtvRegex, normalizedName) {
+				result.resolution = Res720p
+				return result
+			}
+			result.resolution = Res480p // Quality.SDTV
+			return result
 		}
 	}
 
-	// Extension-based fallback (Sonarr parity)
-	// If we still have Unknown quality, try to determine from extension
-	if result.quality == Unknown {
-		extQuality := getQualityForExtension(name)
-		if extQuality != Unknown {
-			result.quality = extQuality
+	// QualityParser.cs:391 — remux without a recognized source, by resolution.
+	if sourceGroup == "" && remuxMatch && resolution != ResUnknown {
+		switch resolution {
+		case Res480p:
+			result.source = SourceBluRay
+			result.resolution = Res480p
+			return result
+		case Res720p:
+			result.source = SourceBluRay
+			result.resolution = Res720p
+			return result
+		case Res2160p:
+			result.source = SourceBluRay
+			result.resolution = Res2160p
+			result.modifier = ModRemux
+			return result
+		case Res1080p:
+			result.source = SourceBluRay
+			result.resolution = Res1080p
+			result.modifier = ModRemux
+			return result
+		}
+	}
+
+	// QualityParser.cs:421 — Anime Bluray.
+	if matches(animeBlurayRegex, normalizedName) {
+		result.source = SourceBluRay
+		switch {
+		case resolution == Res480p || resolution == Res576p || containsIgnoreCase(normalizedName, "480p"):
+			result.source = SourceDVD // Quality.DVD
+			result.resolution = ResUnknown
+			return result
+		case resolution == Res1080p || containsIgnoreCase(normalizedName, "1080p"):
+			result.resolution = Res1080p
+			if remuxMatch {
+				result.modifier = ModRemux
+			}
+			return result
+		case resolution == Res2160p || containsIgnoreCase(normalizedName, "2160p"):
+			result.resolution = Res2160p
+			if remuxMatch {
+				result.modifier = ModRemux
+			}
+			return result
+		default:
+			if remuxMatch && resolution != Res720p {
+				result.resolution = Res1080p
+				result.modifier = ModRemux
+				return result
+			}
+			result.resolution = Res720p
+			return result
+		}
+	}
+
+	// QualityParser.cs:460 — Anime WEB-DL.
+	if matches(animeWebDlRegex, normalizedName) {
+		result.source = SourceWEBDL
+		switch {
+		case resolution == Res480p || resolution == Res576p || containsIgnoreCase(normalizedName, "480p"):
+			result.resolution = Res480p
+			return result
+		case resolution == Res1080p || containsIgnoreCase(normalizedName, "1080p"):
+			result.resolution = Res1080p
+			return result
+		case resolution == Res2160p || containsIgnoreCase(normalizedName, "2160p"):
+			result.resolution = Res2160p
+			return result
+		default:
+			result.resolution = Res720p
+			return result
+		}
+	}
+
+	// QualityParser.cs:494 — resolution known, source inferred from remux or the
+	// file extension; otherwise HDTV (TV) at that resolution / SDTV for SD.
+	if resolution != ResUnknown {
+		source := SourceUnknown
+		modifier := ModNone
+		if remuxMatch {
+			source = SourceBluRay
+			modifier = ModRemux
+		} else {
+			ext := getQualityForExtension(name)
+			if ext.source != SourceUnknown {
+				source = ext.source
+			}
+		}
+
+		switch resolution {
+		case Res2160p:
+			if source == SourceUnknown {
+				result.source = SourceTV
+				result.resolution = Res2160p
+			} else {
+				result.source, result.resolution, result.modifier = findBySourceAndResolution(source, Res2160p, modifier)
+			}
+			return result
+		case Res1080p:
+			if source == SourceUnknown {
+				result.source = SourceTV
+				result.resolution = Res1080p
+			} else {
+				result.source, result.resolution, result.modifier = findBySourceAndResolution(source, Res1080p, modifier)
+			}
+			return result
+		case Res720p:
+			if source == SourceUnknown {
+				result.source = SourceTV
+				result.resolution = Res720p
+			} else {
+				result.source, result.resolution, result.modifier = findBySourceAndResolution(source, Res720p, modifier)
+			}
+			return result
+		case Res480p, Res576p:
+			if source == SourceUnknown {
+				result.source = SourceTV
+				result.resolution = Res480p // Quality.SDTV
+			} else {
+				result.source, result.resolution, result.modifier = findBySourceAndResolution(source, Res480p, modifier)
+			}
+			return result
+		}
+	}
+
+	// QualityParser.cs:569 — x264 with nothing else → SDTV.
+	if codec.x264 {
+		result.source = SourceTV
+		result.resolution = Res480p
+		return result
+	}
+
+	// QualityParser.cs:575 — explicit pixel dimensions.
+	if containsIgnoreCase(normalizedName, "848x480") {
+		if strings.Contains(normalizedName, "dvd") {
+			result.source = SourceDVD
+		} else if containsIgnoreCase(normalizedName, "bluray") {
+			result.source = SourceBluRay
+			result.resolution = Res480p
+		} else {
+			result.source = SourceTV
+			result.resolution = Res480p
+		}
+		return result
+	}
+
+	if containsIgnoreCase(normalizedName, "1280x720") {
+		if containsIgnoreCase(normalizedName, "bluray") {
+			result.source = SourceBluRay
+		} else {
+			result.source = SourceTV
+		}
+		result.resolution = Res720p
+		return result
+	}
+
+	if containsIgnoreCase(normalizedName, "1920x1080") {
+		if containsIgnoreCase(normalizedName, "bluray") {
+			result.source = SourceBluRay
+		} else {
+			result.source = SourceTV
+		}
+		result.resolution = Res1080p
+		return result
+	}
+
+	// QualityParser.cs:631 — concatenated bluray + resolution.
+	if containsIgnoreCase(normalizedName, "bluray720p") {
+		result.source = SourceBluRay
+		result.resolution = Res720p
+		return result
+	}
+	if containsIgnoreCase(normalizedName, "bluray1080p") {
+		result.source = SourceBluRay
+		result.resolution = Res1080p
+		return result
+	}
+	if containsIgnoreCase(normalizedName, "bluray2160p") {
+		result.source = SourceBluRay
+		result.resolution = Res2160p
+		return result
+	}
+
+	// QualityParser.cs:658 — HD TV / SD TV with separators.
+	if g := findFirst(otherSourceRegex, normalizedName); len(g) > 0 {
+		if g["sdtv"] != "" {
+			result.source = SourceTV
+			result.resolution = Res480p
+			return result
+		}
+		if g["hdtv"] != "" {
+			result.source = SourceTV
+			result.resolution = Res720p
+			return result
+		}
+	}
+
+	// QualityParser.cs:92 — extension fallback when nothing else matched.
+	if result.source == SourceUnknown && result.resolution == ResUnknown && result.modifier == ModNone {
+		ext := getQualityForExtension(name)
+		if ext.source != SourceUnknown {
+			result.source = ext.source
+			result.resolution = ext.resolution
 		}
 	}
 
 	return result
+}
+
+// findBySourceAndResolution ports QualityFinder.FindBySourceAndResolution
+// (Qualities/QualityFinder.cs:11) for the cases the parser actually reaches:
+// the (source, resolution, modifier) requested either names a real Quality or
+// falls back to the nearest. In the orthogonal core there is nothing to "find" —
+// the triple IS the quality — so this is the identity for every triple Radarr's
+// Quality table defines, with DVD/DVDR special-cased the way the table does
+// (DVD has resolution 0; DVDR carries REMUX at 480p).
+func findBySourceAndResolution(source Source, resolution Resolution, modifier Modifier) (Source, Resolution, Modifier) {
+	// DVD source has no per-resolution Bluray-style variants in Radarr's table:
+	// the plain DVD quality is resolution-agnostic (Resolution 0). The extension
+	// map only yields DVD from disc images, which carry no resolution.
+	if source == SourceDVD {
+		return SourceDVD, ResUnknown, ModNone
+	}
+	return source, resolution, modifier
 }

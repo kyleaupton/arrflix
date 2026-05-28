@@ -21,6 +21,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/pathmapping"
+	"github.com/kyleaupton/arrflix/internal/quality"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 	"github.com/kyleaupton/arrflix/internal/template"
@@ -279,11 +280,23 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 		candidateTitle = *details.CandidateTitle
 	}
 
-	q := parsing.Parse(candidateTitle)
+	// Domain is known: the task is scoped to a single media type. Pass it to
+	// the parser (so identity uses the right pattern set) and to the
+	// projection (so quality.Full renders in the right vocabulary).
+	var parseOpt parsing.Option
+	var domain quality.Domain
+	if task.MediaType == "movie" {
+		parseOpt = parsing.AsMovie()
+		domain = quality.DomainMovie
+	} else {
+		parseOpt = parsing.AsSeries()
+		domain = quality.DomainSeries
+	}
+	q := parsing.Parse(candidateTitle, parseOpt)
 	candidate := model.DownloadCandidate{
 		Title: candidateTitle,
 	}
-	evalCtx := model.NewEvaluationContext(candidate, q)
+	evalCtx := model.NewEvaluationContext(candidate, q, domain)
 
 	// Add media metadata
 	year := 0

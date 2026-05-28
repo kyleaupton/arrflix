@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kyleaupton/arrflix/internal/parsing"
+	"github.com/kyleaupton/arrflix/internal/quality"
 	"github.com/kyleaupton/arrflix/internal/template"
 )
 
@@ -53,14 +54,20 @@ type CandidateFields struct {
 	GUID        string    `path:"candidate.guid" label:"GUID" type:"text" phase:"pre_download"`
 }
 
-// QualityFields contains parsed quality information from the release title
+// QualityFields contains the parsed quality core (Source, Resolution, Modifier,
+// Revision) plus Full — the per-domain bin name projected from the core by
+// internal/quality at context-build time. Source, Resolution, and Modifier are
+// the orthogonal axes parsing emits; Full is the domain-shaped render
+// ("Bluray-1080p Remux" for series, "Remux-1080p" for movies) and is the
+// user-facing display value rules and templates read.
 type QualityFields struct {
 	Full       string `path:"quality.full" label:"Full Quality" type:"text" phase:"pre_download"`
-	Resolution string `path:"quality.resolution" label:"Resolution" type:"enum" enumValues:"Unknown,SD,480p,576p,720p,1080p,1440p,2160p,4320p" phase:"pre_download"`
-	Source     string `path:"quality.source" label:"Source" type:"enum" enumValues:"Unknown,SDTV,CAM,Telesync,Telecine,Screener,DVD,DVD-Rip,HDTV,WEBRip,WEB-DL,BluRay,REMUX,Raw-HD" phase:"pre_download"`
-	IsRemux    bool   `path:"quality.is_remux" label:"Is Remux" type:"boolean" phase:"pre_download"`
+	Resolution string `path:"quality.resolution" label:"Resolution" type:"enum" enumValues:"Unknown,SD,480p,576p,720p,1080p,2160p" phase:"pre_download"`
+	Source     string `path:"quality.source" label:"Source" type:"enum" enumValues:"Unknown,CAM,Telesync,Telecine,Workprint,DVD,TV,WEBRip,WEB-DL,BluRay" phase:"pre_download"`
+	Modifier   string `path:"quality.modifier" label:"Modifier" type:"enum" enumValues:"NONE,REMUX,BR-DISK,RAWHD" phase:"pre_download"`
 	IsRepack   bool   `path:"quality.is_repack" label:"Is Repack" type:"boolean" phase:"pre_download"`
 	Version    int    `path:"quality.version" label:"Version" type:"number" phase:"pre_download"`
+	Real       int    `path:"quality.real" label:"Real" type:"number" phase:"pre_download"`
 }
 
 // ReleaseFields contains release metadata (not quality-related, not identity).
@@ -147,15 +154,34 @@ type MediaInfoFields struct {
 	VideoMultiViewCount int      `path:"mediainfo.video_multi_view_count" label:"Video Multi-View Count" type:"number" phase:"post_download"`
 }
 
-// NewEvaluationContext creates an EvaluationContext from a DownloadCandidate
-// and a parsed release. It fills the advertised namespaces (Identity, Quality,
-// Release) from the parse via its flat Values() projection; Media is populated
-// later by matching (WithMedia/WithSeriesInfo) and MediaInfo by the ffprobe
-// extractor (WithMediaInfo). The Identity/Quality/Release split here mirrors the
-// parse model 1:1 — notably Edition lives under identity.* (it identifies the
-// cut) and hardcoded-subs under release.* (an encode property).
-func NewEvaluationContext(candidate DownloadCandidate, parsed parsing.ParsedRelease) EvaluationContext {
+// NewEvaluationContext creates an EvaluationContext from a DownloadCandidate, a
+// parsed release, and the domain whose vocabulary the quality bin should render
+// in. It fills the advertised namespaces (Identity, Quality, Release) from the
+// parse via its flat Values() projection; Media is populated later by matching
+// (WithMedia/WithSeriesInfo) and MediaInfo by the ffprobe extractor
+// (WithMediaInfo). The Identity/Quality/Release split mirrors the parse model
+// 1:1 — notably Edition lives under identity.* (it identifies the cut) and
+// hardcoded-subs under release.* (an encode property).
+//
+// Quality.Full is the per-domain bin name projected from the orthogonal core by
+// internal/quality. Pass quality.DomainSeries / quality.DomainMovie when the
+// caller knows the domain; quality.DomainUnknown yields an empty bin (the same
+// "no matching bin" sentinel BinFor produces for an undetected core).
+func NewEvaluationContext(candidate DownloadCandidate, parsed parsing.ParsedRelease, domain quality.Domain) EvaluationContext {
 	v := parsed.Values()
+	bin := quality.BinFor(
+		parsing.Source(v.Quality.Source),
+		parsing.Resolution(v.Quality.Resolution),
+		parsing.Modifier(v.Quality.Modifier),
+		domain,
+	)
+	// Parsing's ModNone is the empty string (mirroring Radarr's Modifier.NONE
+	// being its zero enum value). Surface it to rules and the routing UI as the
+	// canonical "NONE" label so the enum stays closed.
+	modifier := v.Quality.Modifier
+	if modifier == "" {
+		modifier = "NONE"
+	}
 	return EvaluationContext{
 		Candidate: CandidateFields{
 			Size:        candidate.Size,
@@ -198,12 +224,13 @@ func NewEvaluationContext(candidate DownloadCandidate, parsed parsing.ParsedRele
 			ReleaseType:              v.Identity.Numbering.ReleaseType,
 		},
 		Quality: QualityFields{
-			Full:       v.Quality.Full,
+			Full:       bin.Name,
 			Resolution: v.Quality.Resolution,
 			Source:     v.Quality.Source,
-			IsRemux:    v.Quality.IsRemux,
+			Modifier:   modifier,
 			IsRepack:   v.Quality.IsRepack,
 			Version:    v.Quality.Version,
+			Real:       v.Quality.Real,
 		},
 		Release: ReleaseFields{
 			ReleaseGroup:  v.Release.ReleaseGroup,

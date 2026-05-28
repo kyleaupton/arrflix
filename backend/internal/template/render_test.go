@@ -4,10 +4,33 @@ import (
 	"testing"
 
 	"github.com/kyleaupton/arrflix/internal/parsing"
+	"github.com/kyleaupton/arrflix/internal/quality"
 )
 
+// quality_map mirrors the QualityFields shape EvaluationContext.ToTemplateData
+// exposes, projecting the parsed core into the given domain's bin so
+// `{{.Quality.Full}}` resolves the same way a real evaluation would. Built here
+// (not via model.NewEvaluationContext) to keep this test out of the model →
+// template import cycle.
+func quality_map(q parsing.QualityValues, domain quality.Domain) map[string]any {
+	bin := quality.BinFor(parsing.Source(q.Source), parsing.Resolution(q.Resolution), parsing.Modifier(q.Modifier), domain)
+	return map[string]any{
+		"Full":       bin.Name,
+		"Resolution": q.Resolution,
+		"Source":     q.Source,
+		"Modifier":   q.Modifier,
+		"IsRepack":   q.IsRepack,
+		"Version":    q.Version,
+		"Real":       q.Real,
+	}
+}
+
 func TestRender(t *testing.T) {
-	result := parsing.Parse("21.Jump.Street.2012.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.Atmos-GROUP").Values()
+	// Quality.Full is the per-domain bin name, projected from the parsed core
+	// by internal/quality; rendering against the series vocabulary yields
+	// "Bluray-2160p Remux" for this 2160p Bluray remux release.
+	q := parsing.Parse("21.Jump.Street.2012.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.Atmos-GROUP", parsing.AsSeries()).Values().Quality
+	qualityMap := quality_map(q, quality.DomainSeries)
 
 	// Create a namespaced context structure matching EvaluationContext.ToTemplateData()
 	media := map[string]any{
@@ -18,7 +41,7 @@ func TestRender(t *testing.T) {
 
 	ctx := map[string]any{
 		"Media":   media,
-		"Quality": result.Quality,
+		"Quality": qualityMap,
 	}
 
 	tests := []struct {
@@ -72,7 +95,8 @@ func TestRender(t *testing.T) {
 }
 
 func TestRenderZeroPaddedSeasonEpisode(t *testing.T) {
-	result := parsing.Parse("Breaking.Bad.S01E05.720p.BluRay.x264-GROUP").Values()
+	q := parsing.Parse("Breaking.Bad.S01E05.720p.BluRay.x264-GROUP", parsing.AsSeries()).Values().Quality
+	qualityMap := quality_map(q, quality.DomainSeries)
 
 	media := map[string]any{
 		"Title":        "Breaking Bad",
@@ -85,7 +109,7 @@ func TestRenderZeroPaddedSeasonEpisode(t *testing.T) {
 
 	ctx := map[string]any{
 		"Media":   media,
-		"Quality": result.Quality,
+		"Quality": qualityMap,
 	}
 
 	tests := []struct {
