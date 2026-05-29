@@ -156,7 +156,7 @@ A reimport creates a **new** task pointing at the old via `previous_task_id`, re
 | `download_job_updated` | Task change rolls up to the parent job's summary | [Realtime](../realtime/README.md) SSE                  |
 | `want.imported`   | A file is placed and its want advances        | VerifyStep (presence-verify → `available`) per [acquisition](../acquisition/README.md#event-bus--messaging) |
 
-The importer does **not** emit `want.available` (the verify step does) or `media_file.propagated` ([media-server](../media-server/README.md) does).
+The importer does **not** emit `want.available` (the verify step does) or `file.propagated` ([media-server](../media-server/README.md) does).
 
 ## Integration points
 

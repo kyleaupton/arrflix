@@ -10,11 +10,11 @@ The hard architectural decision is already made elsewhere and is **not** relitig
 
 - **Arrflix owns truth; the media server is a consumer, not the authority.** Everything here is enrichment or a *legitimately-coupled* read (watch-state). Nothing here can stall a want.
 - A **`media_server`** row is a named connection `(name, type, url, credentials, sections-mapping, …)` plus standard `enabled`/`default` flags and the three [connectivity-health](../../patterns/connectivity-health/README.md) status columns. `type` discriminates `plex` / `jellyfin`. The model is **multi-server** — N servers of any type — even though v1 ships the Plex driver only.
-- **Propagation** is tracked per-`(media_file, media_server)` in a dedicated record (`state ∈ pending | visible | unknown`, `external_ref` = rating key / item id, `synced_at`). The rating key lives **here**, never on `media_file`.
+- **Propagation** is tracked per-`(file, media_server)` in a dedicated record (`state ∈ pending | visible | unknown`, `external_ref` = rating key / item id, `synced_at`). The rating key lives **here**, never on `file`.
 - Propagation is populated by **(a)** the server webhook (fast path) or **(b)** a reconciliation poll (backfill). Both are **idempotent upserts** — order and duplication don't matter. Poll runs **only while the server is healthy**.
 - **Outbound nudge** (Plex partial-refresh / Jellyfin scan) is **debounced per library section** — Story 02's 23-file import fires *one* refresh, not 23.
 - **Watch-state ingestion** is the *one* legitimate coupling: [hygiene](../hygiene/README.md)'s optional watch-based cleanup policy needs "has this been watched," which only the player knows. Webhook when available, **poll always as the floor** (Plex server-side play webhooks are Plex Pass-only). Degrades to "never fires" with no server — purely additive, never load-bearing.
-- **`MediaServerService`** (outbound nudge + inbound webhook/reconciliation/watch-state) with a **`MediaServerSync`** worker. Emits **`media_file.propagated`** (consumed by [notifications](../notifications/README.md) for deep-link upgrade + SSE).
+- **`MediaServerService`** (outbound nudge + inbound webhook/reconciliation/watch-state) with a **`MediaServerSync`** worker. Emits **`file.propagated`** (consumed by [notifications](../notifications/README.md) for deep-link upgrade + SSE).
 - **Identity stays in [users](../users/README.md).** This spec owns the *server connection* and *library/playback integration*; the Plex-OAuth-as-login bits stay with users. The bridge is the per-user watch-state mapping.
 
 ## Why this is its own spec
@@ -33,7 +33,7 @@ A `media_server` row encodes:
 - **Type** — `plex` (implemented) or `jellyfin` (modeled, no driver in v1). Constrains the driver and the credential/section shape.
 - **URL** — the server's base URL (the admin-reachable address, e.g. `http://plex:32400`).
 - **Credentials** — Plex: an admin/server token (X-Plex-Token). Jellyfin: API key + user id. Redacted on the wire and treated like downloader credentials (see [Credentials & the SSO boundary](#credentials--the-sso-boundary)).
-- **Section mapping** — which server library sections Arrflix maps to which Arrflix [libraries](../libraries/README.md), plus an optional [path-mapping override](#correlation-mapping-a-server-item-back-to-our-media_file) per section for container-mount differences.
+- **Section mapping** — which server library sections Arrflix maps to which Arrflix [libraries](../libraries/README.md), plus an optional [path-mapping override](#correlation-mapping-a-server-item-back-to-our-file) per section for container-mount differences.
 - **Enabled flag** — when false, excluded from outbound nudges, reconciliation, and watch-state polling. Inbound webhooks for a disabled server are dropped.
 - **Default flag** — at most one default; used when no server is otherwise specified. (Multi-server installs that want *all* servers nudged don't rely on this — nudges fan out to every enabled server.)
 - **Connectivity-health columns** — `status` / `status_checked_at` / `status_last_transitioned_at`, per the [pattern](../../patterns/connectivity-health/README.md#persistence).
@@ -41,11 +41,11 @@ A `media_server` row encodes:
 
 ### The propagation record
 
-The core artifact. One row per `(media_file, media_server)` pair:
+The core artifact. One row per `(file, media_server)` pair:
 
 | Field          | Meaning                                                                                  |
 | -------------- | ---------------------------------------------------------------------------------------- |
-| `media_file`   | FK to the Arrflix-owned file. Cascade-deletes with it.                                   |
+| `file`   | FK to the Arrflix-owned file. Cascade-deletes with it.                                   |
 | `media_server` | FK to the configured server. Cascade-deletes with it.                                    |
 | `state`        | `pending` (nudged, not yet confirmed) · `visible` (server has indexed it) · `unknown` (server unreachable / never probed) |
 | `external_ref` | The server's identifier once known — Plex `rating_key`, Jellyfin item id. This is the **stored result of correlation, not the join key.** |
@@ -53,20 +53,20 @@ The core artifact. One row per `(media_file, media_server)` pair:
 
 *(Column types deferred to iteration 2, per house style.)*
 
-Why server-agnostic and off `media_file`: a file may be visible in two servers (Plex + Jellyfin) at once, each with its own rating key and its own propagation timeline. Hanging a single `rating_key` on `media_file` couldn't model that, and it would falsely imply `media_file` depends on a server — it does not.
+Why server-agnostic and off `file`: a file may be visible in two servers (Plex + Jellyfin) at once, each with its own rating key and its own propagation timeline. Hanging a single `rating_key` on `file` couldn't model that, and it would falsely imply `file` depends on a server — it does not.
 
 **State semantics:**
 
 - A file freshly `available` with a healthy server configured → propagation `pending` (nudge sent).
-- Webhook or poll confirms → `visible`, `external_ref` filled, `media_file.propagated` emitted.
+- Webhook or poll confirms → `visible`, `external_ref` filled, `file.propagated` emitted.
 - Server unreachable → stays `pending` (no false `unknown`); `unknown` is for "we asked and genuinely can't tell" or pre-probe initial state.
 - No server configured at all → no propagation rows exist. That's correct: there's nothing to propagate to. The want is still `available`.
 
-### Correlation: mapping a server item back to our `media_file`
+### Correlation: mapping a server item back to our `file`
 
-When a server reports "new item X" (via webhook or poll), we must map X to the right `media_file`. **Path-primary** strategy:
+When a server reports "new item X" (via webhook or poll), we must map X to the right `file`. **Path-primary** strategy:
 
-1. **Primary — path.** Arrflix wrote the file at a deterministic path via the [name template](../name-templates/README.md), so the path is our strongest key. Match the server-reported path against `media_file` paths.
+1. **Primary — path.** Arrflix wrote the file at a deterministic path via the [name template](../name-templates/README.md), so the path is our strongest key. Match the server-reported path against `file` paths.
 2. **Path-mapping override.** In a containerized setup the server sees the file at *its* mount (e.g. `/data/movies/…`) while Arrflix knows it as `/media/movies/…` — the classic *arr "remote path mapping" problem. An optional per-`(library, media_server)` mapping translates the server's view into ours before matching. Optional because single-host installs with shared mounts don't need it.
 3. **Fallback — basename.** If path translation fails or the server reports no usable path, fall back to matching on filename basename + parent dir. Name templates make these distinctive enough to be reliable in practice; ambiguous matches are left `pending` for the next reconciliation pass rather than guessed.
 
@@ -130,7 +130,7 @@ This is kept **deliberately distinct** from availability coupling (which we remo
 [Notifications](../notifications/README.md) fire on `available` — Arrflix's own truth, never blocked on a server. The "Open in Plex" link resolves lazily:
 
 - Propagation already `visible` when the push fires → embed the server deep link directly.
-- Not yet → link to the Arrflix media detail page ("syncing to your server…"), which flips to "Open in Plex" the instant `media_file.propagated` arrives over SSE.
+- Not yet → link to the Arrflix media detail page ("syncing to your server…"), which flips to "Open in Plex" the instant `file.propagated` arrives over SSE.
 
 Never a dead link. An **optional grace window** — hold the push up to ~60–120s when a *healthy* server is configured, so the link is usually live on first tap — is modeled but **defaults off**. The no-grace path is already correct; the window is a UX nicety, not a correctness requirement, and is the kind of thing to ship in iteration 2 once propagation latency is measured in practice.
 
@@ -156,8 +156,8 @@ v1 implements the Plex column. Jellyfin is a driver + credential-shape addition 
 - **Retention / cleanup policy.** Owned by [hygiene](../hygiene/README.md). This spec only *supplies* watch-state; hygiene decides what to do with it.
 - **The cleanup worker.** Owned by [hygiene](../hygiene/README.md). It reads watch-state + retention; it does not live here.
 - **The connectivity-health pattern itself** (worker shape, hysteresis, audit hook) — this spec is a *producer* conforming to it, not its definition.
-- **Notification delivery / routing.** Owned by [notifications](../notifications/README.md). This spec emits `media_file.propagated`; notifications decides who hears about it.
-- **The filesystem `media_file` truth.** Owned by [libraries](../libraries/README.md) / [scan](../scan/README.md).
+- **Notification delivery / routing.** Owned by [notifications](../notifications/README.md). This spec emits `file.propagated`; notifications decides who hears about it.
+- **The filesystem `file` truth.** Owned by [libraries](../libraries/README.md) / [scan](../scan/README.md).
 
 ### Credentials & the SSO boundary
 
@@ -173,15 +173,15 @@ Clean rule of thumb: **identity in, library/playback out.** Anything about *who 
 
 | Neighbor                                                       | How it interacts                                                                                                                            |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| [Acquisition](../acquisition/README.md)                        | Upstream. Emits `want.available` / writes `media_file`; this spec reacts *after* `available`. Never gates it. The contract lives in acquisition's [propagation section](../acquisition/README.md#media-server-propagation-decoupled-from-available). |
+| [Acquisition](../acquisition/README.md)                        | Upstream. Emits `want.available` / writes `file`; this spec reacts *after* `available`. Never gates it. The contract lives in acquisition's [propagation section](../acquisition/README.md#media-server-propagation-decoupled-from-available). |
 | [Connectivity-health](../../patterns/connectivity-health/README.md) | Pattern this spec produces. Probe, `version_mismatch` extension, consumer mapping declared here; worker shape + audit hook owned by the pattern. |
-| [Notifications](../notifications/README.md)                    | Consumes `media_file.propagated` (deep-link upgrade + SSE) and subscribes to `media_server.health` for `failed`-tier admin alerts.          |
+| [Notifications](../notifications/README.md)                    | Consumes `file.propagated` (deep-link upgrade + SSE) and subscribes to `media_server.health` for `failed`-tier admin alerts.          |
 | [Hygiene](../hygiene/README.md)                                | Owns the optional watch-based cleanup policy that consumes the watch-state this spec ingests. The legitimate coupling. This spec supplies the watch signal only. |
 | [Users](../users/README.md)                                    | Owns Plex SSO identity + per-user Plex account id; this spec reads that id for watch-state per-user mapping. Boundary above.                |
 | [Libraries](../libraries/README.md)                            | Section mapping ties a server section to an Arrflix library; path-mapping override resolves container-mount differences.                    |
 | [Scan](../scan/README.md)                                      | Shares the verify authority (file-on-disk truth). Correlation reuses the path knowledge scan/import establish.                              |
 | [Name-templates](../name-templates/README.md)                  | Deterministic output paths are what make path-primary correlation reliable.                                                                 |
-| [Realtime](../realtime/README.md)                              | `media_server.health` transition channel; `media_file.propagated` SSE fan-out for the lazy deep-link flip.                                  |
+| [Realtime](../realtime/README.md)                              | `media_server.health` transition channel; `file.propagated` SSE fan-out for the lazy deep-link flip.                                  |
 | [Audit](../../patterns/audit/README.md) / [Errors](../../patterns/errors/README.md) | Health transitions → admin-action audit; probe/API failures → typed errors (`BadGateway` upstream).                          |
 
 ## Tables
@@ -189,11 +189,11 @@ Clean rule of thumb: **identity in, library/playback out.** Anything about *who 
 **Owned by this spec** (shapes only; column types deferred to iteration 2):
 
 - **`media_server`** — `{ id, name, type, url, credentials, section_mapping, enabled, default, status, status_checked_at, status_last_transitioned_at, created_at, updated_at }`. Replaces the old single-Plex config.
-- **`media_server_propagation`** — `{ media_file, media_server, state, external_ref, synced_at }`. The per-pair record. (Name indicative.)
+- **`media_server_propagation`** — `{ file, media_server, state, external_ref, synced_at }`. The per-pair record. (Name indicative.)
 
 **Referenced, owned elsewhere:**
 
-- **`media_file`** — [libraries](../libraries/README.md) / [scan](../scan/README.md). Server-agnostic; carries no rating key.
+- **`file`** — [libraries](../libraries/README.md) / [scan](../scan/README.md). Server-agnostic; carries no rating key.
 - **user → Plex account id** — [users](../users/README.md). Read for watch-state per-user mapping.
 - **retention / cleanup policy + watch state** — [hygiene](../hygiene/README.md). This spec supplies the watch signal; hygiene owns the decision.
 
@@ -222,10 +222,10 @@ Clean rule of thumb: **identity in, library/playback out.** Anything about *who 
 
 - [Acquisition](../acquisition/README.md) — upstream; owns the want lifecycle and the propagation contract this spec implements.
 - [Connectivity-health](../../patterns/connectivity-health/README.md) — the pattern this spec produces.
-- [Notifications](../notifications/README.md) — consumes `media_file.propagated`; lazy deep-link resolution.
+- [Notifications](../notifications/README.md) — consumes `file.propagated`; lazy deep-link resolution.
 - [Hygiene](../hygiene/README.md) — owns the watch-based cleanup policy; the legitimate watch-state coupling.
 - [Hygiene](../hygiene/README.md) — cleanup worker that reads watch-state + retention.
 - [Users](../users/README.md) — Plex SSO identity boundary; per-user account mapping.
-- [Libraries](../libraries/README.md) / [Scan](../scan/README.md) — `media_file` truth, section/path mapping, verify authority.
+- [Libraries](../libraries/README.md) / [Scan](../scan/README.md) — `file` truth, section/path mapping, verify authority.
 - [Name-templates](../name-templates/README.md) — deterministic paths underpin path-primary correlation.
 - [Downloaders](../downloaders/README.md) — sibling provider-abstraction + connectivity-health producer; structural template for this spec.
