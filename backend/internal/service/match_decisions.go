@@ -94,10 +94,9 @@ type FileMatchRequest struct {
 //   - match-by-ID (file currently in unmatched_file) — first-match,
 //     deletes the unmatched row and creates a media_file via
 //     commitMatch.
-//   - re-match (file currently in media_file) — updates the file's
-//     identity columns (tmdb_id + season/episode/edition) by deleting
-//     and re-creating the media_file (the schema doesn't have an
-//     UpdateMediaFileIdentity query yet).
+//   - re-match (file currently in media_file) — re-points the existing
+//     media_file at the new identity in place (UpdateMediaFileIdentity),
+//     preserving its state snapshot and import history.
 //
 // On a 404 from the provider the function returns NotFound without
 // writing a decision row — the user gave a bad ID; we don't waste an
@@ -194,15 +193,19 @@ func (s *MatchDecisionsService) MatchByID(ctx context.Context, fileID uuid.UUID,
 
 // commitManualMatch is the per-transition arm of MatchByID. It writes
 // the match_decision row, supersedes the prior, then applies the
-// filesystem-shape side-effect: delete unmatched_file + commitMatch
-// for first-match, or delete-and-recreate media_file for re-match.
+// media-table side-effect via commitMatch: create the media_file (+
+// drop the unmatched row) for first-match, or re-point the existing
+// media_file in place for re-match. The in-place re-match path means a
+// commit failure leaves the original media_file untouched rather than
+// orphaning the file.
 //
 // commitMatch's transaction and the match_decision write are
-// intentionally NOT collapsed into one tx — the matcher's repo adapter
-// is keyed by its own contract (InsertMatchDecision + SupersedeMatchDecision)
-// and the read path (GetCurrentMatchDecisionForFile) only cares about
-// the latest non-superseded row regardless of side-effect ordering.
-// The window where they can drift is small and idempotent on retry.
+// intentionally NOT collapsed into one tx — the read path
+// (GetCurrentMatchDecisionForFile) only cares about the latest
+// non-superseded row regardless of side-effect ordering, and the
+// decision row is the audit anchor that should stand even if the
+// media-table write fails. The window where they can drift is small and
+// idempotent on retry.
 func (s *MatchDecisionsService) commitManualMatch(
 	ctx context.Context,
 	library model.Library,
@@ -249,82 +252,56 @@ func (s *MatchDecisionsService) commitManualMatch(
 		in.Episode = &en
 	}
 
-	var mediaFile model.MediaFile
-
 	switch location {
 	case fileLocationUnmatched:
-		// First-match from the inbox: delete the unmatched row, then
-		// create the media_file via commitMatch. Both happen in the
-		// commitMatch transaction's scope plus a follow-up delete; we
-		// could fold the unmatched delete into the same tx by exposing
-		// commitMatch's tx-aware variant, but Kyle's only user so the
-		// non-atomic window is benign — a retry re-runs idempotently.
-		result, cerr := commitMatch(ctx, commitMatchDeps{repo: s.repo, log: s.log, tmdb: s.tmdb}, in)
-		if cerr != nil {
-			return model.MediaFile{}, model.MatchDecision{}, cerr
-		}
-		if result.EpisodeFailed {
-			return model.MediaFile{}, model.MatchDecision{}, apperrors.BadGatewayf("tmdb episode-details lookup failed for %s:%d s%de%d", item.Source, tmdbID, *in.Season, *in.Episode).
-				Op("MatchDecisionsService.commitManualMatch")
-		}
-		mediaFile = result.MediaFile
-
-		// Drop the unmatched_file row — its job is done; the new
-		// match_decision + media_file pair is the canonical record.
-		if derr := s.repo.DeleteUnmatchedFile(ctx, fileID); derr != nil {
-			s.log.Warn().Err(derr).Str("fileId", fileID.String()).Msg("MatchByID: failed to delete unmatched_file row after commit")
-		}
-
-		// Fire enrichment if commitMatch created a new media_item.
-		if result.ItemCreated && s.enrichment != nil {
-			created := result.MediaItem
-			go func() {
-				if err := s.enrichment.EnrichMediaItem(s.backgroundCtx, created); err != nil {
-					s.log.Warn().Err(err).Str("title", created.Title).Msg("manual-match enrichment failed, worker will retry")
-				}
-			}()
-		}
-
+		// First-match from the inbox: create the media_file (carrying the
+		// preserved file_id) via commitMatch, then drop the unmatched row.
 	case fileLocationMedia:
-		// Re-match: the file is already in media_file with some prior
-		// identity. The simplest correct transition is delete + recreate
-		// through commitMatch — the media_file_id changes, but the
-		// match_decision.file_id we keyed on doesn't (the file_id
-		// columns we pass through are the unmatched/media-file UUID,
-		// stable across re-scans). Re-import (renaming on disk per
-		// name templates) is the import service's job; see TODO below.
-		if err := s.repo.DeleteMediaFile(ctx, fileID); err != nil {
-			return model.MediaFile{}, model.MatchDecision{}, err
-		}
-		result, cerr := commitMatch(ctx, commitMatchDeps{repo: s.repo, log: s.log, tmdb: s.tmdb}, in)
-		if cerr != nil {
-			return model.MediaFile{}, model.MatchDecision{}, cerr
-		}
-		if result.EpisodeFailed {
-			return model.MediaFile{}, model.MatchDecision{}, apperrors.BadGatewayf("tmdb episode-details lookup failed for %s:%d s%de%d", item.Source, tmdbID, *in.Season, *in.Episode).
-				Op("MatchDecisionsService.commitManualMatch")
-		}
-		mediaFile = result.MediaFile
-
-		if result.ItemCreated && s.enrichment != nil {
-			created := result.MediaItem
-			go func() {
-				if err := s.enrichment.EnrichMediaItem(s.backgroundCtx, created); err != nil {
-					s.log.Warn().Err(err).Str("title", created.Title).Msg("re-match enrichment failed, worker will retry")
-				}
-			}()
-		}
-
-		// TODO(import): trigger re-import to move/rename the file per
-		// the new identity's name template. The import service doesn't
-		// yet expose a re-import entry point; matcher writes the new
-		// identity to media_file but the file on disk stays at the old
-		// path until import grows this.
-
+		// Re-match: re-point the existing media_file in place rather than
+		// delete-and-recreate. UpdateMediaFileIdentity (Recommit) keeps
+		// the row, its media_file_state snapshot, and its
+		// media_file_import history intact — and, crucially, never leaves
+		// the file untracked if the commit fails partway. media_file.id
+		// (== file_id) is unchanged, so the match_decision chain keyed on
+		// it stays consistent.
+		in.Recommit = true
 	default:
 		return model.MediaFile{}, model.MatchDecision{}, apperrors.NotFoundf("file %s not found in media_file or unmatched_file", fileID).
 			Op("MatchDecisionsService.commitManualMatch")
 	}
+
+	result, cerr := commitMatch(ctx, commitMatchDeps{repo: s.repo, log: s.log, tmdb: s.tmdb}, in)
+	if cerr != nil {
+		return model.MediaFile{}, model.MatchDecision{}, cerr
+	}
+	if result.EpisodeFailed {
+		return model.MediaFile{}, model.MatchDecision{}, apperrors.BadGatewayf("tmdb episode-details lookup failed for %s:%d s%de%d", item.Source, tmdbID, *in.Season, *in.Episode).
+			Op("MatchDecisionsService.commitManualMatch")
+	}
+	mediaFile := result.MediaFile
+
+	// First-match only: the unmatched_file row's job is done now that the
+	// media_file + match_decision pair is the canonical record. Best-effort
+	// — a stale unmatched row is benign and a retry re-runs idempotently.
+	if location == fileLocationUnmatched {
+		if derr := s.repo.DeleteUnmatchedFile(ctx, fileID); derr != nil {
+			s.log.Warn().Err(derr).Str("fileId", fileID.String()).Msg("MatchByID: failed to delete unmatched_file row after commit")
+		}
+	}
+
+	// Fire enrichment if commitMatch created a new media_item.
+	if result.ItemCreated && s.enrichment != nil {
+		created := result.MediaItem
+		go func() {
+			if err := s.enrichment.EnrichMediaItem(s.backgroundCtx, created); err != nil {
+				s.log.Warn().Err(err).Str("title", created.Title).Msg("manual-match enrichment failed, worker will retry")
+			}
+		}()
+	}
+
+	// TODO(import): re-match writes the new identity to media_file but the
+	// file on disk stays at the old path until the import service grows a
+	// re-import entry point to rename per the new identity's name template.
 
 	decision, derr := s.repo.GetCurrentMatchDecisionForFile(ctx, fileID)
 	if derr != nil {

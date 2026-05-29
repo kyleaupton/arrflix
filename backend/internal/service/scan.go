@@ -318,6 +318,14 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 			case matcher.OutcomePartialSeries:
 				stats.PartialSeries++
 			}
+		default:
+			// The aggregator's banded outcomes are all handled above;
+			// OutcomeDetached is a user-only action that never comes out
+			// of MatchBatch. A new or unexpected band reaching here would
+			// otherwise be silently dropped (no media_file / no
+			// unmatched_file row) while its match_decision row already
+			// exists — surface it instead of losing the file.
+			s.logger.Warn().Str("path", f.RelPath).Str("outcome", string(rec.Outcome)).Msg("scan: unhandled match outcome; file left unpersisted")
 		}
 
 		if (i+1)%50 == 0 {

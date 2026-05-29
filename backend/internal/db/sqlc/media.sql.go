@@ -1530,6 +1530,39 @@ func (q *Queries) ResolveUnmatchedFile(ctx context.Context, arg ResolveUnmatched
 	return i, err
 }
 
+const updateMediaFileIdentity = `-- name: UpdateMediaFileIdentity :one
+update media_file
+set media_item_id = $1,
+    episode_id = $2
+where id = $3
+returning id, library_id, media_item_id, episode_id, path, created_at
+`
+
+type UpdateMediaFileIdentityParams struct {
+	MediaItemID pgtype.UUID `json:"media_item_id"`
+	EpisodeID   pgtype.UUID `json:"episode_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+// Re-points an existing media_file at a different identity (media_item +
+// optional episode) in place. Used by the manual re-match flow (Phase 4)
+// so a media→media re-match preserves the row, its media_file_state
+// snapshot, and the media_file_import history — none of which survive a
+// delete-and-recreate.
+func (q *Queries) UpdateMediaFileIdentity(ctx context.Context, arg UpdateMediaFileIdentityParams) (MediaFile, error) {
+	row := q.db.QueryRow(ctx, updateMediaFileIdentity, arg.MediaItemID, arg.EpisodeID, arg.ID)
+	var i MediaFile
+	err := row.Scan(
+		&i.ID,
+		&i.LibraryID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.Path,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const updateMediaFileState = `-- name: UpdateMediaFileState :one
 update media_file_state
 set file_exists = $1,

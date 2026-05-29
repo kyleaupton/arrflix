@@ -292,6 +292,93 @@ func TestMatchDecisions_Unmatch(t *testing.T) {
 	}
 }
 
+// TestMatchDecisions_Rematch_InPlace re-matches a file that's already in
+// media_file to a different identity and asserts the transition is
+// in-place: the same media_file.id survives (so the match_decision chain
+// keyed on it stays consistent), the media_file_state snapshot is
+// preserved, and the media_file_import history row stays attached. This
+// is the regression guard for the delete-and-recreate bug — a failed
+// commit must never orphan the file, and a successful one must not
+// fragment its state/import history.
+func TestMatchDecisions_Rematch_InPlace(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	tmdbSrv, tmdbClient := tmdbtest.New(t)
+	tmdbSrv.OnMovieDetails(603, tmdb.MovieDetails{ID: 603, ReleaseDate: "1999-03-31", Title: "The Matrix"})
+	app := testapp.New(t, pool, testapp.WithTMDB(tmdbClient))
+
+	libID, _ := seedLibrary(t, app, "movies")
+	fileID := seedMediaFile(t, app, libID, 27205, "Inception", 2010, "Inception (2010)/Inception.mkv")
+
+	// Seed an import-history row so we can assert it stays attached to the
+	// same media_file across the re-match.
+	if _, err := app.Pool.Exec(context.Background(),
+		`INSERT INTO media_file_import (media_file_id, method, dest_path, success)
+		 VALUES ($1, 'scan', $2, true)`,
+		fileID, "Inception (2010)/Inception.mkv",
+	); err != nil {
+		t.Fatalf("seed media_file_import: %v", err)
+	}
+
+	// Re-match the media-resident file to a new identity (Matrix, 603).
+	var out matchDecisionWire
+	app.POST(t, "/api/v1/files/"+fileID.String()+"/match",
+		map[string]any{"external": map[string]any{"source": "tmdb", "externalId": "603"}},
+		&out, http.StatusOK,
+	)
+	if out.ChosenRef == nil || out.ChosenRef.ExternalID != "603" {
+		t.Fatalf("current chosenRef: got %+v, want tmdb:603", out.ChosenRef)
+	}
+
+	// The media_file row must still exist under the SAME id, now pointing
+	// at the Matrix media_item.
+	var (
+		mfCount     int
+		newTmdbID   int64
+		stateSize   *int64
+		stateExists bool
+	)
+	if err := app.Pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM media_file WHERE id = $1`, fileID,
+	).Scan(&mfCount); err != nil {
+		t.Fatalf("count media_file: %v", err)
+	}
+	if mfCount != 1 {
+		t.Fatalf("expected media_file %s to survive re-match in place, got %d rows", fileID, mfCount)
+	}
+	if err := app.Pool.QueryRow(context.Background(),
+		`SELECT mi.tmdb_id FROM media_file mf JOIN media_item mi ON mi.id = mf.media_item_id WHERE mf.id = $1`,
+		fileID,
+	).Scan(&newTmdbID); err != nil {
+		t.Fatalf("read re-pointed identity: %v", err)
+	}
+	if newTmdbID != 603 {
+		t.Fatalf("media_file identity: got tmdb %d, want 603", newTmdbID)
+	}
+
+	// media_file_state must be preserved (same row, original file_size).
+	if err := app.Pool.QueryRow(context.Background(),
+		`SELECT file_exists, file_size FROM media_file_state WHERE media_file_id = $1`, fileID,
+	).Scan(&stateExists, &stateSize); err != nil {
+		t.Fatalf("read media_file_state: %v (expected preserved across re-match)", err)
+	}
+	if !stateExists || stateSize == nil || *stateSize != 1024 {
+		t.Fatalf("media_file_state not preserved: exists=%v size=%v", stateExists, stateSize)
+	}
+
+	// The import-history row must still be attached (media_file_id not
+	// nulled by a cascade) — delete-and-recreate would have detached it.
+	var importCount int
+	if err := app.Pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM media_file_import WHERE media_file_id = $1`, fileID,
+	).Scan(&importCount); err != nil {
+		t.Fatalf("count media_file_import: %v", err)
+	}
+	if importCount != 1 {
+		t.Fatalf("expected import-history row to stay attached, got %d", importCount)
+	}
+}
+
 // TestMatchDecisions_Detach: media_file → gone, with the detached
 // outcome row preserving the audit trail.
 func TestMatchDecisions_Detach(t *testing.T) {

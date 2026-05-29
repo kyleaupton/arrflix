@@ -756,6 +756,32 @@ func (r *Repository) CreateMediaFileWithID(ctx context.Context, params CreateMed
 	return toModelMediaFile(row), nil
 }
 
+// UpdateMediaFileIdentityParams is the domain-shaped input for
+// UpdateMediaFileIdentity. Re-points an existing media_file row at a new
+// media_item (and optional episode) without touching its
+// media_file_state or media_file_import history.
+type UpdateMediaFileIdentityParams struct {
+	ID          uuid.UUID
+	MediaItemID uuid.UUID
+	EpisodeID   *uuid.UUID
+}
+
+func (r *Repository) UpdateMediaFileIdentity(ctx context.Context, params UpdateMediaFileIdentityParams) (model.MediaFile, error) {
+	var episode pgtype.UUID
+	if params.EpisodeID != nil {
+		episode = pgtypeFromUUID(*params.EpisodeID)
+	}
+	row, err := r.Q.UpdateMediaFileIdentity(ctx, dbgen.UpdateMediaFileIdentityParams{
+		ID:          pgtypeFromUUID(params.ID),
+		MediaItemID: pgtypeFromUUID(params.MediaItemID),
+		EpisodeID:   episode,
+	})
+	if err != nil {
+		return model.MediaFile{}, apperrors.FromPg(err, "update media file %s identity", params.ID)
+	}
+	return toModelMediaFile(row), nil
+}
+
 func (r *Repository) ListMediaFilesForItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.MediaFileWithState, error) {
 	rows, err := r.Q.ListMediaFilesForItem(ctx, pgtypeFromUUID(mediaItemID))
 	if err != nil {

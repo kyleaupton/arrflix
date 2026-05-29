@@ -56,6 +56,14 @@ type commitMatchInput struct {
 	// join key stable across an unmatched_file → media_file transition.
 	// Scan-time calls leave this nil — fresh rows get auto-assigned ids.
 	PreservedFileID *uuid.UUID
+	// Recommit re-points an existing media_file (identified by
+	// PreservedFileID) at the new identity in place, rather than
+	// inserting a fresh row. Used by the manual re-match flow (media →
+	// media): the UPDATE preserves the row's media_file_state snapshot
+	// and media_file_import history, which a delete-and-recreate would
+	// destroy. Requires PreservedFileID to be set; the existing
+	// media_file_state / media_file_import rows are left untouched.
+	Recommit bool
 }
 
 // commitMatchResult names what commitMatch produced — the new (or
@@ -103,6 +111,11 @@ type commitMatchDeps struct {
 func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (commitMatchResult, error) {
 	if in.TmdbID <= 0 {
 		return commitMatchResult{}, apperrors.Internalf("commitMatch: non-positive tmdb id %d for %q", in.TmdbID, in.RelPath).
+			Op("commitMatch").
+			NotRetryable()
+	}
+	if in.Recommit && in.PreservedFileID == nil {
+		return commitMatchResult{}, apperrors.Internalf("commitMatch: recommit requires a preserved file id for %q", in.RelPath).
 			Op("commitMatch").
 			NotRetryable()
 	}
@@ -178,6 +191,25 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 				eid := epRow.ID
 				episodeIDPtr = &eid
 			}
+		}
+
+		// Re-match: re-point the existing media_file in place. The
+		// media_file_state snapshot and media_file_import history stay
+		// attached to the same row — no new state/import write, because
+		// nothing moved on disk; only the identity changed. The
+		// match_decision row is the audit record for that change.
+		if in.Recommit {
+			mf, ferr := r.UpdateMediaFileIdentity(ctx, repo.UpdateMediaFileIdentityParams{
+				ID:          *in.PreservedFileID,
+				MediaItemID: mediaItem.ID,
+				EpisodeID:   episodeIDPtr,
+			})
+			if ferr != nil {
+				return ferr
+			}
+			result.MediaItem = mediaItem
+			result.MediaFile = mf
+			return nil
 		}
 
 		var (

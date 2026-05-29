@@ -111,6 +111,18 @@ insert into media_file (id, library_id, media_item_id, episode_id, path)
 values (sqlc.arg(id), sqlc.arg(library_id), sqlc.arg(media_item_id), sqlc.arg(episode_id), sqlc.arg(path))
 returning *;
 
+-- name: UpdateMediaFileIdentity :one
+-- Re-points an existing media_file at a different identity (media_item +
+-- optional episode) in place. Used by the manual re-match flow (Phase 4)
+-- so a media→media re-match preserves the row, its media_file_state
+-- snapshot, and the media_file_import history — none of which survive a
+-- delete-and-recreate.
+update media_file
+set media_item_id = sqlc.arg(media_item_id),
+    episode_id = sqlc.arg(episode_id)
+where id = sqlc.arg(id)
+returning *;
+
 -- name: DeleteMediaFile :exec
 delete from media_file where id = $1;
 
