@@ -194,6 +194,7 @@ const (
 	MatchOutcomeAmbiguous       MatchOutcome = "ambiguous"
 	MatchOutcomeNoMatch         MatchOutcome = "no_match"
 	MatchOutcomePartialSeries   MatchOutcome = "partial_series"
+	MatchOutcomeDetached        MatchOutcome = "detached"
 )
 
 func (e *MatchOutcome) Scan(src interface{}) error {

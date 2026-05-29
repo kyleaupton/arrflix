@@ -275,10 +275,15 @@ func isNotFound(err error) bool {
 	if apperrors.IsNotFound(err) {
 		return true
 	}
-	msg := err.Error()
+	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "404") ||
-		strings.Contains(strings.ToLower(msg), "not found") ||
-		strings.Contains(msg, "code 34") // TMDB's "resource not found" status_code
+		strings.Contains(msg, "not found") ||
+		strings.Contains(msg, "could not be found") ||
+		// TMDB's "resource not found" status_code surfaces as either
+		// "code 34" (bare) or "code: 34" (key:value form) depending on
+		// which layer formats the upstream payload.
+		strings.Contains(msg, "code 34") ||
+		strings.Contains(msg, "code: 34")
 }
 
 // classifyUpstream converts an arbitrary TMDB-layer error into the sentinel

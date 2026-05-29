@@ -179,6 +179,36 @@ func (s *Server) OnMovieDetails(id int64, details tmdb.MovieDetails) {
 	})
 }
 
+// OnMovieDetailsNotFound registers a handler for GET /movie/{id} that
+// returns TMDB's standard 404 body. The matcher's metadata provider
+// reads the status code + status_code 34 to surface ErrNotFound rather
+// than ErrUpstreamUnavailable; tests use this to exercise the "user
+// supplied a bad ID" code path on the match-by-ID handler.
+func (s *Server) OnMovieDetailsNotFound(id int64) {
+	s.register(http.MethodGet, fmt.Sprintf("/movie/%d", id), func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":        false,
+			"status_code":    34,
+			"status_message": "The resource you requested could not be found.",
+		})
+	})
+}
+
+// OnTVDetailsNotFound is the series counterpart of OnMovieDetailsNotFound.
+func (s *Server) OnTVDetailsNotFound(id int64) {
+	s.register(http.MethodGet, fmt.Sprintf("/tv/%d", id), func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":        false,
+			"status_code":    34,
+			"status_message": "The resource you requested could not be found.",
+		})
+	})
+}
+
 func (s *Server) OnMovieCredits(id int64, credits tmdb.MovieCredits) {
 	s.register(http.MethodGet, fmt.Sprintf("/movie/%d/credits", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, credits)

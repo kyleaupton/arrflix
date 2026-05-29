@@ -145,6 +145,44 @@ func (q *Queries) CreateMediaFileState(ctx context.Context, arg CreateMediaFileS
 	return i, err
 }
 
+const createMediaFileWithID = `-- name: CreateMediaFileWithID :one
+insert into media_file (id, library_id, media_item_id, episode_id, path)
+values ($1, $2, $3, $4, $5)
+returning id, library_id, media_item_id, episode_id, path, created_at
+`
+
+type CreateMediaFileWithIDParams struct {
+	ID          pgtype.UUID `json:"id"`
+	LibraryID   pgtype.UUID `json:"library_id"`
+	MediaItemID pgtype.UUID `json:"media_item_id"`
+	EpisodeID   pgtype.UUID `json:"episode_id"`
+	Path        string      `json:"path"`
+}
+
+// Inserts a media_file with an explicit id. Used by the manual match
+// flow (Phase 4) to preserve the stable file_id across an
+// unmatched_file → media_file transition: the match_decision rows are
+// keyed by file_id, so the join key has to survive.
+func (q *Queries) CreateMediaFileWithID(ctx context.Context, arg CreateMediaFileWithIDParams) (MediaFile, error) {
+	row := q.db.QueryRow(ctx, createMediaFileWithID,
+		arg.ID,
+		arg.LibraryID,
+		arg.MediaItemID,
+		arg.EpisodeID,
+		arg.Path,
+	)
+	var i MediaFile
+	err := row.Scan(
+		&i.ID,
+		&i.LibraryID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.Path,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createMediaItem = `-- name: CreateMediaItem :one
 insert into media_item (type, title, year, tmdb_id)
 values ($1, $2, $3, $4)

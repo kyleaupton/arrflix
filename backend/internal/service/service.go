@@ -30,6 +30,7 @@ type Services struct {
 	Indexer            *IndexerService
 	Libraries          *LibrariesService
 	Matcher            *matcher.MatcherService
+	MatchDecisions     *MatchDecisionsService
 	Media              *MediaService
 	NameTemplates      *NameTemplatesService
 	Policies           *PoliciesService
@@ -89,13 +90,19 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	// caller today; manual re-match flows (Phase 4) and drop-in flows
 	// (when drop-in detection ships) consume the same surface.
 	metadataProvider := metadata.NewTmdbProvider(tmdb)
+	matcherRepo := matcher.NewRepoAdapter(r)
 	matcherSvc := matcher.NewMatcherService(
 		l,
-		matcher.NewRepoAdapter(r),
+		matcherRepo,
 		metadataProvider,
 		resolvers.DefaultRegistry(metadataProvider),
 		matcher.DefaultConfig(),
 	)
+	// MatchDecisionsService is the user-driven half of the match_decision
+	// write surface (re-match / un-match / detach / match-by-ID). It
+	// shares matcherRepo with MatcherService so the supersede chain
+	// stays consistent across auto-match and manual flows.
+	matchDecisionsSvc := NewMatchDecisionsService(r, l, tmdb, enrichment, metadataProvider, settings, matcherRepo)
 
 	return &Services{
 		Auth:               NewAuthService(r, cfg, settings, invites),
@@ -111,6 +118,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Indexer:            indexer,
 		Libraries:          NewLibrariesService(r, l),
 		Matcher:            matcherSvc,
+		MatchDecisions:     matchDecisionsSvc,
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
 		Policies:           policies,

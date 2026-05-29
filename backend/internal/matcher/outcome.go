@@ -35,6 +35,12 @@ const (
 	// this; the band exists so phase-3 episode-resolving resolvers don't
 	// need a schema change.
 	OutcomePartialSeries Outcome = "partial_series"
+	// OutcomeDetached: the user explicitly removed the file from the
+	// library scope ("this doesn't belong here"). The file may be moved
+	// to a configured quarantine path; the match_decision row preserves
+	// the audit trail. No follow-up match is expected. Phase 4 user-only
+	// outcome — the aggregator never emits this.
+	OutcomeDetached Outcome = "detached"
 )
 
 // Thresholds names where the bands fall on the 0..1 confidence axis. The
@@ -99,6 +105,21 @@ type MatchOutcomeRecord struct {
 	// Tier-3-only path without a follow-up validation step).
 	ChosenItem *metadata.Item
 
+	// RankedCandidates is the top-N post-merge candidate set, sorted by
+	// final aggregated confidence (descending). The slice is capped at
+	// RankedCandidatesLimit (5) and excludes candidates below LowMin —
+	// it mirrors what the matcher inbox surfaces as ranked suggestions.
+	// Empty for no_match; one entry for confident / confident_review /
+	// low_confidence (the chosen candidate); up to 5 for ambiguous.
+	// partial_series carries the series-level chosen candidate only.
+	//
+	// Each entry carries the validated metadata.Item when the aggregator's
+	// Tier-1 validation populated one (matching by post-rewrite
+	// ExternalRef); nil otherwise. Persistence code uses this to write
+	// per-suggestion title/year onto unmatched_file.suggested_matches
+	// without a second LookupByID.
+	RankedCandidates []RankedCandidate
+
 	// Confidence is the final aggregated value driving the band. Zero
 	// when Outcome is no_match.
 	Confidence float64
@@ -129,4 +150,26 @@ type ResolverAudit struct {
 	Tier           Tier    `json:"tier"`
 	CandidateCount int     `json:"candidateCount"`
 	TopConfidence  float64 `json:"topConfidence"`
+}
+
+// RankedCandidatesLimit caps the post-merge candidate slice the
+// aggregator carries on the outcome record. Matches the matching spec's
+// "up to 5 suggestions" semantics for ambiguous outcomes; deeper lists
+// would inflate unmatched_file.suggested_matches without adding signal.
+const RankedCandidatesLimit = 5
+
+// RankedCandidate is one entry in MatchOutcomeRecord.RankedCandidates —
+// a post-aggregator candidate paired with its validated metadata.Item
+// (when available). Order across the slice is by Confidence descending.
+type RankedCandidate struct {
+	Ref        ExternalRef
+	Episode    *EpisodeRef
+	Edition    *string
+	Confidence float64
+	// Item is the validated metadata.Item when the aggregator ran the
+	// Tier-1 validation step and matched this candidate's (post-rewrite)
+	// ExternalRef. Nil for Tier-3-only candidates or when the provider
+	// was absent — persistence code falls back to the chosen item's
+	// title/year in that case.
+	Item *metadata.Item
 }

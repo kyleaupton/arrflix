@@ -435,7 +435,110 @@ func (a *Aggregator) bandAndRecord(file FileRef, cands []Candidate, items map[Ex
 		}
 	}
 
+	rec.RankedCandidates = rankCandidates(cands, items, rec.Outcome, a.cfg.Thresholds.LowMin)
+
 	return rec
+}
+
+// rankCandidates produces the top-N post-merge candidate slice the
+// outcome record carries. The slice mirrors what the matcher inbox would
+// surface as ranked suggestions — already sorted by confidence at the
+// bandAndRecord callsite. Per-outcome semantics:
+//
+//   - no_match: empty (no candidate cleared LowMin).
+//   - confident / confident_review / low_confidence / partial_series:
+//     one entry (the chosen candidate). Ambiguous-mode below-LowMin
+//     candidates are excluded — those bands always have a single dominant
+//     pick by construction.
+//   - ambiguous: up to RankedCandidatesLimit entries, all above LowMin
+//     (or just the top entries when nothing cleared the bar — matching
+//     the spec's "ambiguous with no strong candidates falls into
+//     ambiguous" interpretation).
+//
+// The items map is keyed by post-validation ExternalRef; entries that
+// match a key carry the validated metadata.Item so per-suggestion
+// title/year can be denormalized at persist time without a second
+// LookupByID. Unkeyed candidates (Tier-3 search results) leave Item nil.
+func rankCandidates(cands []Candidate, items map[ExternalRef]*metadata.Item, outcome Outcome, lowMin float64) []RankedCandidate {
+	if len(cands) == 0 {
+		return nil
+	}
+
+	// no_match writes zero suggestions per spec § Confidence bands; the
+	// row's existence is the signal.
+	if outcome == OutcomeNoMatch {
+		return nil
+	}
+
+	// Pick how many to surface. Non-ambiguous bands have a single
+	// dominant pick; ambiguous surfaces up to RankedCandidatesLimit so
+	// the inbox can render the picker.
+	limit := 1
+	if outcome == OutcomeAmbiguous {
+		limit = RankedCandidatesLimit
+	}
+
+	out := make([]RankedCandidate, 0, limit)
+	for _, c := range cands {
+		// Drop sub-LowMin candidates from the suggestion list. The
+		// outcome itself remains banded per the aggregator's earlier
+		// math; this filter just keeps the inbox from surfacing noise.
+		// Exception: when nothing cleared LowMin (ambiguous fallthrough)
+		// we still want SOMETHING in the picker, so the loop's early
+		// break + a final fallback below handles that case.
+		if c.Confidence < lowMin {
+			break
+		}
+		rc := RankedCandidate{
+			Ref:        c.Ref,
+			Confidence: c.Confidence,
+		}
+		if c.Episode != nil {
+			ep := *c.Episode
+			rc.Episode = &ep
+		}
+		if c.Edition != nil {
+			ed := *c.Edition
+			rc.Edition = &ed
+		}
+		if item, ok := items[c.Ref]; ok {
+			rc.Item = item
+		}
+		out = append(out, rc)
+		if len(out) >= limit {
+			break
+		}
+	}
+
+	// Ambiguous fallthrough: if every candidate sat below LowMin and we
+	// produced nothing, surface the top up-to-N regardless so the inbox
+	// has something to render. Other outcomes don't need this — they
+	// produce at least one above-LowMin entry by construction.
+	if outcome == OutcomeAmbiguous && len(out) == 0 {
+		for i, c := range cands {
+			if i >= limit {
+				break
+			}
+			rc := RankedCandidate{
+				Ref:        c.Ref,
+				Confidence: c.Confidence,
+			}
+			if c.Episode != nil {
+				ep := *c.Episode
+				rc.Episode = &ep
+			}
+			if c.Edition != nil {
+				ed := *c.Edition
+				rc.Edition = &ed
+			}
+			if item, ok := items[c.Ref]; ok {
+				rc.Item = item
+			}
+			out = append(out, rc)
+		}
+	}
+
+	return out
 }
 
 // capEvidence marshals the per-resolver evidence map into a JSONB-ready

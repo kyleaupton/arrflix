@@ -31,6 +31,12 @@ These rules apply to both service code (`internal/service/`) and worker code (`i
 6. **Never import `dbgen.*` or `pgtype.*`.**
    Services and workers speak `model.*` (idiomatic Go domain types). The repo handles the persistence ↔ domain translation. Service signatures take and return `model.*` and `uuid.UUID`; pgtype-shaped values are a repo-internal concern. If a service file imports `github.com/kyleaupton/arrflix/internal/db/sqlc` or `github.com/jackc/pgx/v5/pgtype`, the layering is wrong — fix the repo, not the service. (Same rule applies to `internal/jobs/*` workers.)
 
+7. **`*Service` types live in this package. Domain modules don't define services and don't touch the repo.**
+   `internal/<domain>/` packages (parsing, policy, metadata, indexer, importer, matcher, …) provide the *pure* half of a feature: engines, registries, parsers, aggregators, and the domain types they return. They are stateless or hold only in-memory state, and they MUST compile without importing `internal/repo`, `internal/db/sqlc`, or `pgtype`. The orchestration half — the thing that holds `*repo.Repository`, wires the domain engine to persistence, and is hung off `Services` in `service.go` — is a `*Service` and lives here, even when it's a thin wrapper over one domain engine (see `DownloadCandidatesService` over `policy.Engine`). A `FooService` defined inside `internal/foo/` is the layering inverted: it forces a repo-shaped interface + adapter into the domain package to dodge the import cycle, when the service could just hold `*repo.Repository` directly from here.
+
+8. **Default to holding `*repo.Repository` directly; add an interface seam only for a real test need, and declare it here.**
+   A service's repo field is the concrete `*repo.Repository`, not a hand-rolled interface — that's the norm across this package. Introduce a repo-shaped interface seam only when a service has enough untested internal logic to justify faking the repo in a co-located unit test (the per-service design decision called out under [Tests](#fakes-for-service-method-tests-for-when-seams-land)). When you do, the interface is declared in the service file next to its consumer — never in a domain package, and never as a way to let a domain package reach persistence. Domain types the engine returns (e.g. `matcher.MatchOutcomeRecord`) stay in the domain package; the `domain-record → repo.<Method>Params` translation lives in the service, the only layer allowed to know both shapes.
+
 ## Patterns
 
 ### Pass-through (the common case)

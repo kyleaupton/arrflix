@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/model"
 )
 
 // InsertMatchDecisionParams is the domain-shaped input for
@@ -71,4 +72,60 @@ func (r *Repository) SupersedeMatchDecision(ctx context.Context, fileID uuid.UUI
 		SupersedingID: &supersedingID,
 		FileID:        pgtypeFromUUID(fileID),
 	}), "supersede match decision for file %s", fileID)
+}
+
+// toModelMatchDecision translates the persistence-shaped
+// dbgen.MatchDecision into the domain-shaped model.MatchDecision. The
+// outcome enum stringifies; JSONB blobs are wrapped as json.RawMessage
+// so callers can pass them straight through to the API surface.
+func toModelMatchDecision(row dbgen.MatchDecision) model.MatchDecision {
+	md := model.MatchDecision{
+		ID:                 row.ID,
+		FileID:             uuidFromPgtype(row.FileID),
+		Outcome:            string(row.Outcome),
+		ChosenSource:       row.ChosenSource,
+		ChosenExternalID:   row.ChosenExternalID,
+		ChosenSeason:       row.ChosenSeason,
+		ChosenEpisode:      row.ChosenEpisode,
+		ChosenEdition:      row.ChosenEdition,
+		Confidence:         row.Confidence,
+		ResolversConsulted: json.RawMessage(row.ResolversConsulted),
+		Evidence:           json.RawMessage(row.Evidence),
+		EvidenceTruncated:  row.EvidenceTruncated,
+		DecidedBy:          row.DecidedBy,
+		DecidedAt:          row.DecidedAt,
+		SupersededBy:       row.SupersededBy,
+	}
+	if row.SupersededAt.Valid {
+		t := row.SupersededAt.Time
+		md.SupersededAt = &t
+	}
+	return md
+}
+
+// GetCurrentMatchDecisionForFile returns the current (non-superseded)
+// decision for a file, or a NotFound error when none exists. This is the
+// hot-path read behind every endpoint that needs to know "what does the
+// matcher think this file is right now."
+func (r *Repository) GetCurrentMatchDecisionForFile(ctx context.Context, fileID uuid.UUID) (model.MatchDecision, error) {
+	row, err := r.Q.GetCurrentMatchDecision(ctx, pgtypeFromUUID(fileID))
+	if err != nil {
+		return model.MatchDecision{}, apperrors.FromPg(err, "current match decision for file %s", fileID)
+	}
+	return toModelMatchDecision(row), nil
+}
+
+// ListMatchDecisionHistoryForFile returns every decision row for a file
+// in newest-first order. Powers the evidence-read endpoint's
+// ?include_history=true path: the supersede chain plus the current row.
+func (r *Repository) ListMatchDecisionHistoryForFile(ctx context.Context, fileID uuid.UUID) ([]model.MatchDecision, error) {
+	rows, err := r.Q.ListMatchDecisionHistoryForFile(ctx, pgtypeFromUUID(fileID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list match decision history for file %s", fileID)
+	}
+	out := make([]model.MatchDecision, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelMatchDecision(row))
+	}
+	return out, nil
 }

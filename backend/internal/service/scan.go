@@ -441,12 +441,12 @@ func (s *ScannerService) resolveFileID(ctx context.Context, libraryID uuid.UUID,
 // match_decision.outcome (already written by MatchBatch); we don't
 // store a separate flag on media_file.
 //
-// Returns (mediaItemCreated, episodeLookupFailed, error).
+// The actual persistence is delegated to commitMatch, the helper shared
+// with the user-driven match-by-ID handler (Phase 4). Scan's wrapper
+// owns the matcher-record → commitMatchInput translation (cross-source
+// validation, episode unwrap) and the post-commit enrichment kick.
 //
-// TODO(metadata-seam): GetEpisodeDetails isn't on MetadataProvider yet —
-// when it grows LookupEpisode this call moves behind the seam. The
-// movie/series fetches already use rec.ChosenItem (populated by the
-// aggregator's Tier-1 validation) and skip the second TMDB call.
+// Returns (mediaItemCreated, episodeLookupFailed, error).
 //
 // TODO(tracking): close any open wants whose identity matches this
 // outcome's ChosenRef + ChosenEpisode. Phase 4 of the matcher plan is
@@ -472,113 +472,34 @@ func (s *ScannerService) persistConfident(ctx context.Context, library model.Lib
 			NotRetryable()
 	}
 
-	existing, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, library.Type)
-	needsCreateItem := apperrors.IsNotFound(err)
-	if err != nil && !needsCreateItem {
-		return false, false, err
+	in := commitMatchInput{
+		Library:  library,
+		RelPath:  f.RelPath,
+		AbsPath:  f.AbsPath,
+		FileSize: f.FileSize,
+		TmdbID:   tmdbID,
+		Item:     rec.ChosenItem,
+		Edition:  rec.ChosenEdition,
+		Method:   "scan",
 	}
-
-	var createItemParams repo.CreateMediaItemParams
-	if needsCreateItem {
-		title, year, perr := s.titleAndYear(ctx, library, tmdbID, rec.ChosenItem)
-		if perr != nil {
-			return false, false, perr
-		}
-		t := tmdbID
-		createItemParams = repo.CreateMediaItemParams{
-			Type:   library.Type,
-			Title:  title,
-			Year:   &year,
-			TmdbID: &t,
-		}
-	}
-
-	episodeTitle := ""
-	var season, episode *int32
 	if rec.ChosenEpisode != nil {
 		sn := int32(rec.ChosenEpisode.Season)
 		en := int32(rec.ChosenEpisode.Episode)
-		season = &sn
-		episode = &en
-		ep, eerr := s.tmdb.GetEpisodeDetails(ctx, tmdbID, int64(sn), int64(en))
-		if eerr != nil {
-			s.logger.Error().Err(eerr).Str("path", f.AbsPath).Msg("Error getting episode details from TMDB")
-			return false, true, nil // skip file, continue
-		}
-		episodeTitle = ep.Name
+		in.Season = &sn
+		in.Episode = &en
 	}
 
-	var (
-		itemCreated bool
-		createdItem model.MediaItem
-	)
-	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
-		mediaItemID := existing.ID
-		if needsCreateItem {
-			item, cerr := r.CreateMediaItem(ctx, createItemParams)
-			if cerr != nil {
-				return cerr
-			}
-			mediaItemID = item.ID
-			createdItem = item
-			itemCreated = true
-		}
-
-		var episodeIDPtr *uuid.UUID
-		if season != nil {
-			seasonRow, serr := r.UpsertSeason(ctx, repo.UpsertSeasonParams{
-				MediaItemID:  mediaItemID,
-				SeasonNumber: *season,
-			})
-			if serr != nil {
-				return serr
-			}
-			if episode != nil {
-				epRow, eerr := r.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
-					SeasonID:      seasonRow.ID,
-					EpisodeNumber: *episode,
-					Title:         &episodeTitle,
-				})
-				if eerr != nil {
-					return eerr
-				}
-				eid := epRow.ID
-				episodeIDPtr = &eid
-			}
-		}
-
-		mf, ferr := r.CreateMediaFile(ctx, repo.CreateMediaFileParams{
-			LibraryID:   library.ID,
-			MediaItemID: mediaItemID,
-			EpisodeID:   episodeIDPtr,
-			Path:        f.RelPath,
-		})
-		if ferr != nil {
-			return ferr
-		}
-
-		if _, serr := r.UpsertMediaFileState(ctx, repo.UpsertMediaFileStateParams{
-			MediaFileID: mf.ID,
-			FileExists:  true,
-			FileSize:    f.FileSize,
-		}); serr != nil {
-			return serr
-		}
-
-		_, ierr := r.CreateMediaFileImport(ctx, repo.CreateMediaFileImportParams{
-			MediaFileID: mf.ID,
-			Method:      "scan",
-			DestPath:    f.AbsPath,
-			Success:     true,
-		})
-		return ierr
-	})
+	result, err := commitMatch(ctx, commitMatchDeps{repo: s.repo, log: s.logger, tmdb: s.tmdb}, in)
 	if err != nil {
 		return false, false, err
 	}
+	if result.EpisodeFailed {
+		return false, true, nil // skip file, continue
+	}
 
 	// Fire enrichment after commit so the goroutine reads a committed row.
-	if itemCreated && s.enrichment != nil {
+	if result.ItemCreated && s.enrichment != nil {
+		createdItem := result.MediaItem
 		go func() {
 			if err := s.enrichment.EnrichMediaItem(s.ctx, createdItem); err != nil {
 				s.logger.Warn().Err(err).Str("title", createdItem.Title).Msg("scan-time enrichment failed, worker will retry")
@@ -586,61 +507,7 @@ func (s *ScannerService) persistConfident(ctx context.Context, library model.Lib
 		}()
 	}
 
-	return itemCreated, false, nil
-}
-
-// titleAndYear sources the media_item display fields. When the matcher
-// validated against the provider it already fetched the title/year and
-// attached the Item to the record — using it skips the second TMDB call.
-// Falling back to GetMovieDetails / GetSeriesDetails handles cases where
-// validation didn't populate the Item (provider unavailable, candidate
-// passed through on upstream error).
-//
-// TODO(metadata-seam): the fallback fetches will move behind
-// MetadataProvider when the metadata module proper lands; today the
-// TmdbService boundary is what the rest of scan still calls into.
-func (s *ScannerService) titleAndYear(ctx context.Context, library model.Library, tmdbID int64, item *metadata.Item) (string, int32, error) {
-	if item != nil && item.Title != "" {
-		return item.Title, int32(item.Year), nil
-	}
-
-	switch library.Type {
-	case "movie":
-		movie, err := s.tmdb.GetMovieDetails(ctx, tmdbID)
-		if err != nil {
-			return "", 0, err
-		}
-		if movie.ReleaseDate == "" {
-			return "", 0, apperrors.BadGatewayf("tmdb movie %d has empty release date", tmdbID).
-				Op("ScannerService.titleAndYear")
-		}
-		year64, err := strconv.ParseInt(strings.Split(movie.ReleaseDate, "-")[0], 10, 32)
-		if err != nil {
-			return "", 0, apperrors.BadGatewayf("tmdb movie %d release date %q unparseable: %v", tmdbID, movie.ReleaseDate, err).
-				Op("ScannerService.titleAndYear")
-		}
-		return movie.Title, int32(year64), nil
-
-	case "series":
-		tv, err := s.tmdb.GetSeriesDetails(ctx, tmdbID)
-		if err != nil {
-			return "", 0, err
-		}
-		if tv.FirstAirDate == "" {
-			return "", 0, apperrors.BadGatewayf("tmdb series %d has empty first air date", tmdbID).
-				Op("ScannerService.titleAndYear")
-		}
-		year64, err := strconv.ParseInt(strings.Split(tv.FirstAirDate, "-")[0], 10, 32)
-		if err != nil {
-			return "", 0, apperrors.BadGatewayf("tmdb series %d first air date %q unparseable: %v", tmdbID, tv.FirstAirDate, err).
-				Op("ScannerService.titleAndYear")
-		}
-		return tv.Name, int32(year64), nil
-	}
-
-	return "", 0, apperrors.Internalf("unknown library type %q", library.Type).
-		Op("ScannerService.titleAndYear").
-		NotRetryable()
+	return result.ItemCreated, false, nil
 }
 
 // persistUnmatched writes an unmatched_file row for a low_confidence /
@@ -670,20 +537,18 @@ func (s *ScannerService) persistUnmatched(ctx context.Context, library model.Lib
 // evidence, title, year, type}` — one entry per candidate the matcher
 // would surface.
 //
-// Today the aggregator's MatchOutcomeRecord doesn't carry the per-
-// candidate slice (only the chosen one); rather than re-running the
-// resolvers here we surface the chosen candidate as one suggestion for
-// low_confidence and partial_series, leave ambiguous with no
-// suggestions until the aggregator grows a CandidateList field, and
-// emit an empty slice for no_match. That gap is small and intentional:
-// the inbox UI surfaces the path + match_decision evidence regardless;
-// the structured suggestion list grows with the aggregator API.
+// Per-outcome semantics follow the confidence-bands table:
+//   - no_match: empty slice (the row's existence is the signal).
+//   - low_confidence / partial_series: one entry (the strong candidate).
+//   - ambiguous: up to RankedCandidatesLimit (5) ranked entries.
 //
-// TODO(matcher): plumb the post-merge candidate list onto
-// MatchOutcomeRecord so ambiguous outcomes carry up to 5 ranked
-// suggestions (rather than 0).
+// The list mirrors rec.RankedCandidates exactly; the aggregator owns
+// the ranking + truncation. We attach the per-row evidence to every
+// suggestion (capped at suggestedEvidenceCapBytes) because we don't
+// carry per-candidate evidence on the outcome record — the inbox uses
+// the row-level evidence + ContributingResolvers to render the "why".
 func suggestionsFromOutcome(rec matcher.MatchOutcomeRecord, libraryType string) []model.SuggestedMatch {
-	if rec.ChosenRef == nil {
+	if len(rec.RankedCandidates) == 0 {
 		return nil
 	}
 	resolvers := make([]string, 0, len(rec.ResolversConsulted))
@@ -693,25 +558,30 @@ func suggestionsFromOutcome(rec matcher.MatchOutcomeRecord, libraryType string) 
 		}
 	}
 
-	title := ""
-	year := 0
-	if rec.ChosenItem != nil {
-		title = rec.ChosenItem.Title
-		year = rec.ChosenItem.Year
-	}
+	evidence := capSuggestionEvidence(rec.Evidence)
 
-	return []model.SuggestedMatch{{
-		ExternalRef: model.SuggestedExternalRef{
-			Source:     string(rec.ChosenRef.Source),
-			ExternalID: rec.ChosenRef.ExternalID,
-		},
-		Confidence:            rec.Confidence,
-		ContributingResolvers: resolvers,
-		Evidence:              capSuggestionEvidence(rec.Evidence),
-		Title:                 title,
-		Year:                  year,
-		Type:                  libraryType,
-	}}
+	out := make([]model.SuggestedMatch, 0, len(rec.RankedCandidates))
+	for _, c := range rec.RankedCandidates {
+		title := ""
+		year := 0
+		if c.Item != nil {
+			title = c.Item.Title
+			year = c.Item.Year
+		}
+		out = append(out, model.SuggestedMatch{
+			ExternalRef: model.SuggestedExternalRef{
+				Source:     string(c.Ref.Source),
+				ExternalID: c.Ref.ExternalID,
+			},
+			Confidence:            c.Confidence,
+			ContributingResolvers: resolvers,
+			Evidence:              evidence,
+			Title:                 title,
+			Year:                  year,
+			Type:                  libraryType,
+		})
+	}
+	return out
 }
 
 // capSuggestionEvidence trims the per-suggestion evidence payload so a

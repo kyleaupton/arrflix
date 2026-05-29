@@ -498,6 +498,11 @@ export type EpisodeAvailability = {
     title?: string;
 };
 
+export type EpisodeRefDto = {
+    episode: number;
+    season: number;
+};
+
 export type EvaluationTrace = {
     /**
      * A URL to the JSON Schema for this object.
@@ -506,6 +511,11 @@ export type EvaluationTrace = {
     context?: ContextSnapshot;
     finalPlan: Plan;
     policies: Array<PolicyEvaluation> | null;
+};
+
+export type ExternalRefDto = {
+    externalId: string;
+    source: 'tmdb' | 'imdb' | 'tvdb';
 };
 
 export type Feed = {
@@ -569,6 +579,33 @@ export type FileInfo = {
     progress?: number;
     seasonNumber?: number;
     status: string;
+};
+
+export type FileMatchBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Movie edition tag (e.g. 'directors_cut', 'extended')
+     */
+    edition?: string;
+    /**
+     * Series episode (season + episode); omit for movies
+     */
+    episode?: EpisodeRefDto;
+    external: FileMatchBodyExternalStruct;
+};
+
+export type FileMatchBodyExternalStruct = {
+    /**
+     * Provider-specific identifier
+     */
+    externalId: string;
+    /**
+     * External provider
+     */
+    source: 'tmdb' | 'imdb' | 'tvdb';
 };
 
 export type FilesystemBrowseResponse = {
@@ -945,6 +982,75 @@ export type LoginResponse = {
     token: string;
 };
 
+export type MatchDecisionResponse = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    chosenEdition?: string;
+    chosenEpisode?: EpisodeRefDto;
+    chosenItem?: MetadataItem;
+    chosenRef?: ExternalRefDto;
+    confidence: number;
+    decidedAt: string;
+    /**
+     * 'auto' | 'user:<uuid>' | 'rule:<uuid>'
+     */
+    decidedBy: string;
+    /**
+     * Per-resolver raw evidence (capped at 8KB)
+     */
+    evidence: unknown;
+    evidenceTruncated: boolean;
+    /**
+     * Stable file id (UUID)
+     */
+    fileId: string;
+    /**
+     * Decision id (BIGSERIAL)
+     */
+    id: number;
+    outcome: 'confident' | 'confident_review' | 'low_confidence' | 'ambiguous' | 'no_match' | 'partial_series' | 'detached';
+    /**
+     * Per-resolver audit array
+     */
+    resolversConsulted: unknown;
+    supersededAt?: string;
+    supersededBy?: number;
+};
+
+export type MatchDecisionsDetachInputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Move the file to the configured quarantine path
+     */
+    quarantine?: boolean;
+};
+
+export type MatchDecisionsDetachResponse = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    decision: MatchDecisionResponse;
+    /**
+     * Destination path when quarantine moved the file; null otherwise
+     */
+    quarantinedPath?: string;
+};
+
+export type MatchDecisionsGetResponse = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    current: MatchDecisionResponse;
+    history?: Array<MatchDecisionResponse> | null;
+};
+
 export type MeResponse = {
     /**
      * A URL to the JSON Schema for this object.
@@ -962,6 +1068,15 @@ export type MeResponse = {
      * User id (UUID string from JWT subject)
      */
     sub: string;
+};
+
+export type MetadataItem = {
+    externalId: string;
+    redirected?: boolean;
+    source: string;
+    title: string;
+    type?: string;
+    year?: number;
 };
 
 export type MovieDetail = {
@@ -1840,6 +1955,18 @@ export type FeedWritable = {
     rows: Array<FeedRow> | null;
 };
 
+export type FileMatchBodyWritable = {
+    /**
+     * Movie edition tag (e.g. 'directors_cut', 'extended')
+     */
+    edition?: string;
+    /**
+     * Series episode (season + episode); omit for movies
+     */
+    episode?: EpisodeRefDto;
+    external: FileMatchBodyExternalStruct;
+};
+
 export type FilesystemBrowseResponseWritable = {
     /**
      * Resolved absolute path that was browsed
@@ -2044,6 +2171,59 @@ export type LoginResponseWritable = {
      * JWT bearer token
      */
     token: string;
+};
+
+export type MatchDecisionResponseWritable = {
+    chosenEdition?: string;
+    chosenEpisode?: EpisodeRefDto;
+    chosenItem?: MetadataItem;
+    chosenRef?: ExternalRefDto;
+    confidence: number;
+    decidedAt: string;
+    /**
+     * 'auto' | 'user:<uuid>' | 'rule:<uuid>'
+     */
+    decidedBy: string;
+    /**
+     * Per-resolver raw evidence (capped at 8KB)
+     */
+    evidence: unknown;
+    evidenceTruncated: boolean;
+    /**
+     * Stable file id (UUID)
+     */
+    fileId: string;
+    /**
+     * Decision id (BIGSERIAL)
+     */
+    id: number;
+    outcome: 'confident' | 'confident_review' | 'low_confidence' | 'ambiguous' | 'no_match' | 'partial_series' | 'detached';
+    /**
+     * Per-resolver audit array
+     */
+    resolversConsulted: unknown;
+    supersededAt?: string;
+    supersededBy?: number;
+};
+
+export type MatchDecisionsDetachInputBodyWritable = {
+    /**
+     * Move the file to the configured quarantine path
+     */
+    quarantine?: boolean;
+};
+
+export type MatchDecisionsDetachResponseWritable = {
+    decision: MatchDecisionResponseWritable;
+    /**
+     * Destination path when quarantine moved the file; null otherwise
+     */
+    quarantinedPath?: string;
+};
+
+export type MatchDecisionsGetResponseWritable = {
+    current: MatchDecisionResponseWritable;
+    history?: Array<MatchDecisionResponseWritable> | null;
 };
 
 export type MeResponseWritable = {
@@ -3512,6 +3692,175 @@ export type EventsStreamResponses = {
 };
 
 export type EventsStreamResponse = EventsStreamResponses[keyof EventsStreamResponses];
+
+export type FilesDetachData = {
+    body: MatchDecisionsDetachInputBodyWritable;
+    path: {
+        /**
+         * Stable file id
+         */
+        fileId: string;
+    };
+    query?: never;
+    url: '/api/v1/files/{fileId}/detach';
+};
+
+export type FilesDetachErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type FilesDetachError = FilesDetachErrors[keyof FilesDetachErrors];
+
+export type FilesDetachResponses = {
+    /**
+     * OK
+     */
+    200: MatchDecisionsDetachResponse;
+};
+
+export type FilesDetachResponse = FilesDetachResponses[keyof FilesDetachResponses];
+
+export type FilesMatchData = {
+    body: FileMatchBodyWritable;
+    path: {
+        /**
+         * Stable file id (media_file or unmatched_file row)
+         */
+        fileId: string;
+    };
+    query?: never;
+    url: '/api/v1/files/{fileId}/match';
+};
+
+export type FilesMatchErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+    /**
+     * Bad Gateway
+     */
+    502: ProblemDetails;
+};
+
+export type FilesMatchError = FilesMatchErrors[keyof FilesMatchErrors];
+
+export type FilesMatchResponses = {
+    /**
+     * OK
+     */
+    200: MatchDecisionResponse;
+};
+
+export type FilesMatchResponse = FilesMatchResponses[keyof FilesMatchResponses];
+
+export type FilesMatchDecisionData = {
+    body?: never;
+    path: {
+        /**
+         * Stable file id
+         */
+        fileId: string;
+    };
+    query?: {
+        /**
+         * Include the supersede chain (prior decisions, newest first)
+         */
+        includeHistory?: boolean;
+    };
+    url: '/api/v1/files/{fileId}/match-decision';
+};
+
+export type FilesMatchDecisionErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type FilesMatchDecisionError = FilesMatchDecisionErrors[keyof FilesMatchDecisionErrors];
+
+export type FilesMatchDecisionResponses = {
+    /**
+     * OK
+     */
+    200: MatchDecisionsGetResponse;
+};
+
+export type FilesMatchDecisionResponse = FilesMatchDecisionResponses[keyof FilesMatchDecisionResponses];
+
+export type FilesUnmatchData = {
+    body?: never;
+    path: {
+        /**
+         * Stable file id
+         */
+        fileId: string;
+    };
+    query?: never;
+    url: '/api/v1/files/{fileId}/unmatch';
+};
+
+export type FilesUnmatchErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type FilesUnmatchError = FilesUnmatchErrors[keyof FilesUnmatchErrors];
+
+export type FilesUnmatchResponses = {
+    /**
+     * OK
+     */
+    200: MatchDecisionResponse;
+};
+
+export type FilesUnmatchResponse = FilesUnmatchResponses[keyof FilesUnmatchResponses];
 
 export type FilesystemBrowseData = {
     body?: never;

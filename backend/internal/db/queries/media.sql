@@ -102,6 +102,15 @@ insert into media_file (library_id, media_item_id, episode_id, path)
 values (sqlc.arg(library_id), sqlc.arg(media_item_id), sqlc.arg(episode_id), sqlc.arg(path))
 returning *;
 
+-- name: CreateMediaFileWithID :one
+-- Inserts a media_file with an explicit id. Used by the manual match
+-- flow (Phase 4) to preserve the stable file_id across an
+-- unmatched_file → media_file transition: the match_decision rows are
+-- keyed by file_id, so the join key has to survive.
+insert into media_file (id, library_id, media_item_id, episode_id, path)
+values (sqlc.arg(id), sqlc.arg(library_id), sqlc.arg(media_item_id), sqlc.arg(episode_id), sqlc.arg(path))
+returning *;
+
 -- name: DeleteMediaFile :exec
 delete from media_file where id = $1;
 

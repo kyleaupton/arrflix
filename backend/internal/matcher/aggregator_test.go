@@ -482,6 +482,148 @@ func TestMatchBatch_EmptyResolvers_AllNoMatch(t *testing.T) {
 	}
 }
 
+func TestAggregator_RankedCandidates_AmbiguousReturnsTop5(t *testing.T) {
+	t.Parallel()
+	// Eight tied candidates at 0.6 — the merge produces ambiguous and
+	// the RankedCandidates slice should be truncated to 5, ordered by
+	// confidence descending (with a small bonus on the first to
+	// guarantee a deterministic ordering at the head).
+	cands := []Candidate{
+		{Ref: ExternalRef{Source: metadata.SourceTMDB, ExternalID: "1"}, Confidence: 0.62},
+		{Ref: ExternalRef{Source: metadata.SourceTMDB, ExternalID: "2"}, Confidence: 0.61},
+		{Ref: ExternalRef{Source: metadata.SourceTMDB, ExternalID: "3"}, Confidence: 0.60},
+		{Ref: ExternalRef{Source: metadata.SourceTMDB, ExternalID: "4"}, Confidence: 0.59},
+		{Ref: ExternalRef{Source: metadata.SourceTMDB, ExternalID: "5"}, Confidence: 0.58},
+		{Ref: ExternalRef{Source: metadata.SourceTMDB, ExternalID: "6"}, Confidence: 0.57},
+		{Ref: ExternalRef{Source: metadata.SourceTMDB, ExternalID: "7"}, Confidence: 0.56},
+		{Ref: ExternalRef{Source: metadata.SourceTMDB, ExternalID: "8"}, Confidence: 0.55},
+	}
+	r := &fakeResolver{name: "guessit", tier: Tier3, available: true, candidates: cands}
+	reg := registryWith(r)
+	agg := NewAggregator(nil, nil, reg, presetForTest())
+
+	rec := agg.Aggregate(context.Background(), FileRef{ID: uuid.New()})
+
+	if rec.Outcome != OutcomeAmbiguous {
+		t.Fatalf("expected ambiguous, got %s", rec.Outcome)
+	}
+	if len(rec.RankedCandidates) != RankedCandidatesLimit {
+		t.Fatalf("expected %d ranked candidates, got %d", RankedCandidatesLimit, len(rec.RankedCandidates))
+	}
+	// Sorted descending: 1 (0.62) → 2 (0.61) → ... → 5 (0.58).
+	wantOrder := []string{"1", "2", "3", "4", "5"}
+	for i, want := range wantOrder {
+		if rec.RankedCandidates[i].Ref.ExternalID != want {
+			t.Fatalf("rank %d: got %s, want %s", i, rec.RankedCandidates[i].Ref.ExternalID, want)
+		}
+	}
+	// Descending invariant: each entry's confidence ≤ the prior's.
+	for i := 1; i < len(rec.RankedCandidates); i++ {
+		if rec.RankedCandidates[i].Confidence > rec.RankedCandidates[i-1].Confidence {
+			t.Fatalf("rank %d confidence %v > prior %v", i, rec.RankedCandidates[i].Confidence, rec.RankedCandidates[i-1].Confidence)
+		}
+	}
+}
+
+func TestAggregator_RankedCandidates_PerOutcomeContract(t *testing.T) {
+	t.Parallel()
+	// no_match: empty slice.
+	t.Run("no_match", func(t *testing.T) {
+		t.Parallel()
+		reg := registryWith(&fakeResolver{name: "n", tier: Tier1, available: true})
+		agg := NewAggregator(nil, &fakeProvider{}, reg, presetForTest())
+		rec := agg.Aggregate(context.Background(), FileRef{ID: uuid.New()})
+		if rec.Outcome != OutcomeNoMatch {
+			t.Fatalf("expected no_match, got %s", rec.Outcome)
+		}
+		if len(rec.RankedCandidates) != 0 {
+			t.Fatalf("expected 0 ranked candidates for no_match, got %d", len(rec.RankedCandidates))
+		}
+	})
+
+	// confident: one entry.
+	t.Run("confident", func(t *testing.T) {
+		t.Parallel()
+		reg := registryWith(&fakeResolver{name: "n", tier: Tier1, available: true, candidates: candidateOf("99", 0.97)})
+		prov := &fakeProvider{items: map[string]*metadata.Item{
+			"tmdb:99": {Source: metadata.SourceTMDB, ExternalID: "99"},
+		}}
+		agg := NewAggregator(nil, prov, reg, presetForTest())
+		rec := agg.Aggregate(context.Background(), FileRef{ID: uuid.New()})
+		if rec.Outcome != OutcomeConfident {
+			t.Fatalf("expected confident, got %s (conf=%v)", rec.Outcome, rec.Confidence)
+		}
+		if len(rec.RankedCandidates) != 1 {
+			t.Fatalf("expected 1 ranked candidate for confident, got %d", len(rec.RankedCandidates))
+		}
+		if rec.RankedCandidates[0].Ref.ExternalID != "99" {
+			t.Fatalf("ranked chosen mismatch: got %s, want 99", rec.RankedCandidates[0].Ref.ExternalID)
+		}
+	})
+
+	// low_confidence: one entry.
+	t.Run("low_confidence", func(t *testing.T) {
+		t.Parallel()
+		reg := registryWith(&fakeResolver{name: "n", tier: Tier3, available: true, candidates: candidateOf("42", 0.6)})
+		agg := NewAggregator(nil, nil, reg, presetForTest())
+		rec := agg.Aggregate(context.Background(), FileRef{ID: uuid.New()})
+		if rec.Outcome != OutcomeLowConfidence {
+			t.Fatalf("expected low_confidence, got %s", rec.Outcome)
+		}
+		if len(rec.RankedCandidates) != 1 {
+			t.Fatalf("expected 1 ranked candidate for low_confidence, got %d", len(rec.RankedCandidates))
+		}
+	})
+
+	// ambiguous: ≤5 entries.
+	t.Run("ambiguous_two_tied", func(t *testing.T) {
+		t.Parallel()
+		reg := registryWith(&fakeResolver{
+			name: "n", tier: Tier3, available: true,
+			candidates: []Candidate{
+				{Ref: ExternalRef{Source: metadata.SourceTMDB, ExternalID: "1"}, Confidence: 0.62},
+				{Ref: ExternalRef{Source: metadata.SourceTMDB, ExternalID: "2"}, Confidence: 0.61},
+			},
+		})
+		agg := NewAggregator(nil, nil, reg, presetForTest())
+		rec := agg.Aggregate(context.Background(), FileRef{ID: uuid.New()})
+		if rec.Outcome != OutcomeAmbiguous {
+			t.Fatalf("expected ambiguous, got %s", rec.Outcome)
+		}
+		if len(rec.RankedCandidates) != 2 {
+			t.Fatalf("expected 2 ranked candidates, got %d", len(rec.RankedCandidates))
+		}
+	})
+}
+
+func TestAggregator_RankedCandidates_ChosenItemPropagates(t *testing.T) {
+	t.Parallel()
+	// Tier-1 candidate validated by the provider — the validated item
+	// should appear on the corresponding RankedCandidate so persistence
+	// can write title/year without a re-lookup.
+	reg := registryWith(&fakeResolver{
+		name: "path-embed", tier: Tier1, available: true,
+		candidates: candidateOf("100", 0.97),
+	})
+	prov := &fakeProvider{items: map[string]*metadata.Item{
+		"tmdb:100": {Source: metadata.SourceTMDB, ExternalID: "100", Title: "Hundred", Year: 2020},
+	}}
+	agg := NewAggregator(nil, prov, reg, presetForTest())
+
+	rec := agg.Aggregate(context.Background(), FileRef{ID: uuid.New()})
+
+	if len(rec.RankedCandidates) != 1 {
+		t.Fatalf("expected 1 ranked candidate, got %d", len(rec.RankedCandidates))
+	}
+	rc := rec.RankedCandidates[0]
+	if rc.Item == nil {
+		t.Fatalf("expected ranked candidate to carry validated item; got nil")
+	}
+	if rc.Item.Title != "Hundred" || rc.Item.Year != 2020 {
+		t.Fatalf("ranked item mismatch: got %+v", rc.Item)
+	}
+}
+
 func keysOf(m map[string]json.RawMessage) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

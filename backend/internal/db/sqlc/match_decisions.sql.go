@@ -118,6 +118,56 @@ func (q *Queries) InsertMatchDecision(ctx context.Context, arg InsertMatchDecisi
 	return id, err
 }
 
+const listMatchDecisionHistoryForFile = `-- name: ListMatchDecisionHistoryForFile :many
+select id, file_id, outcome, chosen_source, chosen_external_id,
+       chosen_season, chosen_episode, chosen_edition, confidence,
+       resolvers_consulted, evidence, evidence_truncated,
+       decided_by, decided_at, superseded_at, superseded_by
+from match_decision
+where file_id = $1
+order by decided_at desc
+`
+
+// Returns every decision for a file in newest-first order. Used by the
+// evidence-history endpoint (?include_history=true) to render the
+// supersede chain.
+func (q *Queries) ListMatchDecisionHistoryForFile(ctx context.Context, fileID pgtype.UUID) ([]MatchDecision, error) {
+	rows, err := q.db.Query(ctx, listMatchDecisionHistoryForFile, fileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MatchDecision
+	for rows.Next() {
+		var i MatchDecision
+		if err := rows.Scan(
+			&i.ID,
+			&i.FileID,
+			&i.Outcome,
+			&i.ChosenSource,
+			&i.ChosenExternalID,
+			&i.ChosenSeason,
+			&i.ChosenEpisode,
+			&i.ChosenEdition,
+			&i.Confidence,
+			&i.ResolversConsulted,
+			&i.Evidence,
+			&i.EvidenceTruncated,
+			&i.DecidedBy,
+			&i.DecidedAt,
+			&i.SupersededAt,
+			&i.SupersededBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const supersedeMatchDecision = `-- name: SupersedeMatchDecision :exec
 update match_decision
 set superseded_at = now(),

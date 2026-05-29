@@ -725,6 +725,37 @@ func (r *Repository) CreateMediaFile(ctx context.Context, params CreateMediaFile
 	return toModelMediaFile(row), nil
 }
 
+// CreateMediaFileWithIDParams is the domain-shaped input for
+// CreateMediaFileWithID. Same fields as CreateMediaFileParams plus an
+// explicit ID — used by the manual match flow to preserve the
+// match_decision.file_id join key when transitioning an unmatched_file
+// row to a media_file row.
+type CreateMediaFileWithIDParams struct {
+	ID          uuid.UUID
+	LibraryID   uuid.UUID
+	MediaItemID uuid.UUID
+	EpisodeID   *uuid.UUID
+	Path        string
+}
+
+func (r *Repository) CreateMediaFileWithID(ctx context.Context, params CreateMediaFileWithIDParams) (model.MediaFile, error) {
+	var episode pgtype.UUID
+	if params.EpisodeID != nil {
+		episode = pgtypeFromUUID(*params.EpisodeID)
+	}
+	row, err := r.Q.CreateMediaFileWithID(ctx, dbgen.CreateMediaFileWithIDParams{
+		ID:          pgtypeFromUUID(params.ID),
+		LibraryID:   pgtypeFromUUID(params.LibraryID),
+		MediaItemID: pgtypeFromUUID(params.MediaItemID),
+		EpisodeID:   episode,
+		Path:        params.Path,
+	})
+	if err != nil {
+		return model.MediaFile{}, apperrors.FromPg(err, "create media file %q in library %s", params.Path, params.LibraryID)
+	}
+	return toModelMediaFile(row), nil
+}
+
 func (r *Repository) ListMediaFilesForItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.MediaFileWithState, error) {
 	rows, err := r.Q.ListMediaFilesForItem(ctx, pgtypeFromUUID(mediaItemID))
 	if err != nil {
