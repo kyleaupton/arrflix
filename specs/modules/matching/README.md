@@ -85,7 +85,7 @@ Three roles:
                        └──────────────────┬───────────────┘
                                           ▼
                               write match_decision
-                              + media_file OR unmatched_file
+                              + file (identity set, or left NULL)
                               + (optional) want fulfillment
 ```
 
@@ -156,12 +156,12 @@ Doing both — **tiered execution, parallel aggregation when needed** — gives 
 
 | Outcome              | Confidence | Side effect                                                              |
 | -------------------- | ---------- | ------------------------------------------------------------------------ |
-| `confident`          | ≥ 0.95     | `media_file` written; no review                                          |
-| `confident_review`   | 0.7–0.95   | `media_file` written; flagged for review in matcher inbox                |
-| `low_confidence`     | 0.5–0.7    | `unmatched_file` written with one strong suggestion                      |
-| `ambiguous`          | < 0.5 or multiple-candidate-tie | `unmatched_file` written with up to 5 suggestions       |
-| `no_match`           | nothing ≥ 0.5 | `unmatched_file` written; no suggestions                              |
-| `partial_series`     | series confident, episode unresolved | `unmatched_file` with `partial_series` flag             |
+| `confident`          | ≥ 0.95     | identity written to the [file](../files/README.md) (`media_item_id` set); no review                                          |
+| `confident_review`   | 0.7–0.95   | identity written to the file; flagged for review in the matcher inbox                |
+| `low_confidence`     | 0.5–0.7    | file left unidentified (`media_item_id` NULL); decision carries one strong suggestion                      |
+| `ambiguous`          | < 0.5 or multiple-candidate-tie | file left unidentified; decision carries up to 5 ranked suggestions       |
+| `no_match`           | nothing ≥ 0.5 | file left unidentified; decision carries no suggestions                              |
+| `partial_series`     | series confident, episode unresolved | series identity on the file (`media_item_id` set, `episode_id` NULL); `partial_series` is derived, not stored             |
 
 ### Threshold presets
 
@@ -194,7 +194,7 @@ Every consequential decision writes a row, schematically:
 ```
 match_decision(
   id,
-  file_id,                       -- the file being identified
+  file_id,                       -- FK to files.id (the file being identified)
   outcome,                       -- 'confident', 'confident_review', 'low_confidence', 'ambiguous', 'no_match', 'partial_series'
   chosen_external_ref,           -- nullable (set only on success)
   chosen_episode_ref,            -- nullable
@@ -220,7 +220,7 @@ Three distinct actions, three different effects:
 | Action       | What it does                                          | Filesystem effect                                       |
 | ------------ | ----------------------------------------------------- | ------------------------------------------------------- |
 | **Re-match** | "This is identified as X; it's actually Y"            | File moves/renames via name templates; old hardlinks resolved |
-| **Un-match** | "I don't know what this is; back to the inbox"        | File stays in place; `media_file` row removed; `unmatched_file` row created |
+| **Un-match** | "I don't know what this is; back to the inbox"        | File stays in place; identity cleared on the `file` row (`media_item_id` → NULL). No row swap — see [files § lifecycle](../files/README.md#lifecycle) |
 | **Detach**   | "This file doesn't belong in the library at all"      | File optionally moved to a configured quarantine path   |
 
 All three write a `match_decision` row with `decided_by: user:<id>` and supersede the prior decision.
@@ -231,7 +231,7 @@ Re-matches are reversible via the decision-log chain — every prior decision is
 
 Three UI surfaces, all backed by the same data:
 
-1. **Inbox.** `/library/matching` (or similar). All files in `unmatched_file`, plus all `confident_review`-banded matches. Grouped by outcome and source (scan / drop-in / re-match). Count surfaced in the dashboard chrome to make it feel actionable.
+1. **Inbox.** `/library/matching` (or similar). Every file with no resolved identity (`media_item_id` NULL) plus all `confident_review`-banded matches — i.e. every file whose current `match_decision` band is below `confident`. Grouped by outcome and source (scan / drop-in / re-match). Count surfaced in the dashboard chrome to make it feel actionable.
 
 2. **Drill-down / decide pane.** Click an inbox item → see file path, parsed title/year, ranked suggestions with evidence per suggestion (*"guessit says 0.78, path-context says 0.31"*), one-click match, "Search TMDB" fallback, "Match by ID" power-user input.
 
@@ -289,24 +289,23 @@ Rule of thumb: a package gets its own module only when it owns a boundary — an
 ## Migration from v0
 
 What stays:
-- `media_item`, `media_file`, `media_file_state`, `media_file_import` schemas
-- `unmatched_file` table (with richer `suggested_matches` JSONB shape)
+- The `media_item` / `media_season` / `media_episode` content schemas (the content layer is unchanged)
 - `internal/guessit/` client and the FastAPI sidecar — **transitionally**, as an optional fallback resolver only; removed once the unified [parser](../parsing/README.md) clears Tier-1 identity parity (see [parsing § guessit disposition](../parsing/README.md#guessit-disposition))
 - The 4-phase scan structure (walk → identify → enrich → persist), reframed as walk → match → enrich → persist
 - The TRaSH-style path regex (relocated to `internal/matcher/resolvers/pathembed.go`)
 
 What's new:
 - `match_decision` table — the decision log artifact
-- `media_file.osdb_hash` column — populated unconditionally from v1; consumed by v2 OS resolver and v1 hygiene dedup
+- `file_state.osdb_hash` — populated unconditionally from v1 (on every file, identified or not); consumed by the v2 OS resolver and v1 hygiene dedup. Owned by [files](../files/README.md#the-file_state-sidecar--filesystem-facts)
 - `MatcherService` with the resolver + aggregator architecture
 - The `name-parse` resolver backed by the unified [parser](../parsing/README.md), the primary identity signal (replacing guessit)
-- The [persisted parse](../parsing/README.md#persisted-parse) on scanned files (`origin: scanned`, parsed from the filename, best-effort), written alongside the `media_file`
+- The [persisted parse](../parsing/README.md#persisted-parse) on scanned files (`origin: scanned`, parsed from the filename, best-effort), stored in the `file_parse` companion
 - Confidence model + banded outcomes
 - Threshold presets in settings (Strict / Recommended / Relaxed)
 - Match-by-ID and bulk-override surfaces
 
 What evolves:
-- `unmatched_file.suggested_matches` grows from position-rank to per-suggestion `{external_ref, confidence, contributing_resolvers, evidence}` — backwards-compatible (old shape is a subset)
+- Suggestions move off the file entirely onto `match_decision.ranked_candidates` — per-suggestion `{external_ref, confidence, contributing_resolvers, evidence}`. The v0 `unmatched_file.suggested_matches` column is gone; the decision log is the single home for ranked candidates (see [files § decision log](../files/README.md#relationship-to-the-decision-log))
 - Year handling moves from hard filter to soft penalty
 - TMDB pagination becomes paged-stop-on-confidence rather than page-1-only
 
@@ -314,6 +313,7 @@ What dies:
 - `internal/identity/` as a top-level package (regex relocates into matcher/resolvers)
 - The first-success-wins phase gate in scan.go (replaced by tiered aggregation)
 - Direct TMDB calls scattered across scan.go (consolidated in the aggregator)
+- The `unmatched_file` table and the `partial_series` flag — "unmatched" is now `media_item_id IS NULL` on the soft-deleting `file`, and partial-series is derived (`media_item_id` set, `episode_id` NULL). The whole physical-file model is owned by [files](../files/README.md)
 
 Since we have zero users besides Kyle, the migration is "drop the old code, run the new scan." No data preservation gymnastics needed.
 
@@ -323,6 +323,7 @@ Since we have zero users besides Kyle, the migration is "drop the old code, run 
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | **[Parsing](../parsing/README.md)**                   | Provides the string parse (title/year/S-E + per-field confidence) under the `name-parse` resolver. The matcher consumes the parse; it doesn't parse. guessit is an optional fallback parse, removed once parity holds. |
 | **Scan**                                              | Scan walks the filesystem and produces `FileRef`s; matcher consumes them. Scan loses identification logic entirely.                 |
+| **[Files](../files/README.md)**                       | Owns the `file` entity the matcher writes identity onto. `match_decision.file_id` is `file.id`; match/re-match/un-match are in-place identity `UPDATE`s on the file row, never row swaps, so the decision chain stays continuous. |
 | **[Metadata](../metadata/README.md)**                 | Matching writes external IDs via the metadata layer's interface. Cross-provider resolution (IMDb→TMDB) goes through metadata.       |
 | **[Hygiene](../hygiene/README.md)**                   | `identity/unmatched-file` and `identity/wrong-match-suspect` are findings over matcher state. Hygiene is rollup; matcher is drill-down. |
 | **[Tracking / wants](../tracking/README.md)**         | Drop-in match satisfying an open want closes the want. Reverse: when a want fulfills via grab, the matcher gets a pre-confirmed identity. |
@@ -334,7 +335,7 @@ Since we have zero users besides Kyle, the migration is "drop the old code, run 
 ## Open questions
 
 1. **Match-decision retention.** How long do we keep superseded `match_decision` rows? Forever (audit) or trim after N (storage)? Lean forever — they're small and tell the story of a file's journey. Revisit if `match_decision` table grows pathologically.
-2. **`partial_series` behavior.** Series resolved, episode unresolved. Do we write the series-level `media_item` and create a stub `media_file` waiting for episode resolution? Or hold it entirely in `unmatched_file` until episode is identified? Lean: hold in `unmatched_file` — half-identity creates confusing UX downstream.
+2. **`partial_series` behavior — resolved.** A partial-series file carries the series identity on the `file` row (`media_item_id` set, `episode_id` NULL); `partial_series` is a derived state, not a stored flag or a separate table. The half-identity that worried this OQ is fine because it lives on the file as a first-class identity granularity — see [files § identity](../files/README.md#identity-as-state-with-a-ratified-invariant). Settled by the unified file model.
 3. **Edition modeling.** Is `edition` a free-text field in v1 and a proper enum later? Or do we ship with a v1 enum (`theatrical`, `extended`, `directors_cut`, `unrated`, `other`)? Lean enum + nullable free-text companion.
 4. **TMDB validation caching.** A 22-episode season pack with the same embedded series ID shouldn't trigger 22 validation calls. Aggregator-level batch dedup + response cache. Probably already exists for current TMDB calls — verify and reuse.
 5. **Cross-resolver disagreement on tier short-circuit.** If Tier 1 short-circuits with high confidence and a user later re-matches manually with a different identity, the chain is auditable but the disagreement signal is lost. Should we backfill by running Tier 2/3 in the background after a short-circuit, just to populate evidence? Probably no — cheap, but storage-bloaty and not load-bearing.

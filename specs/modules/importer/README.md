@@ -2,14 +2,14 @@
 
 **Status:** Draft, iteration 1
 
-The importer is the **back half** of the [acquisition pipeline](../acquisition/README.md#the-pipeline-today-vs-new): it takes a download the downloader reports as `completed` and turns it into placed, indexed `media_file` rows in a [library](../libraries/README.md). It decides nothing about _what_ to grab or _where_ it goes — [quality profiles](../quality-profiles/README.md) picked the release and [routing](../routing/README.md) already stamped the destination (downloader, library, name template) onto the `download_job`. The importer is the **executor** of those decisions: resolve the files on disk, assign them to the wants they fulfil, hardlink them into place under the rendered [name template](../name-templates/README.md), and write the rows.
+The importer is the **back half** of the [acquisition pipeline](../acquisition/README.md#the-pipeline-today-vs-new): it takes a download the downloader reports as `completed` and turns it into placed, indexed `file` rows in a [library](../libraries/README.md). It decides nothing about _what_ to grab or _where_ it goes — [quality profiles](../quality-profiles/README.md) picked the release and [routing](../routing/README.md) already stamped the destination (downloader, library, name template) onto the `download_job`. The importer is the **executor** of those decisions: resolve the files on disk, assign them to the wants they fulfil, hardlink them into place under the rendered [name template](../name-templates/README.md), and write the rows.
 
 This spec is **primarily descriptive** — the import worker exists and runs in v0 — and locks in a focused set of v1 additions: [path-mapping](../path-mapping/README.md) integration (the boundary the v0 code stubs out), want linkage so an import advances the [want lifecycle](../acquisition/README.md#want-status-the-two-axes), and the season-pack assignment the M:N model needs. The filesystem mechanics (hardlink-first, copy-fallback) stay as-is.
 
 ## TL;DR
 
 - The importer runs **after** a `download_job` reaches `completed`. It spawns one **`import_task` per file**, then a worker drains tasks: resolve source → assign to a want → **ffprobe + re-gate on asserted attributes** → render destination → hardlink/copy → write rows → advance the want to `imported`. A re-gate **hard-fail** short-circuits to reject + blocklist instead.
-- An `import_task` is the unit of work and the audit trail for one file: `{ source, want, library, name_template, dest, method, media_file }` plus a retry/lifecycle envelope. It carries the routing decision copied off the `download_job`.
+- An `import_task` is the unit of work and the audit trail for one file: `{ source, want, library, name_template, dest, method, file }` plus a retry/lifecycle envelope. It carries the routing decision copied off the `download_job`.
 - **The importer executes; it does not decide.** Library, name template, and downloader are routing's output. The importer reads them off the job.
 - **The re-gate is a decision the importer _consumes_, not makes.** After `ffprobe`, before the hardlink, it asks [quality profiles](../quality-profiles/README.md#import-time-re-gate) "does the asserted file still pass the profile it was grabbed under?" — the same boundary it keeps with routing and path-mapping. Pass/soft-fail → place (soft-fail logs a `quality/advertised-mismatch` finding); hard-fail → fail the task `quality_rejected`, and [acquisition](../acquisition/README.md#import-time-re-gate-asserted-verification) blocklists + re-searches.
 - **File assignment is closed-world.** The job already names the wants it fulfils; the importer only maps the torrent's files _onto_ those known targets (which file is S03E05). This is distinct from [matching](../matching/README.md)'s open-world identity resolution — they share the filename parser, nothing else.
@@ -26,7 +26,7 @@ download_job: created → enqueued → downloading → completed     ← downloa
                                                      ▼  spawn import_task per file
 import_task:  pending → in_progress → completed                ← this spec
                                           │
-                                          ├─ write media_file (+ state, + import record)
+                                          ├─ write file (+ state, + import record)
                                           └─ want: downloading → imported, emit want.imported
                                                      │
                                                      ▼
@@ -61,7 +61,7 @@ The parsing primitive (filename → season/episode markers) is the _same_ primit
 A single `download_job` fulfils **many wants** (M:N — see [acquisition § Season packs](../acquisition/README.md#season-packs)); each `import_task`, and so each imported file, fulfils **exactly one** want (`import_task.want_id` is a single FK). Assignment is the join between the two:
 
 - **Covered** — file marker matches an open linked want → one task, want set.
-- **Overflow** — file matches no open want (pack carries E11; we only wanted E01–E10) → routed to `unmatched_file` for [scan](../scan/README.md)/matching to reconcile, or surfaced as extras (final disposition is acquisition's [overflow question](../acquisition/README.md#overflow--under-coverage), not the importer's).
+- **Overflow** — file matches no open want (pack carries E11; we only wanted E01–E10) → left as an unidentified `file` (`media_item_id` NULL) for [scan](../scan/README.md)/matching to reconcile, or surfaced as extras (final disposition is acquisition's [overflow question](../acquisition/README.md#overflow--under-coverage), not the importer's).
 - **Under-coverage** — a want with no covering file in the pack stays `searching`; the importer simply produces no task for it. The scheduler keeps looking.
 
 v0's assignment helper takes a single target episode; v1 widens it to a **target set** so one season-pack job spawns the right per-episode tasks in one pass.
@@ -112,13 +112,13 @@ Collision handling: if the destination already exists and this is a **reimport**
 
 On a successful placement the importer writes, in a single transaction:
 
-- **`media_file`** — `{ library_id, media_item_id, episode_id?, path }`. The relative `path` within the library. Owned by [libraries](../libraries/README.md)/[scan](../scan/README.md); the importer is its writer on the grab path. It carries **no** media-server rating key — propagation lives [elsewhere](../media-server/README.md#the-propagation-record).
-- **`media_file_state`** — `file_exists = true`, `file_size`. The presence/size facts [scan](../scan/README.md)'s verify mode reconciles against.
-- **`media_file_import`** — the per-attempt record: method, source, dest, success. This is the importer's slice of the [audit](../../patterns/audit/README.md) story — the durable "how did this file get here" trail, including the path translation applied.
-- **The [persisted parse](../parsing/README.md#persisted-parse)** — the raw release title + parsed `Quality`/`Release` + `parser_version` + `origin: grabbed`, stored with the `media_file` so a template can be re-rendered (mass-rename) after the `download_job` is purged.
-- **`import_task`** completion — final status, `dest`, `method`, `media_file_id`.
+- **`file`** — `{ library_id, media_item_id, episode_id?, path }`. The relative `path` within the library. The entity is owned by [files](../files/README.md); the importer is its writer on the grab path (identity already known — closed-world). It carries **no** media-server rating key — propagation lives [elsewhere](../media-server/README.md#the-propagation-record).
+- **`file_state`** — `exists = true`, `size_bytes`. The presence/size facts [scan](../scan/README.md)'s verify mode reconciles against.
+- **`file_import`** — the per-attempt record: method, source, dest, success. This is the importer's slice of the [audit](../../patterns/audit/README.md) story — the durable "how did this file get here" trail, including the path translation applied.
+- **The [persisted parse](../parsing/README.md#persisted-parse)** — the raw release title + parsed `Quality`/`Release` + `parser_version` + `origin: grabbed`, stored in the `file_parse` companion so a template can be re-rendered (mass-rename) after the `download_job` is purged.
+- **`import_task`** completion — final status, `dest`, `method`, `file_id`.
 
-Then, outside-but-paired-with the placement: the linked **want transitions `downloading → imported`** and the importer emits `want.imported`. This want coupling is a **v1 addition** — v0 writes the `media_file` but never touches want state (the want lifecycle didn't exist yet). A transaction that fails _after_ a successful hardlink leaves an orphaned link on disk; cleanup of that orphan is an [open question](#open-questions) (today it persists until a scan reconciles it).
+Then, outside-but-paired-with the placement: the linked **want transitions `downloading → imported`** and the importer emits `want.imported`. This want coupling is a **v1 addition** — v0 writes the `file` row but never touches want state (the want lifecycle didn't exist yet). A transaction that fails _after_ a successful hardlink leaves an orphaned link on disk; cleanup of that orphan is an [open question](#open-questions) (today it persists until a scan reconciles it).
 
 ## The `import_task` lifecycle
 
@@ -168,13 +168,14 @@ The importer does **not** emit `want.available` (the verify step does) or `media
 | [Name-templates](../name-templates/README.md) | Rendered here against the media + release + mediainfo context to compute the destination path. |
 | [Quality profiles](../quality-profiles/README.md) | The importer runs the import-time re-gate before placement — supplies asserted `ffprobe` attributes, acts on pass / penalize / hard-fail, doesn't own the logic. |
 | [Parsing](../parsing/README.md) | The closed-world filename-marker parse is the path flavor of the unified parser; the importer calls `internal/parsing` instead of keeping a private copy. |
-| [Libraries](../libraries/README.md) | Destination root; per-type default for orphan imports. The importer writes `media_file.library_id`. |
-| [Matching](../matching/README.md) | Owns open-world identity (scan/drop-in); the importer owns closed-world assignment (grab path). Both consume the same [parser](../parsing/README.md). Overflow files hand off to matching via `unmatched_file`. |
-| [Scan](../scan/README.md) | Reconciles what the importer writes (`media_file_state` presence/size); cleans up orphaned links. Shares the file-on-disk truth. |
+| [Files](../files/README.md) | The importer writes `file` / `file_state` / `file_import` rows on the grab path (identity known); the entity model is owned by files. |
+| [Libraries](../libraries/README.md) | Destination root; per-type default for orphan imports. The importer writes `file.library_id`. |
+| [Matching](../matching/README.md) | Owns open-world identity (scan/drop-in); the importer owns closed-world assignment (grab path). Both consume the same [parser](../parsing/README.md). Overflow files hand off to matching as unidentified `file` rows. |
+| [Scan](../scan/README.md) | Reconciles what the importer writes (`file_state` presence/size); cleans up orphaned links. Shares the file-on-disk truth. |
 | [Downloaders](../downloaders/README.md) | `ListFiles` at spawn; re-queried during source self-heal. |
 | [Realtime](../realtime/README.md) | `import_task_updated` / `download_job_updated` SSE for progress. |
 | [Errors](../../patterns/errors/README.md) | Typed kinds drive retryable-vs-not; unresolvable path is a hold-fix-retry case. |
-| [Audit](../../patterns/audit/README.md) | `media_file_import` is the per-file import record, including the path translation applied. |
+| [Audit](../../patterns/audit/README.md) | `file_import` is the per-file import record, including the path translation applied. |
 
 ## What the importer does NOT own
 
@@ -191,7 +192,7 @@ The importer does **not** emit `want.available` (the verify step does) or `media
 1. **Orphaned hardlink on transaction failure.** If the link succeeds but the DB write rolls back, a link is left on disk. Options: a compensating unlink in the failure path, or leave it for [scan](../scan/README.md) to reconcile (today's de-facto behavior). Lean: compensating unlink for the common case + scan as the backstop; pin in iteration 2.
 2. **Frozen source path → volume-resolved.** v1 resolves the v0 string-path quirk through the volume layer, coordinated with [libraries OQ#4](../libraries/README.md#open-questions) and [path-mapping OQ#9](../path-mapping/README.md#open-questions). Confirm they land together rather than as two migrations.
 3. **Name-template render failure.** Non-retryable and fatal today. Should v1 ship a hardcoded fallback template (so a typo degrades to a sane path instead of a stuck file), or keep it loud? Lean: loud + a clear activity error — a silent fallback hides a misconfiguration.
-4. **Overflow disposition.** Files a season pack carries beyond the wanted set: `unmatched_file` (reconcile via matching) vs first-class "extras." Owned by [acquisition](../acquisition/README.md#overflow--under-coverage); the importer just needs the disposition pinned to know where to route them.
+4. **Overflow disposition.** Files a season pack carries beyond the wanted set: left unidentified (reconcile via matching) vs first-class "extras." Owned by [acquisition](../acquisition/README.md#overflow--under-coverage); the importer just needs the disposition pinned to know where to route them.
 5. **Shared parser extraction.** The filename-marker parse is the path flavor of the unified [parser](../parsing/README.md); the importer calls `internal/parsing` rather than keeping its v0 copy. Lands when parsing is built; until then the importer's copy is the reference. Not a blocker.
 6. **Verify step ownership.** The `imported → available` presence-verify is listed in [acquisition](../acquisition/README.md#event-bus--messaging) as a distinct step. Confirm it lives at the acquisition boundary (a thin worker reacting to `want.imported`) rather than being folded into the import worker — keeps the importer's responsibility bounded at `imported`.
 7. **Concurrency.** The worker claims a bounded batch per tick. Right knob for v1 (fixed batch size vs a worker pool sized to FS throughput)? Lean: keep the simple bounded batch; revisit only if large libraries show import as a bottleneck.
@@ -199,7 +200,7 @@ The importer does **not** emit `want.available` (the verify step does) or `media
 
 ## What we're explicitly not deciding here
 
-- Exact `import_task` / `media_file_import` column types and indexes.
+- Exact `import_task` / `file_import` column types and indexes.
 - The volume-resolution migration plan for the source-path quirk (coordinated, tracked separately).
 - The filename-parser package boundary and signature (lands with matching).
 - VerifyStep internals and the `available` transition mechanics ([acquisition](../acquisition/README.md)).
@@ -214,10 +215,11 @@ The importer does **not** emit `want.available` (the verify step does) or `media
 - [Path-mapping](../path-mapping/README.md) — boundary-1 resolution + the hardlink verdict.
 - [Hardlinks](../hardlinks/README.md) — the recorded import method feeds its broken-link predicate; optional post-link `nlink` assertion.
 - [Name-templates](../name-templates/README.md) — rendered here to compute the destination path.
-- [Libraries](../libraries/README.md) — destination roots, per-type default, the `media_file` index.
+- [Files](../files/README.md) — the `file` / `file_state` / `file_import` rows the importer writes on the grab path.
+- [Libraries](../libraries/README.md) — destination roots, per-type default, the `file` index.
 - [Matching](../matching/README.md) — open-world identity; shares the filename parser, owns the drop-in path.
-- [Scan](../scan/README.md) — reconciles `media_file` truth and orphan sweeps.
+- [Scan](../scan/README.md) — reconciles `file` truth and orphan sweeps.
 - [Media-server](../media-server/README.md) — downstream of `available`; propagation, never the importer's concern.
 - [Errors](../../patterns/errors/README.md) — typed kinds drive retry behavior.
-- [Audit](../../patterns/audit/README.md) — `media_file_import` as the per-file record.
+- [Audit](../../patterns/audit/README.md) — `file_import` as the per-file record.
 - [Downloaders](../downloaders/README.md) — file listing at spawn and source self-heal.
