@@ -31,6 +31,12 @@ These rules apply to both service code (`internal/service/`) and worker code (`i
 6. **Never import `dbgen.*` or `pgtype.*`.**
    Services and workers speak `model.*` (idiomatic Go domain types). The repo handles the persistence ↔ domain translation. Service signatures take and return `model.*` and `uuid.UUID`; pgtype-shaped values are a repo-internal concern. If a service file imports `github.com/kyleaupton/arrflix/internal/db/sqlc` or `github.com/jackc/pgx/v5/pgtype`, the layering is wrong — fix the repo, not the service. (Same rule applies to `internal/jobs/*` workers.)
 
+7. **`*Service` types live in this package. Domain modules don't define services and don't touch the repo.**
+   `internal/<domain>/` packages (parsing, policy, metadata, indexer, importer, matcher, …) provide the *pure* half of a feature: engines, registries, parsers, aggregators, and the domain types they return. They are stateless or hold only in-memory state, and they MUST compile without importing `internal/repo`, `internal/db/sqlc`, or `pgtype`. The orchestration half — the thing that holds `*repo.Repository`, wires the domain engine to persistence, and is hung off `Services` in `service.go` — is a `*Service` and lives here, even when it's a thin wrapper over one domain engine (see `DownloadCandidatesService` over `policy.Engine`). A `FooService` defined inside `internal/foo/` is the layering inverted: it forces a repo-shaped interface + adapter into the domain package to dodge the import cycle, when the service could just hold `*repo.Repository` directly from here.
+
+8. **Default to holding `*repo.Repository` directly; add an interface seam only for a real test need, and declare it here.**
+   A service's repo field is the concrete `*repo.Repository`, not a hand-rolled interface — that's the norm across this package. Introduce a repo-shaped interface seam only when a service has enough untested internal logic to justify faking the repo in a co-located unit test (the per-service design decision called out under [Tests](#fakes-for-service-method-tests-for-when-seams-land)). When you do, the interface is declared in the service file next to its consumer — never in a domain package, and never as a way to let a domain package reach persistence. Domain types the engine returns (e.g. `matcher.MatchOutcomeRecord`) stay in the domain package; the `domain-record → repo.<Method>Params` translation lives in the service, the only layer allowed to know both shapes.
+
 ## Patterns
 
 ### Pass-through (the common case)
@@ -187,7 +193,7 @@ If none of those fit, the answer is probably to read the spec — there might be
 
 ## Tests
 
-Unit tests in this package cover internal logic that doesn't need the full HTTP/DB stack to exercise. Today that means pure helpers, parsers, and transformation code — see `scan_test.go` for the worked examples (`TestIsMediaFile`, `TestGuessitInput`, `TestBuildSearchKey`, `TestEvaluateSearchResults`). The integration suite (`internal/test/integration/`) owns the wire contract; this layer owns correctness of the code behind it. The full split is in [`../test/integration/CLAUDE.md`](../test/integration/CLAUDE.md) — read it before adding a test that would need DB rows or a real external API to set up its precondition.
+Unit tests in this package cover internal logic that doesn't need the full HTTP/DB stack to exercise. Today that means pure helpers, parsers, and transformation code — pick the predicate or transformer next to the production code and test it co-located. The integration suite (`internal/test/integration/`) owns the wire contract; this layer owns correctness of the code behind it. The full split is in [`../test/integration/CLAUDE.md`](../test/integration/CLAUDE.md) — read it before adding a test that would need DB rows or a real external API to set up its precondition.
 
 Service-method tests against faked dependencies are an intended future addition but **don't currently exist in this package**. They require introducing internal interface seams in the production code (the service's repo and external-client fields typed as interfaces rather than concrete `*repo.Repository` / `*TmdbService` pointers). Adding seams is a per-service design decision, not a default — do it when there's enough untested internal logic in a service to justify the production-side change. The pattern to follow when you do is at the bottom of this section.
 
@@ -198,11 +204,11 @@ A test belongs here if the assertion is about an internal branch — a switch ar
 ### Conventions
 
 - **Co-located.** Test for `scan.go` lives in `scan_test.go`, same directory. No separate test packages.
-- **Same package** (`package service`, not `service_test`). Unit tests need access to unexported types and helpers (e.g., `tmdbSearchKey`, `evaluateSearchResults`, `buildSearchKey`, `guessitInput` in `scan.go`) — that's the whole point. Don't export something just to test it; put the test next to the thing.
+- **Same package** (`package service`, not `service_test`). Unit tests need access to unexported types and helpers (e.g., the `isMediaFile`/`isExtraFile` predicates in `scan.go`) — that's the whole point. Don't export something just to test it; put the test next to the thing.
 - **`t.Parallel()` as the first line of every test and every subtest.** Parallel runs surface accidental shared state. If a test genuinely needs serialization (a process-level singleton, a global counter), document why in a comment above the missing `t.Parallel()`.
 - **Hand-rolled fakes, no mocking framework.** When test doubles are needed, write a struct with `xxxFn func(...)` fields rather than pulling in `testify/mock` or generated mocks.
 - **`t.TempDir()` for filesystem fixtures.** Auto-cleaned, isolated per test, parallel-safe.
-- **`httptest.NewServer` for in-process HTTP sidecars.** Useful when the code under test wraps an HTTP client (guessit, TMDB) and you want to exercise the marshaling alongside the logic without a container.
+- **`httptest.NewServer` for in-process HTTP sidecars.** Useful when the code under test wraps an HTTP client (TMDB, Prowlarr) and you want to exercise the marshaling alongside the logic without a container.
 - **Naming.** `TestFunction` for free helpers (`TestIsMediaFile`, `TestBuildSearchKey`); `TestType_Case` for service-method tests when those land. Table tests for pure-function fan-out; named subtests (`t.Run("happy path", ...)`) for behavior cases.
 - **Assert on typed errors via `apperrors.IsX` predicates.** Bind to the kind, not the string. Sentinels are banned (Rule 5) so `errors.Is(err, ErrFoo)` isn't an option anyway.
 

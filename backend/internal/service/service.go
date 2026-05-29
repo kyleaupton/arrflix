@@ -7,9 +7,11 @@ import (
 	tmdb "github.com/cyruzin/golang-tmdb"
 
 	"github.com/kyleaupton/arrflix/internal/config"
-	"github.com/kyleaupton/arrflix/internal/guessit"
 	prowlarradapter "github.com/kyleaupton/arrflix/internal/indexer/prowlarr"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/matcher"
+	"github.com/kyleaupton/arrflix/internal/matcher/resolvers"
+	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/policy"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
@@ -27,6 +29,8 @@ type Services struct {
 	ImportTasks        *ImportTasksService
 	Indexer            *IndexerService
 	Libraries          *LibrariesService
+	Matcher            *MatcherService
+	MatchDecisions     *MatchDecisionsService
 	Media              *MediaService
 	NameTemplates      *NameTemplatesService
 	Policies           *PoliciesService
@@ -81,6 +85,24 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	invites := NewInvitesService(r)
 	enrichment := NewEnrichmentService(r, l, tmdb)
 
+	// Matcher: the v1 resolver catalog (path-embed + name-parse) wires
+	// up via DefaultRegistry. ScannerService.MatchBatch is the only
+	// caller today; manual re-match flows (Phase 4) and drop-in flows
+	// (when drop-in detection ships) consume the same surface.
+	metadataProvider := metadata.NewTmdbProvider(tmdb)
+	matcherSvc := NewMatcherService(
+		l,
+		r,
+		metadataProvider,
+		resolvers.DefaultRegistry(metadataProvider),
+		matcher.DefaultConfig(),
+	)
+	// MatchDecisionsService is the user-driven half of the match_decision
+	// write surface (re-match / un-match / detach / match-by-ID). It
+	// writes through the same repo as MatcherService so the supersede
+	// chain stays consistent across auto-match and manual flows.
+	matchDecisionsSvc := NewMatchDecisionsService(r, l, tmdb, enrichment, metadataProvider, settings)
+
 	return &Services{
 		Auth:               NewAuthService(r, cfg, settings, invites),
 		Downloaders:        NewDownloadersService(r),
@@ -94,10 +116,12 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		ImportTasks:        NewImportTasksService(r),
 		Indexer:            indexer,
 		Libraries:          NewLibrariesService(r, l),
+		Matcher:            matcherSvc,
+		MatchDecisions:     matchDecisionsSvc,
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
 		Policies:           policies,
-		Scanner:            NewScannerService(r, l, tmdb, broker, guessit.NewClient(""), enrichment),
+		Scanner:            NewScannerService(r, l, tmdb, broker, matcherSvc, enrichment),
 		Settings:           settings,
 		Setup:              NewSetupService(r, users, settings, tmdb),
 		Tmdb:               tmdb,

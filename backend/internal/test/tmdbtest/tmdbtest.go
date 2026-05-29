@@ -179,6 +179,36 @@ func (s *Server) OnMovieDetails(id int64, details tmdb.MovieDetails) {
 	})
 }
 
+// OnMovieDetailsNotFound registers a handler for GET /movie/{id} that
+// returns TMDB's standard 404 body. The matcher's metadata provider
+// reads the status code + status_code 34 to surface ErrNotFound rather
+// than ErrUpstreamUnavailable; tests use this to exercise the "user
+// supplied a bad ID" code path on the match-by-ID handler.
+func (s *Server) OnMovieDetailsNotFound(id int64) {
+	s.register(http.MethodGet, fmt.Sprintf("/movie/%d", id), func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":        false,
+			"status_code":    34,
+			"status_message": "The resource you requested could not be found.",
+		})
+	})
+}
+
+// OnTVDetailsNotFound is the series counterpart of OnMovieDetailsNotFound.
+func (s *Server) OnTVDetailsNotFound(id int64) {
+	s.register(http.MethodGet, fmt.Sprintf("/tv/%d", id), func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":        false,
+			"status_code":    34,
+			"status_message": "The resource you requested could not be found.",
+		})
+	})
+}
+
 func (s *Server) OnMovieCredits(id int64, credits tmdb.MovieCredits) {
 	s.register(http.MethodGet, fmt.Sprintf("/movie/%d/credits", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, credits)
@@ -218,6 +248,48 @@ func (s *Server) OnTVVideos(id int64, videos tmdb.VideoResults) {
 func (s *Server) OnPersonDetails(id int64, details tmdb.PersonDetails) {
 	s.register(http.MethodGet, fmt.Sprintf("/person/%d", id), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, details)
+	})
+}
+
+// OnTVEpisodeDetails handles GET /tv/{seriesID}/season/{season}/episode/{episode} —
+// what the scan / persistConfident path calls when it needs an episode
+// title for a matched series file.
+func (s *Server) OnTVEpisodeDetails(seriesID int64, season, episode int, details tmdb.TVEpisodeDetails) {
+	path := fmt.Sprintf("/tv/%d/season/%d/episode/%d", seriesID, season, episode)
+	s.register(http.MethodGet, path, func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, details)
+	})
+}
+
+// OnFindByID handles GET /find/{externalID} — TMDB's cross-provider
+// resolver. The matcher's TmdbProvider calls this to convert IMDb/TVDB
+// IDs to TMDB. movies, series, and tvEpisodes are split arrays matching
+// TMDB's response shape; passing nil for an unused bucket emits an
+// empty array.
+func (s *Server) OnFindByID(externalID, expectedSource string, movies []Movie, series []Series) {
+	movieResults := make([]map[string]any, 0, len(movies))
+	for _, m := range movies {
+		movieResults = append(movieResults, m.asSearchResult())
+	}
+	tvResults := make([]map[string]any, 0, len(series))
+	for _, sh := range series {
+		tvResults = append(tvResults, sh.asSearchResult())
+	}
+	body := map[string]any{
+		"movie_results":      movieResults,
+		"tv_results":         tvResults,
+		"tv_episode_results": []any{},
+		"tv_season_results":  []any{},
+		"person_results":     []any{},
+	}
+	s.register(http.MethodGet, "/find/"+externalID, func(w http.ResponseWriter, r *http.Request) {
+		got := r.URL.Query().Get("external_source")
+		if got != expectedSource {
+			s.t.Errorf("tmdbtest: GET /find/%s: expected external_source=%q, got %q", externalID, expectedSource, got)
+			http.Error(w, "tmdbtest: external_source mismatch", http.StatusNotImplemented)
+			return
+		}
+		writeJSON(w, body)
 	})
 }
 

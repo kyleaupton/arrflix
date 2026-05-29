@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strconv"
@@ -11,30 +10,42 @@ import (
 	"sync"
 	"time"
 
-	tmdb "github.com/cyruzin/golang-tmdb"
 	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
-	"github.com/kyleaupton/arrflix/internal/guessit"
-	"github.com/kyleaupton/arrflix/internal/identity"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/matcher"
+	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
 
+// suggestedEvidenceCapBytes is the per-suggestion evidence cap. The
+// match_decision row caps the whole evidence map at 8KB; an
+// unmatched_file may carry up to 5 suggestions and we don't want one
+// resolver's chatty payload to eat the entire JSONB column, so each
+// per-suggestion evidence is trimmed independently before write. ~2KB
+// per entry keeps a 5-suggestion row around 10KB worst-case.
+const suggestedEvidenceCapBytes = 2 * 1024
+
+// ScannerService owns filesystem discovery + persistence; the matcher
+// owns identification. Phase 3's split (per specs/modules/matching § Code
+// structure) lands here: scan's executeScan goes walk → match → enrich →
+// persist, with the match step a single MatcherService.MatchBatch call.
 type ScannerService struct {
 	repo       *repo.Repository
 	logger     *logger.Logger
 	tmdb       *TmdbService
 	broker     *sse.Broker
-	guessit    *guessit.Client
+	matcher    *MatcherService
 	enrichment *EnrichmentService
 	ctx        context.Context // background context for goroutines; cancelled on shutdown
 	running    sync.Map        // libraryID string -> scanID string
 }
 
-func NewScannerService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, broker *sse.Broker, gc *guessit.Client, enrichment *EnrichmentService) *ScannerService {
-	return &ScannerService{repo: r, logger: l, tmdb: tmdb, broker: broker, guessit: gc, enrichment: enrichment, ctx: context.Background()}
+func NewScannerService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, broker *sse.Broker, m *MatcherService, enrichment *EnrichmentService) *ScannerService {
+	return &ScannerService{repo: r, logger: l, tmdb: tmdb, broker: broker, matcher: m, enrichment: enrichment, ctx: context.Background()}
 }
 
 // SetContext sets the background context used by scan goroutines.
@@ -46,47 +57,22 @@ func (s *ScannerService) SetContext(ctx context.Context) {
 type scanStats struct {
 	FilesSeen           int `json:"filesSeen"`
 	FilesSkipped        int `json:"filesSkipped"`
-	IdentifiedByEmbed   int `json:"identifiedByEmbed"`
-	IdentifiedByGuessit int `json:"identifiedByGuessit"`
+	Confident           int `json:"confident"`
+	ConfidentReview     int `json:"confidentReview"`
+	LowConfidence       int `json:"lowConfidence"`
+	Ambiguous           int `json:"ambiguous"`
+	NoMatch             int `json:"noMatch"`
+	PartialSeries       int `json:"partialSeries"`
 	MediaItemsCreated   int `json:"mediaItemsCreated"`
-	UnmatchedCount      int `json:"unmatchedCount"`
-	SkippedGuessitDown  int `json:"skippedGuessitDown"`
 	EpisodeLookupFailed int `json:"episodeLookupFailed"`
 	Duration            int `json:"duration"`
 }
 
-// Internal pipeline types
-
+// collectedFile is the walk phase's view of one file: paths + size.
 type collectedFile struct {
 	RelPath  string
 	AbsPath  string
 	FileSize *int64
-}
-
-type identifiedFile struct {
-	collectedFile
-	TmdbID  int64
-	Season  *int32
-	Episode *int32
-}
-
-type unmatchedFileEntry struct {
-	collectedFile
-	Suggestions []model.SuggestedMatch
-}
-
-// tmdbSearchKey is used to deduplicate TMDB searches for files that likely belong to the same title.
-type tmdbSearchKey struct {
-	Query string
-	Year  *int
-	Type  string // "movie" or "series"
-}
-
-func (k tmdbSearchKey) String() string {
-	if k.Year != nil {
-		return fmt.Sprintf("%s|%d|%s", k.Query, *k.Year, k.Type)
-	}
-	return fmt.Sprintf("%s||%s", k.Query, k.Type)
 }
 
 // StartScan kicks off an async library scan. It returns the scan ID immediately.
@@ -129,10 +115,13 @@ func (s *ScannerService) StartScan(ctx context.Context, libraryID uuid.UUID) (st
 
 		s.publishEvent("scan_completed", scanID, libKey, map[string]any{
 			"filesSeen":           stats.FilesSeen,
-			"identifiedByEmbed":   stats.IdentifiedByEmbed,
-			"identifiedByGuessit": stats.IdentifiedByGuessit,
+			"confident":           stats.Confident,
+			"confidentReview":     stats.ConfidentReview,
+			"lowConfidence":       stats.LowConfidence,
+			"ambiguous":           stats.Ambiguous,
+			"noMatch":             stats.NoMatch,
+			"partialSeries":       stats.PartialSeries,
 			"mediaItemsCreated":   stats.MediaItemsCreated,
-			"unmatchedCount":      stats.UnmatchedCount,
 			"episodeLookupFailed": stats.EpisodeLookupFailed,
 			"duration":            stats.Duration,
 		})
@@ -164,6 +153,15 @@ func (s *ScannerService) publishEvent(eventType, scanID, libraryID string, extra
 // Pipeline: executeScan
 // ---------------------------------------------------------------------------
 
+// executeScan is the four-phase scan loop. Phase 1 walks the library
+// rooted at library.RootPath and collects file metadata, deduping
+// against the (media_file ∪ unmatched_file) path set. Phase 2 runs the
+// matcher against the collection — identification is entirely the
+// matcher's concern from here on. Phase 3 reads each MatchOutcomeRecord
+// and persists per the matching spec's confidence-band table: confident
+// / confident_review land in media_file; low_confidence / ambiguous /
+// no_match / partial_series land in unmatched_file. Each step publishes
+// SSE progress events for the dashboard.
 func (s *ScannerService) executeScan(ctx context.Context, library model.Library, scanID string) (scanStats, error) {
 	stats := scanStats{}
 	start := time.Now()
@@ -250,78 +248,84 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 
 	s.logger.Info().Int("collected", len(collected)).Int("seen", stats.FilesSeen).Msg("Phase 1 complete: Walk & Collect")
 
-	// Phase 2: Embedded ID Resolution
-	var identified []identifiedFile
-	var needsParsing []collectedFile
-
-	for _, f := range collected {
-		ident, resolveErr := identity.Resolve(library, f.AbsPath)
-		if resolveErr != nil {
-			needsParsing = append(needsParsing, f)
-			continue
-		}
-
-		tmdbID, convertErr := s.resolveTmdbID(ctx, library, ident)
-		if convertErr != nil {
-			s.logger.Debug().Err(convertErr).Str("path", f.RelPath).Msg("Could not resolve TMDB ID from embedded identity")
-			needsParsing = append(needsParsing, f)
-			continue
-		}
-
-		identified = append(identified, identifiedFile{
-			collectedFile: f,
-			TmdbID:        tmdbID,
-			Season:        ident.Season,
-			Episode:       ident.Episode,
-		})
-		stats.IdentifiedByEmbed++
+	if len(collected) == 0 {
+		stats.Duration = int(time.Since(start).Seconds())
+		return stats, nil
 	}
 
-	s.logger.Info().Int("identified", len(identified)).Int("needsParsing", len(needsParsing)).Msg("Phase 2 complete: Embedded ID Resolution")
-
-	// Phase 3: Guessit + TMDB Search
-	if len(needsParsing) > 0 {
-		guessitIdentified, unmatched, guessitErr := s.processWithGuessit(ctx, library, needsParsing)
-		if guessitErr != nil {
-			s.logger.Warn().Err(guessitErr).Msg("Guessit processing failed")
-			stats.SkippedGuessitDown = len(needsParsing)
-		} else {
-			identified = append(identified, guessitIdentified...)
-			stats.IdentifiedByGuessit = len(guessitIdentified)
-
-			// Create unmatched entries
-			for _, uf := range unmatched {
-				if _, upsertErr := s.repo.UpsertUnmatchedFile(ctx, repo.UpsertUnmatchedFileParams{
-					LibraryID:        library.ID,
-					Path:             uf.RelPath,
-					FileSize:         uf.FileSize,
-					SuggestedMatches: uf.Suggestions,
-				}); upsertErr != nil {
-					s.logger.Warn().Err(upsertErr).Str("path", uf.RelPath).Msg("Failed to upsert unmatched file")
-				}
-				stats.UnmatchedCount++
-			}
-		}
+	// Phase 2: Match
+	//
+	// The matcher owns identification (path-embed Tier 1, name-parse
+	// Tier 3, validation, confidence banding). Scan hands it a slice of
+	// FileRefs and gets back one MatchOutcomeRecord per file in the same
+	// order.
+	fileRefs, err := s.toFileRefs(ctx, library, collected)
+	if err != nil {
+		return scanStats{}, err
+	}
+	outcomes, err := s.matcher.MatchBatch(ctx, fileRefs)
+	if err != nil {
+		return scanStats{}, err
+	}
+	if len(outcomes) != len(collected) {
+		// MatchBatch should preserve input order 1:1. A mismatch here
+		// would be a programming error in the matcher contract.
+		return scanStats{}, apperrors.Internalf("matcher returned %d outcomes for %d files", len(outcomes), len(collected)).
+			Op("ScannerService.executeScan").
+			NotRetryable()
 	}
 
-	s.logger.Info().Int("totalIdentified", len(identified)).Msg("Phase 3 complete: Guessit + TMDB Search")
+	s.logger.Info().Int("outcomes", len(outcomes)).Msg("Phase 2 complete: Match")
 
-	// Phase 4: Process Identified Files
-	for i, f := range identified {
+	// Phase 3+4: Enrich & Persist
+	for i, f := range collected {
 		if ctx.Err() != nil {
 			return scanStats{}, ctx.Err()
 		}
 
-		created, epFailed, processErr := s.processIdentifiedFile(ctx, library, f)
-		if processErr != nil {
-			s.logger.Warn().Err(processErr).Str("path", f.RelPath).Msg("Error processing identified file")
-			continue
-		}
-		if created {
-			stats.MediaItemsCreated++
-		}
-		if epFailed {
-			stats.EpisodeLookupFailed++
+		rec := outcomes[i]
+
+		switch rec.Outcome {
+		case matcher.OutcomeConfident, matcher.OutcomeConfidentReview:
+			created, epFailed, perr := s.persistConfident(ctx, library, f, rec)
+			if perr != nil {
+				s.logger.Warn().Err(perr).Str("path", f.RelPath).Msg("persist confident failed")
+				continue
+			}
+			if created {
+				stats.MediaItemsCreated++
+			}
+			if epFailed {
+				stats.EpisodeLookupFailed++
+			}
+			if rec.Outcome == matcher.OutcomeConfident {
+				stats.Confident++
+			} else {
+				stats.ConfidentReview++
+			}
+		case matcher.OutcomeLowConfidence, matcher.OutcomeAmbiguous, matcher.OutcomeNoMatch, matcher.OutcomePartialSeries:
+			if perr := s.persistUnmatched(ctx, library, f, rec); perr != nil {
+				s.logger.Warn().Err(perr).Str("path", f.RelPath).Msg("persist unmatched failed")
+				continue
+			}
+			switch rec.Outcome {
+			case matcher.OutcomeLowConfidence:
+				stats.LowConfidence++
+			case matcher.OutcomeAmbiguous:
+				stats.Ambiguous++
+			case matcher.OutcomeNoMatch:
+				stats.NoMatch++
+			case matcher.OutcomePartialSeries:
+				stats.PartialSeries++
+			}
+		default:
+			// The aggregator's banded outcomes are all handled above;
+			// OutcomeDetached is a user-only action that never comes out
+			// of MatchBatch. A new or unexpected band reaching here would
+			// otherwise be silently dropped (no media_file / no
+			// unmatched_file row) while its match_decision row already
+			// exists — surface it instead of losing the file.
+			s.logger.Warn().Str("path", f.RelPath).Str("outcome", string(rec.Outcome)).Msg("scan: unhandled match outcome; file left unpersisted")
 		}
 
 		if (i+1)%50 == 0 {
@@ -365,195 +369,145 @@ func (s *ScannerService) loadKnownPaths(ctx context.Context, libraryID uuid.UUID
 	return known, nil
 }
 
-// resolveTmdbID extracts a TMDB ID from an identity, converting from TVDB/IMDB if needed.
-func (s *ScannerService) resolveTmdbID(ctx context.Context, library model.Library, ident identity.Identity) (int64, error) {
-	if ident.TmdbID != nil {
-		return *ident.TmdbID, nil
+// toFileRefs translates a slice of walked files into FileRefs the
+// matcher consumes. Each ref gets:
+//
+//   - A stable FileID. We look up the existing media_file or
+//     unmatched_file row by (library_id, relative path) and reuse its
+//     id when found; otherwise a fresh UUID is minted. This keeps
+//     match_decision.file_id stable across re-scans so the supersede
+//     chain points at the same logical file each time.
+//
+//   - A parser hint. parsing.Parse(rel-path, domain, AsPath()) runs
+//     domain-typed (DomainSeries for series libraries, DomainMovie for
+//     movie libraries). Parse is total — an unparseable path yields
+//     zero-confidence fields, not an error — so we pass the result
+//     through unconditionally and let NameParse's Available() check
+//     short-circuit when the parse has no signal.
+//
+// The path on the FileRef is absolute, because PathEmbed scans the
+// whole path string for TRaSH-style `{tmdb-X}` markers (which often
+// live in a parent directory, not the leaf filename).
+func (s *ScannerService) toFileRefs(ctx context.Context, library model.Library, collected []collectedFile) ([]matcher.FileRef, error) {
+	domain := parsing.DomainSeries
+	if library.Type == "movie" {
+		domain = parsing.DomainMovie
+	}
+	refs := make([]matcher.FileRef, 0, len(collected))
+	for _, f := range collected {
+		id, err := s.resolveFileID(ctx, library.ID, f.RelPath)
+		if err != nil {
+			return nil, err
+		}
+		parsed := parsing.Parse(f.RelPath, domain, parsing.AsPath())
+		refs = append(refs, matcher.FileRef{
+			ID:          id,
+			Path:        f.AbsPath,
+			LibraryID:   library.ID,
+			LibraryRoot: library.RootPath,
+			Parsed:      &parsed,
+		})
+	}
+	return refs, nil
+}
+
+// resolveFileID returns a stable file id for (library, relPath). The
+// match_decision table's file_id column carries this identifier across
+// outcomes — a file that was no_match on scan #1 and confident on scan
+// #2 keeps the same id so the supersede chain points at the same
+// logical file. We probe media_file first (most rows live there), fall
+// back to unmatched_file, and mint a fresh UUID only on a true miss.
+func (s *ScannerService) resolveFileID(ctx context.Context, libraryID uuid.UUID, relPath string) (uuid.UUID, error) {
+	mf, err := s.repo.GetMediaFileByLibraryAndPath(ctx, repo.GetMediaFileByLibraryAndPathParams{
+		LibraryID: libraryID,
+		Path:      relPath,
+	})
+	if err == nil {
+		return mf.ID, nil
+	}
+	if !apperrors.IsNotFound(err) {
+		return uuid.Nil, err
 	}
 
-	var id string
-	var provider string
+	uf, err := s.repo.GetUnmatchedFileByPath(ctx, repo.GetUnmatchedFileByPathParams{
+		LibraryID: libraryID,
+		Path:      relPath,
+	})
+	if err == nil {
+		return uf.ID, nil
+	}
+	if !apperrors.IsNotFound(err) {
+		return uuid.Nil, err
+	}
 
-	if ident.TvdbID != nil {
-		id = strconv.FormatInt(*ident.TvdbID, 10)
-		provider = "tvdb_id"
-	} else if ident.ImdbID != nil {
-		id = *ident.ImdbID
-		provider = "imdb_id"
-	} else {
-		return 0, apperrors.Internalf("embedded identity has no provider IDs").
-			Op("ScannerService.resolveTmdbID").
+	return uuid.New(), nil
+}
+
+// persistConfident writes a media_item / media_file / media_file_state /
+// media_file_import set for a confident or confident_review outcome.
+// The "flagged for review" state for confident_review is implicit in
+// match_decision.outcome (already written by MatchBatch); we don't
+// store a separate flag on media_file.
+//
+// The actual persistence is delegated to commitMatch, the helper shared
+// with the user-driven match-by-ID handler (Phase 4). Scan's wrapper
+// owns the matcher-record → commitMatchInput translation (cross-source
+// validation, episode unwrap) and the post-commit enrichment kick.
+//
+// Returns (mediaItemCreated, episodeLookupFailed, error).
+//
+// TODO(tracking): close any open wants whose identity matches this
+// outcome's ChosenRef + ChosenEpisode. Phase 4 of the matcher plan is
+// decision flows; want fulfillment hooks in when tracking lands.
+// See specs/modules/matching/README.md § Drop-in fulfills wants.
+func (s *ScannerService) persistConfident(ctx context.Context, library model.Library, f collectedFile, rec matcher.MatchOutcomeRecord) (bool, bool, error) {
+	if rec.ChosenRef == nil {
+		return false, false, apperrors.Internalf("confident outcome without chosen ref for %q", f.RelPath).
+			Op("ScannerService.persistConfident").
+			NotRetryable()
+	}
+	// The aggregator's cross-provider rewrite ensures any non-TMDB ref
+	// landing here has been resolved to TMDB. Defend the invariant.
+	if rec.ChosenRef.Source != metadata.SourceTMDB {
+		return false, false, apperrors.Internalf("confident outcome carries non-tmdb ref %s:%s for %q", rec.ChosenRef.Source, rec.ChosenRef.ExternalID, f.RelPath).
+			Op("ScannerService.persistConfident").
+			NotRetryable()
+	}
+	tmdbID, err := strconv.ParseInt(rec.ChosenRef.ExternalID, 10, 64)
+	if err != nil {
+		return false, false, apperrors.Internalf("tmdb id %q not numeric: %v", rec.ChosenRef.ExternalID, err).
+			Op("ScannerService.persistConfident").
 			NotRetryable()
 	}
 
-	res, err := s.tmdb.FindByID(ctx, id, provider)
-	if err != nil {
-		return 0, err
+	in := commitMatchInput{
+		Library:  library,
+		RelPath:  f.RelPath,
+		AbsPath:  f.AbsPath,
+		FileSize: f.FileSize,
+		TmdbID:   tmdbID,
+		Item:     rec.ChosenItem,
+		Edition:  rec.ChosenEdition,
+		Method:   "scan",
+	}
+	if rec.ChosenEpisode != nil {
+		sn := int32(rec.ChosenEpisode.Season)
+		en := int32(rec.ChosenEpisode.Episode)
+		in.Season = &sn
+		in.Episode = &en
 	}
 
-	switch library.Type {
-	case "movie":
-		if len(res.MovieResults) > 0 {
-			return res.MovieResults[0].ID, nil
-		}
-	case "series":
-		if len(res.TvResults) > 0 {
-			return res.TvResults[0].ID, nil
-		}
-	}
-
-	return 0, apperrors.NotFoundf("no TMDB results for %s=%q", provider, id).
-		Op("ScannerService.resolveTmdbID")
-}
-
-// fetchMediaItemMetadata fetches title and release year from TMDB for the
-// given library type. Returns BadGateway when the release date is missing
-// or unparseable.
-func (s *ScannerService) fetchMediaItemMetadata(ctx context.Context, library model.Library, tmdbID int64) (string, int32, error) {
-	switch library.Type {
-	case "movie":
-		movie, err := s.tmdb.GetMovieDetails(ctx, tmdbID)
-		if err != nil {
-			return "", 0, err
-		}
-		if movie.ReleaseDate == "" {
-			return "", 0, apperrors.BadGatewayf("tmdb movie %d has empty release date", tmdbID).
-				Op("ScannerService.fetchMediaItemMetadata")
-		}
-		year64, err := strconv.ParseInt(strings.Split(movie.ReleaseDate, "-")[0], 10, 32)
-		if err != nil {
-			return "", 0, apperrors.BadGatewayf("tmdb movie %d release date %q unparseable: %v", tmdbID, movie.ReleaseDate, err).
-				Op("ScannerService.fetchMediaItemMetadata")
-		}
-		return movie.Title, int32(year64), nil
-
-	case "series":
-		tv, err := s.tmdb.GetSeriesDetails(ctx, tmdbID)
-		if err != nil {
-			return "", 0, err
-		}
-		if tv.FirstAirDate == "" {
-			return "", 0, apperrors.BadGatewayf("tmdb series %d has empty first air date", tmdbID).
-				Op("ScannerService.fetchMediaItemMetadata")
-		}
-		year64, err := strconv.ParseInt(strings.Split(tv.FirstAirDate, "-")[0], 10, 32)
-		if err != nil {
-			return "", 0, apperrors.BadGatewayf("tmdb series %d first air date %q unparseable: %v", tmdbID, tv.FirstAirDate, err).
-				Op("ScannerService.fetchMediaItemMetadata")
-		}
-		return tv.Name, int32(year64), nil
-	}
-
-	return "", 0, apperrors.Internalf("unknown library type %q", library.Type).
-		Op("ScannerService.fetchMediaItemMetadata").
-		NotRetryable()
-}
-
-// processIdentifiedFile creates all DB records for a single identified file.
-// Returns (mediaItemCreated, episodeLookupFailed, error).
-func (s *ScannerService) processIdentifiedFile(ctx context.Context, library model.Library, f identifiedFile) (bool, bool, error) {
-	existing, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, f.TmdbID, library.Type)
-	needsCreateItem := apperrors.IsNotFound(err)
-	if err != nil && !needsCreateItem {
-		return false, false, err
-	}
-
-	var createItemParams repo.CreateMediaItemParams
-	if needsCreateItem {
-		title, year, perr := s.fetchMediaItemMetadata(ctx, library, f.TmdbID)
-		if perr != nil {
-			return false, false, perr
-		}
-		tmdb := f.TmdbID
-		createItemParams = repo.CreateMediaItemParams{
-			Type:   library.Type,
-			Title:  title,
-			Year:   &year,
-			TmdbID: &tmdb,
-		}
-	}
-
-	episodeTitle := ""
-	if f.Season != nil && f.Episode != nil {
-		ep, eerr := s.tmdb.GetEpisodeDetails(ctx, f.TmdbID, int64(*f.Season), int64(*f.Episode))
-		if eerr != nil {
-			s.logger.Error().Err(eerr).Str("path", f.AbsPath).Msg("Error getting episode details from TMDB")
-			return false, true, nil // skip file, continue
-		}
-		episodeTitle = ep.Name
-	}
-
-	var (
-		itemCreated bool
-		createdItem model.MediaItem
-	)
-	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
-		mediaItemID := existing.ID
-		if needsCreateItem {
-			item, cerr := r.CreateMediaItem(ctx, createItemParams)
-			if cerr != nil {
-				return cerr
-			}
-			mediaItemID = item.ID
-			createdItem = item
-			itemCreated = true
-		}
-
-		var episodeIDPtr *uuid.UUID
-		if f.Season != nil {
-			season, serr := r.UpsertSeason(ctx, repo.UpsertSeasonParams{
-				MediaItemID:  mediaItemID,
-				SeasonNumber: *f.Season,
-			})
-			if serr != nil {
-				return serr
-			}
-			if f.Episode != nil {
-				episode, eerr := r.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
-					SeasonID:      season.ID,
-					EpisodeNumber: *f.Episode,
-					Title:         &episodeTitle,
-				})
-				if eerr != nil {
-					return eerr
-				}
-				eid := episode.ID
-				episodeIDPtr = &eid
-			}
-		}
-
-		mf, ferr := r.CreateMediaFile(ctx, repo.CreateMediaFileParams{
-			LibraryID:   library.ID,
-			MediaItemID: mediaItemID,
-			EpisodeID:   episodeIDPtr,
-			Path:        f.RelPath,
-		})
-		if ferr != nil {
-			return ferr
-		}
-
-		if _, serr := r.UpsertMediaFileState(ctx, repo.UpsertMediaFileStateParams{
-			MediaFileID: mf.ID,
-			FileExists:  true,
-			FileSize:    f.FileSize,
-		}); serr != nil {
-			return serr
-		}
-
-		_, ierr := r.CreateMediaFileImport(ctx, repo.CreateMediaFileImportParams{
-			MediaFileID: mf.ID,
-			Method:      "scan",
-			DestPath:    f.AbsPath,
-			Success:     true,
-		})
-		return ierr
-	})
+	result, err := commitMatch(ctx, commitMatchDeps{repo: s.repo, log: s.logger, tmdb: s.tmdb}, in)
 	if err != nil {
 		return false, false, err
+	}
+	if result.EpisodeFailed {
+		return false, true, nil // skip file, continue
 	}
 
 	// Fire enrichment after commit so the goroutine reads a committed row.
-	if itemCreated && s.enrichment != nil {
+	if result.ItemCreated && s.enrichment != nil {
+		createdItem := result.MediaItem
 		go func() {
 			if err := s.enrichment.EnrichMediaItem(s.ctx, createdItem); err != nil {
 				s.logger.Warn().Err(err).Str("title", createdItem.Title).Msg("scan-time enrichment failed, worker will retry")
@@ -561,270 +515,96 @@ func (s *ScannerService) processIdentifiedFile(ctx context.Context, library mode
 		}()
 	}
 
-	return itemCreated, false, nil
+	return result.ItemCreated, false, nil
 }
 
-// processWithGuessit handles files that couldn't be identified by embedded IDs.
-// It batch-parses filenames via guessit, groups by title, searches TMDB, and
-// either auto-matches or creates unmatched entries with suggestions.
-func (s *ScannerService) processWithGuessit(ctx context.Context, library model.Library, files []collectedFile) ([]identifiedFile, []unmatchedFileEntry, error) {
-	if s.guessit == nil || !s.guessit.Healthy(ctx) {
-		return nil, nil, apperrors.BadGatewayf("guessit sidecar unavailable").
-			Op("ScannerService.processWithGuessit")
-	}
-
-	// Build guessit input strings
-	inputs := make([]string, len(files))
-	for i, f := range files {
-		inputs[i] = guessitInput(library.Type, f.RelPath)
-	}
-
-	// Batch parse in chunks of 200
-	const chunkSize = 200
-	allResults := make([]guessit.ParseResult, 0, len(inputs))
-	for i := 0; i < len(inputs); i += chunkSize {
-		end := i + chunkSize
-		if end > len(inputs) {
-			end = len(inputs)
-		}
-		chunk, err := s.guessit.ParseBatch(ctx, inputs[i:end])
-		if err != nil {
-			return nil, nil, apperrors.BadGatewayf("guessit batch parse: %v", err).
-				Op("ScannerService.processWithGuessit")
-		}
-		allResults = append(allResults, chunk...)
-	}
-
-	// Group files by search key
-	type groupEntry struct {
-		file   collectedFile
-		result guessit.ParseResult
-	}
-	groups := make(map[string][]groupEntry)
-	keyMap := make(map[string]tmdbSearchKey) // string key -> search key
-
-	for i, f := range files {
-		result := allResults[i]
-		key := buildSearchKey(library.Type, f.RelPath, result)
-		keyStr := key.String()
-		groups[keyStr] = append(groups[keyStr], groupEntry{file: f, result: result})
-		keyMap[keyStr] = key
-	}
-
-	s.logger.Info().Int("groups", len(groups)).Int("files", len(files)).Msg("Guessit grouped files for TMDB search")
-
-	var identified []identifiedFile
-	var unmatched []unmatchedFileEntry
-
-	// One TMDB search per unique group key
-	for keyStr, entries := range groups {
-		key := keyMap[keyStr]
-		if key.Query == "" {
-			// Guessit couldn't parse a title — mark all as unmatched with no suggestions
-			for _, e := range entries {
-				unmatched = append(unmatched, unmatchedFileEntry{
-					collectedFile: e.file,
-					Suggestions:   []model.SuggestedMatch{},
-				})
-			}
-			continue
-		}
-
-		searchResult, err := s.tmdb.MultiSearch(ctx, key.Query, 1)
-		if err != nil {
-			s.logger.Warn().Err(err).Str("query", key.Query).Msg("TMDB multi search failed")
-			for _, e := range entries {
-				unmatched = append(unmatched, unmatchedFileEntry{
-					collectedFile: e.file,
-					Suggestions:   []model.SuggestedMatch{},
-				})
-			}
-			continue
-		}
-
-		match, suggestions := evaluateSearchResults(library.Type, key, searchResult)
-
-		if match != nil {
-			// Auto-matched: assign TMDB ID to all files in this group
-			for _, e := range entries {
-				idf := identifiedFile{
-					collectedFile: e.file,
-					TmdbID:        match.tmdbID,
-				}
-				// For series, extract season/episode from guessit result
-				if library.Type == "series" && e.result.Season != nil {
-					s32 := int32(*e.result.Season)
-					idf.Season = &s32
-				}
-				if library.Type == "series" && e.result.Episode != nil {
-					e32 := int32(*e.result.Episode)
-					idf.Episode = &e32
-				}
-				identified = append(identified, idf)
-			}
-		} else {
-			for _, e := range entries {
-				unmatched = append(unmatched, unmatchedFileEntry{
-					collectedFile: e.file,
-					Suggestions:   suggestions,
-				})
-			}
-		}
-	}
-
-	return identified, unmatched, nil
+// persistUnmatched writes an unmatched_file row for a low_confidence /
+// ambiguous / no_match / partial_series outcome. The candidate list
+// (and its per-resolver evidence) becomes the row's suggested_matches
+// JSONB column. partial_series gets a column flag too so the inbox UI
+// can offer an episode picker rather than a full match prompt.
+//
+// no_match writes the row with an empty suggestions list — the row's
+// existence is the signal; the inbox surfaces it as "we don't know
+// what this is."
+func (s *ScannerService) persistUnmatched(ctx context.Context, library model.Library, f collectedFile, rec matcher.MatchOutcomeRecord) error {
+	suggestions := suggestionsFromOutcome(rec, library.Type)
+	_, err := s.repo.UpsertUnmatchedFile(ctx, repo.UpsertUnmatchedFileParams{
+		LibraryID:        library.ID,
+		Path:             f.RelPath,
+		FileSize:         f.FileSize,
+		SuggestedMatches: suggestions,
+		PartialSeries:    rec.Outcome == matcher.OutcomePartialSeries,
+	})
+	return err
 }
 
-// guessitInput picks the best path segment to send to guessit.
-// For series: use the filename (e.g., "South Park S01E01.mkv")
-// For movies: prefer parent directory name (e.g., "The Matrix (1999)"), fall back to filename
-func guessitInput(libraryType, relPath string) string {
-	if libraryType == "series" {
-		return filepath.Base(relPath)
+// suggestionsFromOutcome translates the matcher's record into the
+// suggested_matches JSONB shape. Per matching § "What evolves" the new
+// shape is `{external_ref, confidence, contributing_resolvers,
+// evidence, title, year, type}` — one entry per candidate the matcher
+// would surface.
+//
+// Per-outcome semantics follow the confidence-bands table:
+//   - no_match: empty slice (the row's existence is the signal).
+//   - low_confidence / partial_series: one entry (the strong candidate).
+//   - ambiguous: up to RankedCandidatesLimit (5) ranked entries.
+//
+// The list mirrors rec.RankedCandidates exactly; the aggregator owns
+// the ranking + truncation. We attach the per-row evidence to every
+// suggestion (capped at suggestedEvidenceCapBytes) because we don't
+// carry per-candidate evidence on the outcome record — the inbox uses
+// the row-level evidence + ContributingResolvers to render the "why".
+func suggestionsFromOutcome(rec matcher.MatchOutcomeRecord, libraryType string) []model.SuggestedMatch {
+	if len(rec.RankedCandidates) == 0 {
+		return nil
 	}
-
-	// Movie: prefer parent directory
-	dir := filepath.Dir(relPath)
-	if dir != "" && dir != "." {
-		return filepath.Base(dir)
-	}
-	return filepath.Base(relPath)
-}
-
-// buildSearchKey creates a dedup key for grouping files that should share one TMDB search.
-// Series: group by top-level directory name (all episodes of the same show)
-// Movies: group by (title, year) from guessit
-func buildSearchKey(libraryType, relPath string, result guessit.ParseResult) tmdbSearchKey {
-	if libraryType == "series" {
-		// Use the top-level directory name as the search query
-		parts := strings.SplitN(relPath, string(filepath.Separator), 2)
-		topDir := parts[0]
-		// Clean common patterns from directory names for better search
-		query := cleanDirName(topDir)
-		return tmdbSearchKey{Query: query, Type: "series"}
-	}
-
-	// Movie: use title and year from guessit
-	title := ""
-	if result.Title != nil {
-		title = *result.Title
-	}
-	return tmdbSearchKey{Query: title, Year: result.Year, Type: "movie"}
-}
-
-// cleanDirName removes common non-title artifacts from directory names.
-func cleanDirName(name string) string {
-	// Remove year in parentheses or brackets like "(2024)" or "[2024]"
-	// but keep the rest. This gives better TMDB search results.
-	// For series dirs like "South Park", this is already clean.
-	// For "South Park (1997)", we want to search "South Park".
-	name = strings.TrimSpace(name)
-
-	// Remove trailing year patterns
-	for _, sep := range []string{"(", "["} {
-		if idx := strings.LastIndex(name, sep); idx > 0 {
-			candidate := strings.TrimSpace(name[:idx])
-			if candidate != "" {
-				name = candidate
-			}
+	resolvers := make([]string, 0, len(rec.ResolversConsulted))
+	for _, a := range rec.ResolversConsulted {
+		if a.CandidateCount > 0 {
+			resolvers = append(resolvers, a.Name)
 		}
 	}
 
-	return name
-}
+	evidence := capSuggestionEvidence(rec.Evidence)
 
-type tmdbMatch struct {
-	tmdbID int64
-}
-
-// evaluateSearchResults matches TMDB search results against a search key.
-// First filters by media type, then narrows by year if available. Returns a
-// match if exactly 1 candidate remains, otherwise returns up to 5 suggestions.
-func evaluateSearchResults(libraryType string, key tmdbSearchKey, searchResult tmdb.SearchMulti) (*tmdbMatch, []model.SuggestedMatch) {
-	if searchResult.SearchMultiResults == nil {
-		return nil, []model.SuggestedMatch{}
-	}
-
-	// Map library type to TMDB media type
-	wantMediaType := "movie"
-	if libraryType == "series" {
-		wantMediaType = "tv"
-	}
-
-	// Filter to matching media type
-	type candidate struct {
-		ID    int64
-		Title string
-		Year  int
-	}
-	var candidates []candidate
-
-	for _, r := range searchResult.Results {
-		if r.MediaType != wantMediaType {
-			continue
-		}
-
-		title := r.Title
-		dateStr := r.ReleaseDate
-		if wantMediaType == "tv" {
-			title = r.Name
-			dateStr = r.FirstAirDate
-		}
-
+	out := make([]model.SuggestedMatch, 0, len(rec.RankedCandidates))
+	for _, c := range rec.RankedCandidates {
+		title := ""
 		year := 0
-		if len(dateStr) >= 4 {
-			if y, err := strconv.Atoi(dateStr[:4]); err == nil {
-				year = y
-			}
+		if c.Item != nil {
+			title = c.Item.Title
+			year = c.Item.Year
 		}
-
-		candidates = append(candidates, candidate{ID: r.ID, Title: title, Year: year})
-	}
-
-	// If we have a year from guessit, narrow candidates to exact year matches only.
-	// This lets us auto-match even when TMDB returns multiple results (e.g. sequels/remakes),
-	// as long as only one result has the right year. Results with no year (year==0) are
-	// excluded because they are typically obscure entries that would prevent disambiguation.
-	if key.Year != nil {
-		var yearFiltered []candidate
-		for _, c := range candidates {
-			if c.Year == *key.Year {
-				yearFiltered = append(yearFiltered, c)
-			}
-		}
-		if len(yearFiltered) > 0 {
-			candidates = yearFiltered
-		}
-	}
-
-	// Auto-match: exactly 1 candidate remaining (after year filtering if applicable)
-	if len(candidates) == 1 {
-		return &tmdbMatch{tmdbID: candidates[0].ID}, nil
-	}
-
-	// Build suggestions (top 5)
-	limit := 5
-	if len(candidates) < limit {
-		limit = len(candidates)
-	}
-
-	suggestions := make([]model.SuggestedMatch, 0, limit)
-	for i := 0; i < limit; i++ {
-		c := candidates[i]
-		score := 100 - (i * 15) // rank-based score: 100, 85, 70, 55, 40
-		if score < 10 {
-			score = 10
-		}
-		suggestions = append(suggestions, model.SuggestedMatch{
-			TmdbID: c.ID,
-			Title:  c.Title,
-			Year:   c.Year,
-			Type:   libraryType,
-			Score:  score,
+		out = append(out, model.SuggestedMatch{
+			ExternalRef: model.SuggestedExternalRef{
+				Source:     string(c.Ref.Source),
+				ExternalID: c.Ref.ExternalID,
+			},
+			Confidence:            c.Confidence,
+			ContributingResolvers: resolvers,
+			Evidence:              evidence,
+			Title:                 title,
+			Year:                  year,
+			Type:                  libraryType,
 		})
 	}
+	return out
+}
 
-	return nil, suggestions
+// capSuggestionEvidence trims the per-suggestion evidence payload so a
+// 5-suggestion row doesn't blow out the JSONB column. The matcher already
+// caps the whole-row evidence at 8KB; this is the per-entry sibling at
+// 2KB. When the cap fires we surface a small marker rather than the
+// original payload — readers can still tell that evidence was attached.
+func capSuggestionEvidence(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	if len(raw) <= suggestedEvidenceCapBytes {
+		return raw
+	}
+	return json.RawMessage(`{"_truncated":true}`)
 }
 
 func isMediaFile(path string) bool {

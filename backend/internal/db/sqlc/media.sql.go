@@ -145,6 +145,44 @@ func (q *Queries) CreateMediaFileState(ctx context.Context, arg CreateMediaFileS
 	return i, err
 }
 
+const createMediaFileWithID = `-- name: CreateMediaFileWithID :one
+insert into media_file (id, library_id, media_item_id, episode_id, path)
+values ($1, $2, $3, $4, $5)
+returning id, library_id, media_item_id, episode_id, path, created_at
+`
+
+type CreateMediaFileWithIDParams struct {
+	ID          pgtype.UUID `json:"id"`
+	LibraryID   pgtype.UUID `json:"library_id"`
+	MediaItemID pgtype.UUID `json:"media_item_id"`
+	EpisodeID   pgtype.UUID `json:"episode_id"`
+	Path        string      `json:"path"`
+}
+
+// Inserts a media_file with an explicit id. Used by the manual match
+// flow (Phase 4) to preserve the stable file_id across an
+// unmatched_file → media_file transition: the match_decision rows are
+// keyed by file_id, so the join key has to survive.
+func (q *Queries) CreateMediaFileWithID(ctx context.Context, arg CreateMediaFileWithIDParams) (MediaFile, error) {
+	row := q.db.QueryRow(ctx, createMediaFileWithID,
+		arg.ID,
+		arg.LibraryID,
+		arg.MediaItemID,
+		arg.EpisodeID,
+		arg.Path,
+	)
+	var i MediaFile
+	err := row.Scan(
+		&i.ID,
+		&i.LibraryID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.Path,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createMediaItem = `-- name: CreateMediaItem :one
 insert into media_item (type, title, year, tmdb_id)
 values ($1, $2, $3, $4)
@@ -194,9 +232,9 @@ func (q *Queries) CreateMediaItem(ctx context.Context, arg CreateMediaItemParams
 
 const createUnmatchedFile = `-- name: CreateUnmatchedFile :one
 
-insert into unmatched_file (library_id, path, file_size, suggested_matches)
-values ($1, $2, $3, $4)
-returning id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id
+insert into unmatched_file (library_id, path, file_size, suggested_matches, partial_series)
+values ($1, $2, $3, $4, $5)
+returning id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id, partial_series
 `
 
 type CreateUnmatchedFileParams struct {
@@ -204,6 +242,7 @@ type CreateUnmatchedFileParams struct {
 	Path             string      `json:"path"`
 	FileSize         *int64      `json:"file_size"`
 	SuggestedMatches []byte      `json:"suggested_matches"`
+	PartialSeries    bool        `json:"partial_series"`
 }
 
 // Unmatched File queries
@@ -213,6 +252,7 @@ func (q *Queries) CreateUnmatchedFile(ctx context.Context, arg CreateUnmatchedFi
 		arg.Path,
 		arg.FileSize,
 		arg.SuggestedMatches,
+		arg.PartialSeries,
 	)
 	var i UnmatchedFile
 	err := row.Scan(
@@ -224,6 +264,7 @@ func (q *Queries) CreateUnmatchedFile(ctx context.Context, arg CreateUnmatchedFi
 		&i.SuggestedMatches,
 		&i.ResolvedAt,
 		&i.ResolvedMediaFileID,
+		&i.PartialSeries,
 	)
 	return i, err
 }
@@ -270,7 +311,7 @@ const dismissUnmatchedFile = `-- name: DismissUnmatchedFile :one
 update unmatched_file
 set resolved_at = now()
 where id = $1
-returning id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id
+returning id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id, partial_series
 `
 
 func (q *Queries) DismissUnmatchedFile(ctx context.Context, id pgtype.UUID) (UnmatchedFile, error) {
@@ -285,6 +326,7 @@ func (q *Queries) DismissUnmatchedFile(ctx context.Context, id pgtype.UUID) (Unm
 		&i.SuggestedMatches,
 		&i.ResolvedAt,
 		&i.ResolvedMediaFileID,
+		&i.PartialSeries,
 	)
 	return i, err
 }
@@ -617,7 +659,7 @@ func (q *Queries) GetSeasonByNumber(ctx context.Context, arg GetSeasonByNumberPa
 }
 
 const getUnmatchedFile = `-- name: GetUnmatchedFile :one
-select id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id from unmatched_file where id = $1
+select id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id, partial_series from unmatched_file where id = $1
 `
 
 func (q *Queries) GetUnmatchedFile(ctx context.Context, id pgtype.UUID) (UnmatchedFile, error) {
@@ -632,12 +674,13 @@ func (q *Queries) GetUnmatchedFile(ctx context.Context, id pgtype.UUID) (Unmatch
 		&i.SuggestedMatches,
 		&i.ResolvedAt,
 		&i.ResolvedMediaFileID,
+		&i.PartialSeries,
 	)
 	return i, err
 }
 
 const getUnmatchedFileByPath = `-- name: GetUnmatchedFileByPath :one
-select id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id from unmatched_file where library_id = $1 and path = $2
+select id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id, partial_series from unmatched_file where library_id = $1 and path = $2
 `
 
 type GetUnmatchedFileByPathParams struct {
@@ -657,6 +700,7 @@ func (q *Queries) GetUnmatchedFileByPath(ctx context.Context, arg GetUnmatchedFi
 		&i.SuggestedMatches,
 		&i.ResolvedAt,
 		&i.ResolvedMediaFileID,
+		&i.PartialSeries,
 	)
 	return i, err
 }
@@ -1341,7 +1385,7 @@ func (q *Queries) ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryI
 }
 
 const listUnmatchedFiles = `-- name: ListUnmatchedFiles :many
-select id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id from unmatched_file
+select id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id, partial_series from unmatched_file
 where resolved_at is null
 order by discovered_at desc
 `
@@ -1364,6 +1408,7 @@ func (q *Queries) ListUnmatchedFiles(ctx context.Context) ([]UnmatchedFile, erro
 			&i.SuggestedMatches,
 			&i.ResolvedAt,
 			&i.ResolvedMediaFileID,
+			&i.PartialSeries,
 		); err != nil {
 			return nil, err
 		}
@@ -1376,7 +1421,7 @@ func (q *Queries) ListUnmatchedFiles(ctx context.Context) ([]UnmatchedFile, erro
 }
 
 const listUnmatchedFilesForLibrary = `-- name: ListUnmatchedFilesForLibrary :many
-select id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id from unmatched_file
+select id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id, partial_series from unmatched_file
 where library_id = $1 and resolved_at is null
 order by discovered_at desc
 `
@@ -1399,6 +1444,7 @@ func (q *Queries) ListUnmatchedFilesForLibrary(ctx context.Context, libraryID pg
 			&i.SuggestedMatches,
 			&i.ResolvedAt,
 			&i.ResolvedMediaFileID,
+			&i.PartialSeries,
 		); err != nil {
 			return nil, err
 		}
@@ -1411,7 +1457,7 @@ func (q *Queries) ListUnmatchedFilesForLibrary(ctx context.Context, libraryID pg
 }
 
 const listUnmatchedFilesPaginated = `-- name: ListUnmatchedFilesPaginated :many
-select id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id from unmatched_file
+select id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id, partial_series from unmatched_file
 where resolved_at is null
   and ($1::uuid is null or library_id = $1)
 order by discovered_at desc
@@ -1442,6 +1488,7 @@ func (q *Queries) ListUnmatchedFilesPaginated(ctx context.Context, arg ListUnmat
 			&i.SuggestedMatches,
 			&i.ResolvedAt,
 			&i.ResolvedMediaFileID,
+			&i.PartialSeries,
 		); err != nil {
 			return nil, err
 		}
@@ -1458,7 +1505,7 @@ update unmatched_file
 set resolved_at = now(),
     resolved_media_file_id = $1
 where id = $2
-returning id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id
+returning id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id, partial_series
 `
 
 type ResolveUnmatchedFileParams struct {
@@ -1478,6 +1525,40 @@ func (q *Queries) ResolveUnmatchedFile(ctx context.Context, arg ResolveUnmatched
 		&i.SuggestedMatches,
 		&i.ResolvedAt,
 		&i.ResolvedMediaFileID,
+		&i.PartialSeries,
+	)
+	return i, err
+}
+
+const updateMediaFileIdentity = `-- name: UpdateMediaFileIdentity :one
+update media_file
+set media_item_id = $1,
+    episode_id = $2
+where id = $3
+returning id, library_id, media_item_id, episode_id, path, created_at
+`
+
+type UpdateMediaFileIdentityParams struct {
+	MediaItemID pgtype.UUID `json:"media_item_id"`
+	EpisodeID   pgtype.UUID `json:"episode_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+// Re-points an existing media_file at a different identity (media_item +
+// optional episode) in place. Used by the manual re-match flow (Phase 4)
+// so a media→media re-match preserves the row, its media_file_state
+// snapshot, and the media_file_import history — none of which survive a
+// delete-and-recreate.
+func (q *Queries) UpdateMediaFileIdentity(ctx context.Context, arg UpdateMediaFileIdentityParams) (MediaFile, error) {
+	row := q.db.QueryRow(ctx, updateMediaFileIdentity, arg.MediaItemID, arg.EpisodeID, arg.ID)
+	var i MediaFile
+	err := row.Scan(
+		&i.ID,
+		&i.LibraryID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.Path,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1648,7 +1729,7 @@ const updateUnmatchedFileSuggestions = `-- name: UpdateUnmatchedFileSuggestions 
 update unmatched_file
 set suggested_matches = $1
 where id = $2
-returning id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id
+returning id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id, partial_series
 `
 
 type UpdateUnmatchedFileSuggestionsParams struct {
@@ -1668,6 +1749,7 @@ func (q *Queries) UpdateUnmatchedFileSuggestions(ctx context.Context, arg Update
 		&i.SuggestedMatches,
 		&i.ResolvedAt,
 		&i.ResolvedMediaFileID,
+		&i.PartialSeries,
 	)
 	return i, err
 }
@@ -1840,13 +1922,14 @@ func (q *Queries) UpsertSeason(ctx context.Context, arg UpsertSeasonParams) (Med
 }
 
 const upsertUnmatchedFile = `-- name: UpsertUnmatchedFile :one
-insert into unmatched_file (library_id, path, file_size, suggested_matches)
-values ($1, $2, $3, $4)
+insert into unmatched_file (library_id, path, file_size, suggested_matches, partial_series)
+values ($1, $2, $3, $4, $5)
 on conflict (library_id, path)
 do update set file_size = excluded.file_size,
               suggested_matches = excluded.suggested_matches,
+              partial_series = excluded.partial_series,
               discovered_at = now()
-returning id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id
+returning id, library_id, path, file_size, discovered_at, suggested_matches, resolved_at, resolved_media_file_id, partial_series
 `
 
 type UpsertUnmatchedFileParams struct {
@@ -1854,6 +1937,7 @@ type UpsertUnmatchedFileParams struct {
 	Path             string      `json:"path"`
 	FileSize         *int64      `json:"file_size"`
 	SuggestedMatches []byte      `json:"suggested_matches"`
+	PartialSeries    bool        `json:"partial_series"`
 }
 
 func (q *Queries) UpsertUnmatchedFile(ctx context.Context, arg UpsertUnmatchedFileParams) (UnmatchedFile, error) {
@@ -1862,6 +1946,7 @@ func (q *Queries) UpsertUnmatchedFile(ctx context.Context, arg UpsertUnmatchedFi
 		arg.Path,
 		arg.FileSize,
 		arg.SuggestedMatches,
+		arg.PartialSeries,
 	)
 	var i UnmatchedFile
 	err := row.Scan(
@@ -1873,6 +1958,7 @@ func (q *Queries) UpsertUnmatchedFile(ctx context.Context, arg UpsertUnmatchedFi
 		&i.SuggestedMatches,
 		&i.ResolvedAt,
 		&i.ResolvedMediaFileID,
+		&i.PartialSeries,
 	)
 	return i, err
 }

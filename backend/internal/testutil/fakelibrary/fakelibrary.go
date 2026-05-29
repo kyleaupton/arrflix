@@ -23,7 +23,7 @@ type Library struct {
 // ---------------------------------------------------------------------------
 
 // SceneMovies contains scene/P2P release naming — no embedded IDs, no clean
-// renaming. This is the primary pattern for guessit-based title resolution.
+// renaming. This is the primary pattern for name-parse-based title resolution.
 var SceneMovies = Library{
 	Name: "scene-movies",
 	Type: "movie",

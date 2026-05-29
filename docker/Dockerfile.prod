@@ -25,10 +25,7 @@ RUN apt-get update && apt-get install -y \
     nginx \
     ca-certificates \
     curl \
-    mediainfo \
-    python3 \
-    python3-pip \
-    python3-venv && \
+    mediainfo && \
     rm -rf /var/lib/apt/lists/*
 
 # Install s6-overlay
@@ -38,11 +35,6 @@ RUN S6_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo "aarch64" || echo "x86_64") 
     curl -fsSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-${S6_ARCH}.tar.xz -o /tmp/s6-overlay-arch.tar.xz && \
     tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz && \
     rm /tmp/*.tar.xz
-
-# Install guessit
-COPY guessit/requirements.txt /opt/guessit/requirements.txt
-RUN python3 -m venv /opt/guessit-venv && \
-    /opt/guessit-venv/bin/pip install --no-cache-dir -r /opt/guessit/requirements.txt
 
 # Install Prowlarr
 RUN PROWLARR_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo "linux-core-arm64" || echo "linux-core-x64") && \
@@ -56,7 +48,6 @@ RUN PROWLARR_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo "linux-core-arm64" || 
 # Copy app artifacts
 COPY --from=backend-build /out/backend /opt/app/backend
 COPY --from=web-build /src/web/dist /usr/share/nginx/html
-COPY guessit/ /opt/guessit/
 
 # Copy s6 services
 COPY docker/s6 /etc/s6-overlay
