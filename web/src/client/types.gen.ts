@@ -1454,11 +1454,18 @@ export type SignupResponse = {
     success: boolean;
 };
 
+export type SuggestedExternalRef = {
+    externalId: string;
+    source: string;
+};
+
 export type SuggestedMatch = {
-    score: number;
-    title: string;
-    tmdbId: number;
-    type: string;
+    confidence: number;
+    contributingResolvers?: Array<string> | null;
+    evidence?: unknown;
+    externalRef: SuggestedExternalRef;
+    title?: string;
+    type?: string;
     year?: number;
 };
 
@@ -1483,6 +1490,7 @@ export type UnmatchedFileResponse = {
     fileSize?: number;
     id: string;
     libraryId: string;
+    partialSeries?: boolean;
     path: string;
     suggestedMatches?: Array<SuggestedMatch> | null;
 };
@@ -2364,6 +2372,7 @@ export type UnmatchedFileResponseWritable = {
     fileSize?: number;
     id: string;
     libraryId: string;
+    partialSeries?: boolean;
     path: string;
     suggestedMatches?: Array<SuggestedMatch> | null;
 };

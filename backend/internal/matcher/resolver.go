@@ -32,7 +32,7 @@ const (
 	// (osdb-hash lives here in v2.)
 	Tier2 Tier = 2
 	// Tier3 resolvers run when neither earlier tier produces a confident
-	// answer. (name-parse, path-context, guessit-fallback live here.)
+	// answer. (name-parse, path-context live here.)
 	Tier3 Tier = 3
 )
 

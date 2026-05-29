@@ -28,6 +28,12 @@ type UnmatchedFileResponse struct {
 	FileSize         *int64                 `json:"fileSize,omitempty"`
 	DiscoveredAt     string                 `json:"discoveredAt"`
 	SuggestedMatches []model.SuggestedMatch `json:"suggestedMatches,omitempty"`
+	// PartialSeries surfaces the matcher's partial_series band: series
+	// identity resolved but the episode is unresolved. The inbox UI uses
+	// this to render an episode picker instead of the regular suggestion
+	// list. False for the standard low_confidence / ambiguous /
+	// no_match cases.
+	PartialSeries bool `json:"partialSeries,omitempty"`
 }
 
 // ListParams contains parameters for listing unmatched files
@@ -255,6 +261,7 @@ func (s *UnmatchedFilesService) toResponse(f model.UnmatchedFile) UnmatchedFileR
 		FileSize:         f.FileSize,
 		DiscoveredAt:     f.DiscoveredAt.Format("2006-01-02T15:04:05Z"),
 		SuggestedMatches: f.SuggestedMatches,
+		PartialSeries:    f.PartialSeries,
 	}
 }
 

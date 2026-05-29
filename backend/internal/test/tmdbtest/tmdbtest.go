@@ -221,6 +221,48 @@ func (s *Server) OnPersonDetails(id int64, details tmdb.PersonDetails) {
 	})
 }
 
+// OnTVEpisodeDetails handles GET /tv/{seriesID}/season/{season}/episode/{episode} —
+// what the scan / persistConfident path calls when it needs an episode
+// title for a matched series file.
+func (s *Server) OnTVEpisodeDetails(seriesID int64, season, episode int, details tmdb.TVEpisodeDetails) {
+	path := fmt.Sprintf("/tv/%d/season/%d/episode/%d", seriesID, season, episode)
+	s.register(http.MethodGet, path, func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, details)
+	})
+}
+
+// OnFindByID handles GET /find/{externalID} — TMDB's cross-provider
+// resolver. The matcher's TmdbProvider calls this to convert IMDb/TVDB
+// IDs to TMDB. movies, series, and tvEpisodes are split arrays matching
+// TMDB's response shape; passing nil for an unused bucket emits an
+// empty array.
+func (s *Server) OnFindByID(externalID, expectedSource string, movies []Movie, series []Series) {
+	movieResults := make([]map[string]any, 0, len(movies))
+	for _, m := range movies {
+		movieResults = append(movieResults, m.asSearchResult())
+	}
+	tvResults := make([]map[string]any, 0, len(series))
+	for _, sh := range series {
+		tvResults = append(tvResults, sh.asSearchResult())
+	}
+	body := map[string]any{
+		"movie_results":      movieResults,
+		"tv_results":         tvResults,
+		"tv_episode_results": []any{},
+		"tv_season_results":  []any{},
+		"person_results":     []any{},
+	}
+	s.register(http.MethodGet, "/find/"+externalID, func(w http.ResponseWriter, r *http.Request) {
+		got := r.URL.Query().Get("external_source")
+		if got != expectedSource {
+			s.t.Errorf("tmdbtest: GET /find/%s: expected external_source=%q, got %q", externalID, expectedSource, got)
+			http.Error(w, "tmdbtest: external_source mismatch", http.StatusNotImplemented)
+			return
+		}
+		writeJSON(w, body)
+	})
+}
+
 func (s *Server) register(method, path string, h http.HandlerFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

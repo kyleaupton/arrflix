@@ -255,16 +255,17 @@ SELECT path FROM unmatched_file WHERE library_id = $1 AND resolved_at IS NULL;
 -- Unmatched File queries
 
 -- name: CreateUnmatchedFile :one
-insert into unmatched_file (library_id, path, file_size, suggested_matches)
-values (sqlc.arg(library_id), sqlc.arg(path), sqlc.arg(file_size), sqlc.arg(suggested_matches))
+insert into unmatched_file (library_id, path, file_size, suggested_matches, partial_series)
+values (sqlc.arg(library_id), sqlc.arg(path), sqlc.arg(file_size), sqlc.arg(suggested_matches), sqlc.arg(partial_series))
 returning *;
 
 -- name: UpsertUnmatchedFile :one
-insert into unmatched_file (library_id, path, file_size, suggested_matches)
-values (sqlc.arg(library_id), sqlc.arg(path), sqlc.arg(file_size), sqlc.arg(suggested_matches))
+insert into unmatched_file (library_id, path, file_size, suggested_matches, partial_series)
+values (sqlc.arg(library_id), sqlc.arg(path), sqlc.arg(file_size), sqlc.arg(suggested_matches), sqlc.arg(partial_series))
 on conflict (library_id, path)
 do update set file_size = excluded.file_size,
               suggested_matches = excluded.suggested_matches,
+              partial_series = excluded.partial_series,
               discovered_at = now()
 returning *;
 

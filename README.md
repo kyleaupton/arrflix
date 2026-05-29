@@ -82,4 +82,3 @@ GPL-3.0
 This project bundles the following third-party software, each distributed under its own license:
 
 - [Prowlarr](https://github.com/Prowlarr/Prowlarr) — GPL-3.0
-- [guessit](https://github.com/guessit-io/guessit) — LGPL-3.0

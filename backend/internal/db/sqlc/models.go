@@ -547,6 +547,7 @@ type UnmatchedFile struct {
 	SuggestedMatches    []byte             `json:"suggested_matches"`
 	ResolvedAt          pgtype.Timestamptz `json:"resolved_at"`
 	ResolvedMediaFileID pgtype.UUID        `json:"resolved_media_file_id"`
+	PartialSeries       bool               `json:"partial_series"`
 }
 
 type UserIdentity struct {

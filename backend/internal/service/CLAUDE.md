@@ -187,7 +187,7 @@ If none of those fit, the answer is probably to read the spec — there might be
 
 ## Tests
 
-Unit tests in this package cover internal logic that doesn't need the full HTTP/DB stack to exercise. Today that means pure helpers, parsers, and transformation code — see `scan_test.go` for the worked examples (`TestIsMediaFile`, `TestGuessitInput`, `TestBuildSearchKey`, `TestEvaluateSearchResults`). The integration suite (`internal/test/integration/`) owns the wire contract; this layer owns correctness of the code behind it. The full split is in [`../test/integration/CLAUDE.md`](../test/integration/CLAUDE.md) — read it before adding a test that would need DB rows or a real external API to set up its precondition.
+Unit tests in this package cover internal logic that doesn't need the full HTTP/DB stack to exercise. Today that means pure helpers, parsers, and transformation code — pick the predicate or transformer next to the production code and test it co-located. The integration suite (`internal/test/integration/`) owns the wire contract; this layer owns correctness of the code behind it. The full split is in [`../test/integration/CLAUDE.md`](../test/integration/CLAUDE.md) — read it before adding a test that would need DB rows or a real external API to set up its precondition.
 
 Service-method tests against faked dependencies are an intended future addition but **don't currently exist in this package**. They require introducing internal interface seams in the production code (the service's repo and external-client fields typed as interfaces rather than concrete `*repo.Repository` / `*TmdbService` pointers). Adding seams is a per-service design decision, not a default — do it when there's enough untested internal logic in a service to justify the production-side change. The pattern to follow when you do is at the bottom of this section.
 
@@ -198,11 +198,11 @@ A test belongs here if the assertion is about an internal branch — a switch ar
 ### Conventions
 
 - **Co-located.** Test for `scan.go` lives in `scan_test.go`, same directory. No separate test packages.
-- **Same package** (`package service`, not `service_test`). Unit tests need access to unexported types and helpers (e.g., `tmdbSearchKey`, `evaluateSearchResults`, `buildSearchKey`, `guessitInput` in `scan.go`) — that's the whole point. Don't export something just to test it; put the test next to the thing.
+- **Same package** (`package service`, not `service_test`). Unit tests need access to unexported types and helpers (e.g., the `isMediaFile`/`isExtraFile` predicates in `scan.go`) — that's the whole point. Don't export something just to test it; put the test next to the thing.
 - **`t.Parallel()` as the first line of every test and every subtest.** Parallel runs surface accidental shared state. If a test genuinely needs serialization (a process-level singleton, a global counter), document why in a comment above the missing `t.Parallel()`.
 - **Hand-rolled fakes, no mocking framework.** When test doubles are needed, write a struct with `xxxFn func(...)` fields rather than pulling in `testify/mock` or generated mocks.
 - **`t.TempDir()` for filesystem fixtures.** Auto-cleaned, isolated per test, parallel-safe.
-- **`httptest.NewServer` for in-process HTTP sidecars.** Useful when the code under test wraps an HTTP client (guessit, TMDB) and you want to exercise the marshaling alongside the logic without a container.
+- **`httptest.NewServer` for in-process HTTP sidecars.** Useful when the code under test wraps an HTTP client (TMDB, Prowlarr) and you want to exercise the marshaling alongside the logic without a container.
 - **Naming.** `TestFunction` for free helpers (`TestIsMediaFile`, `TestBuildSearchKey`); `TestType_Case` for service-method tests when those land. Table tests for pure-function fan-out; named subtests (`t.Run("happy path", ...)`) for behavior cases.
 - **Assert on typed errors via `apperrors.IsX` predicates.** Bind to the kind, not the string. Sentinels are banned (Rule 5) so `errors.Is(err, ErrFoo)` isn't an option anyway.
 

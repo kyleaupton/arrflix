@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kyleaupton/arrflix/internal/metadata"
 )
 
 // Outcome is the confidence band the aggregator assigns to a file. Six
@@ -88,6 +89,15 @@ type MatchOutcomeRecord struct {
 	ChosenRef     *ExternalRef
 	ChosenEpisode *EpisodeRef
 	ChosenEdition *string
+
+	// ChosenItem is the validated metadata.Item for the chosen candidate,
+	// populated by the aggregator's Tier-1 validation step. Scan reads it
+	// in the persist phase to avoid re-fetching movie/series details that
+	// the provider already returned — when ChosenItem is set, ChosenRef
+	// always refers to the same canonical identity. Nil when no candidate
+	// won (no_match, ambiguous) or when validation didn't run (no provider,
+	// Tier-3-only path without a follow-up validation step).
+	ChosenItem *metadata.Item
 
 	// Confidence is the final aggregated value driving the band. Zero
 	// when Outcome is no_match.

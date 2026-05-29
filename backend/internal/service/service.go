@@ -7,7 +7,6 @@ import (
 	tmdb "github.com/cyruzin/golang-tmdb"
 
 	"github.com/kyleaupton/arrflix/internal/config"
-	"github.com/kyleaupton/arrflix/internal/guessit"
 	prowlarradapter "github.com/kyleaupton/arrflix/internal/indexer/prowlarr"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/matcher"
@@ -85,11 +84,10 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	invites := NewInvitesService(r)
 	enrichment := NewEnrichmentService(r, l, tmdb)
 
-	// Matcher: wired in Phase 2; consumed in Phase 3 (scan.go's current
-	// guessit + identity.Resolve path is what MatchBatch will replace).
-	// The DefaultRegistry helper is the single source of truth for which
-	// resolvers ship in v1 (path-embed, name-parse); per-library toggle
-	// is v2 and filters this set rather than rebuilding it.
+	// Matcher: the v1 resolver catalog (path-embed + name-parse) wires
+	// up via DefaultRegistry. ScannerService.MatchBatch is the only
+	// caller today; manual re-match flows (Phase 4) and drop-in flows
+	// (when drop-in detection ships) consume the same surface.
 	metadataProvider := metadata.NewTmdbProvider(tmdb)
 	matcherSvc := matcher.NewMatcherService(
 		l,
@@ -116,7 +114,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
 		Policies:           policies,
-		Scanner:            NewScannerService(r, l, tmdb, broker, guessit.NewClient(""), enrichment),
+		Scanner:            NewScannerService(r, l, tmdb, broker, matcherSvc, enrichment),
 		Settings:           settings,
 		Setup:              NewSetupService(r, users, settings, tmdb),
 		Tmdb:               tmdb,

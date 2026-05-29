@@ -3458,27 +3458,42 @@ components:
       required:
         - success
       type: object
+    SuggestedExternalRef:
+      additionalProperties: false
+      properties:
+        externalId:
+          type: string
+        source:
+          type: string
+      required:
+        - source
+        - externalId
+      type: object
     SuggestedMatch:
       additionalProperties: false
       properties:
-        score:
-          format: int64
-          type: integer
+        confidence:
+          format: double
+          type: number
+        contributingResolvers:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        evidence: {}
+        externalRef:
+          $ref: "#/components/schemas/SuggestedExternalRef"
         title:
           type: string
-        tmdbId:
-          format: int64
-          type: integer
         type:
           type: string
         year:
           format: int64
           type: integer
       required:
-        - tmdbId
-        - title
-        - type
-        - score
+        - externalRef
+        - confidence
       type: object
     TestResult:
       additionalProperties: false
@@ -3523,6 +3538,8 @@ components:
           type: string
         libraryId:
           type: string
+        partialSeries:
+          type: boolean
         path:
           type: string
         suggestedMatches:

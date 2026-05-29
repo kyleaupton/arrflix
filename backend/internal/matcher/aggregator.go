@@ -12,8 +12,8 @@ import (
 
 // evidenceCapBytes is the per-decision evidence payload cap. 8KB per
 // matching spec OQ#10 — generous enough for a TMDB candidate list plus a
-// guessit raw response, but bounded so the match_decision table doesn't
-// drift into pathological JSONB sizes.
+// resolver's raw response, but bounded so the match_decision table
+// doesn't drift into pathological JSONB sizes.
 const evidenceCapBytes = 8 * 1024
 
 // validatedMultiplierValid is the multiplier applied to a Tier-1
@@ -88,12 +88,12 @@ func NewAggregator(log *logger.Logger, provider metadata.MetadataProvider, regis
 //  5. Band the result by Thresholds; emit a MatchOutcomeRecord.
 func (a *Aggregator) Aggregate(ctx context.Context, file FileRef) MatchOutcomeRecord {
 	t1Cands, t1Audits, t1Evidence := a.runTier(ctx, file, Tier1)
-	t1Cands = a.validateAgainstProvider(ctx, t1Cands, &t1Evidence)
+	t1Cands, t1Items := a.validateAgainstProvider(ctx, t1Cands, &t1Evidence)
 
 	// Short-circuit: Tier-1 alone produced a confident answer.
 	if best, ok := dominantAbove(t1Cands, a.cfg.Thresholds.Auto); ok {
 		_ = best // keep symmetric with the descend path
-		return a.bandAndRecord(file, t1Cands, t1Audits, t1Evidence)
+		return a.bandAndRecord(file, t1Cands, t1Items, t1Audits, t1Evidence)
 	}
 
 	t2Cands, t2Audits, t2Evidence := a.runTier(ctx, file, Tier2)
@@ -106,7 +106,11 @@ func (a *Aggregator) Aggregate(ctx context.Context, file FileRef) MatchOutcomeRe
 	hintYear := yearHintFromFile(file)
 	cands = mergeCandidates(cands, hintYear)
 
-	return a.bandAndRecord(file, cands, audits, evidence)
+	// Items only carry through for Tier-1 candidates; Tier-3 candidates
+	// come from Search and don't carry a validated item. The descend path
+	// keeps the Tier-1 items keyed by the (possibly rewritten) ExternalRef
+	// so bandAndRecord can attach the item when a Tier-1 candidate wins.
+	return a.bandAndRecord(file, cands, t1Items, audits, evidence)
 }
 
 // runTier executes every resolver in a tier sequentially, collecting
@@ -172,9 +176,15 @@ func (a *Aggregator) runTier(ctx context.Context, file FileRef, tier Tier) ([]Ca
 // Provider absence is non-fatal — when validation can't run, candidates
 // pass through unchanged. The lower-band fallthrough still catches
 // genuinely-wrong identities at the outcome layer.
-func (a *Aggregator) validateAgainstProvider(ctx context.Context, cands []Candidate, evidence *map[string]json.RawMessage) []Candidate {
+//
+// The items map returns the validated metadata.Item per (rewritten)
+// ExternalRef so bandAndRecord can surface it on MatchOutcomeRecord
+// without a second LookupByID. Candidates that passed through on upstream
+// error don't get an item attached.
+func (a *Aggregator) validateAgainstProvider(ctx context.Context, cands []Candidate, evidence *map[string]json.RawMessage) ([]Candidate, map[ExternalRef]*metadata.Item) {
+	items := map[ExternalRef]*metadata.Item{}
 	if a.provider == nil || len(cands) == 0 {
-		return cands
+		return cands, items
 	}
 
 	type redirectLog struct {
@@ -236,6 +246,7 @@ func (a *Aggregator) validateAgainstProvider(ctx context.Context, cands []Candid
 		} else {
 			c.Confidence *= validatedMultiplierValid
 		}
+		items[c.Ref] = item
 		out = append(out, c)
 	}
 
@@ -258,7 +269,7 @@ func (a *Aggregator) validateAgainstProvider(ctx context.Context, cands []Candid
 		}
 	}
 
-	return out
+	return out, items
 }
 
 // mergeCandidates combines candidates that share an ExternalRef. The
@@ -351,8 +362,12 @@ func dominantAbove(cands []Candidate, threshold float64) (Candidate, bool) {
 }
 
 // bandAndRecord turns the final candidate set into a MatchOutcomeRecord
-// with the right outcome band and chosen-* fields populated.
-func (a *Aggregator) bandAndRecord(file FileRef, cands []Candidate, audits []ResolverAudit, evidence map[string]json.RawMessage) MatchOutcomeRecord {
+// with the right outcome band and chosen-* fields populated. The items
+// map (keyed by post-validation ExternalRef) carries the validated
+// metadata.Item for any Tier-1 candidate that survived validation; when
+// the chosen candidate matches a key, the item is attached to the record
+// so downstream consumers can read title/year without a second lookup.
+func (a *Aggregator) bandAndRecord(file FileRef, cands []Candidate, items map[ExternalRef]*metadata.Item, audits []ResolverAudit, evidence map[string]json.RawMessage) MatchOutcomeRecord {
 	rec := MatchOutcomeRecord{
 		FileID:             file.ID,
 		ResolversConsulted: audits,
@@ -411,6 +426,12 @@ func (a *Aggregator) bandAndRecord(file FileRef, cands []Candidate, audits []Res
 		if best.Edition != nil {
 			ed := *best.Edition
 			rec.ChosenEdition = &ed
+		}
+		// Tier-1 validation populated items; attach the validated record
+		// for the winning ref so persistence can skip the second
+		// LookupByID for movie/series details.
+		if item, ok := items[best.Ref]; ok {
+			rec.ChosenItem = item
 		}
 	}
 

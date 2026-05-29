@@ -1,8 +1,9 @@
 package fakelibrary
 
 // Real-world fixtures derived from an actual user's library. These contain
-// NO embedded IDs — everything here relies on guessit + TMDB search to resolve.
-// Each fixture targets a specific naming pattern commonly found in the wild.
+// NO embedded IDs — everything here relies on the matcher's name-parse
+// resolver hitting TMDB search to resolve. Each fixture targets a specific
+// naming pattern commonly found in the wild.
 
 // ---------------------------------------------------------------------------
 // Movie fixtures — real-world naming (no embedded IDs)

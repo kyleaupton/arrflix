@@ -892,8 +892,11 @@ func toModelMediaFileImport(row dbgen.MediaFileImport) model.MediaFileImport {
 
 func (r *Repository) CreateMediaFileImport(ctx context.Context, params CreateMediaFileImportParams) (model.MediaFileImport, error) {
 	row, err := r.Q.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
-		MediaFileID:  pgtypeFromUUID(params.MediaFileID),
-		ImportTaskID: pgtypeFromUUID(params.ImportTaskID),
+		MediaFileID: pgtypeFromUUID(params.MediaFileID),
+		// scan and manual-match imports don't have an import_task — the
+		// column is nullable in the schema; map uuid.Nil → NULL so the
+		// FK to import_task is satisfied for scan-discovered files.
+		ImportTaskID: pgtypeFromUUIDOrNull(params.ImportTaskID),
 		Method:       params.Method,
 		SourcePath:   params.SourcePath,
 		DestPath:     params.DestPath,
@@ -972,6 +975,7 @@ type CreateUnmatchedFileParams struct {
 	Path             string
 	FileSize         *int64
 	SuggestedMatches []model.SuggestedMatch
+	PartialSeries    bool
 }
 
 // UpsertUnmatchedFileParams is the domain-shaped input for UpsertUnmatchedFile.
@@ -982,6 +986,7 @@ type UpsertUnmatchedFileParams struct {
 	Path             string
 	FileSize         *int64
 	SuggestedMatches []model.SuggestedMatch
+	PartialSeries    bool
 }
 
 // GetUnmatchedFileByPathParams is the domain-shaped input for
@@ -1008,11 +1013,12 @@ type UpdateUnmatchedFileSuggestionsParams struct {
 // into the domain-shaped model.UnmatchedFile.
 func toModelUnmatchedFile(row dbgen.UnmatchedFile) model.UnmatchedFile {
 	uf := model.UnmatchedFile{
-		ID:           uuidFromPgtype(row.ID),
-		LibraryID:    uuidFromPgtype(row.LibraryID),
-		Path:         row.Path,
-		FileSize:     row.FileSize,
-		DiscoveredAt: row.DiscoveredAt,
+		ID:            uuidFromPgtype(row.ID),
+		LibraryID:     uuidFromPgtype(row.LibraryID),
+		Path:          row.Path,
+		FileSize:      row.FileSize,
+		DiscoveredAt:  row.DiscoveredAt,
+		PartialSeries: row.PartialSeries,
 	}
 	if len(row.SuggestedMatches) > 0 {
 		var matches []model.SuggestedMatch
@@ -1055,6 +1061,7 @@ func (r *Repository) CreateUnmatchedFile(ctx context.Context, params CreateUnmat
 		Path:             params.Path,
 		FileSize:         params.FileSize,
 		SuggestedMatches: suggestionsJSON,
+		PartialSeries:    params.PartialSeries,
 	})
 	if err != nil {
 		return model.UnmatchedFile{}, apperrors.FromPg(err, "create unmatched file %q in library %s", params.Path, params.LibraryID)
@@ -1072,6 +1079,7 @@ func (r *Repository) UpsertUnmatchedFile(ctx context.Context, params UpsertUnmat
 		Path:             params.Path,
 		FileSize:         params.FileSize,
 		SuggestedMatches: suggestionsJSON,
+		PartialSeries:    params.PartialSeries,
 	})
 	if err != nil {
 		return model.UnmatchedFile{}, apperrors.FromPg(err, "upsert unmatched file %q in library %s", params.Path, params.LibraryID)
