@@ -1,28 +1,35 @@
--- match_decision is the matcher's decision-log artifact: one row per
--- consequential identity decision (auto-match, manual match, re-match,
--- un-match). Current match for a file = the latest non-superseded row.
+-- Matcher schema: the decision-log artifact plus the unmatched_file
+-- columns the matcher's low-confidence outcomes write.
 --
--- See specs/modules/matching/README.md § "The match-decision artifact".
--- All six outcome bands ship in v1 even though phase-1 (no real
--- resolvers registered) only emits no_match in practice; carrying the
--- full enum from day one avoids a later ALTER TYPE.
+-- See specs/modules/matching/README.md § "The match-decision artifact"
+-- and § "What evolves".
 
+-- match_outcome is the confidence band the aggregator assigns, plus the
+-- user-only `detached` action. The aggregator emits the first six;
+-- `detached` is written only by the manual detach flow ("this file
+-- doesn't belong in the library at all"). It's distinct from `no_match`
+-- ("we don't know what this is") so the inbox can filter "needs a
+-- decision" from "user said no" when reading the chain back.
 CREATE TYPE match_outcome AS ENUM (
     'confident',
     'confident_review',
     'low_confidence',
     'ambiguous',
     'no_match',
-    'partial_series'
+    'partial_series',
+    'detached'
 );
 
+-- match_decision is the matcher's decision-log artifact: one row per
+-- consequential identity decision (auto-match, manual match, re-match,
+-- un-match, detach). Current match for a file = the latest non-superseded
+-- row.
 CREATE TABLE match_decision (
     id                  BIGSERIAL PRIMARY KEY,
-    -- file_id is the file being identified. Deliberately not an FK in
-    -- phase 1: the file may live in either media_file or unmatched_file
-    -- depending on the outcome, and the canonical producer of the ID is
-    -- the future matcher-aware scan loop (phase 3). Until that lands the
-    -- column is opaque-but-stable.
+    -- file_id is the file being identified. Deliberately not an FK: the
+    -- file may live in either media_file or unmatched_file depending on
+    -- the outcome, so there's no single FK target. The scan loop and the
+    -- manual-match flow both keep this id stable across transitions.
     file_id             UUID NOT NULL,
     outcome             match_outcome NOT NULL,
     -- chosen_* fields are populated only for confident /
@@ -43,7 +50,7 @@ CREATE TABLE match_decision (
     evidence            JSONB NOT NULL,
     evidence_truncated  BOOLEAN NOT NULL DEFAULT false,
     -- decided_by names the actor: 'auto' for the aggregator, 'user:<id>'
-    -- for manual re-match / un-match, 'rule:<id>' for future
+    -- for manual re-match / un-match / detach, 'rule:<id>' for future
     -- bulk-override surfaces (matching spec § Killer UX moves #3).
     decided_by          TEXT NOT NULL,
     decided_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -61,3 +68,15 @@ CREATE INDEX match_decision_file_id_idx ON match_decision (file_id);
 CREATE INDEX match_decision_current_idx
     ON match_decision (file_id)
     WHERE superseded_at IS NULL;
+
+-- partial_series flag on unmatched_file. The matcher's partial_series
+-- outcome means "series identity resolved but the episode is unresolved"
+-- — the file still needs a human to land an episode pick. It writes
+-- unmatched_file like the other low-band outcomes, distinguished by this
+-- column. Default false so the common case passes through unchanged.
+ALTER TABLE unmatched_file
+    ADD COLUMN partial_series BOOLEAN NOT NULL DEFAULT false;
+
+CREATE INDEX idx_unmatched_file_partial_series
+    ON unmatched_file (library_id)
+    WHERE partial_series = true;
