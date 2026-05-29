@@ -38,13 +38,13 @@ type ScannerService struct {
 	logger     *logger.Logger
 	tmdb       *TmdbService
 	broker     *sse.Broker
-	matcher    *matcher.MatcherService
+	matcher    *MatcherService
 	enrichment *EnrichmentService
 	ctx        context.Context // background context for goroutines; cancelled on shutdown
 	running    sync.Map        // libraryID string -> scanID string
 }
 
-func NewScannerService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, broker *sse.Broker, m *matcher.MatcherService, enrichment *EnrichmentService) *ScannerService {
+func NewScannerService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, broker *sse.Broker, m *MatcherService, enrichment *EnrichmentService) *ScannerService {
 	return &ScannerService{repo: r, logger: l, tmdb: tmdb, broker: broker, matcher: m, enrichment: enrichment, ctx: context.Background()}
 }
 

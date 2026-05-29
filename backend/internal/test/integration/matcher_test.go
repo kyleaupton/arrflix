@@ -13,6 +13,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/test/dbtest"
 )
 
@@ -31,7 +32,7 @@ func TestMatchDecision_EndToEnd(t *testing.T) {
 	pool := dbtest.New(t)
 	r := repo.New(pool)
 
-	svc := matcher.NewMatcherService(nil, matcher.NewRepoAdapter(r), nil, matcher.NewRegistry(), matcher.DefaultConfig())
+	svc := service.NewMatcherService(nil, r, nil, matcher.NewRegistry(), matcher.DefaultConfig())
 
 	fileID := uuid.New()
 	files := []matcher.FileRef{{ID: fileID, Path: "/lib/test.mkv"}}
@@ -183,9 +184,9 @@ func TestMatcher_FullPipeline_EndToEnd(t *testing.T) {
 		},
 	}
 
-	svc := matcher.NewMatcherService(
+	svc := service.NewMatcherService(
 		nil,
-		matcher.NewRepoAdapter(r),
+		r,
 		prov,
 		resolvers.DefaultRegistry(prov),
 		matcher.DefaultConfig(),

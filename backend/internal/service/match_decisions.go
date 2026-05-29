@@ -21,20 +21,20 @@ import (
 //
 // Auto-match (the scanner's confident-band path) goes through
 // MatcherService.MatchBatch directly; this service is the user-driven
-// half of the match_decision write surface. Both halves share the
-// underlying repo (and the commitMatch helper for the success-path
-// persistence side-effect) so the supersede chain remains consistent.
+// half of the match_decision write surface. Both halves write through
+// the same repo (via the insertMatchOutcome helper, and commitMatch for
+// the success-path persistence side-effect) so the supersede chain
+// remains consistent.
 //
 // See specs/modules/matching/README.md § "Re-match, un-match, detach"
 // for the action / effect contract.
 type MatchDecisionsService struct {
-	repo        *repo.Repository
-	log         *logger.Logger
-	tmdb        *TmdbService
-	enrichment  *EnrichmentService
-	provider    metadata.MetadataProvider
-	settings    *SettingsService
-	matcherRepo matcher.MatcherRepo
+	repo       *repo.Repository
+	log        *logger.Logger
+	tmdb       *TmdbService
+	enrichment *EnrichmentService
+	provider   metadata.MetadataProvider
+	settings   *SettingsService
 	// backgroundCtx is used for fire-and-forget side effects (enrichment
 	// kick after manual match). Mirrors ScannerService.ctx.
 	backgroundCtx context.Context
@@ -52,7 +52,6 @@ func NewMatchDecisionsService(
 	enrichment *EnrichmentService,
 	provider metadata.MetadataProvider,
 	settings *SettingsService,
-	matcherRepo matcher.MatcherRepo,
 ) *MatchDecisionsService {
 	return &MatchDecisionsService{
 		repo:          r,
@@ -61,7 +60,6 @@ func NewMatchDecisionsService(
 		enrichment:    enrichment,
 		provider:      provider,
 		settings:      settings,
-		matcherRepo:   matcherRepo,
 		backgroundCtx: context.Background(),
 	}
 }
@@ -221,11 +219,11 @@ func (s *MatchDecisionsService) commitManualMatch(
 	// Phase 1: write match_decision + supersede prior. This is the
 	// audit anchor — even if the side-effect below fails, the decision
 	// row stands.
-	decisionID, err := s.matcherRepo.InsertMatchDecision(ctx, rec)
+	decisionID, err := insertMatchOutcome(ctx, s.repo, rec)
 	if err != nil {
 		return model.MediaFile{}, model.MatchDecision{}, err
 	}
-	if err := s.matcherRepo.SupersedeMatchDecision(ctx, fileID, decisionID); err != nil {
+	if err := s.repo.SupersedeMatchDecision(ctx, fileID, decisionID); err != nil {
 		return model.MediaFile{}, model.MatchDecision{}, err
 	}
 
@@ -365,11 +363,11 @@ func (s *MatchDecisionsService) Unmatch(ctx context.Context, fileID uuid.UUID, u
 		DecidedBy:          "user:" + userID.String(),
 	}
 
-	decisionID, err := s.matcherRepo.InsertMatchDecision(ctx, rec)
+	decisionID, err := insertMatchOutcome(ctx, s.repo, rec)
 	if err != nil {
 		return model.MatchDecision{}, err
 	}
-	if err := s.matcherRepo.SupersedeMatchDecision(ctx, fileID, decisionID); err != nil {
+	if err := s.repo.SupersedeMatchDecision(ctx, fileID, decisionID); err != nil {
 		return model.MatchDecision{}, err
 	}
 
@@ -435,11 +433,11 @@ func (s *MatchDecisionsService) Detach(ctx context.Context, fileID uuid.UUID, us
 		DecidedBy:          "user:" + userID.String(),
 	}
 
-	decisionID, err := s.matcherRepo.InsertMatchDecision(ctx, rec)
+	decisionID, err := insertMatchOutcome(ctx, s.repo, rec)
 	if err != nil {
 		return DetachResult{}, err
 	}
-	if err := s.matcherRepo.SupersedeMatchDecision(ctx, fileID, decisionID); err != nil {
+	if err := s.repo.SupersedeMatchDecision(ctx, fileID, decisionID); err != nil {
 		return DetachResult{}, err
 	}
 

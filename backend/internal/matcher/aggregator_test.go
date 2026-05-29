@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -52,36 +51,6 @@ func (f *fakeProvider) Search(_ context.Context, _ string, _ metadata.SearchOpti
 
 func (f *fakeProvider) ResolveCrossProviderID(_ context.Context, _ metadata.ExternalSource, _ string) (string, error) {
 	return "", nil
-}
-
-// fakeRepo records writes for assertion. Thread-safe so a parallel test
-// running multiple aggregations can read without the race detector
-// firing.
-type fakeRepo struct {
-	mu        sync.Mutex
-	records   []MatchOutcomeRecord
-	supersede []supersedeCall
-	nextID    int64
-}
-
-type supersedeCall struct {
-	fileID        uuid.UUID
-	supersedingID int64
-}
-
-func (r *fakeRepo) InsertMatchDecision(_ context.Context, rec MatchOutcomeRecord) (int64, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.nextID++
-	r.records = append(r.records, rec)
-	return r.nextID, nil
-}
-
-func (r *fakeRepo) SupersedeMatchDecision(_ context.Context, fileID uuid.UUID, supersedingID int64) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.supersede = append(r.supersede, supersedeCall{fileID: fileID, supersedingID: supersedingID})
-	return nil
 }
 
 // candidateOf builds a single-candidate slice in the most common test
@@ -420,68 +389,6 @@ func TestAggregator_PartialSeriesBand(t *testing.T) {
 	}
 }
 
-func TestMatchBatch_WritesRecordsViaRepo(t *testing.T) {
-	t.Parallel()
-	// End-to-end through MatcherService: a fake repo receives one
-	// insert + one supersede call per file.
-	r := &fakeResolver{
-		name: "name-parse", tier: Tier3, available: true,
-		candidates: candidateOf("42", 0.6),
-	}
-	reg := registryWith(r)
-	repo := &fakeRepo{}
-
-	svc := NewMatcherService(nil, repo, nil, reg, presetForTest())
-
-	files := []FileRef{
-		{ID: uuid.New(), Path: "/lib/movie.mkv"},
-		{ID: uuid.New(), Path: "/lib/other.mkv"},
-	}
-	out, err := svc.MatchBatch(context.Background(), files)
-	if err != nil {
-		t.Fatalf("MatchBatch: %v", err)
-	}
-	if len(out) != 2 {
-		t.Fatalf("expected 2 outcomes, got %d", len(out))
-	}
-
-	repo.mu.Lock()
-	defer repo.mu.Unlock()
-	if len(repo.records) != 2 {
-		t.Fatalf("expected 2 records written, got %d", len(repo.records))
-	}
-	if len(repo.supersede) != 2 {
-		t.Fatalf("expected 2 supersede calls, got %d", len(repo.supersede))
-	}
-	for i, rec := range repo.records {
-		if rec.FileID != files[i].ID {
-			t.Fatalf("record %d: file id mismatch: got %s, want %s", i, rec.FileID, files[i].ID)
-		}
-		if rec.DecidedBy != "auto" {
-			t.Fatalf("record %d: decided_by = %q, want %q", i, rec.DecidedBy, "auto")
-		}
-	}
-}
-
-func TestMatchBatch_EmptyResolvers_AllNoMatch(t *testing.T) {
-	t.Parallel()
-	// No resolvers registered (the phase-1 default state). Every file
-	// in the batch lands in no_match, and the records still get
-	// written.
-	repo := &fakeRepo{}
-	svc := NewMatcherService(nil, repo, nil, NewRegistry(), presetForTest())
-
-	out, err := svc.MatchBatch(context.Background(), []FileRef{{ID: uuid.New()}, {ID: uuid.New()}})
-	if err != nil {
-		t.Fatalf("MatchBatch: %v", err)
-	}
-	for _, rec := range out {
-		if rec.Outcome != OutcomeNoMatch {
-			t.Fatalf("expected no_match, got %s", rec.Outcome)
-		}
-	}
-}
-
 func TestAggregator_RankedCandidates_AmbiguousReturnsTop5(t *testing.T) {
 	t.Parallel()
 	// Eight tied candidates at 0.6 — the merge produces ambiguous and
@@ -637,9 +544,6 @@ var _ Resolver = (*fakeResolver)(nil)
 
 // Compile-time check: fakeProvider satisfies metadata.MetadataProvider.
 var _ metadata.MetadataProvider = (*fakeProvider)(nil)
-
-// Compile-time check: fakeRepo satisfies MatcherRepo.
-var _ MatcherRepo = (*fakeRepo)(nil)
 
 // Sanity: when we strip the package version comment, evidence keys
 // remain lowercase. (A reminder for future readers — the audit JSON is

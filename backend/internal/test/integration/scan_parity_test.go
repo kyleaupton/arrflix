@@ -13,6 +13,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/matcher/resolvers"
 	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/parsing"
+	"github.com/kyleaupton/arrflix/internal/service"
 )
 
 // TestScan_ParityCheck_RepresentativeCorpus is the §J sanity pass —
@@ -41,7 +42,7 @@ func TestScan_ParityCheck_RepresentativeCorpus(t *testing.T) {
 			"Inception":       {{Source: metadata.SourceTMDB, ExternalID: "27205", Type: metadata.EntityMovie, Title: "Inception", Year: 2010}},
 		},
 	}
-	svc := matcher.NewMatcherService(
+	svc := service.NewMatcherService(
 		nil,
 		nil, // no repo writes for the parity check
 		prov,
