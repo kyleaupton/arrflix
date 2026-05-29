@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS import_task (
   -- Result (populated on success)
   dest_path TEXT,  -- Relative path within library
   import_method TEXT CHECK (import_method IS NULL OR import_method IN ('hardlink', 'copy')),
-  media_file_id UUID REFERENCES media_file(id) ON DELETE SET NULL,
+  file_id UUID REFERENCES file(id) ON DELETE SET NULL,
 
   -- Retry logic
   attempt_count INT NOT NULL DEFAULT 0,
@@ -167,9 +167,9 @@ CREATE TABLE IF NOT EXISTS import_task_event (
 CREATE INDEX IF NOT EXISTS idx_ite_task ON import_task_event(import_task_id);
 CREATE INDEX IF NOT EXISTS idx_ite_created ON import_task_event(created_at DESC);
 
--- Add FK from media_file_import to import_task now that import_task exists
-ALTER TABLE media_file_import
-  ADD CONSTRAINT fk_media_file_import_task
+-- Add FK from file_import to import_task now that import_task exists
+ALTER TABLE file_import
+  ADD CONSTRAINT fk_file_import_task
   FOREIGN KEY (import_task_id)
   REFERENCES import_task(id)
   ON DELETE SET NULL;

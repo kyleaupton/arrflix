@@ -25,6 +25,7 @@ type InsertMatchDecisionParams struct {
 	ChosenEpisode      *int32
 	ChosenEdition      *string
 	Confidence         float64
+	RankedCandidates   json.RawMessage
 	ResolversConsulted json.RawMessage
 	Evidence           json.RawMessage
 	EvidenceTruncated  bool
@@ -53,6 +54,7 @@ func (r *Repository) InsertMatchDecision(ctx context.Context, params InsertMatch
 		ChosenEpisode:      params.ChosenEpisode,
 		ChosenEdition:      params.ChosenEdition,
 		Confidence:         params.Confidence,
+		RankedCandidates:   params.RankedCandidates,
 		ResolversConsulted: resolvers,
 		Evidence:           evidence,
 		EvidenceTruncated:  params.EvidenceTruncated,
@@ -89,6 +91,7 @@ func toModelMatchDecision(row dbgen.MatchDecision) model.MatchDecision {
 		ChosenEpisode:      row.ChosenEpisode,
 		ChosenEdition:      row.ChosenEdition,
 		Confidence:         row.Confidence,
+		RankedCandidates:   json.RawMessage(row.RankedCandidates),
 		ResolversConsulted: json.RawMessage(row.ResolversConsulted),
 		Evidence:           json.RawMessage(row.Evidence),
 		EvidenceTruncated:  row.EvidenceTruncated,

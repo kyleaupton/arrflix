@@ -71,31 +71,36 @@ type detachResponse struct {
 	QuarantinedPath *string           `json:"quarantinedPath,omitempty"`
 }
 
-// seedUnmatchedFile creates an unmatched_file row directly via raw SQL
-// so the test doesn't have to drive the whole scan loop. This is a
-// per-CLAUDE.md backdoor; the alternative (running scan with files on
-// disk) is heavyweight when the assertion is about the action
-// endpoints, not the scan loop. The fileID matches matcher.FileRef.ID
-// so /files/{id} resolves.
+// seedUnmatchedFile creates a live file row with NULL identity (the inbox
+// state) plus its file_state via raw SQL, so the test doesn't have to
+// drive the whole scan loop. This is a per-CLAUDE.md backdoor; the
+// alternative (running scan with files on disk) is heavyweight when the
+// assertion is about the action endpoints. The id matches
+// matcher.FileRef.ID so /files/{id} resolves.
 func seedUnmatchedFile(t *testing.T, app *testapp.App, libraryID uuid.UUID, path string) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID
-	err := app.Pool.QueryRow(context.Background(),
-		`INSERT INTO unmatched_file (library_id, path, file_size, suggested_matches, partial_series)
-		 VALUES ($1, $2, $3, $4, false)
+	if err := app.Pool.QueryRow(context.Background(),
+		`INSERT INTO file (library_id, path)
+		 VALUES ($1, $2)
 		 RETURNING id`,
-		libraryID, path, int64(1024), []byte(`[]`),
-	).Scan(&id)
-	if err != nil {
-		t.Fatalf("seed unmatched_file: %v", err)
+		libraryID, path,
+	).Scan(&id); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	if _, err := app.Pool.Exec(context.Background(),
+		`INSERT INTO file_state (file_id, exists, size_bytes)
+		 VALUES ($1, true, $2)`,
+		id, int64(1024),
+	); err != nil {
+		t.Fatalf("seed file_state: %v", err)
 	}
 	return id
 }
 
-// seedMediaFile creates a media_item + media_file + media_file_state
-// triple via raw SQL. Used by the re-match / unmatch / detach tests to
-// drive a "file currently in media_file" precondition without running
-// the scan loop.
+// seedMediaFile creates a media_item + identified file + file_state triple
+// via raw SQL. Used by the re-match / unmatch / detach tests to drive a
+// "file already identified" precondition without running the scan loop.
 func seedMediaFile(t *testing.T, app *testapp.App, libraryID uuid.UUID, tmdbID int64, title string, year int, path string) uuid.UUID {
 	t.Helper()
 	var mediaItemID uuid.UUID
@@ -107,23 +112,23 @@ func seedMediaFile(t *testing.T, app *testapp.App, libraryID uuid.UUID, tmdbID i
 	).Scan(&mediaItemID); err != nil {
 		t.Fatalf("seed media_item: %v", err)
 	}
-	var mediaFileID uuid.UUID
+	var fileID uuid.UUID
 	if err := app.Pool.QueryRow(context.Background(),
-		`INSERT INTO media_file (library_id, media_item_id, path)
+		`INSERT INTO file (library_id, media_item_id, path)
 		 VALUES ($1, $2, $3)
 		 RETURNING id`,
 		libraryID, mediaItemID, path,
-	).Scan(&mediaFileID); err != nil {
-		t.Fatalf("seed media_file: %v", err)
+	).Scan(&fileID); err != nil {
+		t.Fatalf("seed file: %v", err)
 	}
 	if _, err := app.Pool.Exec(context.Background(),
-		`INSERT INTO media_file_state (media_file_id, file_exists, file_size)
+		`INSERT INTO file_state (file_id, exists, size_bytes)
 		 VALUES ($1, true, $2)`,
-		mediaFileID, int64(1024),
+		fileID, int64(1024),
 	); err != nil {
-		t.Fatalf("seed media_file_state: %v", err)
+		t.Fatalf("seed file_state: %v", err)
 	}
-	return mediaFileID
+	return fileID
 }
 
 // seedLibrary builds a movie library with a real on-disk root, returns
@@ -193,24 +198,17 @@ func TestMatchDecisions_MatchByID_FromInbox(t *testing.T) {
 		t.Fatalf("chosenItem: got %+v", out.ChosenItem)
 	}
 
-	// unmatched_file row should be gone; media_file row should exist.
-	var ufCount, mfCount int
+	// The same file row should survive (id unchanged), now carrying the
+	// resolved identity. "Matched" is file.media_item_id IS NOT NULL.
+	var identifiedCount int
 	if err := app.Pool.QueryRow(context.Background(),
-		`SELECT count(*) FROM unmatched_file WHERE id = $1`, fileID,
-	).Scan(&ufCount); err != nil {
-		t.Fatalf("count uf: %v", err)
+		`SELECT count(*) FROM file WHERE id = $1 AND media_item_id IS NOT NULL AND deleted_at IS NULL`,
+		fileID,
+	).Scan(&identifiedCount); err != nil {
+		t.Fatalf("count identified file: %v", err)
 	}
-	if ufCount != 0 {
-		t.Fatalf("expected 0 unmatched_file rows, got %d", ufCount)
-	}
-	if err := app.Pool.QueryRow(context.Background(),
-		`SELECT count(*) FROM media_file WHERE library_id = $1 AND path = $2`,
-		libID, "The Matrix/The Matrix.mkv",
-	).Scan(&mfCount); err != nil {
-		t.Fatalf("count mf: %v", err)
-	}
-	if mfCount != 1 {
-		t.Fatalf("expected 1 media_file row, got %d", mfCount)
+	if identifiedCount != 1 {
+		t.Fatalf("expected file %s to be identified in place, got %d", fileID, identifiedCount)
 	}
 
 	total, current := countMatchDecisions(t, app, fileID)
@@ -272,23 +270,17 @@ func TestMatchDecisions_Unmatch(t *testing.T) {
 		t.Fatalf("confidence: got %v, want 0.0", out.Confidence)
 	}
 
-	// media_file row should be gone; unmatched_file row should be
-	// present at the same path.
-	var mfCount, ufCount int
-	_ = app.Pool.QueryRow(context.Background(),
-		`SELECT count(*) FROM media_file WHERE id = $1`, fileID,
-	).Scan(&mfCount)
-	if mfCount != 0 {
-		t.Fatalf("expected 0 media_file rows, got %d", mfCount)
-	}
+	// The file row should survive in place with identity cleared
+	// (media_item_id NULL) — un-match is an UPDATE, not a row swap.
+	var unidentifiedCount int
 	if err := app.Pool.QueryRow(context.Background(),
-		`SELECT count(*) FROM unmatched_file WHERE library_id = $1 AND path = $2`,
-		libID, "Inception (2010)/Inception.mkv",
-	).Scan(&ufCount); err != nil {
-		t.Fatalf("count uf: %v", err)
+		`SELECT count(*) FROM file WHERE id = $1 AND media_item_id IS NULL AND deleted_at IS NULL`,
+		fileID,
+	).Scan(&unidentifiedCount); err != nil {
+		t.Fatalf("count unidentified file: %v", err)
 	}
-	if ufCount != 1 {
-		t.Fatalf("expected 1 unmatched_file row, got %d", ufCount)
+	if unidentifiedCount != 1 {
+		t.Fatalf("expected file %s to have identity cleared in place, got %d", fileID, unidentifiedCount)
 	}
 }
 
@@ -311,13 +303,13 @@ func TestMatchDecisions_Rematch_InPlace(t *testing.T) {
 	fileID := seedMediaFile(t, app, libID, 27205, "Inception", 2010, "Inception (2010)/Inception.mkv")
 
 	// Seed an import-history row so we can assert it stays attached to the
-	// same media_file across the re-match.
+	// same file across the re-match.
 	if _, err := app.Pool.Exec(context.Background(),
-		`INSERT INTO media_file_import (media_file_id, method, dest_path, success)
+		`INSERT INTO file_import (file_id, method, dest_path, success)
 		 VALUES ($1, 'scan', $2, true)`,
 		fileID, "Inception (2010)/Inception.mkv",
 	); err != nil {
-		t.Fatalf("seed media_file_import: %v", err)
+		t.Fatalf("seed file_import: %v", err)
 	}
 
 	// Re-match the media-resident file to a new identity (Matrix, 603).
@@ -330,52 +322,62 @@ func TestMatchDecisions_Rematch_InPlace(t *testing.T) {
 		t.Fatalf("current chosenRef: got %+v, want tmdb:603", out.ChosenRef)
 	}
 
-	// The media_file row must still exist under the SAME id, now pointing
-	// at the Matrix media_item.
+	// The file row must still exist under the SAME id, now pointing at the
+	// Matrix media_item.
 	var (
-		mfCount     int
+		fCount      int
 		newTmdbID   int64
 		stateSize   *int64
 		stateExists bool
 	)
 	if err := app.Pool.QueryRow(context.Background(),
-		`SELECT count(*) FROM media_file WHERE id = $1`, fileID,
-	).Scan(&mfCount); err != nil {
-		t.Fatalf("count media_file: %v", err)
+		`SELECT count(*) FROM file WHERE id = $1 AND deleted_at IS NULL`, fileID,
+	).Scan(&fCount); err != nil {
+		t.Fatalf("count file: %v", err)
 	}
-	if mfCount != 1 {
-		t.Fatalf("expected media_file %s to survive re-match in place, got %d rows", fileID, mfCount)
+	if fCount != 1 {
+		t.Fatalf("expected file %s to survive re-match in place, got %d rows", fileID, fCount)
 	}
 	if err := app.Pool.QueryRow(context.Background(),
-		`SELECT mi.tmdb_id FROM media_file mf JOIN media_item mi ON mi.id = mf.media_item_id WHERE mf.id = $1`,
+		`SELECT mi.tmdb_id FROM file f JOIN media_item mi ON mi.id = f.media_item_id WHERE f.id = $1`,
 		fileID,
 	).Scan(&newTmdbID); err != nil {
 		t.Fatalf("read re-pointed identity: %v", err)
 	}
 	if newTmdbID != 603 {
-		t.Fatalf("media_file identity: got tmdb %d, want 603", newTmdbID)
+		t.Fatalf("file identity: got tmdb %d, want 603", newTmdbID)
 	}
 
-	// media_file_state must be preserved (same row, original file_size).
+	// file_state must be preserved (same row, original size).
 	if err := app.Pool.QueryRow(context.Background(),
-		`SELECT file_exists, file_size FROM media_file_state WHERE media_file_id = $1`, fileID,
+		`SELECT exists, size_bytes FROM file_state WHERE file_id = $1`, fileID,
 	).Scan(&stateExists, &stateSize); err != nil {
-		t.Fatalf("read media_file_state: %v (expected preserved across re-match)", err)
+		t.Fatalf("read file_state: %v (expected preserved across re-match)", err)
 	}
 	if !stateExists || stateSize == nil || *stateSize != 1024 {
-		t.Fatalf("media_file_state not preserved: exists=%v size=%v", stateExists, stateSize)
+		t.Fatalf("file_state not preserved: exists=%v size=%v", stateExists, stateSize)
 	}
 
-	// The import-history row must still be attached (media_file_id not
-	// nulled by a cascade) — delete-and-recreate would have detached it.
-	var importCount int
+	// The seeded import-history row must still be attached (file_id not
+	// nulled by a cascade) — a delete-and-recreate would have detached it.
+	// The in-place re-match appends its own import row, so the count is 2:
+	// the original 'scan' attempt plus the 'manual_match' re-match.
+	var importCount, seededCount int
 	if err := app.Pool.QueryRow(context.Background(),
-		`SELECT count(*) FROM media_file_import WHERE media_file_id = $1`, fileID,
+		`SELECT count(*) FROM file_import WHERE file_id = $1`, fileID,
 	).Scan(&importCount); err != nil {
-		t.Fatalf("count media_file_import: %v", err)
+		t.Fatalf("count file_import: %v", err)
 	}
-	if importCount != 1 {
-		t.Fatalf("expected import-history row to stay attached, got %d", importCount)
+	if importCount != 2 {
+		t.Fatalf("expected 2 import rows (seeded scan + re-match), got %d", importCount)
+	}
+	if err := app.Pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM file_import WHERE file_id = $1 AND method = 'scan'`, fileID,
+	).Scan(&seededCount); err != nil {
+		t.Fatalf("count seeded import: %v", err)
+	}
+	if seededCount != 1 {
+		t.Fatalf("expected the seeded scan import row to survive re-match, got %d", seededCount)
 	}
 }
 
@@ -414,13 +416,21 @@ func TestMatchDecisions_Detach(t *testing.T) {
 		t.Fatalf("expected file %s to still exist, got %v", abs, err)
 	}
 
-	// media_file row gone; match_decision row preserved.
-	var mfCount, mdCount int
+	// file soft-deleted (excluded from live reads) but the row survives as
+	// the audit anchor; match_decision row preserved.
+	var liveCount, mdCount int
 	_ = app.Pool.QueryRow(context.Background(),
-		`SELECT count(*) FROM media_file WHERE id = $1`, fileID,
-	).Scan(&mfCount)
-	if mfCount != 0 {
-		t.Fatalf("expected 0 media_file rows after detach, got %d", mfCount)
+		`SELECT count(*) FROM file WHERE id = $1 AND deleted_at IS NULL`, fileID,
+	).Scan(&liveCount)
+	if liveCount != 0 {
+		t.Fatalf("expected file %s to be soft-deleted, got %d live rows", fileID, liveCount)
+	}
+	var totalCount int
+	_ = app.Pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM file WHERE id = $1`, fileID,
+	).Scan(&totalCount)
+	if totalCount != 1 {
+		t.Fatalf("expected detached file row to survive as audit anchor, got %d", totalCount)
 	}
 	if err := app.Pool.QueryRow(context.Background(),
 		`SELECT count(*) FROM match_decision WHERE file_id = $1 AND outcome = 'detached'`,

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kyleaupton/arrflix/internal/matcher"
 	"github.com/kyleaupton/arrflix/internal/matcher/resolvers"
 	"github.com/kyleaupton/arrflix/internal/metadata"
@@ -16,6 +17,36 @@ import (
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/test/dbtest"
 )
+
+// seedRawLibrary inserts a movie library directly via SQL (no on-disk
+// root needed — these tests drive MatcherService below the scan loop)
+// and returns its id. File rows reference it via the FK.
+func seedRawLibrary(t *testing.T, pool *pgxpool.Pool, name string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := pool.QueryRow(context.Background(),
+		`INSERT INTO library (name, type, root_path) VALUES ($1, 'movie', $2) RETURNING id`,
+		name, "/lib/"+name,
+	).Scan(&id); err != nil {
+		t.Fatalf("seed library: %v", err)
+	}
+	return id
+}
+
+// seedFileRow inserts a live file row (identity NULL) under the library
+// so match_decision.file_id (a real FK) can anchor to it — the row scan
+// would create at discovery before MatchBatch runs.
+func seedFileRow(t *testing.T, pool *pgxpool.Pool, libraryID uuid.UUID, path string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := pool.QueryRow(context.Background(),
+		`INSERT INTO file (library_id, path) VALUES ($1, $2) RETURNING id`,
+		libraryID, path,
+	).Scan(&id); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	return id
+}
 
 // TestMatchDecision_EndToEnd writes a no_match record + a confident
 // record via the matcher service through its repo adapter, then reads
@@ -34,7 +65,11 @@ func TestMatchDecision_EndToEnd(t *testing.T) {
 
 	svc := service.NewMatcherService(nil, r, nil, matcher.NewRegistry(), matcher.DefaultConfig())
 
-	fileID := uuid.New()
+	// match_decision.file_id is a real FK to file(id); the row must exist
+	// before the matcher writes a decision against it (in production scan
+	// creates it at discovery). Seed it here.
+	libID := seedRawLibrary(t, pool, "matcher-lib")
+	fileID := seedFileRow(t, pool, libID, "test.mkv")
 	files := []matcher.FileRef{{ID: fileID, Path: "/lib/test.mkv"}}
 
 	out, err := svc.MatchBatch(context.Background(), files)
@@ -192,9 +227,13 @@ func TestMatcher_FullPipeline_EndToEnd(t *testing.T) {
 		matcher.DefaultConfig(),
 	)
 
+	// match_decision.file_id is a real FK; seed the file rows scan would
+	// create at discovery so the decisions can anchor to them.
+	libID := seedRawLibrary(t, pool, "matcher-pipeline-lib")
+
 	// File 1: path-embed only — Tier-1 short-circuit.
 	file1 := matcher.FileRef{
-		ID:   uuid.New(),
+		ID:   seedFileRow(t, pool, libID, "Y (1999) {tmdb-11820}/Y.mkv"),
 		Path: "/lib/movies/Y (1999) {tmdb-11820}/Y.mkv",
 	}
 	// File 2: name-parse only — Tier-3 caps at 0.85 (cap is intentional; with
@@ -202,7 +241,7 @@ func TestMatcher_FullPipeline_EndToEnd(t *testing.T) {
 	// To land in confident_review, parsed title isn't an exact-match — use a
 	// non-unique result with year mismatch to drop below cap.
 	file2 := matcher.FileRef{
-		ID:   uuid.New(),
+		ID:   seedFileRow(t, pool, libID, "Unknown Movie (2020).mkv"),
 		Path: "/lib/movies/Unknown Movie (2020).mkv",
 		Parsed: &parsing.ParsedRelease{
 			Identity: parsing.IdentityAttrs{
@@ -216,7 +255,7 @@ func TestMatcher_FullPipeline_EndToEnd(t *testing.T) {
 	// even without it the resolvers corroborate. Tier-1 alone after
 	// validation: 1.0 * 0.99 = 0.99, landing in confident.
 	file3 := matcher.FileRef{
-		ID:   uuid.New(),
+		ID:   seedFileRow(t, pool, libID, "Inception (2010) {tmdb-27205}/Inception.mkv"),
 		Path: "/lib/movies/Inception (2010) {tmdb-27205}/Inception.mkv",
 		Parsed: &parsing.ParsedRelease{
 			Identity: parsing.IdentityAttrs{
@@ -228,7 +267,7 @@ func TestMatcher_FullPipeline_EndToEnd(t *testing.T) {
 	}
 	// File 4: neither signal. No embed in path, no parsed identity.
 	file4 := matcher.FileRef{
-		ID:   uuid.New(),
+		ID:   seedFileRow(t, pool, libID, "random.mkv"),
 		Path: "/lib/movies/random.mkv",
 	}
 

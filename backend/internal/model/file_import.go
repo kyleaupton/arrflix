@@ -6,13 +6,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// MediaFileImport is the domain shape for a media_file_import row. It mirrors
-// the persistence-layer dbgen.MediaFileImport but uses idiomatic Go types
-// (uuid.UUID, time.Time, *T for nullable scalars) and lives outside the
-// persistence boundary.
-type MediaFileImport struct {
+// FileImport is the domain shape for a file_import row — the per-attempt
+// import audit (hardlink/copy/scan/manual_match) anchored to a file.
+type FileImport struct {
 	ID           uuid.UUID `json:"id"`
-	MediaFileID  uuid.UUID `json:"mediaFileId"`
+	FileID       uuid.UUID `json:"fileId"`
 	ImportTaskID uuid.UUID `json:"importTaskId"`
 	Method       string    `json:"method"`
 	SourcePath   *string   `json:"sourcePath,omitempty"`

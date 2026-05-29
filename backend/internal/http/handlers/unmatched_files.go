@@ -11,6 +11,10 @@ import (
 
 // ----- Handler -----
 
+// UnmatchedFiles exposes the read surface over files needing review
+// (file.media_item_id IS NULL). The decision flows (match, un-match,
+// detach, evidence read) live on the /files/{fileId}/* endpoints in
+// match_decisions.go.
 type UnmatchedFiles struct{ svc *service.Services }
 
 func NewUnmatchedFiles(s *service.Services) *UnmatchedFiles { return &UnmatchedFiles{svc: s} }
@@ -48,7 +52,7 @@ func (h *UnmatchedFiles) List(ctx context.Context, input *UnmatchedFilesListInpu
 // ----- Get -----
 
 type UnmatchedFilesGetInput struct {
-	ID uuid.UUID `path:"id" format:"uuid" doc:"Unmatched file ID"`
+	ID uuid.UUID `path:"id" format:"uuid" doc:"File ID"`
 }
 
 type UnmatchedFilesGetOutput struct {
@@ -63,76 +67,6 @@ func (h *UnmatchedFiles) Get(ctx context.Context, input *UnmatchedFilesGetInput)
 	return &UnmatchedFilesGetOutput{Body: out}, nil
 }
 
-// ----- Match -----
-
-type UnmatchedFilesMatchInput struct {
-	ID   uuid.UUID `path:"id" format:"uuid" doc:"Unmatched file ID"`
-	Body struct {
-		TmdbID  int64  `json:"tmdbId" required:"true" minimum:"1" doc:"TMDB ID to match against"`
-		Type    string `json:"type" required:"true" enum:"movie,series" doc:"Media type"`
-		Season  *int   `json:"season,omitempty" doc:"Season number (series only)"`
-		Episode *int   `json:"episode,omitempty" doc:"Episode number (series only)"`
-	}
-}
-
-type UnmatchedFilesMatchResponse struct {
-	MediaFileID string `json:"mediaFileId" doc:"Created media file ID (UUID string)"`
-	Path        string `json:"path" doc:"Path of the matched file"`
-}
-
-type UnmatchedFilesMatchOutput struct {
-	Body UnmatchedFilesMatchResponse
-}
-
-func (h *UnmatchedFiles) Match(ctx context.Context, input *UnmatchedFilesMatchInput) (*UnmatchedFilesMatchOutput, error) {
-	mediaFile, err := h.svc.UnmatchedFiles.Match(ctx, input.ID, service.MatchRequest{
-		TmdbID:  input.Body.TmdbID,
-		Type:    input.Body.Type,
-		Season:  input.Body.Season,
-		Episode: input.Body.Episode,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &UnmatchedFilesMatchOutput{Body: UnmatchedFilesMatchResponse{
-		MediaFileID: mediaFile.ID.String(),
-		Path:        mediaFile.Path,
-	}}, nil
-}
-
-// ----- Dismiss -----
-
-type UnmatchedFilesDismissInput struct {
-	ID uuid.UUID `path:"id" format:"uuid" doc:"Unmatched file ID"`
-}
-
-type UnmatchedFilesDismissOutput struct{}
-
-func (h *UnmatchedFiles) Dismiss(ctx context.Context, input *UnmatchedFilesDismissInput) (*UnmatchedFilesDismissOutput, error) {
-	if err := h.svc.UnmatchedFiles.Dismiss(ctx, input.ID); err != nil {
-		return nil, err
-	}
-	return &UnmatchedFilesDismissOutput{}, nil
-}
-
-// ----- Refresh -----
-
-type UnmatchedFilesRefreshInput struct {
-	ID uuid.UUID `path:"id" format:"uuid" doc:"Unmatched file ID"`
-}
-
-type UnmatchedFilesRefreshOutput struct {
-	Body service.UnmatchedFileResponse
-}
-
-func (h *UnmatchedFiles) Refresh(ctx context.Context, input *UnmatchedFilesRefreshInput) (*UnmatchedFilesRefreshOutput, error) {
-	out, err := h.svc.UnmatchedFiles.RefreshSuggestions(ctx, input.ID)
-	if err != nil {
-		return nil, err
-	}
-	return &UnmatchedFilesRefreshOutput{Body: out}, nil
-}
-
 // ----- Register -----
 
 func (h *UnmatchedFiles) RegisterHumachi(api huma.API) {
@@ -140,8 +74,8 @@ func (h *UnmatchedFiles) RegisterHumachi(api huma.API) {
 		OperationID: "unmatched-files-list",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/unmatched-files",
-		Summary:     "List unmatched files",
-		Description: "Paginated list of files that couldn't be auto-matched to media items. Optional libraryId filter.",
+		Summary:     "List files needing review",
+		Description: "Paginated list of files with no resolved identity (media_item_id IS NULL). Optional libraryId filter. Match/un-match/detach are on /api/v1/files/{fileId}/*.",
 		Tags:        []string{"unmatched-files"},
 	}, h.List)
 
@@ -149,39 +83,8 @@ func (h *UnmatchedFiles) RegisterHumachi(api huma.API) {
 		OperationID: "unmatched-files-get",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/unmatched-files/{id}",
-		Summary:     "Get unmatched file",
+		Summary:     "Get a file needing review",
 		Tags:        []string{"unmatched-files"},
 		Errors:      errsRead,
 	}, h.Get)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "unmatched-files-match",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/unmatched-files/{id}/match",
-		Summary:     "Match unmatched file to media item",
-		Description: "Manually matches an unmatched file to a TMDB-identified media item. Returns 409 if the file is already resolved.",
-		Tags:        []string{"unmatched-files"},
-		Errors:      errs(errsUpsert, errsUpstream),
-	}, h.Match)
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "unmatched-files-dismiss",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/unmatched-files/{id}/dismiss",
-		Summary:       "Dismiss unmatched file",
-		Description:   "Mark an unmatched file as resolved without matching it.",
-		Tags:          []string{"unmatched-files"},
-		DefaultStatus: http.StatusNoContent,
-		Errors:        errsRead,
-	}, h.Dismiss)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "unmatched-files-refresh",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/unmatched-files/{id}/refresh",
-		Summary:     "Refresh match suggestions",
-		Description: "Regenerate the list of suggested matches for an unmatched file.",
-		Tags:        []string{"unmatched-files"},
-		Errors:      errs(errsRead, errsUpstream),
-	}, h.Refresh)
 }

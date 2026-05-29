@@ -1,8 +1,7 @@
--- Matcher schema: the decision-log artifact plus the unmatched_file
--- columns the matcher's low-confidence outcomes write.
+-- Matcher schema: the decision-log artifact.
 --
 -- See specs/modules/matching/README.md § "The match-decision artifact"
--- and § "What evolves".
+-- and specs/modules/files/README.md § "Relationship to the decision log".
 
 -- match_outcome is the confidence band the aggregator assigns, plus the
 -- user-only `detached` action. The aggregator emits the first six;
@@ -26,11 +25,12 @@ CREATE TYPE match_outcome AS ENUM (
 -- row.
 CREATE TABLE match_decision (
     id                  BIGSERIAL PRIMARY KEY,
-    -- file_id is the file being identified. Deliberately not an FK: the
-    -- file may live in either media_file or unmatched_file depending on
-    -- the outcome, so there's no single FK target. The scan loop and the
-    -- manual-match flow both keep this id stable across transitions.
-    file_id             UUID NOT NULL,
+    -- file_id is the file being identified. A real FK is safe because
+    -- files soft-delete (file.deleted_at) rather than hard-delete, so the
+    -- audit anchor never dangles. The id is stable across identity
+    -- transitions (match / un-match are in-place UPDATEs on the file row),
+    -- which keeps the supersede chain continuous.
+    file_id             UUID NOT NULL REFERENCES file(id),
     outcome             match_outcome NOT NULL,
     -- chosen_* fields are populated only for confident /
     -- confident_review / low_confidence / partial_series outcomes —
@@ -41,6 +41,12 @@ CREATE TABLE match_decision (
     chosen_episode      INT,
     chosen_edition      TEXT,
     confidence          DOUBLE PRECISION NOT NULL,
+    -- ranked_candidates is the up-to-5 suggestion set the matcher's
+    -- low-confidence / ambiguous / partial_series outcomes surface in the
+    -- inbox: per-entry {external_ref, confidence, contributing_resolvers,
+    -- evidence, title, year, type}. This is the single home for ranked
+    -- candidates — the v0 unmatched_file.suggested_matches column is gone.
+    ranked_candidates   JSONB,
     -- resolvers_consulted is the top-line audit trail: array of
     -- {name, tier, candidate_count, top_confidence}. Cheap to scan.
     resolvers_consulted JSONB NOT NULL,
@@ -68,15 +74,3 @@ CREATE INDEX match_decision_file_id_idx ON match_decision (file_id);
 CREATE INDEX match_decision_current_idx
     ON match_decision (file_id)
     WHERE superseded_at IS NULL;
-
--- partial_series flag on unmatched_file. The matcher's partial_series
--- outcome means "series identity resolved but the episode is unresolved"
--- — the file still needs a human to land an episode pick. It writes
--- unmatched_file like the other low-band outcomes, distinguished by this
--- column. Default false so the common case passes through unchanged.
-ALTER TABLE unmatched_file
-    ADD COLUMN partial_series BOOLEAN NOT NULL DEFAULT false;
-
-CREATE INDEX idx_unmatched_file_partial_series
-    ON unmatched_file (library_id)
-    WHERE partial_series = true;

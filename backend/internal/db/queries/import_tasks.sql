@@ -88,7 +88,7 @@ UPDATE import_task
 SET status = 'completed',
     dest_path = sqlc.arg(dest_path),
     import_method = sqlc.arg(import_method),
-    media_file_id = sqlc.arg(media_file_id),
+    file_id = sqlc.arg(file_id),
     updated_at = now()
 WHERE id = sqlc.arg(id)
 RETURNING *;

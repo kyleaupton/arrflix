@@ -22,8 +22,9 @@ type LibraryQueryParams struct {
 	Offset     int32
 }
 
-// UnmatchedFilesQueryParams contains parameters for paginated unmatched files queries
-type UnmatchedFilesQueryParams struct {
+// FilesReviewQueryParams contains parameters for the paginated
+// "files needing review" query (file.media_item_id IS NULL).
+type FilesReviewQueryParams struct {
 	LibraryID *uuid.UUID
 	PageSize  int32
 	Offset    int32
@@ -60,47 +61,36 @@ type MediaRepo interface {
 	UpsertEpisode(ctx context.Context, params UpsertEpisodeParams) (model.MediaEpisode, error)
 
 	// File path loading for scanner
-	ListMediaFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
-	ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
+	ListFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
 
-	// Files (removed season_id and status)
-	GetMediaFile(ctx context.Context, id uuid.UUID) (model.MediaFile, error)
-	GetMediaFileByLibraryAndPath(ctx context.Context, params GetMediaFileByLibraryAndPathParams) (model.MediaFile, error)
-	CreateMediaFile(ctx context.Context, params CreateMediaFileParams) (model.MediaFile, error)
-	ListMediaFilesForItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.MediaFileWithState, error)
+	// Files. Identity is nullable; "unmatched" is media_item_id IS NULL.
+	// Reads filter deleted_at IS NULL.
+	GetFile(ctx context.Context, id uuid.UUID) (model.File, error)
+	GetFileByLibraryAndPath(ctx context.Context, params GetFileByLibraryAndPathParams) (model.File, error)
+	CreateFile(ctx context.Context, params CreateFileParams) (model.File, error)
+	SetFileIdentity(ctx context.Context, params SetFileIdentityParams) (model.File, error)
+	ClearFileIdentity(ctx context.Context, id uuid.UUID) (model.File, error)
+	SoftDeleteFile(ctx context.Context, id uuid.UUID) (model.File, error)
+	ListFilesForItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.FileWithState, error)
+	ListFilesNeedingReview(ctx context.Context, params FilesReviewQueryParams) ([]model.File, error)
+	CountFilesNeedingReview(ctx context.Context, libraryID *uuid.UUID) (int64, error)
 	ListEpisodeAvailabilityForSeries(ctx context.Context, mediaItemID uuid.UUID) ([]model.SeriesEpisodeAvailability, error)
-	DeleteMediaFile(ctx context.Context, id uuid.UUID) error
 
 	// File state
-	CreateMediaFileState(ctx context.Context, mediaFileID uuid.UUID, fileExists bool, fileSize *int64) (model.MediaFileState, error)
-	UpsertMediaFileState(ctx context.Context, params UpsertMediaFileStateParams) (model.MediaFileState, error)
-	GetMediaFileState(ctx context.Context, mediaFileID uuid.UUID) (model.MediaFileState, error)
-	UpdateMediaFileState(ctx context.Context, mediaFileID uuid.UUID, fileExists bool, fileSize *int64) (model.MediaFileState, error)
-	ListMissingFiles(ctx context.Context) ([]model.MediaFileWithState, error)
-	ListFilesNeedingVerification(ctx context.Context, beforeTime time.Time, limit int32) ([]model.MediaFileWithState, error)
+	CreateFileState(ctx context.Context, params CreateFileStateParams) (model.FileState, error)
+	UpsertFileState(ctx context.Context, params UpsertFileStateParams) (model.FileState, error)
+	GetFileState(ctx context.Context, fileID uuid.UUID) (model.FileState, error)
+	UpdateFileState(ctx context.Context, params UpdateFileStateParams) (model.FileState, error)
+	ListMissingFiles(ctx context.Context) ([]model.FileWithState, error)
+	ListFilesNeedingVerification(ctx context.Context, beforeTime time.Time, limit int32) ([]model.FileWithState, error)
 
 	// File imports
-	CreateMediaFileImport(ctx context.Context, params CreateMediaFileImportParams) (model.MediaFileImport, error)
-	GetMediaFileImport(ctx context.Context, id uuid.UUID) (model.MediaFileImport, error)
-	ListImportsForMediaFile(ctx context.Context, mediaFileID uuid.UUID) ([]model.MediaFileImport, error)
-	ListImportsForImportTask(ctx context.Context, importTaskID uuid.UUID) ([]model.MediaFileImport, error)
-	ListRecentImports(ctx context.Context, limit int32) ([]model.MediaFileImport, error)
-	ListFailedImports(ctx context.Context, limit int32) ([]model.MediaFileImport, error)
-
-	// Unmatched files
-	CreateUnmatchedFile(ctx context.Context, params CreateUnmatchedFileParams) (model.UnmatchedFile, error)
-	UpsertUnmatchedFile(ctx context.Context, params UpsertUnmatchedFileParams) (model.UnmatchedFile, error)
-	GetUnmatchedFile(ctx context.Context, id uuid.UUID) (model.UnmatchedFile, error)
-	GetUnmatchedFileByPath(ctx context.Context, params GetUnmatchedFileByPathParams) (model.UnmatchedFile, error)
-	ListUnmatchedFiles(ctx context.Context) ([]model.UnmatchedFile, error)
-	ListUnmatchedFilesForLibrary(ctx context.Context, libraryID uuid.UUID) ([]model.UnmatchedFile, error)
-	ListUnmatchedFilesPaginated(ctx context.Context, params UnmatchedFilesQueryParams) ([]model.UnmatchedFile, error)
-	CountUnmatchedFiles(ctx context.Context, libraryID *uuid.UUID) (int64, error)
-	ResolveUnmatchedFile(ctx context.Context, params ResolveUnmatchedFileParams) (model.UnmatchedFile, error)
-	DismissUnmatchedFile(ctx context.Context, id uuid.UUID) (model.UnmatchedFile, error)
-	UpdateUnmatchedFileSuggestions(ctx context.Context, params UpdateUnmatchedFileSuggestionsParams) (model.UnmatchedFile, error)
-	DeleteUnmatchedFile(ctx context.Context, id uuid.UUID) error
-	DeleteResolvedUnmatchedFilesOlderThan(ctx context.Context, beforeTime time.Time) error
+	CreateFileImport(ctx context.Context, params CreateFileImportParams) (model.FileImport, error)
+	GetFileImport(ctx context.Context, id uuid.UUID) (model.FileImport, error)
+	ListImportsForFile(ctx context.Context, fileID uuid.UUID) ([]model.FileImport, error)
+	ListImportsForImportTask(ctx context.Context, importTaskID uuid.UUID) ([]model.FileImport, error)
+	ListRecentImports(ctx context.Context, limit int32) ([]model.FileImport, error)
+	ListFailedImports(ctx context.Context, limit int32) ([]model.FileImport, error)
 }
 
 // CreateMediaItemParams is the domain-shaped input for CreateMediaItem. Mirrors
@@ -528,77 +518,118 @@ func (r *Repository) UpsertEpisode(ctx context.Context, params UpsertEpisodePara
 	return toModelMediaEpisode(row), nil
 }
 
-// CreateMediaFileParams is the domain-shaped input for CreateMediaFile. Mirrors
-// the writeable subset of model.MediaFile (omits server-managed ID/CreatedAt).
-type CreateMediaFileParams struct {
+// CreateFileParams is the domain-shaped input for CreateFile. The id is
+// supplied by the caller (the scan/match loop) so it stays stable as the
+// match_decision.file_id join key. Identity fields are nullable.
+type CreateFileParams struct {
+	ID          uuid.UUID
 	LibraryID   uuid.UUID
-	MediaItemID uuid.UUID
-	EpisodeID   *uuid.UUID
 	Path        string
+	MediaItemID *uuid.UUID
+	EpisodeID   *uuid.UUID
+	Edition     *string
 }
 
-// GetMediaFileByLibraryAndPathParams is the domain-shaped input for
-// GetMediaFileByLibraryAndPath.
-type GetMediaFileByLibraryAndPathParams struct {
+// SetFileIdentityParams is the domain-shaped input for SetFileIdentity —
+// points a file at a (media_item + optional episode + edition) in place.
+type SetFileIdentityParams struct {
+	ID          uuid.UUID
+	MediaItemID uuid.UUID
+	EpisodeID   *uuid.UUID
+	Edition     *string
+}
+
+// GetFileByLibraryAndPathParams is the domain-shaped input for
+// GetFileByLibraryAndPath.
+type GetFileByLibraryAndPathParams struct {
 	LibraryID uuid.UUID
 	Path      string
 }
 
-// UpsertMediaFileStateParams is the domain-shaped input for UpsertMediaFileState.
-// Mirrors the writeable subset of model.MediaFileState (omits server-managed
-// LastVerifiedAt, set to now() in SQL).
-type UpsertMediaFileStateParams struct {
-	MediaFileID uuid.UUID
-	FileExists  bool
-	FileSize    *int64
+// CreateFileStateParams is the domain-shaped input for CreateFileState.
+// Omits server-managed LastVerifiedAt (set to now() in SQL).
+type CreateFileStateParams struct {
+	FileID    uuid.UUID
+	Exists    bool
+	SizeBytes *int64
+	OsdbHash  *string
 }
 
-// toModelMediaFile translates the persistence-shaped dbgen.MediaFile into
-// the domain-shaped model.MediaFile.
-func toModelMediaFile(row dbgen.MediaFile) model.MediaFile {
-	mf := model.MediaFile{
-		ID:          uuidFromPgtype(row.ID),
-		LibraryID:   uuidFromPgtype(row.LibraryID),
-		MediaItemID: uuidFromPgtype(row.MediaItemID),
-		Path:        row.Path,
-		CreatedAt:   row.CreatedAt,
+// UpsertFileStateParams is the domain-shaped input for UpsertFileState.
+type UpsertFileStateParams struct {
+	FileID    uuid.UUID
+	Exists    bool
+	SizeBytes *int64
+	OsdbHash  *string
+}
+
+// UpdateFileStateParams is the domain-shaped input for UpdateFileState.
+type UpdateFileStateParams struct {
+	FileID    uuid.UUID
+	Exists    bool
+	SizeBytes *int64
+	OsdbHash  *string
+}
+
+// toModelFile translates the persistence-shaped dbgen.File into the
+// domain-shaped model.File.
+func toModelFile(row dbgen.File) model.File {
+	f := model.File{
+		ID:        uuidFromPgtype(row.ID),
+		LibraryID: uuidFromPgtype(row.LibraryID),
+		Path:      row.Path,
+		Edition:   row.Edition,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}
+	if row.MediaItemID.Valid {
+		id := uuidFromPgtype(row.MediaItemID)
+		f.MediaItemID = &id
 	}
 	if row.EpisodeID.Valid {
 		id := uuidFromPgtype(row.EpisodeID)
-		mf.EpisodeID = &id
+		f.EpisodeID = &id
 	}
-	return mf
+	if row.DeletedAt.Valid {
+		t := row.DeletedAt.Time
+		f.DeletedAt = &t
+	}
+	return f
 }
 
-// toModelMediaFileState translates the persistence-shaped dbgen.MediaFileState
-// into the domain-shaped model.MediaFileState.
-func toModelMediaFileState(row dbgen.MediaFileState) model.MediaFileState {
-	return model.MediaFileState{
-		MediaFileID:    uuidFromPgtype(row.MediaFileID),
-		FileExists:     row.FileExists,
-		FileSize:       row.FileSize,
+// toModelFileState translates the persistence-shaped dbgen.FileState into
+// the domain-shaped model.FileState.
+func toModelFileState(row dbgen.FileState) model.FileState {
+	return model.FileState{
+		FileID:         uuidFromPgtype(row.FileID),
+		Exists:         row.Exists,
+		SizeBytes:      row.SizeBytes,
+		OsdbHash:       row.OsdbHash,
 		LastVerifiedAt: row.LastVerifiedAt,
 	}
 }
 
-// toModelMediaFileWithState translates a ListMediaFilesForItemRow (which
-// LEFT-JOINs season/episode/state) into the domain composite.
-func toModelMediaFileWithState(row dbgen.ListMediaFilesForItemRow) model.MediaFileWithState {
-	mf := model.MediaFile{
-		ID:          uuidFromPgtype(row.ID),
-		LibraryID:   uuidFromPgtype(row.LibraryID),
-		MediaItemID: uuidFromPgtype(row.MediaItemID),
-		Path:        row.Path,
-		CreatedAt:   row.CreatedAt,
+// toModelFileWithState translates a ListFilesForItemRow (which LEFT-JOINs
+// season/episode/state) into the domain composite.
+func toModelFileWithState(row dbgen.ListFilesForItemRow) model.FileWithState {
+	f := model.File{
+		ID:        uuidFromPgtype(row.ID),
+		LibraryID: uuidFromPgtype(row.LibraryID),
+		Path:      row.Path,
+		CreatedAt: row.CreatedAt,
+	}
+	if row.MediaItemID.Valid {
+		id := uuidFromPgtype(row.MediaItemID)
+		f.MediaItemID = &id
 	}
 	if row.EpisodeID.Valid {
 		id := uuidFromPgtype(row.EpisodeID)
-		mf.EpisodeID = &id
+		f.EpisodeID = &id
 	}
-	out := model.MediaFileWithState{
-		MediaFile:     mf,
-		FileExists:    row.FileExists,
-		FileSize:      row.FileSize,
+	out := model.FileWithState{
+		File:          f,
+		Exists:        row.Exists,
+		SizeBytes:     row.SizeBytes,
 		SeasonNumber:  row.SeasonNumber,
 		EpisodeNumber: row.EpisodeNumber,
 	}
@@ -613,53 +644,59 @@ func toModelMediaFileWithState(row dbgen.ListMediaFilesForItemRow) model.MediaFi
 	return out
 }
 
-// toModelMediaFileWithStateFromMissing translates a ListMissingFilesRow into
-// the domain composite. The query joins media_file_state but doesn't carry
+// toModelFileWithStateFromMissing translates a ListMissingFilesRow into the
+// domain composite. The query joins file_state but doesn't carry
 // season/episode context.
-func toModelMediaFileWithStateFromMissing(row dbgen.ListMissingFilesRow) model.MediaFileWithState {
-	mf := model.MediaFile{
-		ID:          uuidFromPgtype(row.ID),
-		LibraryID:   uuidFromPgtype(row.LibraryID),
-		MediaItemID: uuidFromPgtype(row.MediaItemID),
-		Path:        row.Path,
-		CreatedAt:   row.CreatedAt,
+func toModelFileWithStateFromMissing(row dbgen.ListMissingFilesRow) model.FileWithState {
+	f := model.File{
+		ID:        uuidFromPgtype(row.ID),
+		LibraryID: uuidFromPgtype(row.LibraryID),
+		Path:      row.Path,
+		CreatedAt: row.CreatedAt,
+	}
+	if row.MediaItemID.Valid {
+		id := uuidFromPgtype(row.MediaItemID)
+		f.MediaItemID = &id
 	}
 	if row.EpisodeID.Valid {
 		id := uuidFromPgtype(row.EpisodeID)
-		mf.EpisodeID = &id
+		f.EpisodeID = &id
 	}
-	// ListMissingFiles selects rows where file_exists = false; surface that
+	// ListMissingFiles selects rows where exists = false; surface that
 	// explicitly so callers don't have to assume.
 	missing := false
 	t := row.LastVerifiedAt
-	return model.MediaFileWithState{
-		MediaFile:      mf,
-		FileExists:     &missing,
-		FileSize:       row.FileSize,
+	return model.FileWithState{
+		File:           f,
+		Exists:         &missing,
+		SizeBytes:      row.SizeBytes,
 		LastVerifiedAt: &t,
 	}
 }
 
-// toModelMediaFileWithStateFromVerification translates a
+// toModelFileWithStateFromVerification translates a
 // ListFilesNeedingVerificationRow into the domain composite.
-func toModelMediaFileWithStateFromVerification(row dbgen.ListFilesNeedingVerificationRow) model.MediaFileWithState {
-	mf := model.MediaFile{
-		ID:          uuidFromPgtype(row.ID),
-		LibraryID:   uuidFromPgtype(row.LibraryID),
-		MediaItemID: uuidFromPgtype(row.MediaItemID),
-		Path:        row.Path,
-		CreatedAt:   row.CreatedAt,
+func toModelFileWithStateFromVerification(row dbgen.ListFilesNeedingVerificationRow) model.FileWithState {
+	f := model.File{
+		ID:        uuidFromPgtype(row.ID),
+		LibraryID: uuidFromPgtype(row.LibraryID),
+		Path:      row.Path,
+		CreatedAt: row.CreatedAt,
+	}
+	if row.MediaItemID.Valid {
+		id := uuidFromPgtype(row.MediaItemID)
+		f.MediaItemID = &id
 	}
 	if row.EpisodeID.Valid {
 		id := uuidFromPgtype(row.EpisodeID)
-		mf.EpisodeID = &id
+		f.EpisodeID = &id
 	}
-	exists := row.FileExists
+	exists := row.Exists
 	t := row.LastVerifiedAt
-	return model.MediaFileWithState{
-		MediaFile:      mf,
-		FileExists:     &exists,
-		FileSize:       row.FileSize,
+	return model.FileWithState{
+		File:           f,
+		Exists:         &exists,
+		SizeBytes:      row.SizeBytes,
 		LastVerifiedAt: &t,
 	}
 }
@@ -672,7 +709,7 @@ func toModelSeriesEpisodeAvailability(row dbgen.ListEpisodeAvailabilityForSeries
 		EpisodeNumber: row.EpisodeNumber,
 		EpisodeID:     uuidFromPgtype(row.EpisodeID),
 		Title:         row.Title,
-		FileExists:    row.FileExists,
+		FileExists:    row.Exists,
 	}
 	if row.AirDate.Valid {
 		t := row.AirDate.Time
@@ -689,109 +726,119 @@ func toModelSeriesEpisodeAvailability(row dbgen.ListEpisodeAvailabilityForSeries
 	return out
 }
 
-func (r *Repository) GetMediaFile(ctx context.Context, id uuid.UUID) (model.MediaFile, error) {
-	row, err := r.Q.GetMediaFile(ctx, pgtypeFromUUID(id))
+func (r *Repository) GetFile(ctx context.Context, id uuid.UUID) (model.File, error) {
+	row, err := r.Q.GetFile(ctx, pgtypeFromUUID(id))
 	if err != nil {
-		return model.MediaFile{}, apperrors.FromPg(err, "media file %s not found", id)
+		return model.File{}, apperrors.FromPg(err, "file %s not found", id)
 	}
-	return toModelMediaFile(row), nil
+	return toModelFile(row), nil
 }
 
-func (r *Repository) GetMediaFileByLibraryAndPath(ctx context.Context, params GetMediaFileByLibraryAndPathParams) (model.MediaFile, error) {
-	row, err := r.Q.GetMediaFileByLibraryAndPath(ctx, dbgen.GetMediaFileByLibraryAndPathParams{
+func (r *Repository) GetFileByLibraryAndPath(ctx context.Context, params GetFileByLibraryAndPathParams) (model.File, error) {
+	row, err := r.Q.GetFileByLibraryAndPath(ctx, dbgen.GetFileByLibraryAndPathParams{
 		LibraryID: pgtypeFromUUID(params.LibraryID),
 		Path:      params.Path,
 	})
 	if err != nil {
-		return model.MediaFile{}, apperrors.FromPg(err, "media file at %q in library %s not found", params.Path, params.LibraryID)
+		return model.File{}, apperrors.FromPg(err, "file at %q in library %s not found", params.Path, params.LibraryID)
 	}
-	return toModelMediaFile(row), nil
+	return toModelFile(row), nil
 }
 
-func (r *Repository) CreateMediaFile(ctx context.Context, params CreateMediaFileParams) (model.MediaFile, error) {
-	var episode pgtype.UUID
+func (r *Repository) CreateFile(ctx context.Context, params CreateFileParams) (model.File, error) {
+	var mediaItem, episode pgtype.UUID
+	if params.MediaItemID != nil {
+		mediaItem = pgtypeFromUUID(*params.MediaItemID)
+	}
 	if params.EpisodeID != nil {
 		episode = pgtypeFromUUID(*params.EpisodeID)
 	}
-	row, err := r.Q.CreateMediaFile(ctx, dbgen.CreateMediaFileParams{
-		LibraryID:   pgtypeFromUUID(params.LibraryID),
-		MediaItemID: pgtypeFromUUID(params.MediaItemID),
-		EpisodeID:   episode,
-		Path:        params.Path,
-	})
-	if err != nil {
-		return model.MediaFile{}, apperrors.FromPg(err, "create media file %q in library %s", params.Path, params.LibraryID)
-	}
-	return toModelMediaFile(row), nil
-}
-
-// CreateMediaFileWithIDParams is the domain-shaped input for
-// CreateMediaFileWithID. Same fields as CreateMediaFileParams plus an
-// explicit ID — used by the manual match flow to preserve the
-// match_decision.file_id join key when transitioning an unmatched_file
-// row to a media_file row.
-type CreateMediaFileWithIDParams struct {
-	ID          uuid.UUID
-	LibraryID   uuid.UUID
-	MediaItemID uuid.UUID
-	EpisodeID   *uuid.UUID
-	Path        string
-}
-
-func (r *Repository) CreateMediaFileWithID(ctx context.Context, params CreateMediaFileWithIDParams) (model.MediaFile, error) {
-	var episode pgtype.UUID
-	if params.EpisodeID != nil {
-		episode = pgtypeFromUUID(*params.EpisodeID)
-	}
-	row, err := r.Q.CreateMediaFileWithID(ctx, dbgen.CreateMediaFileWithIDParams{
+	row, err := r.Q.CreateFile(ctx, dbgen.CreateFileParams{
 		ID:          pgtypeFromUUID(params.ID),
 		LibraryID:   pgtypeFromUUID(params.LibraryID),
-		MediaItemID: pgtypeFromUUID(params.MediaItemID),
-		EpisodeID:   episode,
 		Path:        params.Path,
+		MediaItemID: mediaItem,
+		EpisodeID:   episode,
+		Edition:     params.Edition,
 	})
 	if err != nil {
-		return model.MediaFile{}, apperrors.FromPg(err, "create media file %q in library %s", params.Path, params.LibraryID)
+		return model.File{}, apperrors.FromPg(err, "create file %q in library %s", params.Path, params.LibraryID)
 	}
-	return toModelMediaFile(row), nil
+	return toModelFile(row), nil
 }
 
-// UpdateMediaFileIdentityParams is the domain-shaped input for
-// UpdateMediaFileIdentity. Re-points an existing media_file row at a new
-// media_item (and optional episode) without touching its
-// media_file_state or media_file_import history.
-type UpdateMediaFileIdentityParams struct {
-	ID          uuid.UUID
-	MediaItemID uuid.UUID
-	EpisodeID   *uuid.UUID
-}
-
-func (r *Repository) UpdateMediaFileIdentity(ctx context.Context, params UpdateMediaFileIdentityParams) (model.MediaFile, error) {
+func (r *Repository) SetFileIdentity(ctx context.Context, params SetFileIdentityParams) (model.File, error) {
 	var episode pgtype.UUID
 	if params.EpisodeID != nil {
 		episode = pgtypeFromUUID(*params.EpisodeID)
 	}
-	row, err := r.Q.UpdateMediaFileIdentity(ctx, dbgen.UpdateMediaFileIdentityParams{
+	row, err := r.Q.SetFileIdentity(ctx, dbgen.SetFileIdentityParams{
 		ID:          pgtypeFromUUID(params.ID),
 		MediaItemID: pgtypeFromUUID(params.MediaItemID),
 		EpisodeID:   episode,
+		Edition:     params.Edition,
 	})
 	if err != nil {
-		return model.MediaFile{}, apperrors.FromPg(err, "update media file %s identity", params.ID)
+		return model.File{}, apperrors.FromPg(err, "set identity for file %s", params.ID)
 	}
-	return toModelMediaFile(row), nil
+	return toModelFile(row), nil
 }
 
-func (r *Repository) ListMediaFilesForItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.MediaFileWithState, error) {
-	rows, err := r.Q.ListMediaFilesForItem(ctx, pgtypeFromUUID(mediaItemID))
+func (r *Repository) ClearFileIdentity(ctx context.Context, id uuid.UUID) (model.File, error) {
+	row, err := r.Q.ClearFileIdentity(ctx, pgtypeFromUUID(id))
 	if err != nil {
-		return nil, apperrors.FromPg(err, "list media files for item %s", mediaItemID)
+		return model.File{}, apperrors.FromPg(err, "clear identity for file %s", id)
 	}
-	out := make([]model.MediaFileWithState, 0, len(rows))
+	return toModelFile(row), nil
+}
+
+func (r *Repository) SoftDeleteFile(ctx context.Context, id uuid.UUID) (model.File, error) {
+	row, err := r.Q.SoftDeleteFile(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.File{}, apperrors.FromPg(err, "soft-delete file %s", id)
+	}
+	return toModelFile(row), nil
+}
+
+func (r *Repository) ListFilesForItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.FileWithState, error) {
+	rows, err := r.Q.ListFilesForItem(ctx, pgtypeFromUUID(mediaItemID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list files for item %s", mediaItemID)
+	}
+	out := make([]model.FileWithState, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, toModelMediaFileWithState(row))
+		out = append(out, toModelFileWithState(row))
 	}
 	return out, nil
+}
+
+func (r *Repository) ListFilesNeedingReview(ctx context.Context, params FilesReviewQueryParams) ([]model.File, error) {
+	var libID pgtype.UUID
+	if params.LibraryID != nil {
+		libID = pgtypeFromUUID(*params.LibraryID)
+	}
+	rows, err := r.Q.ListFilesNeedingReview(ctx, dbgen.ListFilesNeedingReviewParams{
+		LibraryID: libID,
+		PageSize:  params.PageSize,
+		OffsetVal: params.Offset,
+	})
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list files needing review")
+	}
+	out := make([]model.File, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelFile(row))
+	}
+	return out, nil
+}
+
+func (r *Repository) CountFilesNeedingReview(ctx context.Context, libraryID *uuid.UUID) (int64, error) {
+	var libID pgtype.UUID
+	if libraryID != nil {
+		libID = pgtypeFromUUID(*libraryID)
+	}
+	count, err := r.Q.CountFilesNeedingReview(ctx, libID)
+	return count, apperrors.FromPg(err, "count files needing review")
 }
 
 func (r *Repository) ListEpisodeAvailabilityForSeries(ctx context.Context, mediaItemID uuid.UUID) ([]model.SeriesEpisodeAvailability, error) {
@@ -806,18 +853,9 @@ func (r *Repository) ListEpisodeAvailabilityForSeries(ctx context.Context, media
 	return out, nil
 }
 
-func (r *Repository) DeleteMediaFile(ctx context.Context, id uuid.UUID) error {
-	return apperrors.FromPg(r.Q.DeleteMediaFile(ctx, pgtypeFromUUID(id)), "delete media file %s", id)
-}
-
-func (r *Repository) ListMediaFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error) {
-	paths, err := r.Q.ListMediaFilePathsForLibrary(ctx, pgtypeFromUUID(libraryID))
-	return paths, apperrors.FromPg(err, "list media file paths for library %s", libraryID)
-}
-
-func (r *Repository) ListUnmatchedFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error) {
-	paths, err := r.Q.ListUnmatchedFilePathsForLibrary(ctx, pgtypeFromUUID(libraryID))
-	return paths, apperrors.FromPg(err, "list unmatched file paths for library %s", libraryID)
+func (r *Repository) ListFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error) {
+	paths, err := r.Q.ListFilePathsForLibrary(ctx, pgtypeFromUUID(libraryID))
+	return paths, apperrors.FromPg(err, "list file paths for library %s", libraryID)
 }
 
 // CheckMediaItemsInLibrary returns a map of tmdbID -> true for items that exist in library
@@ -843,65 +881,68 @@ func (r *Repository) CheckMediaItemsInLibrary(ctx context.Context, tmdbIDs []int
 	return result, nil
 }
 
-// Media File State methods
+// File State methods
 
-func (r *Repository) CreateMediaFileState(ctx context.Context, mediaFileID uuid.UUID, fileExists bool, fileSize *int64) (model.MediaFileState, error) {
-	row, err := r.Q.CreateMediaFileState(ctx, dbgen.CreateMediaFileStateParams{
-		MediaFileID: pgtypeFromUUID(mediaFileID),
-		FileExists:  fileExists,
-		FileSize:    fileSize,
+func (r *Repository) CreateFileState(ctx context.Context, params CreateFileStateParams) (model.FileState, error) {
+	row, err := r.Q.CreateFileState(ctx, dbgen.CreateFileStateParams{
+		FileID:    pgtypeFromUUID(params.FileID),
+		Exists:    params.Exists,
+		SizeBytes: params.SizeBytes,
+		OsdbHash:  params.OsdbHash,
 	})
 	if err != nil {
-		return model.MediaFileState{}, apperrors.FromPg(err, "create media file state for %s", mediaFileID)
+		return model.FileState{}, apperrors.FromPg(err, "create file state for %s", params.FileID)
 	}
-	return toModelMediaFileState(row), nil
+	return toModelFileState(row), nil
 }
 
-func (r *Repository) UpsertMediaFileState(ctx context.Context, params UpsertMediaFileStateParams) (model.MediaFileState, error) {
-	row, err := r.Q.UpsertMediaFileState(ctx, dbgen.UpsertMediaFileStateParams{
-		MediaFileID: pgtypeFromUUID(params.MediaFileID),
-		FileExists:  params.FileExists,
-		FileSize:    params.FileSize,
+func (r *Repository) UpsertFileState(ctx context.Context, params UpsertFileStateParams) (model.FileState, error) {
+	row, err := r.Q.UpsertFileState(ctx, dbgen.UpsertFileStateParams{
+		FileID:    pgtypeFromUUID(params.FileID),
+		Exists:    params.Exists,
+		SizeBytes: params.SizeBytes,
+		OsdbHash:  params.OsdbHash,
 	})
 	if err != nil {
-		return model.MediaFileState{}, apperrors.FromPg(err, "upsert media file state for %s", params.MediaFileID)
+		return model.FileState{}, apperrors.FromPg(err, "upsert file state for %s", params.FileID)
 	}
-	return toModelMediaFileState(row), nil
+	return toModelFileState(row), nil
 }
 
-func (r *Repository) GetMediaFileState(ctx context.Context, mediaFileID uuid.UUID) (model.MediaFileState, error) {
-	row, err := r.Q.GetMediaFileState(ctx, pgtypeFromUUID(mediaFileID))
+func (r *Repository) GetFileState(ctx context.Context, fileID uuid.UUID) (model.FileState, error) {
+	row, err := r.Q.GetFileState(ctx, pgtypeFromUUID(fileID))
 	if err != nil {
-		return model.MediaFileState{}, apperrors.FromPg(err, "media file state for %s not found", mediaFileID)
+		return model.FileState{}, apperrors.FromPg(err, "file state for %s not found", fileID)
 	}
-	return toModelMediaFileState(row), nil
+	return toModelFileState(row), nil
 }
 
-func (r *Repository) UpdateMediaFileState(ctx context.Context, mediaFileID uuid.UUID, fileExists bool, fileSize *int64) (model.MediaFileState, error) {
-	row, err := r.Q.UpdateMediaFileState(ctx, dbgen.UpdateMediaFileStateParams{
-		MediaFileID: pgtypeFromUUID(mediaFileID),
-		FileExists:  fileExists,
-		FileSize:    fileSize,
+func (r *Repository) UpdateFileState(ctx context.Context, params UpdateFileStateParams) (model.FileState, error) {
+	row, err := r.Q.UpdateFileState(ctx, dbgen.UpdateFileStateParams{
+		FileID:    pgtypeFromUUID(params.FileID),
+		Exists:    params.Exists,
+		SizeBytes: params.SizeBytes,
+		OsdbHash:  params.OsdbHash,
 	})
 	if err != nil {
-		return model.MediaFileState{}, apperrors.FromPg(err, "update media file state for %s", mediaFileID)
+		return model.FileState{}, apperrors.FromPg(err, "update file state for %s", params.FileID)
 	}
-	return toModelMediaFileState(row), nil
+	return toModelFileState(row), nil
 }
 
-func (r *Repository) ListMissingFiles(ctx context.Context) ([]model.MediaFileWithState, error) {
+func (r *Repository) ListMissingFiles(ctx context.Context) ([]model.FileWithState, error) {
 	rows, err := r.Q.ListMissingFiles(ctx)
 	if err != nil {
 		return nil, apperrors.FromPg(err, "list missing files")
 	}
-	out := make([]model.MediaFileWithState, 0, len(rows))
+	out := make([]model.FileWithState, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, toModelMediaFileWithStateFromMissing(row))
+		out = append(out, toModelFileWithStateFromMissing(row))
 	}
 	return out, nil
 }
 
-func (r *Repository) ListFilesNeedingVerification(ctx context.Context, beforeTime time.Time, limit int32) ([]model.MediaFileWithState, error) {
+func (r *Repository) ListFilesNeedingVerification(ctx context.Context, beforeTime time.Time, limit int32) ([]model.FileWithState, error) {
 	rows, err := r.Q.ListFilesNeedingVerification(ctx, dbgen.ListFilesNeedingVerificationParams{
 		BeforeTime: beforeTime,
 		LimitVal:   limit,
@@ -909,20 +950,20 @@ func (r *Repository) ListFilesNeedingVerification(ctx context.Context, beforeTim
 	if err != nil {
 		return nil, apperrors.FromPg(err, "list files needing verification")
 	}
-	out := make([]model.MediaFileWithState, 0, len(rows))
+	out := make([]model.FileWithState, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, toModelMediaFileWithStateFromVerification(row))
+		out = append(out, toModelFileWithStateFromVerification(row))
 	}
 	return out, nil
 }
 
-// Media File Import methods
+// File Import methods
 
-// CreateMediaFileImportParams is the domain-shaped input for CreateMediaFileImport.
-// Mirrors the writeable subset of model.MediaFileImport (omits server-managed
+// CreateFileImportParams is the domain-shaped input for CreateFileImport.
+// Mirrors the writeable subset of model.FileImport (omits server-managed
 // ID and AttemptedAt).
-type CreateMediaFileImportParams struct {
-	MediaFileID  uuid.UUID
+type CreateFileImportParams struct {
+	FileID       uuid.UUID
 	ImportTaskID uuid.UUID
 	Method       string
 	SourcePath   *string
@@ -931,12 +972,12 @@ type CreateMediaFileImportParams struct {
 	ErrorMessage *string
 }
 
-// toModelMediaFileImport translates the persistence-shaped dbgen.MediaFileImport
-// into the domain-shaped model.MediaFileImport.
-func toModelMediaFileImport(row dbgen.MediaFileImport) model.MediaFileImport {
-	return model.MediaFileImport{
+// toModelFileImport translates the persistence-shaped dbgen.FileImport into
+// the domain-shaped model.FileImport.
+func toModelFileImport(row dbgen.FileImport) model.FileImport {
+	return model.FileImport{
 		ID:           uuidFromPgtype(row.ID),
-		MediaFileID:  uuidFromPgtype(row.MediaFileID),
+		FileID:       uuidFromPgtype(row.FileID),
 		ImportTaskID: uuidFromPgtype(row.ImportTaskID),
 		Method:       row.Method,
 		SourcePath:   row.SourcePath,
@@ -947,9 +988,9 @@ func toModelMediaFileImport(row dbgen.MediaFileImport) model.MediaFileImport {
 	}
 }
 
-func (r *Repository) CreateMediaFileImport(ctx context.Context, params CreateMediaFileImportParams) (model.MediaFileImport, error) {
-	row, err := r.Q.CreateMediaFileImport(ctx, dbgen.CreateMediaFileImportParams{
-		MediaFileID: pgtypeFromUUID(params.MediaFileID),
+func (r *Repository) CreateFileImport(ctx context.Context, params CreateFileImportParams) (model.FileImport, error) {
+	row, err := r.Q.CreateFileImport(ctx, dbgen.CreateFileImportParams{
+		FileID: pgtypeFromUUID(params.FileID),
 		// scan and manual-match imports don't have an import_task — the
 		// column is nullable in the schema; map uuid.Nil → NULL so the
 		// FK to import_task is satisfied for scan-discovered files.
@@ -961,299 +1002,63 @@ func (r *Repository) CreateMediaFileImport(ctx context.Context, params CreateMed
 		ErrorMessage: params.ErrorMessage,
 	})
 	if err != nil {
-		return model.MediaFileImport{}, apperrors.FromPg(err, "create media file import for task %s", params.ImportTaskID)
+		return model.FileImport{}, apperrors.FromPg(err, "create file import for file %s", params.FileID)
 	}
-	return toModelMediaFileImport(row), nil
+	return toModelFileImport(row), nil
 }
 
-func (r *Repository) GetMediaFileImport(ctx context.Context, id uuid.UUID) (model.MediaFileImport, error) {
-	row, err := r.Q.GetMediaFileImport(ctx, pgtypeFromUUID(id))
+func (r *Repository) GetFileImport(ctx context.Context, id uuid.UUID) (model.FileImport, error) {
+	row, err := r.Q.GetFileImport(ctx, pgtypeFromUUID(id))
 	if err != nil {
-		return model.MediaFileImport{}, apperrors.FromPg(err, "media file import %s not found", id)
+		return model.FileImport{}, apperrors.FromPg(err, "file import %s not found", id)
 	}
-	return toModelMediaFileImport(row), nil
+	return toModelFileImport(row), nil
 }
 
-func (r *Repository) ListImportsForMediaFile(ctx context.Context, mediaFileID uuid.UUID) ([]model.MediaFileImport, error) {
-	rows, err := r.Q.ListImportsForMediaFile(ctx, pgtypeFromUUID(mediaFileID))
+func (r *Repository) ListImportsForFile(ctx context.Context, fileID uuid.UUID) ([]model.FileImport, error) {
+	rows, err := r.Q.ListImportsForFile(ctx, pgtypeFromUUID(fileID))
 	if err != nil {
-		return nil, apperrors.FromPg(err, "list imports for media file %s", mediaFileID)
+		return nil, apperrors.FromPg(err, "list imports for file %s", fileID)
 	}
-	out := make([]model.MediaFileImport, 0, len(rows))
+	out := make([]model.FileImport, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, toModelMediaFileImport(row))
+		out = append(out, toModelFileImport(row))
 	}
 	return out, nil
 }
 
-func (r *Repository) ListImportsForImportTask(ctx context.Context, importTaskID uuid.UUID) ([]model.MediaFileImport, error) {
+func (r *Repository) ListImportsForImportTask(ctx context.Context, importTaskID uuid.UUID) ([]model.FileImport, error) {
 	rows, err := r.Q.ListImportsForImportTask(ctx, pgtypeFromUUID(importTaskID))
 	if err != nil {
 		return nil, apperrors.FromPg(err, "list imports for import task %s", importTaskID)
 	}
-	out := make([]model.MediaFileImport, 0, len(rows))
+	out := make([]model.FileImport, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, toModelMediaFileImport(row))
+		out = append(out, toModelFileImport(row))
 	}
 	return out, nil
 }
 
-func (r *Repository) ListRecentImports(ctx context.Context, limit int32) ([]model.MediaFileImport, error) {
+func (r *Repository) ListRecentImports(ctx context.Context, limit int32) ([]model.FileImport, error) {
 	rows, err := r.Q.ListRecentImports(ctx, limit)
 	if err != nil {
 		return nil, apperrors.FromPg(err, "list recent imports")
 	}
-	out := make([]model.MediaFileImport, 0, len(rows))
+	out := make([]model.FileImport, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, toModelMediaFileImport(row))
+		out = append(out, toModelFileImport(row))
 	}
 	return out, nil
 }
 
-func (r *Repository) ListFailedImports(ctx context.Context, limit int32) ([]model.MediaFileImport, error) {
+func (r *Repository) ListFailedImports(ctx context.Context, limit int32) ([]model.FileImport, error) {
 	rows, err := r.Q.ListFailedImports(ctx, limit)
 	if err != nil {
 		return nil, apperrors.FromPg(err, "list failed imports")
 	}
-	out := make([]model.MediaFileImport, 0, len(rows))
+	out := make([]model.FileImport, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, toModelMediaFileImport(row))
+		out = append(out, toModelFileImport(row))
 	}
 	return out, nil
-}
-
-// Unmatched File methods
-
-// CreateUnmatchedFileParams is the domain-shaped input for CreateUnmatchedFile.
-// Mirrors the writeable subset of model.UnmatchedFile (omits server-managed
-// ID/DiscoveredAt and resolution fields).
-type CreateUnmatchedFileParams struct {
-	LibraryID        uuid.UUID
-	Path             string
-	FileSize         *int64
-	SuggestedMatches []model.SuggestedMatch
-	PartialSeries    bool
-}
-
-// UpsertUnmatchedFileParams is the domain-shaped input for UpsertUnmatchedFile.
-// Same shape as CreateUnmatchedFileParams; conflict on (library_id, path) updates
-// the suggestions and file size.
-type UpsertUnmatchedFileParams struct {
-	LibraryID        uuid.UUID
-	Path             string
-	FileSize         *int64
-	SuggestedMatches []model.SuggestedMatch
-	PartialSeries    bool
-}
-
-// GetUnmatchedFileByPathParams is the domain-shaped input for
-// GetUnmatchedFileByPath.
-type GetUnmatchedFileByPathParams struct {
-	LibraryID uuid.UUID
-	Path      string
-}
-
-// ResolveUnmatchedFileParams is the domain-shaped input for ResolveUnmatchedFile.
-type ResolveUnmatchedFileParams struct {
-	ID                  uuid.UUID
-	ResolvedMediaFileID uuid.UUID
-}
-
-// UpdateUnmatchedFileSuggestionsParams is the domain-shaped input for
-// UpdateUnmatchedFileSuggestions.
-type UpdateUnmatchedFileSuggestionsParams struct {
-	ID               uuid.UUID
-	SuggestedMatches []model.SuggestedMatch
-}
-
-// toModelUnmatchedFile translates the persistence-shaped dbgen.UnmatchedFile
-// into the domain-shaped model.UnmatchedFile.
-func toModelUnmatchedFile(row dbgen.UnmatchedFile) model.UnmatchedFile {
-	uf := model.UnmatchedFile{
-		ID:            uuidFromPgtype(row.ID),
-		LibraryID:     uuidFromPgtype(row.LibraryID),
-		Path:          row.Path,
-		FileSize:      row.FileSize,
-		DiscoveredAt:  row.DiscoveredAt,
-		PartialSeries: row.PartialSeries,
-	}
-	if len(row.SuggestedMatches) > 0 {
-		var matches []model.SuggestedMatch
-		if err := json.Unmarshal(row.SuggestedMatches, &matches); err == nil {
-			uf.SuggestedMatches = matches
-		}
-		// Silent-empty on parse failure: bad rows shouldn't fail the whole query.
-	}
-	if row.ResolvedAt.Valid {
-		t := row.ResolvedAt.Time
-		uf.ResolvedAt = &t
-	}
-	if row.ResolvedMediaFileID.Valid {
-		id := uuidFromPgtype(row.ResolvedMediaFileID)
-		uf.ResolvedMediaFileID = &id
-	}
-	return uf
-}
-
-// marshalSuggestions serializes a SuggestedMatch slice to JSON bytes for
-// persistence. Returns nil bytes for an empty slice (the column is nullable).
-func marshalSuggestions(matches []model.SuggestedMatch, op string) ([]byte, error) {
-	if len(matches) == 0 {
-		return nil, nil
-	}
-	b, err := json.Marshal(matches)
-	if err != nil {
-		return nil, apperrors.Internalf("marshal suggestions: %v", err).Op(op)
-	}
-	return b, nil
-}
-
-func (r *Repository) CreateUnmatchedFile(ctx context.Context, params CreateUnmatchedFileParams) (model.UnmatchedFile, error) {
-	suggestionsJSON, err := marshalSuggestions(params.SuggestedMatches, "Repository.CreateUnmatchedFile")
-	if err != nil {
-		return model.UnmatchedFile{}, err
-	}
-	row, err := r.Q.CreateUnmatchedFile(ctx, dbgen.CreateUnmatchedFileParams{
-		LibraryID:        pgtypeFromUUID(params.LibraryID),
-		Path:             params.Path,
-		FileSize:         params.FileSize,
-		SuggestedMatches: suggestionsJSON,
-		PartialSeries:    params.PartialSeries,
-	})
-	if err != nil {
-		return model.UnmatchedFile{}, apperrors.FromPg(err, "create unmatched file %q in library %s", params.Path, params.LibraryID)
-	}
-	return toModelUnmatchedFile(row), nil
-}
-
-func (r *Repository) UpsertUnmatchedFile(ctx context.Context, params UpsertUnmatchedFileParams) (model.UnmatchedFile, error) {
-	suggestionsJSON, err := marshalSuggestions(params.SuggestedMatches, "Repository.UpsertUnmatchedFile")
-	if err != nil {
-		return model.UnmatchedFile{}, err
-	}
-	row, err := r.Q.UpsertUnmatchedFile(ctx, dbgen.UpsertUnmatchedFileParams{
-		LibraryID:        pgtypeFromUUID(params.LibraryID),
-		Path:             params.Path,
-		FileSize:         params.FileSize,
-		SuggestedMatches: suggestionsJSON,
-		PartialSeries:    params.PartialSeries,
-	})
-	if err != nil {
-		return model.UnmatchedFile{}, apperrors.FromPg(err, "upsert unmatched file %q in library %s", params.Path, params.LibraryID)
-	}
-	return toModelUnmatchedFile(row), nil
-}
-
-func (r *Repository) GetUnmatchedFile(ctx context.Context, id uuid.UUID) (model.UnmatchedFile, error) {
-	row, err := r.Q.GetUnmatchedFile(ctx, pgtypeFromUUID(id))
-	if err != nil {
-		return model.UnmatchedFile{}, apperrors.FromPg(err, "unmatched file %s not found", id)
-	}
-	return toModelUnmatchedFile(row), nil
-}
-
-func (r *Repository) GetUnmatchedFileByPath(ctx context.Context, params GetUnmatchedFileByPathParams) (model.UnmatchedFile, error) {
-	row, err := r.Q.GetUnmatchedFileByPath(ctx, dbgen.GetUnmatchedFileByPathParams{
-		LibraryID: pgtypeFromUUID(params.LibraryID),
-		Path:      params.Path,
-	})
-	if err != nil {
-		return model.UnmatchedFile{}, apperrors.FromPg(err, "unmatched file at %q in library %s not found", params.Path, params.LibraryID)
-	}
-	return toModelUnmatchedFile(row), nil
-}
-
-func (r *Repository) ListUnmatchedFiles(ctx context.Context) ([]model.UnmatchedFile, error) {
-	rows, err := r.Q.ListUnmatchedFiles(ctx)
-	if err != nil {
-		return nil, apperrors.FromPg(err, "list unmatched files")
-	}
-	out := make([]model.UnmatchedFile, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, toModelUnmatchedFile(row))
-	}
-	return out, nil
-}
-
-func (r *Repository) ListUnmatchedFilesForLibrary(ctx context.Context, libraryID uuid.UUID) ([]model.UnmatchedFile, error) {
-	rows, err := r.Q.ListUnmatchedFilesForLibrary(ctx, pgtypeFromUUID(libraryID))
-	if err != nil {
-		return nil, apperrors.FromPg(err, "list unmatched files for library %s", libraryID)
-	}
-	out := make([]model.UnmatchedFile, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, toModelUnmatchedFile(row))
-	}
-	return out, nil
-}
-
-func (r *Repository) ListUnmatchedFilesPaginated(ctx context.Context, params UnmatchedFilesQueryParams) ([]model.UnmatchedFile, error) {
-	var libID pgtype.UUID
-	if params.LibraryID != nil {
-		libID = pgtypeFromUUID(*params.LibraryID)
-	}
-	rows, err := r.Q.ListUnmatchedFilesPaginated(ctx, dbgen.ListUnmatchedFilesPaginatedParams{
-		LibraryID: libID,
-		PageSize:  params.PageSize,
-		OffsetVal: params.Offset,
-	})
-	if err != nil {
-		return nil, apperrors.FromPg(err, "list unmatched files paginated")
-	}
-	out := make([]model.UnmatchedFile, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, toModelUnmatchedFile(row))
-	}
-	return out, nil
-}
-
-func (r *Repository) CountUnmatchedFiles(ctx context.Context, libraryID *uuid.UUID) (int64, error) {
-	var libID pgtype.UUID
-	if libraryID != nil {
-		libID = pgtypeFromUUID(*libraryID)
-	}
-	count, err := r.Q.CountUnmatchedFiles(ctx, libID)
-	return count, apperrors.FromPg(err, "count unmatched files")
-}
-
-func (r *Repository) ResolveUnmatchedFile(ctx context.Context, params ResolveUnmatchedFileParams) (model.UnmatchedFile, error) {
-	row, err := r.Q.ResolveUnmatchedFile(ctx, dbgen.ResolveUnmatchedFileParams{
-		ID:                  pgtypeFromUUID(params.ID),
-		ResolvedMediaFileID: pgtypeFromUUID(params.ResolvedMediaFileID),
-	})
-	if err != nil {
-		return model.UnmatchedFile{}, apperrors.FromPg(err, "resolve unmatched file %s", params.ID)
-	}
-	return toModelUnmatchedFile(row), nil
-}
-
-func (r *Repository) DismissUnmatchedFile(ctx context.Context, id uuid.UUID) (model.UnmatchedFile, error) {
-	row, err := r.Q.DismissUnmatchedFile(ctx, pgtypeFromUUID(id))
-	if err != nil {
-		return model.UnmatchedFile{}, apperrors.FromPg(err, "dismiss unmatched file %s", id)
-	}
-	return toModelUnmatchedFile(row), nil
-}
-
-func (r *Repository) UpdateUnmatchedFileSuggestions(ctx context.Context, params UpdateUnmatchedFileSuggestionsParams) (model.UnmatchedFile, error) {
-	suggestionsJSON, err := marshalSuggestions(params.SuggestedMatches, "Repository.UpdateUnmatchedFileSuggestions")
-	if err != nil {
-		return model.UnmatchedFile{}, err
-	}
-	row, err := r.Q.UpdateUnmatchedFileSuggestions(ctx, dbgen.UpdateUnmatchedFileSuggestionsParams{
-		ID:               pgtypeFromUUID(params.ID),
-		SuggestedMatches: suggestionsJSON,
-	})
-	if err != nil {
-		return model.UnmatchedFile{}, apperrors.FromPg(err, "update suggestions for unmatched file %s", params.ID)
-	}
-	return toModelUnmatchedFile(row), nil
-}
-
-func (r *Repository) DeleteUnmatchedFile(ctx context.Context, id uuid.UUID) error {
-	return apperrors.FromPg(r.Q.DeleteUnmatchedFile(ctx, pgtypeFromUUID(id)), "delete unmatched file %s", id)
-}
-
-func (r *Repository) DeleteResolvedUnmatchedFilesOlderThan(ctx context.Context, beforeTime time.Time) error {
-	return apperrors.FromPg(r.Q.DeleteResolvedUnmatchedFilesOlderThan(ctx, pgtype.Timestamptz{Time: beforeTime, Valid: true}), "delete resolved unmatched files older than %s", beforeTime)
 }

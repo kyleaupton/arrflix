@@ -11,6 +11,7 @@ insert into match_decision (
     chosen_episode,
     chosen_edition,
     confidence,
+    ranked_candidates,
     resolvers_consulted,
     evidence,
     evidence_truncated,
@@ -25,6 +26,7 @@ values (
     sqlc.arg(chosen_episode),
     sqlc.arg(chosen_edition),
     sqlc.arg(confidence),
+    sqlc.arg(ranked_candidates),
     sqlc.arg(resolvers_consulted),
     sqlc.arg(evidence),
     sqlc.arg(evidence_truncated),
@@ -48,7 +50,7 @@ where file_id = sqlc.arg(file_id)
 -- Returns the current (non-superseded) decision for a file, if any.
 select id, file_id, outcome, chosen_source, chosen_external_id,
        chosen_season, chosen_episode, chosen_edition, confidence,
-       resolvers_consulted, evidence, evidence_truncated,
+       ranked_candidates, resolvers_consulted, evidence, evidence_truncated,
        decided_by, decided_at, superseded_at, superseded_by
 from match_decision
 where file_id = sqlc.arg(file_id)
@@ -62,7 +64,7 @@ limit 1;
 -- supersede chain.
 select id, file_id, outcome, chosen_source, chosen_external_id,
        chosen_season, chosen_episode, chosen_edition, confidence,
-       resolvers_consulted, evidence, evidence_truncated,
+       ranked_candidates, resolvers_consulted, evidence, evidence_truncated,
        decided_by, decided_at, superseded_at, superseded_by
 from match_decision
 where file_id = sqlc.arg(file_id)

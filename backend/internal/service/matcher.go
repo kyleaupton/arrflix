@@ -8,8 +8,17 @@ import (
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/matcher"
 	"github.com/kyleaupton/arrflix/internal/metadata"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
+
+// suggestedEvidenceCapBytes is the per-suggestion evidence cap. The
+// match_decision row caps the whole evidence map at 8KB; ranked_candidates
+// may carry up to 5 entries and we don't want one resolver's chatty
+// payload to eat the JSONB column, so each per-suggestion evidence is
+// trimmed independently. ~2KB per entry keeps a 5-suggestion set around
+// 10KB worst-case.
+const suggestedEvidenceCapBytes = 2 * 1024
 
 // MatcherService is the public surface scan, drop-in flows, and the
 // match-decision handlers call. It wraps the matcher domain module (the
@@ -117,10 +126,16 @@ func insertMatchOutcome(ctx context.Context, r *repo.Repository, rec matcher.Mat
 			NotRetryable()
 	}
 
+	rankedJSON, err := rankedCandidatesJSON(rec)
+	if err != nil {
+		return 0, err
+	}
+
 	params := repo.InsertMatchDecisionParams{
 		FileID:             rec.FileID,
 		Outcome:            string(rec.Outcome),
 		Confidence:         rec.Confidence,
+		RankedCandidates:   rankedJSON,
 		ResolversConsulted: auditJSON,
 		Evidence:           rec.Evidence,
 		EvidenceTruncated:  rec.Truncated,
@@ -144,4 +159,70 @@ func insertMatchOutcome(ctx context.Context, r *repo.Repository, rec matcher.Mat
 	}
 
 	return r.InsertMatchDecision(ctx, params)
+}
+
+// rankedCandidatesJSON marshals the outcome's ranked candidate set into
+// the match_decision.ranked_candidates JSONB shape — one
+// model.SuggestedMatch per candidate, the home for the suggestions the
+// inbox surfaces (per matching § "What evolves"). Empty for no_match /
+// outcomes without candidates, which yields nil bytes (NULL column).
+//
+// Per-candidate evidence is the row-level evidence trimmed to
+// suggestedEvidenceCapBytes — the outcome record doesn't carry per-
+// candidate evidence, so the inbox uses the row-level evidence plus
+// ContributingResolvers to render the "why".
+func rankedCandidatesJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
+	if len(rec.RankedCandidates) == 0 {
+		return nil, nil
+	}
+	resolvers := make([]string, 0, len(rec.ResolversConsulted))
+	for _, a := range rec.ResolversConsulted {
+		if a.CandidateCount > 0 {
+			resolvers = append(resolvers, a.Name)
+		}
+	}
+	evidence := capSuggestionEvidence(rec.Evidence)
+
+	out := make([]model.SuggestedMatch, 0, len(rec.RankedCandidates))
+	for _, c := range rec.RankedCandidates {
+		title, year, typ := "", 0, ""
+		if c.Item != nil {
+			title = c.Item.Title
+			year = c.Item.Year
+			typ = string(c.Item.Type)
+		}
+		out = append(out, model.SuggestedMatch{
+			ExternalRef: model.SuggestedExternalRef{
+				Source:     string(c.Ref.Source),
+				ExternalID: c.Ref.ExternalID,
+			},
+			Confidence:            c.Confidence,
+			ContributingResolvers: resolvers,
+			Evidence:              evidence,
+			Title:                 title,
+			Year:                  year,
+			Type:                  typ,
+		})
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return nil, apperrors.Internalf("marshal ranked_candidates: %v", err).
+			Op("rankedCandidatesJSON").
+			NotRetryable()
+	}
+	return b, nil
+}
+
+// capSuggestionEvidence trims the per-candidate evidence payload so a
+// 5-candidate set doesn't blow out the JSONB column. When the cap fires
+// we surface a small marker rather than the original payload — readers
+// can still tell that evidence was attached.
+func capSuggestionEvidence(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	if len(raw) <= suggestedEvidenceCapBytes {
+		return raw
+	}
+	return json.RawMessage(`{"_truncated":true}`)
 }

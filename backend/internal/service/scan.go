@@ -21,14 +21,6 @@ import (
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
 
-// suggestedEvidenceCapBytes is the per-suggestion evidence cap. The
-// match_decision row caps the whole evidence map at 8KB; an
-// unmatched_file may carry up to 5 suggestions and we don't want one
-// resolver's chatty payload to eat the entire JSONB column, so each
-// per-suggestion evidence is trimmed independently before write. ~2KB
-// per entry keeps a 5-suggestion row around 10KB worst-case.
-const suggestedEvidenceCapBytes = 2 * 1024
-
 // ScannerService owns filesystem discovery + persistence; the matcher
 // owns identification. Phase 3's split (per specs/modules/matching § Code
 // structure) lands here: scan's executeScan goes walk → match → enrich →
@@ -155,13 +147,14 @@ func (s *ScannerService) publishEvent(eventType, scanID, libraryID string, extra
 
 // executeScan is the four-phase scan loop. Phase 1 walks the library
 // rooted at library.RootPath and collects file metadata, deduping
-// against the (media_file ∪ unmatched_file) path set. Phase 2 runs the
-// matcher against the collection — identification is entirely the
-// matcher's concern from here on. Phase 3 reads each MatchOutcomeRecord
-// and persists per the matching spec's confidence-band table: confident
-// / confident_review land in media_file; low_confidence / ambiguous /
-// no_match / partial_series land in unmatched_file. Each step publishes
-// SSE progress events for the dashboard.
+// against the live file path set. Phase 2 runs the matcher against the
+// collection — identification is entirely the matcher's concern from
+// here on. Phase 3 reads each MatchOutcomeRecord and persists one file
+// row per discovered file: confident / confident_review set identity;
+// low_confidence / ambiguous / no_match leave it NULL; partial_series
+// sets the series title with the episode left NULL. The ranked
+// candidates live on the match_decision row (written by MatchBatch), not
+// on the file. Each step publishes SSE progress events for the dashboard.
 func (s *ScannerService) executeScan(ctx context.Context, library model.Library, scanID string) (scanStats, error) {
 	stats := scanStats{}
 	start := time.Now()
@@ -215,7 +208,7 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 			}
 		} else {
 			// Fallback: per-file DB check
-			_, dbErr := s.repo.GetMediaFileByLibraryAndPath(ctx, repo.GetMediaFileByLibraryAndPathParams{
+			_, dbErr := s.repo.GetFileByLibraryAndPath(ctx, repo.GetFileByLibraryAndPathParams{
 				LibraryID: library.ID,
 				Path:      relPath,
 			})
@@ -255,8 +248,11 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 
 	// Phase 2: Match
 	//
-	// The matcher owns identification (path-embed Tier 1, name-parse
-	// Tier 3, validation, confidence banding). Scan hands it a slice of
+	// Each collected file is materialized as a `file` row (identity NULL)
+	// before matching, because match_decision.file_id is a real FK — the
+	// row must exist before the matcher writes a decision against it. The
+	// matcher then owns identification (path-embed Tier 1, name-parse
+	// Tier 3, validation, confidence banding); scan hands it a slice of
 	// FileRefs and gets back one MatchOutcomeRecord per file in the same
 	// order.
 	fileRefs, err := s.toFileRefs(ctx, library, collected)
@@ -304,8 +300,8 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 				stats.ConfidentReview++
 			}
 		case matcher.OutcomeLowConfidence, matcher.OutcomeAmbiguous, matcher.OutcomeNoMatch, matcher.OutcomePartialSeries:
-			if perr := s.persistUnmatched(ctx, library, f, rec); perr != nil {
-				s.logger.Warn().Err(perr).Str("path", f.RelPath).Msg("persist unmatched failed")
+			if perr := s.persistUnidentified(ctx, library, f, rec); perr != nil {
+				s.logger.Warn().Err(perr).Str("path", f.RelPath).Msg("persist unidentified failed")
 				continue
 			}
 			switch rec.Outcome {
@@ -322,9 +318,9 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 			// The aggregator's banded outcomes are all handled above;
 			// OutcomeDetached is a user-only action that never comes out
 			// of MatchBatch. A new or unexpected band reaching here would
-			// otherwise be silently dropped (no media_file / no
-			// unmatched_file row) while its match_decision row already
-			// exists — surface it instead of losing the file.
+			// otherwise be silently dropped (no file row) while its
+			// match_decision row already exists — surface it instead of
+			// losing the file.
 			s.logger.Warn().Str("path", f.RelPath).Str("outcome", string(rec.Outcome)).Msg("scan: unhandled match outcome; file left unpersisted")
 		}
 
@@ -346,24 +342,16 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 // Helpers
 // ---------------------------------------------------------------------------
 
-// loadKnownPaths bulk-loads all media_file and unresolved unmatched_file paths
-// for the given library into a set for O(1) dedup during the walk phase.
+// loadKnownPaths bulk-loads all live file paths for the given library
+// into a set for O(1) dedup during the walk phase.
 func (s *ScannerService) loadKnownPaths(ctx context.Context, libraryID uuid.UUID) (map[string]struct{}, error) {
-	mediaPaths, err := s.repo.ListMediaFilePathsForLibrary(ctx, libraryID)
+	paths, err := s.repo.ListFilePathsForLibrary(ctx, libraryID)
 	if err != nil {
 		return nil, err
 	}
 
-	unmatchedPaths, err := s.repo.ListUnmatchedFilePathsForLibrary(ctx, libraryID)
-	if err != nil {
-		return nil, err
-	}
-
-	known := make(map[string]struct{}, len(mediaPaths)+len(unmatchedPaths))
-	for _, p := range mediaPaths {
-		known[p] = struct{}{}
-	}
-	for _, p := range unmatchedPaths {
+	known := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
 		known[p] = struct{}{}
 	}
 	return known, nil
@@ -372,11 +360,11 @@ func (s *ScannerService) loadKnownPaths(ctx context.Context, libraryID uuid.UUID
 // toFileRefs translates a slice of walked files into FileRefs the
 // matcher consumes. Each ref gets:
 //
-//   - A stable FileID. We look up the existing media_file or
-//     unmatched_file row by (library_id, relative path) and reuse its
-//     id when found; otherwise a fresh UUID is minted. This keeps
-//     match_decision.file_id stable across re-scans so the supersede
-//     chain points at the same logical file each time.
+//   - A stable FileID. We look up the existing live file row by
+//     (library_id, relative path) and reuse its id when found; otherwise
+//     a fresh UUID is minted. This keeps match_decision.file_id stable
+//     across re-scans so the supersede chain points at the same logical
+//     file each time, and the id is threaded straight into the file row.
 //
 //   - A parser hint. parsing.Parse(rel-path, domain, AsPath()) runs
 //     domain-typed (DomainSeries for series libraries, DomainMovie for
@@ -395,7 +383,7 @@ func (s *ScannerService) toFileRefs(ctx context.Context, library model.Library, 
 	}
 	refs := make([]matcher.FileRef, 0, len(collected))
 	for _, f := range collected {
-		id, err := s.resolveFileID(ctx, library.ID, f.RelPath)
+		id, err := s.ensureFileRow(ctx, library.ID, f)
 		if err != nil {
 			return nil, err
 		}
@@ -411,43 +399,47 @@ func (s *ScannerService) toFileRefs(ctx context.Context, library model.Library, 
 	return refs, nil
 }
 
-// resolveFileID returns a stable file id for (library, relPath). The
-// match_decision table's file_id column carries this identifier across
-// outcomes — a file that was no_match on scan #1 and confident on scan
-// #2 keeps the same id so the supersede chain points at the same
-// logical file. We probe media_file first (most rows live there), fall
-// back to unmatched_file, and mint a fresh UUID only on a true miss.
-func (s *ScannerService) resolveFileID(ctx context.Context, libraryID uuid.UUID, relPath string) (uuid.UUID, error) {
-	mf, err := s.repo.GetMediaFileByLibraryAndPath(ctx, repo.GetMediaFileByLibraryAndPathParams{
+// ensureFileRow returns the stable file id for a collected file, creating
+// the row (identity NULL) when it doesn't yet exist. The id is the
+// match_decision.file_id join key and must outlive every outcome — a file
+// that was no_match on scan #1 and confident on scan #2 keeps the same id
+// so the supersede chain points at the same logical file. The row exists
+// before MatchBatch runs because the decision's FK to file requires it.
+func (s *ScannerService) ensureFileRow(ctx context.Context, libraryID uuid.UUID, f collectedFile) (uuid.UUID, error) {
+	existing, err := s.repo.GetFileByLibraryAndPath(ctx, repo.GetFileByLibraryAndPathParams{
 		LibraryID: libraryID,
-		Path:      relPath,
+		Path:      f.RelPath,
 	})
 	if err == nil {
-		return mf.ID, nil
+		return existing.ID, nil
 	}
 	if !apperrors.IsNotFound(err) {
 		return uuid.Nil, err
 	}
 
-	uf, err := s.repo.GetUnmatchedFileByPath(ctx, repo.GetUnmatchedFileByPathParams{
+	id := uuid.New()
+	if _, err := s.repo.CreateFile(ctx, repo.CreateFileParams{
+		ID:        id,
 		LibraryID: libraryID,
-		Path:      relPath,
-	})
-	if err == nil {
-		return uf.ID, nil
-	}
-	if !apperrors.IsNotFound(err) {
+		Path:      f.RelPath,
+	}); err != nil {
 		return uuid.Nil, err
 	}
-
-	return uuid.New(), nil
+	if _, err := s.repo.UpsertFileState(ctx, repo.UpsertFileStateParams{
+		FileID:    id,
+		Exists:    true,
+		SizeBytes: f.FileSize,
+	}); err != nil {
+		return uuid.Nil, err
+	}
+	return id, nil
 }
 
-// persistConfident writes a media_item / media_file / media_file_state /
-// media_file_import set for a confident or confident_review outcome.
-// The "flagged for review" state for confident_review is implicit in
-// match_decision.outcome (already written by MatchBatch); we don't
-// store a separate flag on media_file.
+// persistConfident sets identity on the file (creating the row if scan
+// hasn't yet) plus its file_state / file_import for a confident or
+// confident_review outcome. The "flagged for review" state for
+// confident_review is implicit in match_decision.outcome (already
+// written by MatchBatch); we don't store a separate flag on the file.
 //
 // The actual persistence is delegated to commitMatch, the helper shared
 // with the user-driven match-by-ID handler (Phase 4). Scan's wrapper
@@ -482,6 +474,7 @@ func (s *ScannerService) persistConfident(ctx context.Context, library model.Lib
 
 	in := commitMatchInput{
 		Library:  library,
+		FileID:   rec.FileID,
 		RelPath:  f.RelPath,
 		AbsPath:  f.AbsPath,
 		FileSize: f.FileSize,
@@ -518,93 +511,44 @@ func (s *ScannerService) persistConfident(ctx context.Context, library model.Lib
 	return result.ItemCreated, false, nil
 }
 
-// persistUnmatched writes an unmatched_file row for a low_confidence /
-// ambiguous / no_match / partial_series outcome. The candidate list
-// (and its per-resolver evidence) becomes the row's suggested_matches
-// JSONB column. partial_series gets a column flag too so the inbox UI
-// can offer an episode picker rather than a full match prompt.
+// persistUnidentified handles the low_confidence / ambiguous / no_match
+// bands (and partial_series when the series couldn't be pinned). The file
+// row + state already exist from ensureFileRow with identity NULL — the
+// inbox surfaces it as needing review — so there's nothing more to write:
+// the ranked candidates the matcher surfaces live on the match_decision
+// row (written by MatchBatch), not on the file. "Unmatched" is the query
+// file.media_item_id IS NULL.
 //
-// no_match writes the row with an empty suggestions list — the row's
-// existence is the signal; the inbox surfaces it as "we don't know
-// what this is."
-func (s *ScannerService) persistUnmatched(ctx context.Context, library model.Library, f collectedFile, rec matcher.MatchOutcomeRecord) error {
-	suggestions := suggestionsFromOutcome(rec, library.Type)
-	_, err := s.repo.UpsertUnmatchedFile(ctx, repo.UpsertUnmatchedFileParams{
-		LibraryID:        library.ID,
-		Path:             f.RelPath,
-		FileSize:         f.FileSize,
-		SuggestedMatches: suggestions,
-		PartialSeries:    rec.Outcome == matcher.OutcomePartialSeries,
+// partial_series with a chosen series ref sets the series title on the
+// file (media_item_id set, episode_id NULL) so the inbox can offer an
+// episode picker; that path reuses commitMatch with no episode.
+func (s *ScannerService) persistUnidentified(ctx context.Context, library model.Library, f collectedFile, rec matcher.MatchOutcomeRecord) error {
+	if rec.Outcome == matcher.OutcomePartialSeries && rec.ChosenRef != nil && rec.ChosenRef.Source == metadata.SourceTMDB {
+		return s.persistPartialSeries(ctx, library, f, rec)
+	}
+	return nil
+}
+
+// persistPartialSeries sets the series title on the file (episode left
+// NULL) for a partial_series outcome carrying a validated series ref.
+func (s *ScannerService) persistPartialSeries(ctx context.Context, library model.Library, f collectedFile, rec matcher.MatchOutcomeRecord) error {
+	tmdbID, err := strconv.ParseInt(rec.ChosenRef.ExternalID, 10, 64)
+	if err != nil {
+		return apperrors.Internalf("partial_series tmdb id %q not numeric: %v", rec.ChosenRef.ExternalID, err).
+			Op("ScannerService.persistPartialSeries").
+			NotRetryable()
+	}
+	_, err = commitMatch(ctx, commitMatchDeps{repo: s.repo, log: s.logger, tmdb: s.tmdb}, commitMatchInput{
+		Library:  library,
+		FileID:   rec.FileID,
+		RelPath:  f.RelPath,
+		AbsPath:  f.AbsPath,
+		FileSize: f.FileSize,
+		TmdbID:   tmdbID,
+		Item:     rec.ChosenItem,
+		Method:   "scan",
 	})
 	return err
-}
-
-// suggestionsFromOutcome translates the matcher's record into the
-// suggested_matches JSONB shape. Per matching § "What evolves" the new
-// shape is `{external_ref, confidence, contributing_resolvers,
-// evidence, title, year, type}` — one entry per candidate the matcher
-// would surface.
-//
-// Per-outcome semantics follow the confidence-bands table:
-//   - no_match: empty slice (the row's existence is the signal).
-//   - low_confidence / partial_series: one entry (the strong candidate).
-//   - ambiguous: up to RankedCandidatesLimit (5) ranked entries.
-//
-// The list mirrors rec.RankedCandidates exactly; the aggregator owns
-// the ranking + truncation. We attach the per-row evidence to every
-// suggestion (capped at suggestedEvidenceCapBytes) because we don't
-// carry per-candidate evidence on the outcome record — the inbox uses
-// the row-level evidence + ContributingResolvers to render the "why".
-func suggestionsFromOutcome(rec matcher.MatchOutcomeRecord, libraryType string) []model.SuggestedMatch {
-	if len(rec.RankedCandidates) == 0 {
-		return nil
-	}
-	resolvers := make([]string, 0, len(rec.ResolversConsulted))
-	for _, a := range rec.ResolversConsulted {
-		if a.CandidateCount > 0 {
-			resolvers = append(resolvers, a.Name)
-		}
-	}
-
-	evidence := capSuggestionEvidence(rec.Evidence)
-
-	out := make([]model.SuggestedMatch, 0, len(rec.RankedCandidates))
-	for _, c := range rec.RankedCandidates {
-		title := ""
-		year := 0
-		if c.Item != nil {
-			title = c.Item.Title
-			year = c.Item.Year
-		}
-		out = append(out, model.SuggestedMatch{
-			ExternalRef: model.SuggestedExternalRef{
-				Source:     string(c.Ref.Source),
-				ExternalID: c.Ref.ExternalID,
-			},
-			Confidence:            c.Confidence,
-			ContributingResolvers: resolvers,
-			Evidence:              evidence,
-			Title:                 title,
-			Year:                  year,
-			Type:                  libraryType,
-		})
-	}
-	return out
-}
-
-// capSuggestionEvidence trims the per-suggestion evidence payload so a
-// 5-suggestion row doesn't blow out the JSONB column. The matcher already
-// caps the whole-row evidence at 8KB; this is the per-entry sibling at
-// 2KB. When the cap fires we surface a small marker rather than the
-// original payload — readers can still tell that evidence was attached.
-func capSuggestionEvidence(raw json.RawMessage) json.RawMessage {
-	if len(raw) == 0 {
-		return nil
-	}
-	if len(raw) <= suggestedEvidenceCapBytes {
-		return raw
-	}
-	return json.RawMessage(`{"_truncated":true}`)
 }
 
 func isMediaFile(path string) bool {

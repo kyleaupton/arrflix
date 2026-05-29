@@ -216,27 +216,31 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 
 	// On tx failure the hardlink is left as an orphan; a future scan picks it up.
 	err = w.repo.InTx(ctx, func(r *repo.Repository) error {
-		mediaFile, ferr := r.CreateMediaFile(ctx, repo.CreateMediaFileParams{
+		// Closed-world create: the import knows the identity up front, so
+		// the file row is born with media_item_id / episode_id set.
+		mediaItemID := task.MediaItemID
+		file, ferr := r.CreateFile(ctx, repo.CreateFileParams{
+			ID:          uuid.New(),
 			LibraryID:   task.LibraryID,
-			MediaItemID: task.MediaItemID,
-			EpisodeID:   episodeIDPtr,
 			Path:        destPath,
+			MediaItemID: &mediaItemID,
+			EpisodeID:   episodeIDPtr,
 		})
 		if ferr != nil {
 			return ferr
 		}
 
 		fileSize := srcInfo.Size()
-		if _, serr := r.UpsertMediaFileState(ctx, repo.UpsertMediaFileStateParams{
-			MediaFileID: mediaFile.ID,
-			FileExists:  true,
-			FileSize:    &fileSize,
+		if _, serr := r.UpsertFileState(ctx, repo.UpsertFileStateParams{
+			FileID:    file.ID,
+			Exists:    true,
+			SizeBytes: &fileSize,
 		}); serr != nil {
 			return serr
 		}
 
-		if _, ierr := r.CreateMediaFileImport(ctx, repo.CreateMediaFileImportParams{
-			MediaFileID:  mediaFile.ID,
+		if _, ierr := r.CreateFileImport(ctx, repo.CreateFileImportParams{
+			FileID:       file.ID,
 			ImportTaskID: task.ID,
 			Method:       method,
 			SourcePath:   &task.SourcePath,
@@ -251,7 +255,7 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 			ID:           task.ID,
 			DestPath:     destPath,
 			ImportMethod: method,
-			MediaFileID:  mediaFile.ID,
+			FileID:       file.ID,
 		})
 		return terr
 	})
