@@ -1679,6 +1679,8 @@ components:
           type:
             - string
             - "null"
+        fileId:
+          type: string
         id:
           type: string
         importMethod:
@@ -1694,8 +1696,6 @@ components:
         maxAttempts:
           format: int32
           type: integer
-        mediaFileId:
-          type: string
         mediaItemId:
           type: string
         mediaType:
@@ -1727,7 +1727,7 @@ components:
         - nameTemplateId
         - destPath
         - importMethod
-        - mediaFileId
+        - fileId
         - attemptCount
         - maxAttempts
         - nextRunAt
@@ -1829,6 +1829,8 @@ components:
           type:
             - string
             - "null"
+        fileId:
+          type: string
         id:
           type: string
         importMethod:
@@ -1844,8 +1846,6 @@ components:
         maxAttempts:
           format: int32
           type: integer
-        mediaFileId:
-          type: string
         mediaItemId:
           type: string
         mediaType:
@@ -1878,7 +1878,7 @@ components:
         - nameTemplateId
         - destPath
         - importMethod
-        - mediaFileId
+        - fileId
         - attemptCount
         - maxAttempts
         - nextRunAt
@@ -1928,6 +1928,8 @@ components:
           type:
             - string
             - "null"
+        fileId:
+          type: string
         id:
           type: string
         importMethod:
@@ -1947,8 +1949,6 @@ components:
         maxAttempts:
           format: int32
           type: integer
-        mediaFileId:
-          type: string
         mediaItemId:
           type: string
         mediaItemType:
@@ -2027,7 +2027,7 @@ components:
         - nameTemplateId
         - destPath
         - importMethod
-        - mediaFileId
+        - fileId
         - attemptCount
         - maxAttempts
         - nextRunAt
@@ -3666,43 +3666,6 @@ components:
       required:
         - success
       type: object
-    SuggestedExternalRef:
-      additionalProperties: false
-      properties:
-        externalId:
-          type: string
-        source:
-          type: string
-      required:
-        - source
-        - externalId
-      type: object
-    SuggestedMatch:
-      additionalProperties: false
-      properties:
-        confidence:
-          format: double
-          type: number
-        contributingResolvers:
-          items:
-            type: string
-          type:
-            - array
-            - "null"
-        evidence: {}
-        externalRef:
-          $ref: "#/components/schemas/SuggestedExternalRef"
-        title:
-          type: string
-        type:
-          type: string
-        year:
-          format: int64
-          type: integer
-      required:
-        - externalRef
-        - confidence
-      type: object
     TestResult:
       additionalProperties: false
       properties:
@@ -3750,70 +3713,11 @@ components:
           type: boolean
         path:
           type: string
-        suggestedMatches:
-          items:
-            $ref: "#/components/schemas/SuggestedMatch"
-          type:
-            - array
-            - "null"
       required:
         - id
         - libraryId
         - path
         - discoveredAt
-      type: object
-    UnmatchedFilesMatchInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/UnmatchedFilesMatchInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        episode:
-          description: Episode number (series only)
-          format: int64
-          type: integer
-        season:
-          description: Season number (series only)
-          format: int64
-          type: integer
-        tmdbId:
-          description: TMDB ID to match against
-          format: int64
-          minimum: 1
-          type: integer
-        type:
-          description: Media type
-          enum:
-            - movie
-            - series
-          type: string
-      required:
-        - tmdbId
-        - type
-      type: object
-    UnmatchedFilesMatchResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/UnmatchedFilesMatchResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        mediaFileId:
-          description: Created media file ID (UUID string)
-          type: string
-        path:
-          description: Path of the matched file
-          type: string
-      required:
-        - mediaFileId
-        - path
       type: object
     UpdateDetails:
       additionalProperties: false
@@ -8355,7 +8259,7 @@ paths:
         - setup
   /api/v1/unmatched-files:
     get:
-      description: Paginated list of files that couldn't be auto-matched to media items. Optional libraryId filter.
+      description: Paginated list of files with no resolved identity (media_item_id IS NULL). Optional libraryId filter. Match/un-match/detach are on /api/v1/files/{fileId}/*.
       operationId: unmatched-files-list
       parameters:
         - description: Optional library filter (uuid.Nil / omitted = no filter)
@@ -8400,19 +8304,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Error
-      summary: List unmatched files
+      summary: List files needing review
       tags:
         - unmatched-files
   /api/v1/unmatched-files/{id}:
     get:
       operationId: unmatched-files-get
       parameters:
-        - description: Unmatched file ID
+        - description: File ID
           in: path
           name: id
           required: true
           schema:
-            description: Unmatched file ID
+            description: File ID
             format: uuid
             type: string
       responses:
@@ -8440,156 +8344,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
-      summary: Get unmatched file
-      tags:
-        - unmatched-files
-  /api/v1/unmatched-files/{id}/dismiss:
-    post:
-      description: Mark an unmatched file as resolved without matching it.
-      operationId: unmatched-files-dismiss
-      parameters:
-        - description: Unmatched file ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Unmatched file ID
-            format: uuid
-            type: string
-      responses:
-        "204":
-          description: No Content
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Dismiss unmatched file
-      tags:
-        - unmatched-files
-  /api/v1/unmatched-files/{id}/match:
-    post:
-      description: Manually matches an unmatched file to a TMDB-identified media item. Returns 409 if the file is already resolved.
-      operationId: unmatched-files-match
-      parameters:
-        - description: Unmatched file ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Unmatched file ID
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UnmatchedFilesMatchInputBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UnmatchedFilesMatchResponse"
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "409":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Conflict
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-        "502":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Bad Gateway
-      summary: Match unmatched file to media item
-      tags:
-        - unmatched-files
-  /api/v1/unmatched-files/{id}/refresh:
-    post:
-      description: Regenerate the list of suggested matches for an unmatched file.
-      operationId: unmatched-files-refresh
-      parameters:
-        - description: Unmatched file ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Unmatched file ID
-            format: uuid
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UnmatchedFileResponse"
-          description: OK
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-        "502":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Bad Gateway
-      summary: Refresh match suggestions
+      summary: Get a file needing review
       tags:
         - unmatched-files
   /api/v1/users:

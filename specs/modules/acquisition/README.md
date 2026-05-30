@@ -9,7 +9,7 @@ Acquisition is a **code module, not a settings surface.** It has no user-facing 
 ## TL;DR
 
 - Acquisition is **orchestration**, not selection. Picking is owned by [quality profiles](../quality-profiles/README.md); post-pick decisions are owned by [routing](../routing/README.md). This doc owns the chain that connects them.
-- The pipeline: **want → search → quality (gate + score + pick) → routing (decide where) → download_job → import_task → media_file → verify → available**. A want reaches `available` when Arrflix verifies the file on disk — **not** when Plex sees it. Media-server sync (Plex/Jellyfin) happens _after_ `available` and never gates it.
+- The pipeline: **want → search → quality (gate + score + pick) → routing (decide where) → download_job → import_task → file → verify → available**. A want reaches `available` when Arrflix verifies the file on disk — **not** when Plex sees it. Media-server sync (Plex/Jellyfin) happens _after_ `available` and never gates it.
 - The pipeline writes audit rows following the system-wide [decision-artifact pattern](../../patterns/audit/README.md). Retention is centralized there, not here.
 - A single download_job can fulfill **many wants** (season packs). Linkage is M:N.
 - Interactive search shares all components with the autonomous flow but bypasses hard-gating and tags the entry as a manual override.
@@ -40,7 +40,7 @@ user clicks "grab"
   → ImportWorker reads completed jobs
     → creates import_task per file
     → hardlinks files into library, applies name template
-    → creates media_file rows
+    → creates file rows
 ```
 
 The trace is returned in the API response and forgotten. There is no record of _which other releases were considered or rejected_.
@@ -65,11 +65,11 @@ DownloadJobWorker (existing) → completed
 ImportWorker (existing, with want linkage)
   → ffprobe asserted attributes; quality re-gate on the real file
       ├─ hard-fail → reject import, blocklist release, want → searching (re-grab), emit want.regate_failed
-      └─ pass / soft-fail → hardlink → media_file (soft-fail also logs a quality/advertised-mismatch finding)
+      └─ pass / soft-fail → hardlink → file (soft-fail also logs a quality/advertised-mismatch finding)
 VerifyStep (new) → presence-verify on disk → emit want.available   ← Arrflix's own authority
 MediaServerSync (new, downstream, non-blocking)
   → nudge each configured server to index (Plex partial-refresh / Jellyfin scan)
-  → on webhook OR reconciliation poll: record propagation, emit media_file.propagated
+  → on webhook OR reconciliation poll: record propagation, emit file.propagated
 ```
 
 **Interactive path** (the manual workflow today):
@@ -87,7 +87,7 @@ user opens movie/series → clicks search
 
 ### What stays the same
 
-The **back half** of the pipeline is unchanged, with one addition. Once a download_job exists, the existing DownloadJobWorker and ImportWorker do their thing — hardlinks, name templates, media_file creation all stay. The one new step is the **import-time re-gate** (see below): before the file is placed, the profile is re-run against the file's asserted attributes. The new world is otherwise about the **front half**: persistent intent + a richer selection layer + an orchestrator that wakes on events instead of clicks.
+The **back half** of the pipeline is unchanged, with one addition. Once a download_job exists, the existing DownloadJobWorker and ImportWorker do their thing — hardlinks, name templates, file creation all stay. The one new step is the **import-time re-gate** (see below): before the file is placed, the profile is re-run against the file's asserted attributes. The new world is otherwise about the **front half**: persistent intent + a richer selection layer + an orchestrator that wakes on events instead of clicks.
 
 ## Import-time re-gate (asserted verification)
 
@@ -237,7 +237,7 @@ The data model needs to support **1 download_job → N wants**.
 
 ### Overflow & under-coverage
 
-- **Overflow**: the season pack has more episodes than the wants we have. Excess files are imported normally and create episode wants if scope rule includes them, otherwise become unmatched_files (or are stored as "extras" — TBD).
+- **Overflow**: the season pack has more episodes than the wants we have. Excess files are imported normally and create episode wants if scope rule includes them, otherwise become unidentified files (or are stored as "extras" — TBD).
 - **Under-coverage**: the season pack has fewer episodes than wanted (e.g., S03 pack on a show that aired S03E11 after the pack was published). Wants that _weren't_ covered stay in `searching`; the scheduler keeps looking.
 
 ### Import → want fulfillment
@@ -270,7 +270,7 @@ Plus a few **freshness / progress** fields the pill reads (data, not enum): `las
 
 **Resume logic keys off the annotation, not the state.** A `blocked`(indexer) want resumes immediately on a `<resource>.health` recovery event; a `backing_off` want resumes on its `next_attempt_at` schedule. The scheduler distinguishes them by annotation — they're both `searching`, but they wake on different signals. (This is what [Story 10](../../stories/10-indexer-health-degraded-and-recovery.md) needs and what resolves its open question on distinguishing infra-blocked from backing-off wants.)
 
-**Not a want annotation: media-server propagation.** Once a want is `available`, whether Plex/Jellyfin has indexed the file is a _separate_ per-`(media_file, server)` status (see [Media-server propagation](#media-server-propagation-decoupled-from-available)), surfaced as its own badge — not a want annotation. The want is done; propagation is downstream.
+**Not a want annotation: media-server propagation.** Once a want is `available`, whether Plex/Jellyfin has indexed the file is a _separate_ per-`(file, server)` status (see [Media-server propagation](#media-server-propagation-decoupled-from-available)), surfaced as its own badge — not a want annotation. The want is done; propagation is downstream.
 
 ## Media-server propagation (decoupled from `available`)
 
@@ -285,7 +285,7 @@ Plus a few **freshness / progress** fields the pill reads (data, not enum): `las
 
 The last two transitions of the want lifecycle:
 
-- **`imported`** — ImportWorker has hardlinked the file into the library path and written the `media_file` row. The file is _placed_.
+- **`imported`** — ImportWorker has hardlinked the file into the library path and written the `file` row. The file is _placed_.
 - **`available`** — Arrflix has **verified the file is present and readable on disk** (a stat/size check; the same authority [scan](../scan/README.md)'s verify mode uses). The file is _confirmed_. This is the terminal happy state, and it is reachable with **no media server at all**.
 
 For the common case the verify is an inline check microseconds after the hardlink. The state still earns its place: it catches the "hardlink reported success but the file is gone / the disk errored" case, and gives scan-verify a re-confirmation hook.
@@ -294,7 +294,7 @@ What this kills: the old `imported → available` transition was gated on a Plex
 
 ### Propagation is a separate, non-blocking axis
 
-Once a file is `available`, Arrflix nudges each configured media server to index it (Plex partial-refresh, Jellyfin scan) and tracks the result as a **per-`(media_file, media_server)` propagation record** — server-agnostic, multi-server-ready:
+Once a file is `available`, Arrflix nudges each configured media server to index it (Plex partial-refresh, Jellyfin scan) and tracks the result as a **per-`(file, media_server)` propagation record** — server-agnostic, multi-server-ready:
 
 - Populated by **(a)** the server's webhook when it fires (fast path), or **(b)** a best-effort reconciliation poll that queries the server's API (backfill when the webhook is missed).
 - The media server is itself a [connectivity-health](../../patterns/connectivity-health/README.md) resource; reconciliation only runs while it's healthy.
@@ -335,7 +335,7 @@ Never a dead link, never a stuck want. (An optional _grace window_ — hold the 
 - **`download_job` grows `want` linkage.** Via an M:N intermediate, not a single FK.
 - **`import_task` grows a `want_id` FK.** One want per imported file.
 - **Search cache: in-memory → DB-backed**, longer TTL, with explicit invalidation hooks.
-- **Media-server linkage stays off `media_item`.** Plex rating keys (and Jellyfin equivalents) live in a per-`(media_file, media_server)` propagation record, not a column on `media_item` — server-agnostic and multi-server-ready. Owned by the pending media-server spec; see [Media-server propagation](#media-server-propagation-decoupled-from-available).
+- **Media-server linkage stays off `media_item`.** Plex rating keys (and Jellyfin equivalents) live in a per-`(file, media_server)` propagation record, not a column on `media_item` — server-agnostic and multi-server-ready. Owned by the pending media-server spec; see [Media-server propagation](#media-server-propagation-decoupled-from-available).
 
 ## What gets added (summary)
 
@@ -383,7 +383,7 @@ The pipeline relies on events flowing between components. The [realtime](../real
 | `want.imported`      | ImportWorker                                 | VerifyStep (presence-verify on disk)     |
 | `want.regate_failed` | ImportWorker (re-gate hard-fail)             | AcquisitionWorker (blocklist + re-search), SearchScheduler, SSE |
 | `want.available`     | VerifyStep (file verified on disk)           | NotificationService, SSE, MediaServerSync |
-| `media_file.propagated` | MediaServerSync (webhook or reconciliation poll) | NotificationService (deep-link upgrade), SSE |
+| `file.propagated` | MediaServerSync (webhook or reconciliation poll) | NotificationService (deep-link upgrade), SSE |
 | `tracking.archived`  | TrackingService                              | SSE, NotificationService                 |
 | `upgrade.proposed`   | AcquisitionWorker                            | NotificationService                      |
 

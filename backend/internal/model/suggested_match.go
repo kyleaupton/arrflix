@@ -2,12 +2,12 @@ package model
 
 import "encoding/json"
 
-// SuggestedMatch is one ranked alternative attached to an unmatched_file.
-// It maps to the matcher's per-resolver candidate view: a canonical
-// (source, external_id) identity, the aggregated confidence the matcher
-// computed for that identity, the resolvers that voted for it, and the
-// raw evidence payload (the same per-resolver JSON the match_decision
-// row carries, capped at ~2KB per entry on write).
+// SuggestedMatch is one ranked alternative in a match_decision's
+// ranked_candidates set. It maps to the matcher's per-resolver candidate
+// view: a canonical (source, external_id) identity, the aggregated
+// confidence the matcher computed for that identity, the resolvers that
+// voted for it, and the raw evidence payload (the same per-resolver JSON
+// the match_decision row carries, capped at ~2KB per entry on write).
 //
 // Display fields (Title, Year, Type) are denormalized at write-time from
 // the metadata.Item the aggregator validated against, so the matcher
@@ -33,7 +33,7 @@ type SuggestedMatch struct {
 	// ContributingResolvers names the resolvers whose candidates
 	// merged into this suggestion (e.g. ["path-embed", "name-parse"]).
 	// Read by the matcher inbox's "why didn't this match" affordance
-	// and by re-match flows in Phase 4.
+	// and by re-match flows.
 	ContributingResolvers []string `json:"contributingResolvers,omitempty"`
 	// Evidence is the per-resolver JSON payload the matcher emitted
 	// for this suggestion. Whole-row capping (8KB) lives at the

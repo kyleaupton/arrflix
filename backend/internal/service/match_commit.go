@@ -20,18 +20,30 @@ import (
 // id by the time we reach here; cross-provider rewrite happens upstream
 // (in the matcher's aggregator for the scan path, in the manual handler
 // before calling commit for the user-driven path).
+//
+// The file row is the stable spine: FileID names it, and the row is
+// created at discovery. commitMatch writes the media_item / season /
+// episode rows, then UPDATEs identity onto the file in place — the row,
+// its file_state snapshot, and its file_import history all survive every
+// identity transition.
 type commitMatchInput struct {
 	Library model.Library
+	// FileID is the stable file id — the row created at discovery and the
+	// match_decision.file_id join key. commitMatch upserts the file row at
+	// this id and points its identity at the matched media_item.
+	FileID uuid.UUID
 	// RelPath is the file path relative to the library root. Becomes
-	// media_file.path.
+	// file.path.
 	RelPath string
-	// AbsPath is the absolute on-disk path. Used by
-	// media_file_import.dest_path so the import history matches the
-	// scan-time behaviour.
+	// AbsPath is the absolute on-disk path. Used by file_import.dest_path
+	// so the import history matches the scan-time behaviour.
 	AbsPath string
 	// FileSize is the on-disk file size in bytes. nil leaves the column
-	// unset on media_file_state.
+	// unset on file_state.
 	FileSize *int64
+	// OsdbHash is the OSDB content hash. nil leaves the column unset on
+	// file_state (too-small file / read error at walk time).
+	OsdbHash *string
 	// TmdbID is the validated TMDB identifier the file is being matched
 	// to.
 	TmdbID int64
@@ -43,37 +55,22 @@ type commitMatchInput struct {
 	// Season / Episode are populated for series matches.
 	Season  *int32
 	Episode *int32
-	// Edition is the movie cut, free-text in v1. Not persisted to
-	// media_file directly — lives on match_decision; the column-level
-	// edition modeling is a v2 schema change.
+	// Edition is the movie cut, free-text in v1. Stored on file.edition.
 	Edition *string
-	// Method is the media_file_import.method value — "scan" for the
-	// scanner's confident-band path, "manual_match" for the user-driven
+	// Method is the file_import.method value — "scan" for the scanner's
+	// confident-band path, "manual_match" for the user-driven
 	// match-by-ID handler.
 	Method string
-	// PreservedFileID, when set, becomes the new media_file row's id.
-	// Used by the manual match flow to keep the match_decision.file_id
-	// join key stable across an unmatched_file → media_file transition.
-	// Scan-time calls leave this nil — fresh rows get auto-assigned ids.
-	PreservedFileID *uuid.UUID
-	// Recommit re-points an existing media_file (identified by
-	// PreservedFileID) at the new identity in place, rather than
-	// inserting a fresh row. Used by the manual re-match flow (media →
-	// media): the UPDATE preserves the row's media_file_state snapshot
-	// and media_file_import history, which a delete-and-recreate would
-	// destroy. Requires PreservedFileID to be set; the existing
-	// media_file_state / media_file_import rows are left untouched.
-	Recommit bool
 }
 
 // commitMatchResult names what commitMatch produced — the new (or
-// existing) media_item / media_file pair, plus whether scan-time
+// existing) media_item and the file row, plus whether scan-time
 // enrichment should fire on the item, plus whether TMDB episode lookup
 // failed (which lets the caller decide between "skip the file" and
 // "surface the error").
 type commitMatchResult struct {
 	MediaItem     model.MediaItem
-	MediaFile     model.MediaFile
+	File          model.File
 	ItemCreated   bool
 	EpisodeFailed bool
 }
@@ -89,19 +86,25 @@ type commitMatchDeps struct {
 }
 
 // commitMatch is the shared persistence helper for confident-band
-// matches. It writes the media_item / media_season / media_episode /
-// media_file / media_file_state / media_file_import rows in one
-// transaction, taking the same shape regardless of whether the source
-// is the scanner's auto-match or the user's match-by-ID handler.
+// matches. It writes the media_item / media_season / media_episode rows,
+// upserts the file row at the stable FileID with identity set, and writes
+// file_state / file_import in one transaction. Same shape regardless of
+// whether the source is the scanner's auto-match or the user's
+// match-by-ID handler.
+//
+// The file row is keyed on the stable FileID: if it already exists (the
+// common case — scan discovers it, then matches it), the identity is set
+// in place via SetFileIdentity and the file_state / file_import rows are
+// rewritten. If it doesn't (a closed-world create), CreateFile mints it
+// with identity already set.
 //
 // Caller responsibilities (NOT done here):
 //   - Writing the match_decision row (the matcher's repo does that).
-//   - Deleting any unmatched_file row the file used to live in.
 //   - Firing scan-time enrichment on a fresh item (off-thread; both
 //     callers do their own fire-and-forget).
 //
 // Returns EpisodeFailed=true when a TMDB episode-details lookup failed
-// — scan treats that as a skip (file stays unmatched). Manual match
+// — scan treats that as a skip (file stays unidentified). Manual match
 // callers can choose to propagate or fall through.
 //
 // TODO(metadata-seam): GetEpisodeDetails isn't on MetadataProvider yet —
@@ -114,8 +117,8 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 			Op("commitMatch").
 			NotRetryable()
 	}
-	if in.Recommit && in.PreservedFileID == nil {
-		return commitMatchResult{}, apperrors.Internalf("commitMatch: recommit requires a preserved file id for %q", in.RelPath).
+	if in.FileID == uuid.Nil {
+		return commitMatchResult{}, apperrors.Internalf("commitMatch: nil file id for %q", in.RelPath).
 			Op("commitMatch").
 			NotRetryable()
 	}
@@ -193,53 +196,44 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 			}
 		}
 
-		// Re-match: re-point the existing media_file in place. The
-		// media_file_state snapshot and media_file_import history stay
-		// attached to the same row — no new state/import write, because
-		// nothing moved on disk; only the identity changed. The
-		// match_decision row is the audit record for that change.
-		if in.Recommit {
-			mf, ferr := r.UpdateMediaFileIdentity(ctx, repo.UpdateMediaFileIdentityParams{
-				ID:          *in.PreservedFileID,
-				MediaItemID: mediaItem.ID,
-				EpisodeID:   episodeIDPtr,
-			})
-			if ferr != nil {
-				return ferr
-			}
-			result.MediaItem = mediaItem
-			result.MediaFile = mf
-			return nil
-		}
-
+		// Point the file row at the matched identity. The row already
+		// exists for scan-discovered files; SetFileIdentity is a no-op-safe
+		// in-place UPDATE that preserves the file_state snapshot and import
+		// history. If it doesn't exist yet (a closed-world create path),
+		// CreateFile mints it at the stable id with identity already set.
 		var (
-			mf   model.MediaFile
+			f    model.File
 			ferr error
 		)
-		if in.PreservedFileID != nil {
-			mf, ferr = r.CreateMediaFileWithID(ctx, repo.CreateMediaFileWithIDParams{
-				ID:          *in.PreservedFileID,
-				LibraryID:   in.Library.ID,
+		if _, gerr := r.GetFile(ctx, in.FileID); gerr == nil {
+			f, ferr = r.SetFileIdentity(ctx, repo.SetFileIdentityParams{
+				ID:          in.FileID,
 				MediaItemID: mediaItem.ID,
 				EpisodeID:   episodeIDPtr,
+				Edition:     in.Edition,
+			})
+		} else if apperrors.IsNotFound(gerr) {
+			mediaItemID := mediaItem.ID
+			f, ferr = r.CreateFile(ctx, repo.CreateFileParams{
+				ID:          in.FileID,
+				LibraryID:   in.Library.ID,
 				Path:        in.RelPath,
+				MediaItemID: &mediaItemID,
+				EpisodeID:   episodeIDPtr,
+				Edition:     in.Edition,
 			})
 		} else {
-			mf, ferr = r.CreateMediaFile(ctx, repo.CreateMediaFileParams{
-				LibraryID:   in.Library.ID,
-				MediaItemID: mediaItem.ID,
-				EpisodeID:   episodeIDPtr,
-				Path:        in.RelPath,
-			})
+			return gerr
 		}
 		if ferr != nil {
 			return ferr
 		}
 
-		if _, serr := r.UpsertMediaFileState(ctx, repo.UpsertMediaFileStateParams{
-			MediaFileID: mf.ID,
-			FileExists:  true,
-			FileSize:    in.FileSize,
+		if _, serr := r.UpsertFileState(ctx, repo.UpsertFileStateParams{
+			FileID:    f.ID,
+			Exists:    true,
+			SizeBytes: in.FileSize,
+			OsdbHash:  in.OsdbHash,
 		}); serr != nil {
 			return serr
 		}
@@ -248,17 +242,17 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 		if method == "" {
 			method = "scan"
 		}
-		if _, ierr := r.CreateMediaFileImport(ctx, repo.CreateMediaFileImportParams{
-			MediaFileID: mf.ID,
-			Method:      method,
-			DestPath:    in.AbsPath,
-			Success:     true,
+		if _, ierr := r.CreateFileImport(ctx, repo.CreateFileImportParams{
+			FileID:   f.ID,
+			Method:   method,
+			DestPath: in.AbsPath,
+			Success:  true,
 		}); ierr != nil {
 			return ierr
 		}
 
 		result.MediaItem = mediaItem
-		result.MediaFile = mf
+		result.File = f
 		return nil
 	})
 	if err != nil {
@@ -271,8 +265,7 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 // commitMatchTitleAndYear sources the media_item display fields,
 // preferring the pre-fetched Item (from the matcher's validation step
 // or the manual handler's LookupByID) and falling back to a fresh TMDB
-// lookup. Mirrors what ScannerService.titleAndYear used to do; the
-// helper moved here so commitMatch has one home.
+// lookup.
 func commitMatchTitleAndYear(ctx context.Context, d commitMatchDeps, library model.Library, tmdbID int64, item *metadata.Item) (string, int32, error) {
 	if item != nil && item.Title != "" {
 		return item.Title, int32(item.Year), nil

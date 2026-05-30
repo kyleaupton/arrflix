@@ -14,7 +14,7 @@ import (
 const getCurrentMatchDecision = `-- name: GetCurrentMatchDecision :one
 select id, file_id, outcome, chosen_source, chosen_external_id,
        chosen_season, chosen_episode, chosen_edition, confidence,
-       resolvers_consulted, evidence, evidence_truncated,
+       ranked_candidates, resolvers_consulted, evidence, evidence_truncated,
        decided_by, decided_at, superseded_at, superseded_by
 from match_decision
 where file_id = $1
@@ -37,6 +37,7 @@ func (q *Queries) GetCurrentMatchDecision(ctx context.Context, fileID pgtype.UUI
 		&i.ChosenEpisode,
 		&i.ChosenEdition,
 		&i.Confidence,
+		&i.RankedCandidates,
 		&i.ResolversConsulted,
 		&i.Evidence,
 		&i.EvidenceTruncated,
@@ -59,6 +60,7 @@ insert into match_decision (
     chosen_episode,
     chosen_edition,
     confidence,
+    ranked_candidates,
     resolvers_consulted,
     evidence,
     evidence_truncated,
@@ -76,7 +78,8 @@ values (
     $9,
     $10,
     $11,
-    $12
+    $12,
+    $13
 )
 returning id
 `
@@ -90,6 +93,7 @@ type InsertMatchDecisionParams struct {
 	ChosenEpisode      *int32       `json:"chosen_episode"`
 	ChosenEdition      *string      `json:"chosen_edition"`
 	Confidence         float64      `json:"confidence"`
+	RankedCandidates   []byte       `json:"ranked_candidates"`
 	ResolversConsulted []byte       `json:"resolvers_consulted"`
 	Evidence           []byte       `json:"evidence"`
 	EvidenceTruncated  bool         `json:"evidence_truncated"`
@@ -108,6 +112,7 @@ func (q *Queries) InsertMatchDecision(ctx context.Context, arg InsertMatchDecisi
 		arg.ChosenEpisode,
 		arg.ChosenEdition,
 		arg.Confidence,
+		arg.RankedCandidates,
 		arg.ResolversConsulted,
 		arg.Evidence,
 		arg.EvidenceTruncated,
@@ -121,7 +126,7 @@ func (q *Queries) InsertMatchDecision(ctx context.Context, arg InsertMatchDecisi
 const listMatchDecisionHistoryForFile = `-- name: ListMatchDecisionHistoryForFile :many
 select id, file_id, outcome, chosen_source, chosen_external_id,
        chosen_season, chosen_episode, chosen_edition, confidence,
-       resolvers_consulted, evidence, evidence_truncated,
+       ranked_candidates, resolvers_consulted, evidence, evidence_truncated,
        decided_by, decided_at, superseded_at, superseded_by
 from match_decision
 where file_id = $1
@@ -150,6 +155,7 @@ func (q *Queries) ListMatchDecisionHistoryForFile(ctx context.Context, fileID pg
 			&i.ChosenEpisode,
 			&i.ChosenEdition,
 			&i.Confidence,
+			&i.RankedCandidates,
 			&i.ResolversConsulted,
 			&i.Evidence,
 			&i.EvidenceTruncated,

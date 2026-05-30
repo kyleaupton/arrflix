@@ -59,7 +59,7 @@ type SetImportTaskCompletedParams struct {
 	ID           uuid.UUID
 	DestPath     string
 	ImportMethod string
-	MediaFileID  uuid.UUID
+	FileID       uuid.UUID
 }
 
 // ScheduleImportTaskRetryParams is the domain-shaped input for
@@ -111,7 +111,7 @@ func toModelImportTask(row dbgen.ImportTask) model.ImportTask {
 		NameTemplateID: uuidFromPgtype(row.NameTemplateID),
 		DestPath:       row.DestPath,
 		ImportMethod:   row.ImportMethod,
-		MediaFileID:    uuidFromPgtype(row.MediaFileID),
+		FileID:         uuidFromPgtype(row.FileID),
 		AttemptCount:   row.AttemptCount,
 		MaxAttempts:    row.MaxAttempts,
 		NextRunAt:      row.NextRunAt,
@@ -141,7 +141,7 @@ func toModelImportTaskWithDetails(row dbgen.GetImportTaskWithDetailsRow) model.I
 			NameTemplateID: uuidFromPgtype(row.NameTemplateID),
 			DestPath:       row.DestPath,
 			ImportMethod:   row.ImportMethod,
-			MediaFileID:    uuidFromPgtype(row.MediaFileID),
+			FileID:         uuidFromPgtype(row.FileID),
 			AttemptCount:   row.AttemptCount,
 			MaxAttempts:    row.MaxAttempts,
 			NextRunAt:      row.NextRunAt,
@@ -184,7 +184,7 @@ func toModelImportTaskHistoryEntry(row dbgen.GetImportTaskHistoryRow) model.Impo
 			NameTemplateID: uuidFromPgtype(row.NameTemplateID),
 			DestPath:       row.DestPath,
 			ImportMethod:   row.ImportMethod,
-			MediaFileID:    uuidFromPgtype(row.MediaFileID),
+			FileID:         uuidFromPgtype(row.FileID),
 			AttemptCount:   row.AttemptCount,
 			MaxAttempts:    row.MaxAttempts,
 			NextRunAt:      row.NextRunAt,
@@ -369,7 +369,7 @@ func (r *Repository) SetImportTaskCompleted(ctx context.Context, params SetImpor
 		ID:           pgtypeFromUUID(params.ID),
 		DestPath:     &params.DestPath,
 		ImportMethod: &params.ImportMethod,
-		MediaFileID:  pgtypeFromUUIDOrNull(params.MediaFileID),
+		FileID:       pgtypeFromUUIDOrNull(params.FileID),
 	})
 	if err != nil {
 		return model.ImportTask{}, apperrors.FromPg(err, "mark import task %s completed", params.ID)

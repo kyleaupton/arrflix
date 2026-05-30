@@ -3,8 +3,8 @@
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/vue-query';
 
 import { client } from '../client.gen';
-import { authLogin, authMe, authPlexExchange, authSignup, bootstrapGet, downloadCandidatesDownloadMovie, downloadCandidatesDownloadSeries, downloadCandidatesListMovie, downloadCandidatesListSeries, downloadCandidatesPreviewMovie, downloadCandidatesPreviewSeries, downloadersCreate, downloadersDelete, downloadersGet, downloadersGetDefault, downloadersList, downloadersTest, downloadersTestConfig, downloadersUpdate, downloadJobsCancel, downloadJobsGet, downloadJobsHistory, downloadJobsList, downloadJobsListForMovie, downloadJobsListForSeries, downloadJobsListImportTasks, downloadJobsReimport, downloadJobsRetry, downloadJobsTimeline, feedGet, filesDetach, filesMatch, filesMatchDecision, filesUnmatch, filesystemBrowse, healthCheck, importTasksCancel, importTasksCounts, importTasksGet, importTasksHistory, importTasksList, importTasksReimport, importTasksTimeline, indexersAction, indexersDelete, indexersGet, indexersGetSchema, indexersListConfigured, indexersSave, indexersTestAll, indexersTestSaved, indexersTestUnsaved, indexersToggle, invitesCreate, invitesDelete, invitesList, librariesCreate, librariesDelete, librariesGet, librariesList, librariesScan, librariesUpdate, libraryList, mediaGetMovie, mediaGetPerson, mediaGetSeries, mediaSearch, nameTemplatesCreate, nameTemplatesDelete, nameTemplatesGet, nameTemplatesGetDefault, nameTemplatesList, nameTemplatesUpdate, type Options, policiesCreate, policiesCreateAction, policiesCreateRule, policiesDelete, policiesDeleteAction, policiesDeleteRule, policiesEvaluate, policiesGet, policiesGetAction, policiesGetFields, policiesGetRule, policiesList, policiesListActions, policiesUpdate, policiesUpdateAction, policiesUpdateRule, rolesList, settingsList, settingsPatch, setupInitialize, setupStatus, setupTmdb, unmatchedFilesDismiss, unmatchedFilesGet, unmatchedFilesList, unmatchedFilesMatch, unmatchedFilesRefresh, usersAssignRole, usersDelete, usersGet, usersGetProfile, usersList, usersUpdate, usersUpdatePassword, usersUpdateProfile, usersUpdateProfilePassword, versionGet } from '../sdk.gen';
-import type { AuthLoginData, AuthLoginError, AuthLoginResponse, AuthMeData, AuthPlexExchangeData, AuthPlexExchangeError, AuthPlexExchangeResponse, AuthSignupData, AuthSignupError, AuthSignupResponse, BootstrapGetData, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieError, DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesError, DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesListMovieData, DownloadCandidatesListSeriesData, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieError, DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesError, DownloadCandidatesPreviewSeriesResponse, DownloadersCreateData, DownloadersCreateError, DownloadersCreateResponse, DownloadersDeleteData, DownloadersDeleteError, DownloadersDeleteResponse, DownloadersGetData, DownloadersGetDefaultData, DownloadersListData, DownloadersTestConfigData, DownloadersTestConfigError, DownloadersTestConfigResponse, DownloadersTestData, DownloadersTestError, DownloadersTestResponse, DownloadersUpdateData, DownloadersUpdateError, DownloadersUpdateResponse, DownloadJobsCancelData, DownloadJobsCancelError, DownloadJobsCancelResponse, DownloadJobsGetData, DownloadJobsHistoryData, DownloadJobsListData, DownloadJobsListForMovieData, DownloadJobsListForSeriesData, DownloadJobsListImportTasksData, DownloadJobsReimportData, DownloadJobsReimportError, DownloadJobsReimportResponse, DownloadJobsRetryData, DownloadJobsRetryError, DownloadJobsRetryResponse, DownloadJobsTimelineData, FeedGetData, FilesDetachData, FilesDetachError, FilesDetachResponse, FilesMatchData, FilesMatchDecisionData, FilesMatchError, FilesMatchResponse, FilesUnmatchData, FilesUnmatchError, FilesUnmatchResponse, FilesystemBrowseData, HealthCheckData, ImportTasksCancelData, ImportTasksCancelError, ImportTasksCancelResponse, ImportTasksCountsData, ImportTasksGetData, ImportTasksHistoryData, ImportTasksListData, ImportTasksListError, ImportTasksListResponse, ImportTasksReimportData, ImportTasksReimportError, ImportTasksReimportResponse, ImportTasksTimelineData, IndexersActionData, IndexersActionError, IndexersDeleteData, IndexersDeleteError, IndexersDeleteResponse, IndexersGetData, IndexersGetSchemaData, IndexersListConfiguredData, IndexersSaveData, IndexersSaveError, IndexersSaveResponse, IndexersTestAllData, IndexersTestAllError, IndexersTestAllResponse, IndexersTestSavedData, IndexersTestSavedError, IndexersTestSavedResponse, IndexersTestUnsavedData, IndexersTestUnsavedError, IndexersTestUnsavedResponse, IndexersToggleData, IndexersToggleError, IndexersToggleResponse, InvitesCreateData, InvitesCreateError, InvitesCreateResponse, InvitesDeleteData, InvitesDeleteError, InvitesDeleteResponse, InvitesListData, LibrariesCreateData, LibrariesCreateError, LibrariesCreateResponse, LibrariesDeleteData, LibrariesDeleteError, LibrariesDeleteResponse, LibrariesGetData, LibrariesListData, LibrariesScanData, LibrariesScanError, LibrariesScanResponse, LibrariesUpdateData, LibrariesUpdateError, LibrariesUpdateResponse, LibraryListData, LibraryListError, LibraryListResponse, MediaGetMovieData, MediaGetPersonData, MediaGetSeriesData, MediaSearchData, MediaSearchError, MediaSearchResponse, NameTemplatesCreateData, NameTemplatesCreateError, NameTemplatesCreateResponse, NameTemplatesDeleteData, NameTemplatesDeleteError, NameTemplatesDeleteResponse, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesListData, NameTemplatesUpdateData, NameTemplatesUpdateError, NameTemplatesUpdateResponse, PoliciesCreateActionData, PoliciesCreateActionError, PoliciesCreateActionResponse, PoliciesCreateData, PoliciesCreateError, PoliciesCreateResponse, PoliciesCreateRuleData, PoliciesCreateRuleError, PoliciesCreateRuleResponse, PoliciesDeleteActionData, PoliciesDeleteActionError, PoliciesDeleteActionResponse, PoliciesDeleteData, PoliciesDeleteError, PoliciesDeleteResponse, PoliciesDeleteRuleData, PoliciesDeleteRuleError, PoliciesDeleteRuleResponse, PoliciesEvaluateData, PoliciesEvaluateError, PoliciesEvaluateResponse, PoliciesGetActionData, PoliciesGetData, PoliciesGetFieldsData, PoliciesGetRuleData, PoliciesListActionsData, PoliciesListData, PoliciesUpdateActionData, PoliciesUpdateActionError, PoliciesUpdateActionResponse, PoliciesUpdateData, PoliciesUpdateError, PoliciesUpdateResponse, PoliciesUpdateRuleData, PoliciesUpdateRuleError, PoliciesUpdateRuleResponse, RolesListData, SettingsListData, SettingsPatchData, SettingsPatchError, SettingsPatchResponse, SetupInitializeData, SetupInitializeError, SetupInitializeResponse2, SetupStatusData, SetupTmdbData, SetupTmdbError, SetupTmdbResponse2, UnmatchedFilesDismissData, UnmatchedFilesDismissError, UnmatchedFilesDismissResponse, UnmatchedFilesGetData, UnmatchedFilesListData, UnmatchedFilesListError, UnmatchedFilesListResponse, UnmatchedFilesMatchData, UnmatchedFilesMatchError, UnmatchedFilesMatchResponse2, UnmatchedFilesRefreshData, UnmatchedFilesRefreshError, UnmatchedFilesRefreshResponse, UsersAssignRoleData, UsersAssignRoleError, UsersAssignRoleResponse, UsersDeleteData, UsersDeleteError, UsersDeleteResponse, UsersGetData, UsersGetProfileData, UsersListData, UsersUpdateData, UsersUpdateError, UsersUpdatePasswordData, UsersUpdatePasswordError, UsersUpdatePasswordResponse, UsersUpdateProfileData, UsersUpdateProfileError, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordError, UsersUpdateProfilePasswordResponse, UsersUpdateProfileResponse, UsersUpdateResponse, VersionGetData } from '../types.gen';
+import { authLogin, authMe, authPlexExchange, authSignup, bootstrapGet, downloadCandidatesDownloadMovie, downloadCandidatesDownloadSeries, downloadCandidatesListMovie, downloadCandidatesListSeries, downloadCandidatesPreviewMovie, downloadCandidatesPreviewSeries, downloadersCreate, downloadersDelete, downloadersGet, downloadersGetDefault, downloadersList, downloadersTest, downloadersTestConfig, downloadersUpdate, downloadJobsCancel, downloadJobsGet, downloadJobsHistory, downloadJobsList, downloadJobsListForMovie, downloadJobsListForSeries, downloadJobsListImportTasks, downloadJobsReimport, downloadJobsRetry, downloadJobsTimeline, feedGet, filesDetach, filesMatch, filesMatchDecision, filesUnmatch, filesystemBrowse, healthCheck, importTasksCancel, importTasksCounts, importTasksGet, importTasksHistory, importTasksList, importTasksReimport, importTasksTimeline, indexersAction, indexersDelete, indexersGet, indexersGetSchema, indexersListConfigured, indexersSave, indexersTestAll, indexersTestSaved, indexersTestUnsaved, indexersToggle, invitesCreate, invitesDelete, invitesList, librariesCreate, librariesDelete, librariesGet, librariesList, librariesScan, librariesUpdate, libraryList, mediaGetMovie, mediaGetPerson, mediaGetSeries, mediaSearch, nameTemplatesCreate, nameTemplatesDelete, nameTemplatesGet, nameTemplatesGetDefault, nameTemplatesList, nameTemplatesUpdate, type Options, policiesCreate, policiesCreateAction, policiesCreateRule, policiesDelete, policiesDeleteAction, policiesDeleteRule, policiesEvaluate, policiesGet, policiesGetAction, policiesGetFields, policiesGetRule, policiesList, policiesListActions, policiesUpdate, policiesUpdateAction, policiesUpdateRule, rolesList, settingsList, settingsPatch, setupInitialize, setupStatus, setupTmdb, unmatchedFilesGet, unmatchedFilesList, usersAssignRole, usersDelete, usersGet, usersGetProfile, usersList, usersUpdate, usersUpdatePassword, usersUpdateProfile, usersUpdateProfilePassword, versionGet } from '../sdk.gen';
+import type { AuthLoginData, AuthLoginError, AuthLoginResponse, AuthMeData, AuthPlexExchangeData, AuthPlexExchangeError, AuthPlexExchangeResponse, AuthSignupData, AuthSignupError, AuthSignupResponse, BootstrapGetData, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieError, DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesError, DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesListMovieData, DownloadCandidatesListSeriesData, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieError, DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesError, DownloadCandidatesPreviewSeriesResponse, DownloadersCreateData, DownloadersCreateError, DownloadersCreateResponse, DownloadersDeleteData, DownloadersDeleteError, DownloadersDeleteResponse, DownloadersGetData, DownloadersGetDefaultData, DownloadersListData, DownloadersTestConfigData, DownloadersTestConfigError, DownloadersTestConfigResponse, DownloadersTestData, DownloadersTestError, DownloadersTestResponse, DownloadersUpdateData, DownloadersUpdateError, DownloadersUpdateResponse, DownloadJobsCancelData, DownloadJobsCancelError, DownloadJobsCancelResponse, DownloadJobsGetData, DownloadJobsHistoryData, DownloadJobsListData, DownloadJobsListForMovieData, DownloadJobsListForSeriesData, DownloadJobsListImportTasksData, DownloadJobsReimportData, DownloadJobsReimportError, DownloadJobsReimportResponse, DownloadJobsRetryData, DownloadJobsRetryError, DownloadJobsRetryResponse, DownloadJobsTimelineData, FeedGetData, FilesDetachData, FilesDetachError, FilesDetachResponse, FilesMatchData, FilesMatchDecisionData, FilesMatchError, FilesMatchResponse, FilesUnmatchData, FilesUnmatchError, FilesUnmatchResponse, FilesystemBrowseData, HealthCheckData, ImportTasksCancelData, ImportTasksCancelError, ImportTasksCancelResponse, ImportTasksCountsData, ImportTasksGetData, ImportTasksHistoryData, ImportTasksListData, ImportTasksListError, ImportTasksListResponse, ImportTasksReimportData, ImportTasksReimportError, ImportTasksReimportResponse, ImportTasksTimelineData, IndexersActionData, IndexersActionError, IndexersDeleteData, IndexersDeleteError, IndexersDeleteResponse, IndexersGetData, IndexersGetSchemaData, IndexersListConfiguredData, IndexersSaveData, IndexersSaveError, IndexersSaveResponse, IndexersTestAllData, IndexersTestAllError, IndexersTestAllResponse, IndexersTestSavedData, IndexersTestSavedError, IndexersTestSavedResponse, IndexersTestUnsavedData, IndexersTestUnsavedError, IndexersTestUnsavedResponse, IndexersToggleData, IndexersToggleError, IndexersToggleResponse, InvitesCreateData, InvitesCreateError, InvitesCreateResponse, InvitesDeleteData, InvitesDeleteError, InvitesDeleteResponse, InvitesListData, LibrariesCreateData, LibrariesCreateError, LibrariesCreateResponse, LibrariesDeleteData, LibrariesDeleteError, LibrariesDeleteResponse, LibrariesGetData, LibrariesListData, LibrariesScanData, LibrariesScanError, LibrariesScanResponse, LibrariesUpdateData, LibrariesUpdateError, LibrariesUpdateResponse, LibraryListData, LibraryListError, LibraryListResponse, MediaGetMovieData, MediaGetPersonData, MediaGetSeriesData, MediaSearchData, MediaSearchError, MediaSearchResponse, NameTemplatesCreateData, NameTemplatesCreateError, NameTemplatesCreateResponse, NameTemplatesDeleteData, NameTemplatesDeleteError, NameTemplatesDeleteResponse, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesListData, NameTemplatesUpdateData, NameTemplatesUpdateError, NameTemplatesUpdateResponse, PoliciesCreateActionData, PoliciesCreateActionError, PoliciesCreateActionResponse, PoliciesCreateData, PoliciesCreateError, PoliciesCreateResponse, PoliciesCreateRuleData, PoliciesCreateRuleError, PoliciesCreateRuleResponse, PoliciesDeleteActionData, PoliciesDeleteActionError, PoliciesDeleteActionResponse, PoliciesDeleteData, PoliciesDeleteError, PoliciesDeleteResponse, PoliciesDeleteRuleData, PoliciesDeleteRuleError, PoliciesDeleteRuleResponse, PoliciesEvaluateData, PoliciesEvaluateError, PoliciesEvaluateResponse, PoliciesGetActionData, PoliciesGetData, PoliciesGetFieldsData, PoliciesGetRuleData, PoliciesListActionsData, PoliciesListData, PoliciesUpdateActionData, PoliciesUpdateActionError, PoliciesUpdateActionResponse, PoliciesUpdateData, PoliciesUpdateError, PoliciesUpdateResponse, PoliciesUpdateRuleData, PoliciesUpdateRuleError, PoliciesUpdateRuleResponse, RolesListData, SettingsListData, SettingsPatchData, SettingsPatchError, SettingsPatchResponse, SetupInitializeData, SetupInitializeError, SetupInitializeResponse2, SetupStatusData, SetupTmdbData, SetupTmdbError, SetupTmdbResponse2, UnmatchedFilesGetData, UnmatchedFilesListData, UnmatchedFilesListError, UnmatchedFilesListResponse, UsersAssignRoleData, UsersAssignRoleError, UsersAssignRoleResponse, UsersDeleteData, UsersDeleteError, UsersDeleteResponse, UsersGetData, UsersGetProfileData, UsersListData, UsersUpdateData, UsersUpdateError, UsersUpdatePasswordData, UsersUpdatePasswordError, UsersUpdatePasswordResponse, UsersUpdateProfileData, UsersUpdateProfileError, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordError, UsersUpdateProfilePasswordResponse, UsersUpdateProfileResponse, UsersUpdateResponse, VersionGetData } from '../types.gen';
 
 /**
  * Login
@@ -1985,8 +1985,8 @@ export const setupTmdbMutation = (options?: Partial<Options<SetupTmdbData>>): Us
 export const unmatchedFilesListQueryKey = (options?: Options<UnmatchedFilesListData>) => createQueryKey('unmatchedFilesList', options);
 
 /**
- * List unmatched files
- * Paginated list of files that couldn't be auto-matched to media items. Optional libraryId filter.
+ * List files needing review
+ * Paginated list of files with no resolved identity (media_item_id IS NULL). Optional libraryId filter. Match/un-match/detach are on /api/v1/files/{fileId}*.
  */
 export const unmatchedFilesListOptions = (options?: Options<UnmatchedFilesListData>) => {
     return queryOptions({
@@ -2006,8 +2006,8 @@ export const unmatchedFilesListOptions = (options?: Options<UnmatchedFilesListDa
 export const unmatchedFilesListInfiniteQueryKey = (options?: Options<UnmatchedFilesListData>): QueryKey<Options<UnmatchedFilesListData>> => createQueryKey('unmatchedFilesList', options, true);
 
 /**
- * List unmatched files
- * Paginated list of files that couldn't be auto-matched to media items. Optional libraryId filter.
+ * List files needing review
+ * Paginated list of files with no resolved identity (media_item_id IS NULL). Optional libraryId filter. Match/un-match/detach are on /api/v1/files/{fileId}*.
  */
 export const unmatchedFilesListInfiniteOptions = (options?: Options<UnmatchedFilesListData>) => {
     return infiniteQueryOptions<UnmatchedFilesListResponse, UnmatchedFilesListError, InfiniteData<UnmatchedFilesListResponse>, QueryKey<Options<UnmatchedFilesListData>>, number | Pick<QueryKey<Options<UnmatchedFilesListData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
@@ -2036,7 +2036,7 @@ export const unmatchedFilesListInfiniteOptions = (options?: Options<UnmatchedFil
 export const unmatchedFilesGetQueryKey = (options: Options<UnmatchedFilesGetData>) => createQueryKey('unmatchedFilesGet', options);
 
 /**
- * Get unmatched file
+ * Get a file needing review
  */
 export const unmatchedFilesGetOptions = (options: Options<UnmatchedFilesGetData>) => {
     return queryOptions({
@@ -2051,60 +2051,6 @@ export const unmatchedFilesGetOptions = (options: Options<UnmatchedFilesGetData>
         },
         queryKey: unmatchedFilesGetQueryKey(options)
     });
-};
-
-/**
- * Dismiss unmatched file
- * Mark an unmatched file as resolved without matching it.
- */
-export const unmatchedFilesDismissMutation = (options?: Partial<Options<UnmatchedFilesDismissData>>): UseMutationOptions<UnmatchedFilesDismissResponse, UnmatchedFilesDismissError, Options<UnmatchedFilesDismissData>> => {
-    const mutationOptions: UseMutationOptions<UnmatchedFilesDismissResponse, UnmatchedFilesDismissError, Options<UnmatchedFilesDismissData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await unmatchedFilesDismiss({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-/**
- * Match unmatched file to media item
- * Manually matches an unmatched file to a TMDB-identified media item. Returns 409 if the file is already resolved.
- */
-export const unmatchedFilesMatchMutation = (options?: Partial<Options<UnmatchedFilesMatchData>>): UseMutationOptions<UnmatchedFilesMatchResponse2, UnmatchedFilesMatchError, Options<UnmatchedFilesMatchData>> => {
-    const mutationOptions: UseMutationOptions<UnmatchedFilesMatchResponse2, UnmatchedFilesMatchError, Options<UnmatchedFilesMatchData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await unmatchedFilesMatch({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-/**
- * Refresh match suggestions
- * Regenerate the list of suggested matches for an unmatched file.
- */
-export const unmatchedFilesRefreshMutation = (options?: Partial<Options<UnmatchedFilesRefreshData>>): UseMutationOptions<UnmatchedFilesRefreshResponse, UnmatchedFilesRefreshError, Options<UnmatchedFilesRefreshData>> => {
-    const mutationOptions: UseMutationOptions<UnmatchedFilesRefreshResponse, UnmatchedFilesRefreshError, Options<UnmatchedFilesRefreshData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await unmatchedFilesRefresh({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
 };
 
 export const usersListQueryKey = (options?: Options<UsersListData>) => createQueryKey('usersList', options);

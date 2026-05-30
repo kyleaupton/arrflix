@@ -36,6 +36,7 @@ type MatchDecision struct {
 	ChosenEpisode      *int32          `json:"chosenEpisode,omitempty"`
 	ChosenEdition      *string         `json:"chosenEdition,omitempty"`
 	Confidence         float64         `json:"confidence"`
+	RankedCandidates   json.RawMessage `json:"rankedCandidates,omitempty"`
 	ResolversConsulted json.RawMessage `json:"resolversConsulted"`
 	Evidence           json.RawMessage `json:"evidence"`
 	EvidenceTruncated  bool            `json:"evidenceTruncated"`

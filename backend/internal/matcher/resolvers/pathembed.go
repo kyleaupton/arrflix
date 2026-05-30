@@ -29,14 +29,10 @@ import (
 //
 // Episode numbering (S##E## anywhere in the path) is extracted opportunistically
 // and attached to the candidate when present; movies just leave it nil.
-//
-// Phase-3 cutover: `internal/identity/` and its callers (scan.go) are still
-// live; the regex below is a *port* of that package's logic, copied
-// verbatim so the original can be deleted cleanly when Phase 3 lands.
 type PathEmbed struct{}
 
 // embeddedIDPattern matches TRaSH-style provider IDs in a path. The
-// expression is a verbatim port of internal/identity/identity.go's
+// expression is ported from the former internal/identity/identity.go's
 // `(tvdb|tmdb|imdb)-((?:tt)?\d+)` — it deliberately doesn't anchor on
 // brackets or braces so both `{tmdb-X}` and `[tmdb-X]` shapes match,
 // matching the existing test corpus and the TRaSH naming convention.

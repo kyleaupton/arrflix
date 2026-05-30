@@ -389,9 +389,9 @@ func (s *MediaService) GetMovieDetail(ctx context.Context, tmdbID int64) (model.
 		local = false
 	}
 
-	var files []model.MediaFileWithState
+	var files []model.FileWithState
 	if local {
-		files, _ = s.repo.ListMediaFilesForItem(ctx, mediaItem.ID)
+		files, _ = s.repo.ListFilesForItem(ctx, mediaItem.ID)
 	}
 
 	fileInfos := buildFileInfos(files)
@@ -546,9 +546,9 @@ func (s *MediaService) GetSeriesDetail(ctx context.Context, tmdbID int64) (model
 		local = false
 	}
 
-	var files []model.MediaFileWithState
+	var files []model.FileWithState
 	if local {
-		files, _ = s.repo.ListMediaFilesForItem(ctx, mediaItem.ID)
+		files, _ = s.repo.ListFilesForItem(ctx, mediaItem.ID)
 	}
 
 	fileInfos, availability := buildFileInfoAndAvailability(files)
@@ -727,7 +727,7 @@ func (s *MediaService) buildFileInfosFromDownloadJobsForSeries(ctx context.Conte
 		path := job.CandidateTitle
 
 		fileInfos = append(fileInfos, model.FileInfo{
-			ID:            "", // No media_file exists yet
+			ID:            "", // No file row exists yet
 			LibraryID:     libID,
 			Path:          path,
 			Status:        "downloading",
@@ -771,7 +771,7 @@ func (s *MediaService) GetPersonDetail(ctx context.Context, tmdbID int64) (model
 	}, nil
 }
 
-func buildFileInfos(files []model.MediaFileWithState) []model.FileInfo {
+func buildFileInfos(files []model.FileWithState) []model.FileInfo {
 	fileInfos := make([]model.FileInfo, 0, len(files))
 
 	for _, f := range files {
@@ -786,7 +786,7 @@ func buildFileInfos(files []model.MediaFileWithState) []model.FileInfo {
 		}
 		// Derive status from file_exists field
 		status := "available"
-		if f.FileExists != nil && !*f.FileExists {
+		if f.Exists != nil && !*f.Exists {
 			status = "missing"
 		}
 		fileInfos = append(fileInfos, model.FileInfo{
@@ -802,7 +802,7 @@ func buildFileInfos(files []model.MediaFileWithState) []model.FileInfo {
 	return fileInfos
 }
 
-func buildFileInfoAndAvailability(files []model.MediaFileWithState) ([]model.FileInfo, model.Availability) {
+func buildFileInfoAndAvailability(files []model.FileWithState) ([]model.FileInfo, model.Availability) {
 	fileInfos := make([]model.FileInfo, 0, len(files))
 	libAgg := map[string]struct {
 		count  int
@@ -821,7 +821,7 @@ func buildFileInfoAndAvailability(files []model.MediaFileWithState) ([]model.Fil
 		}
 		// Derive status from file_exists field
 		status := "available"
-		if f.FileExists != nil && !*f.FileExists {
+		if f.Exists != nil && !*f.Exists {
 			status = "missing"
 		}
 		fileInfos = append(fileInfos, model.FileInfo{
@@ -916,7 +916,7 @@ func (s *MediaService) buildFileInfosFromDownloadJobs(ctx context.Context, tmdbI
 		path := job.CandidateTitle
 
 		fileInfos = append(fileInfos, model.FileInfo{
-			ID:            "", // No media_file exists yet
+			ID:            "", // No file row exists yet
 			LibraryID:     libID,
 			Path:          path,
 			Status:        "downloading",

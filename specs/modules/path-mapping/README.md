@@ -23,7 +23,7 @@ It is the explicit home for what the rest of the system has so far assumed (down
 Three reasons it can't live on the existing connection specs:
 
 1. **It spans actors.** A volume is shared by Arrflix _and_ a downloader _and_ a media server. "Downloads and library are on different mounts" is not a fact about any single connection, so it can't live on the downloader edit screen the way Sonarr's per-downloader "Remote Path Mappings" do. It needs a layer that sits below all of them.
-2. **It's already being solved piecemeal, inconsistently.** Import implicitly assumes the downloader's `content_path` is directly accessible (a shared mount). The [media-server spec](../media-server/README.md#correlation-mapping-a-server-item-back-to-our-media_file) proposes a per-`(library, media_server)` path-mapping override. Those are the _same problem_ solved two different ways. This spec unifies them: the media-server override becomes a volume lookup and disappears as a bespoke field.
+2. **It's already being solved piecemeal, inconsistently.** Import implicitly assumes the downloader's `content_path` is directly accessible (a shared mount). The [media-server spec](../media-server/README.md#correlation-mapping-a-server-item-back-to-our-file) proposes a per-`(library, media_server)` path-mapping override. Those are the _same problem_ solved two different ways. This spec unifies them: the media-server override becomes a volume lookup and disappears as a bespoke field.
 3. **It's the natural home for the hardlink-correctness guard** — the thing that makes the project's "efficient storage" promise real instead of aspirational. That reasoning is cross-actor (download dir vs library) and belongs nowhere else.
 
 ## The model
@@ -66,10 +66,10 @@ Every cross-frame path question is one `translate` call:
 | - | -------- | ---- | ------- |
 | 1 | Downloader → Arrflix (import) | `translate(qbit, arrflix, content_path)` | `/downloads/torrents/X/X.mkv` → `/data/torrents/X/X.mkv` — then hardlink into `/data/movies/…` |
 | 2 | Arrflix → Downloader (`SavePath`) | `translate(arrflix, qbit, save_dir)` | `/data/torrents` → `/downloads/torrents` — set as [`AddRequest.SavePath`](../downloaders/README.md#addrequest-shape) |
-| 3 | Media server → Arrflix (correlation) | `translate(plex, arrflix, webhook_path)` | `/media/movies/X (2024)/X.mkv` → `/data/movies/X (2024)/X.mkv` — match `media_file.path` |
+| 3 | Media server → Arrflix (correlation) | `translate(plex, arrflix, webhook_path)` | `/media/movies/X (2024)/X.mkv` → `/data/movies/X (2024)/X.mkv` — match `file.path` |
 | 4 | Arrflix → Media server (targeted refresh) | `translate(arrflix, plex, import_dir)` | `/data/movies/X (2024)` → `/media/movies/X (2024)` — hand to Plex partial-refresh |
 
-Boundary 3 is the case the [media-server spec](../media-server/README.md#correlation-mapping-a-server-item-back-to-our-media_file) currently solves with a per-`(library, server)` override. Here it is a volume lookup, so that bespoke field is **superseded** — correlation resolves the server-reported path to canonical and matches `media_file`, with the existing basename fallback unchanged.
+Boundary 3 is the case the [media-server spec](../media-server/README.md#correlation-mapping-a-server-item-back-to-our-file) currently solves with a per-`(library, server)` override. Here it is a volume lookup, so that bespoke field is **superseded** — correlation resolves the server-reported path to canonical and matches `file`, with the existing basename fallback unchanged.
 
 ### Hardlink feasibility — the first-class output
 
@@ -162,7 +162,7 @@ The operator therefore chooses among three postures over the _same_ data: **full
 **Referenced, owned elsewhere:**
 
 - **`downloader`** / **`media_server`** — [downloaders](../downloaders/README.md) / [media-server](../media-server/README.md). An alias references one.
-- **`library`** root paths, `media_file.path`, `download_job.content_path` — resolved _through_ the volume layer; not owned here.
+- **`library`** root paths, `file.path`, `download_job.content_path` — resolved _through_ the volume layer; not owned here.
 
 ## Open questions
 

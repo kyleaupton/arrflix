@@ -25,7 +25,7 @@ Once matching becomes its own subsystem, scan's responsibilities tighten:
 | ---------------------------- | ----------------------------------------------------------------------------------------------------- |
 | **Discovery**                | Walk the filesystem under each library root; produce a list of media files                            |
 | **Reconciliation**           | Detect files in DB that no longer exist on disk; detect size/mtime drift on present files            |
-| **State refresh**            | Update `media_file_state.file_exists`, `last_verified_at`, file_size as appropriate                  |
+| **State refresh**            | Update `file_state.exists`, `last_verified_at`, size as appropriate                                  |
 | **Cheap metadata capture**   | Compute OSDb hash on first discovery; emit "needs probe" events for ffprobe metadata                  |
 | **Event emission**           | Publish file events to the matcher (new files), hygiene (integrity findings), and [realtime](../realtime/README.md) (live progress to clients) |
 
@@ -46,14 +46,14 @@ The single most important shift from v0 is that scan needs to notice when files 
 Greenfield scan does two passes per run:
 
 ```
-1. DB pass: list all media_file rows scoped to this library (and unmatched_file rows)
+1. DB pass: list all file rows scoped to this library (identified or not)
 2. FS pass: walk the library rootpath, collect every media file
 
 3. Resolve the diff:
    ┌─────────────────────────────────────────────────────────────────────┐
    │  In DB + on disk   → update last_verified_at, check size/mtime drift │
    │  Not in DB, on disk → emit FileEvent → matcher.MatchBatch            │
-   │  In DB, not on disk → mark media_file_state.file_exists = false      │
+   │  In DB, not on disk → mark file_state.exists = false                 │
    │                       emit integrity/orphan-db-row finding           │
    └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -86,7 +86,7 @@ Caveats:
 
 ### How Verify actually works
 
-Verify never walks the FS. It iterates the known `media_file` rows, `stat()`s each one, and:
+Verify never walks the FS. It iterates the known `file` rows, `stat()`s each one, and:
 
 - File present, size matches → update `last_verified_at`
 - File present, size differs → flag as drifted; emit hygiene finding
@@ -167,7 +167,7 @@ Two operations to do during the walk that pay back hugely downstream.
 
 ### OSDb hash — always, unconditionally
 
-128 KiB total disk read per file (the OpenSubtitles hash sums file size + first 64 KiB + last 64 KiB). Trivial cost. Store on `media_file.osdb_hash`. Pays back in:
+128 KiB total disk read per file (the OpenSubtitles hash sums file size + first 64 KiB + last 64 KiB). Trivial cost. Store on `file_state.osdb_hash` (every file, identified or not). Pays back in:
 
 - **Matching v2** — OpenSubtitles resolver consumes stored hashes for near-100%-confidence identification
 - **Hygiene v1** — `layout/duplicate-files` becomes a fast `GROUP BY osdb_hash` lookup, not a fuzzy comparison
@@ -188,7 +188,7 @@ Foundation for several quality-related hygiene rules (`quality/bitrate-outlier`,
 
 Two challenges: costs hundreds of ms per file (slow over thousands of files), and it requires `ffprobe` in the container (already present for downloader/transcode pipelines).
 
-Solution: run ffprobe **lazily and out-of-band**. Scan emits a "needs probe" event for each new file. A separate `MediaProbeWorker` consumes events at its own pace and writes into a `media_file_probe` table. Scan never blocks on probe.
+Solution: run ffprobe **lazily and out-of-band**. Scan emits a "needs probe" event for each new file. A separate `MediaProbeWorker` consumes events at its own pace and writes into a `file_probe` table. Scan never blocks on probe.
 
 Probe re-runs only when explicitly requested (codec/bitrate of a static file don't change). On re-match or re-import, the file path may change but the probe metadata travels with the underlying file (keyed on osdb_hash if available, else file path).
 
@@ -212,14 +212,15 @@ Scan is mostly plumbing, but a few well-placed features make it feel like a thin
 | Neighbor                                              | How scan interacts                                                                                                |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | **[Matching](../matching/README.md)**                 | Scan emits `FileEvent`s for new files → `MatcherService.MatchBatch` consumes batches. Scan reads matcher's writes for dedup. |
+| **[Files](../files/README.md)**                       | Scan creates and reconciles `file` + `file_state` rows. The file is the unit scan discovers, dedups against, and marks present/missing — identified or not. |
 | **[Hygiene](../hygiene/README.md)**                   | Scan opportunistically populates `hygiene_finding` rows during walks (broken hardlinks, orphan rows, phantom files, drift). |
-| **[Hardlinks](../hardlinks/README.md)**               | Scan is the capture point: stamps `st_dev` / `st_ino` / `st_nlink` on `media_file_state` during the stats it already does; the exact `nlink` predicate replaces the old drift heuristic for broken-link detection. |
+| **[Hardlinks](../hardlinks/README.md)**               | Scan is the capture point: stamps `st_dev` / `st_ino` / `st_nlink` on `file_state` during the stats it already does; the exact `nlink` predicate replaces the old drift heuristic for broken-link detection. |
 | **[Metadata](../metadata/README.md)**                 | New matches trigger enrichment downstream — scan itself is metadata-agnostic.                                      |
 | **[Tracking / wants](../tracking/README.md)**         | A file appearing on disk (drop-in or scan-discovered) can satisfy an open want via matcher's drop-in flow. Scan doesn't talk to tracking directly. |
 | **Import**                                            | Import is the *write* side; scan is the *read* side. Together they keep DB and FS in sync. Post-import targeted scan confirms the file landed. |
-| **Downloader (qbittorrent etc.)**                     | Post-grab webhook fires a targeted scan. Future: attach torrent metadata (info-hash) to the resulting `media_file` rows. |
+| **Downloader (qbittorrent etc.)**                     | Post-grab webhook fires a targeted scan. Future: attach torrent metadata (info-hash) to the resulting `file` rows. |
 | **Plex / Jellyfin**                                   | Plex `library.new` webhook from Story 1 confirms a file actually appeared in Plex — orthogonal to scan, but they share the "file is now real" moment. |
-| **MediaProbeWorker** (new)                            | Scan emits "needs probe" events; probe worker consumes async; populates ffprobe metadata into `media_file_probe`. |
+| **MediaProbeWorker** (new)                            | Scan emits "needs probe" events; probe worker consumes async; populates ffprobe metadata into `file_probe`. |
 | **IntegrityVerifyWorker** (new)                       | Walks no files; `stat()`s known files; updates `last_verified_at`; fires hygiene findings on stat errors.        |
 | **[Realtime](../realtime/README.md)**                 | Live progress events (current file, files-per-second, ETA) emitted continuously during scan runs.                |
 
@@ -240,12 +241,11 @@ A handful of FS realities that need explicit handling:
 
 Iteration 1 doesn't pin column types, but sketching the touch points clarifies the model:
 
-- `media_file` — added (on new discoveries), kept (on present files), unchanged (on missing — see state below)
-- `media_file_state` — `file_exists`, `file_size`, `last_verified_at`, possibly `mtime` for future Diff heuristics, and `st_dev` / `st_ino` / `st_nlink` captured on every `stat()` (zero extra I/O — same `Stat_t`) for the [hardlinks](../hardlinks/README.md) reference graph
-- `media_file.osdb_hash` — populated on first discovery; never recomputed unless drift detected
-- `media_file_probe` (new table) — ffprobe output keyed on `media_file_id`; populated by `MediaProbeWorker`
+- `file` — added (on new discoveries, identity NULL until the matcher resolves it), kept (on present files), unchanged (on missing — see state below). The unit scan tracks; owned by [files](../files/README.md)
+- `file_state` — `exists`, `size_bytes`, `last_verified_at`, possibly `mtime` for future Diff heuristics, and `st_dev` / `st_ino` / `st_nlink` captured on every `stat()` (zero extra I/O — same `Stat_t`) for the [hardlinks](../hardlinks/README.md) reference graph
+- `file_state.osdb_hash` — populated on first discovery (every file, identified or not); never recomputed unless drift detected
+- `file_probe` (new table) — ffprobe output keyed on `file_id`; populated by `MediaProbeWorker`
 - `scan_run` (new table) — per-scan audit row (mode, trigger, started/completed, counts, errors)
-- `unmatched_file` — written via matcher, but scan's "new file" events feed it
 - `hygiene_finding` — opportunistic writes when scan notices an integrity issue mid-walk
 
 Data shapes resolve in iteration 2.
@@ -270,7 +270,7 @@ Data shapes resolve in iteration 2.
 
 ## What we're explicitly not deciding here
 
-- Exact table names, columns, indexes for `scan_run`, `media_file_probe`, or `media_file_state` extensions
+- Exact table names, columns, indexes for `scan_run`, `file_probe`, or `file_state` extensions
 - API endpoint shapes for scan triggers and progress queries
 - [Realtime](../realtime/README.md) event payload shapes (vocabulary only, no payloads)
 - Library multi-root vs grouping (deferred to libraries spec)

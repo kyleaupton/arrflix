@@ -18,15 +18,14 @@ import (
 
 // ----- Handler -----
 
-// MatchDecisions exposes the Phase-4 file-action endpoints:
+// MatchDecisions exposes the file-action endpoints:
 //   - POST   /api/v1/files/{fileId}/match            — re-match + match-by-ID
 //   - POST   /api/v1/files/{fileId}/unmatch          — back to inbox
 //   - POST   /api/v1/files/{fileId}/detach           — out of library
 //   - GET    /api/v1/files/{fileId}/match-decision   — evidence read
 //
 // The {fileId} path component is the stable file id surfaced by
-// matcher.FileRef.ID — probed against media_file then unmatched_file
-// by the underlying service (the same join key the scan loop uses).
+// matcher.FileRef.ID — a lookup against the file table.
 type MatchDecisions struct{ svc *service.Services }
 
 func NewMatchDecisions(s *service.Services) *MatchDecisions { return &MatchDecisions{svc: s} }
@@ -142,7 +141,7 @@ func userIDFromContext(ctx context.Context, op string) (uuid.UUID, error) {
 
 // FileMatchBody is the unified request body for /match. The endpoint
 // serves both spec actions — match-by-ID (from the inbox) and re-match
-// (changing identity on a media_file).
+// (changing identity on a file).
 type FileMatchBody struct {
 	External struct {
 		Source     string `json:"source" required:"true" enum:"tmdb,imdb,tvdb" doc:"External provider"`
@@ -153,7 +152,7 @@ type FileMatchBody struct {
 }
 
 type MatchDecisionsMatchInput struct {
-	FileID uuid.UUID `path:"fileId" format:"uuid" doc:"Stable file id (media_file or unmatched_file row)"`
+	FileID uuid.UUID `path:"fileId" format:"uuid" doc:"Stable file id (file row)"`
 	Body   FileMatchBody
 }
 
@@ -302,7 +301,7 @@ func (h *MatchDecisions) RegisterHumachi(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/files/{fileId}/match",
 		Summary:     "Match a file to a media identity",
-		Description: "Unified endpoint for match-by-ID (file currently in the inbox) and re-match (changing identity on an existing media_file). Validates the supplied (source, externalId) against the metadata provider; on a 404 returns NotFound and writes no decision row. On success, writes a confident match_decision row, supersedes the prior, and applies the persistence side-effect (delete unmatched_file + create media_file, or update media_file identity).",
+		Description: "Unified endpoint for match-by-ID (file currently in the inbox) and re-match (changing identity on an existing file). Validates the supplied (source, externalId) against the metadata provider; on a 404 returns NotFound and writes no decision row. On success, writes a confident match_decision row, supersedes the prior, and sets the file's identity.",
 		Tags:        []string{"files"},
 		Errors:      errs(errsRead, errsWrite, errsUpstream),
 	}, h.Match)
@@ -312,7 +311,7 @@ func (h *MatchDecisions) RegisterHumachi(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/files/{fileId}/unmatch",
 		Summary:     "Un-match a file (back to the inbox)",
-		Description: "Writes a no_match decision and transitions the file from media_file to unmatched_file with no suggestions. File stays on disk. Idempotent: returns the current decision unchanged when the file is already unmatched.",
+		Description: "Writes a no_match decision and clears the file's identity, leaving no suggestions. File stays on disk. Idempotent: returns the current decision unchanged when the file is already unmatched.",
 		Tags:        []string{"files"},
 		Errors:      errsRead,
 	}, h.Unmatch)

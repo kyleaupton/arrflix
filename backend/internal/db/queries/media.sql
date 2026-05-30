@@ -89,63 +89,96 @@ do update set title = excluded.title,
               tvdb_id = excluded.tvdb_id
 returning *;
 
--- Files (removed season_id and status)
+-- Files. Identity (media_item_id, episode_id) is nullable; "unmatched" is
+-- media_item_id IS NULL. Files soft-delete (deleted_at); every live read
+-- filters deleted_at IS NULL.
 
--- name: GetMediaFile :one
-select * from media_file where id = $1;
+-- name: GetFile :one
+select * from file where id = $1 and deleted_at is null;
 
--- name: GetMediaFileByLibraryAndPath :one
-select * from media_file where library_id = $1 and path = $2;
+-- name: GetFileByLibraryAndPath :one
+-- Returns the live file at (library, path). Soft-deleted rows are
+-- excluded so a path freed by a detach reads as absent.
+select * from file
+where library_id = $1 and path = $2 and deleted_at is null;
 
--- name: CreateMediaFile :one
-insert into media_file (library_id, media_item_id, episode_id, path)
-values (sqlc.arg(library_id), sqlc.arg(media_item_id), sqlc.arg(episode_id), sqlc.arg(path))
+-- name: CreateFile :one
+-- Inserts a file with an explicit id. The id is the stable join key
+-- match_decision.file_id points at, threaded from the scan/match loop so
+-- the decision chain reconnects to the row.
+insert into file (id, library_id, path, media_item_id, episode_id, edition)
+values (sqlc.arg(id), sqlc.arg(library_id), sqlc.arg(path), sqlc.arg(media_item_id), sqlc.arg(episode_id), sqlc.arg(edition))
 returning *;
 
--- name: CreateMediaFileWithID :one
--- Inserts a media_file with an explicit id. Used by the manual match
--- flow (Phase 4) to preserve the stable file_id across an
--- unmatched_file → media_file transition: the match_decision rows are
--- keyed by file_id, so the join key has to survive.
-insert into media_file (id, library_id, media_item_id, episode_id, path)
-values (sqlc.arg(id), sqlc.arg(library_id), sqlc.arg(media_item_id), sqlc.arg(episode_id), sqlc.arg(path))
-returning *;
-
--- name: UpdateMediaFileIdentity :one
--- Re-points an existing media_file at a different identity (media_item +
--- optional episode) in place. Used by the manual re-match flow (Phase 4)
--- so a media→media re-match preserves the row, its media_file_state
--- snapshot, and the media_file_import history — none of which survive a
--- delete-and-recreate.
-update media_file
+-- name: SetFileIdentity :one
+-- Points a file at an identity (media_item + optional episode + edition)
+-- in place. Used by match / re-match — the row, its file_state snapshot,
+-- and its file_import history all survive.
+update file
 set media_item_id = sqlc.arg(media_item_id),
-    episode_id = sqlc.arg(episode_id)
+    episode_id = sqlc.arg(episode_id),
+    edition = sqlc.arg(edition),
+    updated_at = now()
 where id = sqlc.arg(id)
 returning *;
 
--- name: DeleteMediaFile :exec
-delete from media_file where id = $1;
+-- name: ClearFileIdentity :one
+-- Un-match: clears identity in place (back to the inbox). The file stays
+-- on disk and in the table; only media_item_id / episode_id / edition go
+-- NULL.
+update file
+set media_item_id = null,
+    episode_id = null,
+    edition = null,
+    updated_at = now()
+where id = sqlc.arg(id)
+returning *;
 
--- name: ListMediaFilesForItem :many
+-- name: SoftDeleteFile :one
+-- Detach: marks the file gone from the library scope. The row survives as
+-- the audit anchor; live reads exclude it.
+update file
+set deleted_at = now(),
+    updated_at = now()
+where id = sqlc.arg(id)
+returning *;
+
+-- name: ListFilesForItem :many
 select
-  mf.id,
-  mf.library_id,
-  mf.media_item_id,
-  mf.episode_id,
-  mf.path,
-  mf.created_at,
+  f.id,
+  f.library_id,
+  f.media_item_id,
+  f.episode_id,
+  f.path,
+  f.created_at,
   ms.id as season_id,
   ms.season_number,
   me.episode_number,
-  mfs.file_exists,
-  mfs.file_size,
-  mfs.last_verified_at
-from media_file mf
-left join media_episode me on mf.episode_id = me.id
+  fs.exists,
+  fs.size_bytes,
+  fs.last_verified_at
+from file f
+left join media_episode me on f.episode_id = me.id
 left join media_season ms on me.season_id = ms.id
-left join media_file_state mfs on mf.id = mfs.media_file_id
-where mf.media_item_id = $1
-order by mf.created_at desc;
+left join file_state fs on f.id = fs.file_id
+where f.media_item_id = $1 and f.deleted_at is null
+order by f.created_at desc;
+
+-- name: ListFilesNeedingReview :many
+-- Files with no resolved identity — the matcher inbox over the unified
+-- file table. Optional library filter; soft-deleted rows excluded.
+select * from file
+where media_item_id is null
+  and deleted_at is null
+  and (sqlc.narg(library_id)::uuid is null or library_id = sqlc.narg(library_id))
+order by created_at desc
+limit sqlc.arg(page_size)::int offset sqlc.arg(offset_val)::int;
+
+-- name: CountFilesNeedingReview :one
+select count(*) from file
+where media_item_id is null
+  and deleted_at is null
+  and (sqlc.narg(library_id)::uuid is null or library_id = sqlc.narg(library_id));
 
 -- name: ListEpisodeAvailabilityForSeries :many
 select
@@ -154,14 +187,14 @@ select
   me.id as episode_id,
   me.title,
   me.air_date,
-  mf.id as file_id,
-  mf.library_id,
-  mfs.file_exists
+  f.id as file_id,
+  f.library_id,
+  fs.exists
 from media_episode me
 join media_season ms on me.season_id = ms.id
 join media_item mi on ms.media_item_id = mi.id
-left join media_file mf on mf.episode_id = me.id
-left join media_file_state mfs on mf.id = mfs.media_file_id
+left join file f on f.episode_id = me.id and f.deleted_at is null
+left join file_state fs on f.id = fs.file_id
 where mi.id = $1
 order by ms.season_number, me.episode_number;
 
@@ -192,158 +225,85 @@ WHERE
 SELECT tmdb_id FROM media_item
 WHERE tmdb_id = ANY(sqlc.arg(tmdb_ids)::bigint[]) AND type = sqlc.arg(type);
 
--- Media File State queries
+-- File State queries
 
--- name: CreateMediaFileState :one
-insert into media_file_state (media_file_id, file_exists, file_size, last_verified_at)
-values (sqlc.arg(media_file_id), sqlc.arg(file_exists), sqlc.arg(file_size), now())
+-- name: CreateFileState :one
+insert into file_state (file_id, exists, size_bytes, osdb_hash, last_verified_at)
+values (sqlc.arg(file_id), sqlc.arg(exists), sqlc.arg(size_bytes), sqlc.arg(osdb_hash), now())
 returning *;
 
--- name: UpsertMediaFileState :one
-insert into media_file_state (media_file_id, file_exists, file_size, last_verified_at)
-values (sqlc.arg(media_file_id), sqlc.arg(file_exists), sqlc.arg(file_size), now())
-on conflict (media_file_id)
-do update set file_exists = excluded.file_exists,
-              file_size = excluded.file_size,
+-- name: UpsertFileState :one
+insert into file_state (file_id, exists, size_bytes, osdb_hash, last_verified_at)
+values (sqlc.arg(file_id), sqlc.arg(exists), sqlc.arg(size_bytes), sqlc.arg(osdb_hash), now())
+on conflict (file_id)
+do update set exists = excluded.exists,
+              size_bytes = excluded.size_bytes,
+              osdb_hash = excluded.osdb_hash,
               last_verified_at = now()
 returning *;
 
--- name: GetMediaFileState :one
-select * from media_file_state where media_file_id = $1;
+-- name: GetFileState :one
+select * from file_state where file_id = $1;
 
--- name: UpdateMediaFileState :one
-update media_file_state
-set file_exists = sqlc.arg(file_exists),
-    file_size = sqlc.arg(file_size),
+-- name: UpdateFileState :one
+update file_state
+set exists = sqlc.arg(exists),
+    size_bytes = sqlc.arg(size_bytes),
+    osdb_hash = sqlc.arg(osdb_hash),
     last_verified_at = now()
-where media_file_id = sqlc.arg(media_file_id)
+where file_id = sqlc.arg(file_id)
 returning *;
 
 -- name: ListMissingFiles :many
-select mf.*, mfs.file_size, mfs.last_verified_at
-from media_file mf
-join media_file_state mfs on mf.id = mfs.media_file_id
-where mfs.file_exists = false
-order by mfs.last_verified_at desc;
+select f.*, fs.size_bytes, fs.last_verified_at
+from file f
+join file_state fs on f.id = fs.file_id
+where fs.exists = false and f.deleted_at is null
+order by fs.last_verified_at desc;
 
 -- name: ListFilesNeedingVerification :many
-select mf.*, mfs.file_exists, mfs.file_size, mfs.last_verified_at
-from media_file mf
-join media_file_state mfs on mf.id = mfs.media_file_id
-where mfs.last_verified_at < sqlc.arg(before_time)
-order by mfs.last_verified_at asc
+select f.*, fs.exists, fs.size_bytes, fs.last_verified_at
+from file f
+join file_state fs on f.id = fs.file_id
+where fs.last_verified_at < sqlc.arg(before_time) and f.deleted_at is null
+order by fs.last_verified_at asc
 limit sqlc.arg(limit_val);
 
--- Media File Import queries
+-- File Import queries
 
--- name: CreateMediaFileImport :one
-insert into media_file_import (media_file_id, import_task_id, method, source_path, dest_path, success, error_message)
-values (sqlc.arg(media_file_id), sqlc.arg(import_task_id), sqlc.arg(method), sqlc.arg(source_path), sqlc.arg(dest_path), sqlc.arg(success), sqlc.arg(error_message))
+-- name: CreateFileImport :one
+insert into file_import (file_id, import_task_id, method, source_path, dest_path, success, error_message)
+values (sqlc.arg(file_id), sqlc.arg(import_task_id), sqlc.arg(method), sqlc.arg(source_path), sqlc.arg(dest_path), sqlc.arg(success), sqlc.arg(error_message))
 returning *;
 
--- name: GetMediaFileImport :one
-select * from media_file_import where id = $1;
+-- name: GetFileImport :one
+select * from file_import where id = $1;
 
--- name: ListImportsForMediaFile :many
-select * from media_file_import
-where media_file_id = $1
+-- name: ListImportsForFile :many
+select * from file_import
+where file_id = $1
 order by attempted_at desc;
 
 -- name: ListImportsForImportTask :many
-select * from media_file_import
+select * from file_import
 where import_task_id = $1
 order by attempted_at desc;
 
 -- name: ListRecentImports :many
-select * from media_file_import
+select * from file_import
 order by attempted_at desc
 limit sqlc.arg(limit_val);
 
 -- name: ListFailedImports :many
-select * from media_file_import
+select * from file_import
 where success = false
 order by attempted_at desc
 limit sqlc.arg(limit_val);
 
 -- Bulk path loading for scanner
 
--- name: ListMediaFilePathsForLibrary :many
-SELECT path FROM media_file WHERE library_id = $1;
-
--- name: ListUnmatchedFilePathsForLibrary :many
-SELECT path FROM unmatched_file WHERE library_id = $1 AND resolved_at IS NULL;
-
--- Unmatched File queries
-
--- name: CreateUnmatchedFile :one
-insert into unmatched_file (library_id, path, file_size, suggested_matches, partial_series)
-values (sqlc.arg(library_id), sqlc.arg(path), sqlc.arg(file_size), sqlc.arg(suggested_matches), sqlc.arg(partial_series))
-returning *;
-
--- name: UpsertUnmatchedFile :one
-insert into unmatched_file (library_id, path, file_size, suggested_matches, partial_series)
-values (sqlc.arg(library_id), sqlc.arg(path), sqlc.arg(file_size), sqlc.arg(suggested_matches), sqlc.arg(partial_series))
-on conflict (library_id, path)
-do update set file_size = excluded.file_size,
-              suggested_matches = excluded.suggested_matches,
-              partial_series = excluded.partial_series,
-              discovered_at = now()
-returning *;
-
--- name: GetUnmatchedFile :one
-select * from unmatched_file where id = $1;
-
--- name: GetUnmatchedFileByPath :one
-select * from unmatched_file where library_id = $1 and path = $2;
-
--- name: ListUnmatchedFiles :many
-select * from unmatched_file
-where resolved_at is null
-order by discovered_at desc;
-
--- name: ListUnmatchedFilesForLibrary :many
-select * from unmatched_file
-where library_id = $1 and resolved_at is null
-order by discovered_at desc;
-
--- name: ListUnmatchedFilesPaginated :many
-select * from unmatched_file
-where resolved_at is null
-  and (sqlc.narg(library_id)::uuid is null or library_id = sqlc.narg(library_id))
-order by discovered_at desc
-limit sqlc.arg(page_size)::int offset sqlc.arg(offset_val)::int;
-
--- name: CountUnmatchedFiles :one
-select count(*) from unmatched_file
-where resolved_at is null
-  and (sqlc.narg(library_id)::uuid is null or library_id = sqlc.narg(library_id));
-
--- name: ResolveUnmatchedFile :one
-update unmatched_file
-set resolved_at = now(),
-    resolved_media_file_id = sqlc.arg(resolved_media_file_id)
-where id = sqlc.arg(id)
-returning *;
-
--- name: DismissUnmatchedFile :one
-update unmatched_file
-set resolved_at = now()
-where id = sqlc.arg(id)
-returning *;
-
--- name: UpdateUnmatchedFileSuggestions :one
-update unmatched_file
-set suggested_matches = sqlc.arg(suggested_matches)
-where id = sqlc.arg(id)
-returning *;
-
--- name: DeleteUnmatchedFile :exec
-delete from unmatched_file where id = $1;
-
--- name: DeleteResolvedUnmatchedFilesOlderThan :exec
-delete from unmatched_file
-where resolved_at is not null
-  and resolved_at < sqlc.arg(before_time);
+-- name: ListFilePathsForLibrary :many
+SELECT path FROM file WHERE library_id = $1 AND deleted_at IS NULL;
 
 -- Metadata enrichment queries
 

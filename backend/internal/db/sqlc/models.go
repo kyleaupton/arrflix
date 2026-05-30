@@ -339,6 +339,38 @@ type Downloader struct {
 	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
+type File struct {
+	ID          pgtype.UUID        `json:"id"`
+	LibraryID   pgtype.UUID        `json:"library_id"`
+	Path        string             `json:"path"`
+	MediaItemID pgtype.UUID        `json:"media_item_id"`
+	EpisodeID   pgtype.UUID        `json:"episode_id"`
+	Edition     *string            `json:"edition"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type FileImport struct {
+	ID           pgtype.UUID `json:"id"`
+	FileID       pgtype.UUID `json:"file_id"`
+	ImportTaskID pgtype.UUID `json:"import_task_id"`
+	Method       string      `json:"method"`
+	SourcePath   *string     `json:"source_path"`
+	DestPath     string      `json:"dest_path"`
+	AttemptedAt  time.Time   `json:"attempted_at"`
+	Success      bool        `json:"success"`
+	ErrorMessage *string     `json:"error_message"`
+}
+
+type FileState struct {
+	FileID         pgtype.UUID `json:"file_id"`
+	Exists         bool        `json:"exists"`
+	SizeBytes      *int64      `json:"size_bytes"`
+	OsdbHash       *string     `json:"osdb_hash"`
+	LastVerifiedAt time.Time   `json:"last_verified_at"`
+}
+
 type ImportTask struct {
 	ID             pgtype.UUID   `json:"id"`
 	Status         string        `json:"status"`
@@ -352,7 +384,7 @@ type ImportTask struct {
 	NameTemplateID pgtype.UUID   `json:"name_template_id"`
 	DestPath       *string       `json:"dest_path"`
 	ImportMethod   *string       `json:"import_method"`
-	MediaFileID    pgtype.UUID   `json:"media_file_id"`
+	FileID         pgtype.UUID   `json:"file_id"`
 	AttemptCount   int32         `json:"attempt_count"`
 	MaxAttempts    int32         `json:"max_attempts"`
 	NextRunAt      time.Time     `json:"next_run_at"`
@@ -394,6 +426,7 @@ type MatchDecision struct {
 	ChosenEpisode      *int32             `json:"chosen_episode"`
 	ChosenEdition      *string            `json:"chosen_edition"`
 	Confidence         float64            `json:"confidence"`
+	RankedCandidates   []byte             `json:"ranked_candidates"`
 	ResolversConsulted []byte             `json:"resolvers_consulted"`
 	Evidence           []byte             `json:"evidence"`
 	EvidenceTruncated  bool               `json:"evidence_truncated"`
@@ -412,34 +445,6 @@ type MediaEpisode struct {
 	TmdbID        *int64      `json:"tmdb_id"`
 	TvdbID        *int64      `json:"tvdb_id"`
 	CreatedAt     time.Time   `json:"created_at"`
-}
-
-type MediaFile struct {
-	ID          pgtype.UUID `json:"id"`
-	LibraryID   pgtype.UUID `json:"library_id"`
-	MediaItemID pgtype.UUID `json:"media_item_id"`
-	EpisodeID   pgtype.UUID `json:"episode_id"`
-	Path        string      `json:"path"`
-	CreatedAt   time.Time   `json:"created_at"`
-}
-
-type MediaFileImport struct {
-	ID           pgtype.UUID `json:"id"`
-	MediaFileID  pgtype.UUID `json:"media_file_id"`
-	ImportTaskID pgtype.UUID `json:"import_task_id"`
-	Method       string      `json:"method"`
-	SourcePath   *string     `json:"source_path"`
-	DestPath     string      `json:"dest_path"`
-	AttemptedAt  time.Time   `json:"attempted_at"`
-	Success      bool        `json:"success"`
-	ErrorMessage *string     `json:"error_message"`
-}
-
-type MediaFileState struct {
-	MediaFileID    pgtype.UUID `json:"media_file_id"`
-	FileExists     bool        `json:"file_exists"`
-	FileSize       *int64      `json:"file_size"`
-	LastVerifiedAt time.Time   `json:"last_verified_at"`
 }
 
 type MediaItem struct {
@@ -537,18 +542,6 @@ type Rule struct {
 	RightOperand string      `json:"right_operand"`
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`
-}
-
-type UnmatchedFile struct {
-	ID                  pgtype.UUID        `json:"id"`
-	LibraryID           pgtype.UUID        `json:"library_id"`
-	Path                string             `json:"path"`
-	FileSize            *int64             `json:"file_size"`
-	DiscoveredAt        time.Time          `json:"discovered_at"`
-	SuggestedMatches    []byte             `json:"suggested_matches"`
-	ResolvedAt          pgtype.Timestamptz `json:"resolved_at"`
-	ResolvedMediaFileID pgtype.UUID        `json:"resolved_media_file_id"`
-	PartialSeries       bool               `json:"partial_series"`
 }
 
 type UserIdentity struct {

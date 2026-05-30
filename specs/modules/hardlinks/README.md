@@ -9,7 +9,7 @@ It is the explicit home for a concept four other specs already lean on without o
 ## TL;DR
 
 - The "graph" is **emergent, not a maintained structure**. Three facts per file — `st_dev`, `st_ino`, `st_nlink` — are all it takes: two paths with the same `(st_dev, st_ino)` _are_ the same inode (hardlinked), and `st_nlink` is that inode's reference count. The graph is a `GROUP BY (st_dev, st_ino)` over captured facts.
-- **Capture rides existing `stat()`s — no new walk.** [Scan](../scan/README.md) (full / diff / verify), the [importer](../importer/README.md) (post-link), and the verify step already `stat()` files; the three inode fields come back in the _same_ `syscall.Stat_t`. Capture is three field assignments, zero extra I/O. The facts live on `media_file_state` beside `file_size` / `last_verified_at`.
+- **Capture rides existing `stat()`s — no new walk.** [Scan](../scan/README.md) (full / diff / verify), the [importer](../importer/README.md) (post-link), and the verify step already `stat()` files; the three inode fields come back in the _same_ `syscall.Stat_t`. Capture is three field assignments, zero extra I/O. The facts live on `file_state` beside `size_bytes` / `last_verified_at`.
 - **This upgrades broken-hardlink detection from heuristic to exact.** Scan today infers breakage from "size/mtime drift," which _misses the canonical case_ (a torrent is removed, `nlink` drops 2→1, size/mtime unchanged). A file imported via **hardlink** whose live `nlink == 1` is _provably_ broken — no heuristic.
 - **A small `internal/hardlink` package owns the queries**, not a worker: `RefCount`, `PathsSharing`, `ReclaimableBytes`, `IsBrokenHardlink`. Pure reads over the captured facts. Weight is closer to [`internal/parsing`](../parsing/README.md) than to a module with its own lifecycle.
 - **The one genuinely new computation is the downloader correlation** — "this inode is held alive by torrent X in qBittorrent." It stats each downloader's per-torrent files ([`ListFiles`](../downloaders/README.md#the-provider-model)), groups by inode, joins against library inodes. It runs **on-demand / slow-cadence**, never per-scan, because statting all torrents is the expensive part.
@@ -42,7 +42,7 @@ The dividing line with path-mapping is the crux:
 
 ### The three facts
 
-Every probed `media_file` carries, alongside the presence/size facts [scan](../scan/README.md#what-scan-writes-data-shapes-sketched) already reconciles:
+Every probed `file` carries, alongside the presence/size facts [scan](../scan/README.md#what-scan-writes-data-shapes-sketched) already reconciles:
 
 | Fact | From | Meaning |
 | --- | --- | --- |
@@ -50,11 +50,11 @@ Every probed `media_file` carries, alongside the presence/size facts [scan](../s
 | `st_ino` | `syscall.Stat_t.Ino` | The inode number. `(st_dev, st_ino)` is the identity of the underlying bytes — the join key for "same file." |
 | `st_nlink` | `syscall.Stat_t.Nlink` | The reference count: how many directory entries point at this inode. |
 
-Lean: these are **columns on `media_file_state`** (the existing per-file FS-facts row), not a new table — they're the same shape and refresh on the same `stat()`. A companion table is the fallback if the row gets unwieldy ([open questions](#open-questions)).
+Lean: these are **columns on `file_state`** (the per-file FS-facts row, owned by [files](../files/README.md)), not a new table — they're the same shape and refresh on the same `stat()`. A companion table is the fallback if the row gets unwieldy ([open questions](#open-questions)).
 
 ### The graph is emergent
 
-There is no graph object to build or keep coherent. "All paths sharing this inode" is `GROUP BY (st_dev, st_ino)` over `media_file_state`. The package surfaces that as named queries; the storage engine does the work.
+There is no graph object to build or keep coherent. "All paths sharing this inode" is `GROUP BY (st_dev, st_ino)` over `file_state`. The package surfaces that as named queries; the storage engine does the work.
 
 ### Broken-hardlink detection — exact, via `nlink` + import method
 
@@ -62,10 +62,10 @@ The canonical failure: the torrent client is wiped or a torrent removed, the lib
 
 The exact signal combines two facts Arrflix already has the pieces for:
 
-- The [importer](../importer/README.md#persistence--one-transaction) records the placement **method** (`hardlink` | `copy`) on `media_file_import`.
+- The [importer](../importer/README.md#persistence--one-transaction) records the placement **method** (`hardlink` | `copy`) on `file_import`.
 - This spec captures live `st_nlink`.
 
-> A `media_file` whose recorded import method was **`hardlink`** but whose live **`st_nlink == 1`** is a **broken hardlink** — proven, not inferred. (`nlink == 1` on a `copy`-imported file is normal and is _not_ a finding.)
+> A `file` whose recorded import method was **`hardlink`** but whose live **`st_nlink == 1`** is a **broken hardlink** — proven, not inferred. (`nlink == 1` on a `copy`-imported file is normal and is _not_ a finding.)
 
 That predicate is all **detection** needs. It does not require knowing _which_ torrent vanished — that's explanation, below.
 
@@ -75,7 +75,7 @@ To turn detection into the hygiene-grade story (*"held alive by 3 torrents; dele
 
 1. For each enabled [downloader](../downloaders/README.md), list its torrents' files (`ListFiles`).
 2. `stat()` each, capturing `(st_dev, st_ino)`.
-3. Group by inode; join against library `media_file` inodes.
+3. Group by inode; join against library `file` inodes.
 
 The result is, per library inode: the set of downloader torrents currently holding it alive. From that fall out the two consumer payloads:
 
@@ -128,12 +128,12 @@ It depends on [path-mapping](../path-mapping/README.md)'s `device()` / `sameFile
 
 | Neighbor | How it interacts |
 | --- | --- |
-| [Scan](../scan/README.md) | The capture point: stamps `st_dev` / `st_ino` / `st_nlink` on `media_file_state` during the stats it already does (full / diff / verify). Its broken-hardlink detection upgrades from drift-heuristic to the exact `nlink` predicate. |
+| [Scan](../scan/README.md) | The capture point: stamps `st_dev` / `st_ino` / `st_nlink` on `file_state` during the stats it already does (full / diff / verify). Its broken-hardlink detection upgrades from drift-heuristic to the exact `nlink` predicate. |
 | [Importer](../importer/README.md) | Records the placement method this spec's detection keys on; can call a post-link `nlink` assertion. Captures inode facts on the file it just placed. |
 | [Path-mapping](../path-mapping/README.md) | Supplies `device()` / `sameFile()` for live checks and `translate` to bring a downloader path into the canonical frame before correlation. Strict primitive/consumer split — no overlap. |
 | [Hygiene](../hygiene/README.md) | Primary consumer: `integrity/broken-hardlink` detection, the hardlink-intelligence narrative, and the hardlink-aware cleanup preflight all read this package. |
 | [Downloaders](../downloaders/README.md) | `ListFiles` feeds the correlation (which torrent holds which inode alive). |
-| [Libraries](../libraries/README.md) | `media_file` / `media_file_state` are the library-side rows the graph is grouped over. |
+| [Files](../files/README.md) | Owns `file` / `file_state` — the rows the graph is grouped over. |
 | Storage-intelligence (future wedge) | Built on `ReclaimableBytes` + the correlation; this spec is its substrate. |
 | [Errors](../../patterns/errors/README.md) | A failed `stat` or downloader `ListFiles` during correlation produces a typed error (`BadGateway` upstream); correlation degrades to "unknown holders," never blocks. |
 
@@ -141,18 +141,18 @@ It depends on [path-mapping](../path-mapping/README.md)'s `device()` / `sameFile
 
 **Owned by this spec** (shapes indicative; column types deferred to iteration 2):
 
-- **`media_file_state` extension** — adds `st_dev`, `st_ino`, `st_nlink` (and the `stat` timestamp already present). Lean: columns on the existing FS-facts row rather than a new table. Captured by scan / importer / verify.
+- **`file_state` extension** — adds `st_dev`, `st_ino`, `st_nlink` (and the `stat` timestamp already present). Lean: columns on the existing FS-facts row rather than a new table. Captured by scan / importer / verify.
 
 **Referenced, owned elsewhere:**
 
-- **`media_file` / `media_file_import`** — [libraries](../libraries/README.md) / [scan](../scan/README.md) / [importer](../importer/README.md). The import **method** (`hardlink` | `copy`) on `media_file_import` is half the broken-link predicate.
+- **`file` / `file_import`** — [files](../files/README.md) / [scan](../scan/README.md) / [importer](../importer/README.md). The import **method** (`hardlink` | `copy`) on `file_import` is half the broken-link predicate.
 - **`download_job` / downloader torrent file lists** — [downloaders](../downloaders/README.md). The correlation source.
 
 No table stores "the graph" — it's queried, not materialized. A cached correlation table is a possible optimization, [open](#open-questions).
 
 ## Open questions
 
-1. **Columns vs companion table.** `st_dev` / `st_ino` / `st_nlink` on `media_file_state` (lean — same shape, same refresh) vs a `media_file_inode` companion. Revisit only if the state row grows unwieldy.
+1. **Columns vs companion table.** `st_dev` / `st_ino` / `st_nlink` on `file_state` (lean — same shape, same refresh) vs a `file_inode` companion. Revisit only if the state row grows unwieldy.
 2. **Correlation: cached or live.** Recompute the inode→torrent correlation on each consumer call (always fresh, expensive) vs cache it with a TTL refreshed by a slow sweep (fast reads, possible staleness). Lean: cache with a slow-sweep refresh for dashboards; destructive preflights re-stat live regardless.
 3. **Correlation cadence + ownership of the sweep.** If a periodic correlation sweep exists, is it its own scheduled job or folded into scan's verify pass / hygiene's nightly audit? Lean: ride [hygiene's nightly audit](../hygiene/README.md#computation-model) (it's already the retrospective, FS-touching cadence) rather than a new worker.
 4. **`nlink` baseline for non-import-tracked files.** The broken-link predicate leans on the recorded import method. For files Arrflix didn't grab (scanned-in, drop-ins) there may be no `hardlink` method recorded — so `nlink == 1` is ambiguous (could be a legit single copy). Lean: the finding only fires for `method == hardlink`; scanned files get a weaker, opt-in "single-linked file in a hardlink-first library" advisory at most.
@@ -163,7 +163,7 @@ No table stores "the graph" — it's queried, not materialized. A cached correla
 
 ## What we're explicitly not deciding here
 
-- Exact column types / index shape for the `media_file_state` inode fields.
+- Exact column types / index shape for the `file_state` inode fields.
 - The Go signatures of the `internal/hardlink` query surface.
 - Whether the downloader correlation is materialized in a table and, if so, its schema.
 - The slow-sweep scheduling mechanics (cadence, dedup) — coordinated with scan / hygiene.
@@ -178,5 +178,5 @@ No table stores "the graph" — it's queried, not materialized. A cached correla
 - [Scan](../scan/README.md) — the capture point; its broken-hardlink detection upgrades to the exact `nlink` predicate.
 - [Hygiene](../hygiene/README.md) — primary consumer: broken-hardlink finding, hardlink-intelligence UX, hardlink-aware cleanup preflight.
 - [Downloaders](../downloaders/README.md) — `ListFiles` feeds the inode→torrent correlation.
-- [Libraries](../libraries/README.md) — owns `media_file` / `media_file_state` the graph groups over.
+- [Files](../files/README.md) — owns `file` / `file_state` the graph groups over.
 - [Errors](../../patterns/errors/README.md) — typed errors for failed stats / downloader calls during correlation.

@@ -45,7 +45,7 @@ The canonical-source designation is a **configuration choice, not a code assumpt
 
 **Migration path:** add the `external_id` tables, backfill from the existing `tmdb_id` / `imdb_id` columns, then drop those columns in a later migration once all reads have been moved.
 
-**Optional `confidence` field:** for low-confidence auto-matches (the unmatched_file flow assigning a likely match), we may want to record confidence per mapping. Pin in iteration 2 — flagged in open questions.
+**Optional `confidence` field:** for low-confidence auto-matches (the unidentified-file flow assigning a likely match), we may want to record confidence per mapping. Pin in iteration 2 — flagged in open questions.
 
 ## Item-level metadata
 
@@ -98,7 +98,7 @@ We **store unaired episodes**. `air_date` is in the future (or NULL for announce
 - Tracking's scope evaluation (e.g., `future_only` rules include future episodes immediately)
 - Smart scheduling's air-date awareness
 
-A pre-air episode has **no `media_file`** and exists as a record only. When it airs, the want lifecycle picks it up via tracking; nothing about the episode row changes.
+A pre-air episode has **no `file`** and exists as a record only. When it airs, the want lifecycle picks it up via tracking; nothing about the episode row changes.
 
 ### Handling renumbering
 
@@ -112,7 +112,7 @@ TMDB occasionally renumbers — moves an episode from `S01E13` to `S02E01`, etc.
 
 If TMDB removes an episode, we **don't delete the row** — we mark it `deprecated: true`. Reasons:
 
-- Preserves any media_files that were imported under that episode (the file still exists on disk; orphaning the row breaks scan/match)
+- Preserves any files that were imported under that episode (the file still exists on disk; orphaning the row breaks scan/match)
 - Preserves user history (decision_log, watch state, overrides)
 - Reversible if TMDB un-removes (rare but happens)
 
@@ -307,12 +307,12 @@ Adjacent concerns that live elsewhere:
 
 ## Open questions
 
-1. **Confidence on external_id mappings.** Needed for low-confidence auto-matches (e.g., unmatched_file picks a suggested match with 70% confidence). Probably add as an optional column; pin in iteration 2.
+1. **Confidence on external_id mappings.** Needed for low-confidence auto-matches (e.g., an unidentified file picks a suggested match with 70% confidence). Probably add as an optional column; pin in iteration 2.
 2. **Override granularity for episodes.** Do we extend `media_item_local_override` pattern to a per-episode override table now, or defer until there's demand? Leaning defer; episode-level overrides are rare in practice.
 3. **Renumber notification UX.** When TMDB renumbers, how loud should the system be? Silent migration with a log entry vs. a one-off [notification](../notifications/README.md) vs. blocking the sync for admin approval. Probably notification + auto-migrate.
 4. **Deprecated episode visibility.** Where in the UI do we show `deprecated: true` episodes? Probably hidden by default, with an admin toggle to surface. Important for not silently losing user-imported files.
 5. **TMDB ID merges.** When TMDB merges two records (rare but real), how do we follow? Probably: detect via the redirect TMDB returns, log a warning, leave the data alone, surface to admin for review.
-6. **Re-match flow data preservation.** When a user corrects a wrong TMDB match for a media_item (Fix Match flow), the episode tree needs to be wiped and re-synced. What happens to media_files associated with the old match — re-link or orphan? Probably re-link via the scan/match logic, fall back to unmatched on failure.
+6. **Re-match flow data preservation.** When a user corrects a wrong TMDB match for a media_item (Fix Match flow), the episode tree needs to be wiped and re-synced. What happens to files associated with the old match — re-link or orphan? Probably re-link via the scan/match logic, fall back to unmatched on failure.
 7. **Anime numbering (absolute vs season) — seam reserved.** Full anime support (numbering-mapping, AniDB as a provider) stays out of v1, but the cheap seam is taken now rather than deferred: `media_episode` carries a **nullable `absolute_number` column from v1**, populated opportunistically whenever TMDB/TVDB returns it. It's free, and it avoids a later migration the moment anime lands. What stays deferred is the **numbering-mapping** that reconciles a release's scene/absolute number against this canonical numbering — that's a future [matching](../matching/README.md#the-resolver-catalog) `episode-numbering` resolver consuming [parsing](../parsing/README.md)'s numbering-namespace tag, not a metadata concern. Identity-side, AniDB is already reserved in the [external_id registry](#identity) and the [provider abstraction](#provider-abstraction), so adding it is an implementation, not a re-architecture.
 8. **Image cache promotion.** What's the trigger to graduate to a local image cache? Likely: when we add custom artwork uploads (so we're already serving local images anyway), the case for proxying TMDB images via the same path gets stronger.
 9. **Collection-as-entity promotion.** When a `collection_id` column is no longer enough — e.g., we want a collection focus page with overview text and a poster — we promote to a `collection` table. Document this as the explicit upgrade path.

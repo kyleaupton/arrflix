@@ -681,12 +681,12 @@ export type ImportTask = {
     downloadJobId: string;
     episodeId: string;
     errorKind: string | null;
+    fileId: string;
     id: string;
     importMethod: string | null;
     lastError: string | null;
     libraryId: string;
     maxAttempts: number;
-    mediaFileId: string;
     mediaItemId: string;
     mediaType: string;
     nameTemplateId: string;
@@ -728,12 +728,12 @@ export type ImportTaskHistoryEntry = {
     downloadJobId: string;
     episodeId: string;
     errorKind: string | null;
+    fileId: string;
     id: string;
     importMethod: string | null;
     lastError: string | null;
     libraryId: string;
     maxAttempts: number;
-    mediaFileId: string;
     mediaItemId: string;
     mediaType: string;
     nameTemplateId: string;
@@ -758,6 +758,7 @@ export type ImportTaskWithDetails = {
     episodeNumber: number | null;
     episodeTitle: string | null;
     errorKind: string | null;
+    fileId: string;
     id: string;
     importMethod: string | null;
     lastError: string | null;
@@ -765,7 +766,6 @@ export type ImportTaskWithDetails = {
     libraryName: string;
     libraryRootPath: string;
     maxAttempts: number;
-    mediaFileId: string;
     mediaItemId: string;
     mediaItemType: string;
     mediaTitle: string;
@@ -1569,21 +1569,6 @@ export type SignupResponse = {
     success: boolean;
 };
 
-export type SuggestedExternalRef = {
-    externalId: string;
-    source: string;
-};
-
-export type SuggestedMatch = {
-    confidence: number;
-    contributingResolvers?: Array<string> | null;
-    evidence?: unknown;
-    externalRef: SuggestedExternalRef;
-    title?: string;
-    type?: string;
-    year?: number;
-};
-
 export type TestResult = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1606,45 +1591,6 @@ export type UnmatchedFileResponse = {
     id: string;
     libraryId: string;
     partialSeries?: boolean;
-    path: string;
-    suggestedMatches?: Array<SuggestedMatch> | null;
-};
-
-export type UnmatchedFilesMatchInputBody = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    /**
-     * Episode number (series only)
-     */
-    episode?: number;
-    /**
-     * Season number (series only)
-     */
-    season?: number;
-    /**
-     * TMDB ID to match against
-     */
-    tmdbId: number;
-    /**
-     * Media type
-     */
-    type: 'movie' | 'series';
-};
-
-export type UnmatchedFilesMatchResponse = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    /**
-     * Created media file ID (UUID string)
-     */
-    mediaFileId: string;
-    /**
-     * Path of the matched file
-     */
     path: string;
 };
 
@@ -1989,12 +1935,12 @@ export type ImportTaskWritable = {
     downloadJobId: string;
     episodeId: string;
     errorKind: string | null;
+    fileId: string;
     id: string;
     importMethod: string | null;
     lastError: string | null;
     libraryId: string;
     maxAttempts: number;
-    mediaFileId: string;
     mediaItemId: string;
     mediaType: string;
     nameTemplateId: string;
@@ -2023,6 +1969,7 @@ export type ImportTaskWithDetailsWritable = {
     episodeNumber: number | null;
     episodeTitle: string | null;
     errorKind: string | null;
+    fileId: string;
     id: string;
     importMethod: string | null;
     lastError: string | null;
@@ -2030,7 +1977,6 @@ export type ImportTaskWithDetailsWritable = {
     libraryName: string;
     libraryRootPath: string;
     maxAttempts: number;
-    mediaFileId: string;
     mediaItemId: string;
     mediaItemType: string;
     mediaTitle: string;
@@ -2553,37 +2499,6 @@ export type UnmatchedFileResponseWritable = {
     id: string;
     libraryId: string;
     partialSeries?: boolean;
-    path: string;
-    suggestedMatches?: Array<SuggestedMatch> | null;
-};
-
-export type UnmatchedFilesMatchInputBodyWritable = {
-    /**
-     * Episode number (series only)
-     */
-    episode?: number;
-    /**
-     * Season number (series only)
-     */
-    season?: number;
-    /**
-     * TMDB ID to match against
-     */
-    tmdbId: number;
-    /**
-     * Media type
-     */
-    type: 'movie' | 'series';
-};
-
-export type UnmatchedFilesMatchResponseWritable = {
-    /**
-     * Created media file ID (UUID string)
-     */
-    mediaFileId: string;
-    /**
-     * Path of the matched file
-     */
     path: string;
 };
 
@@ -6528,7 +6443,7 @@ export type UnmatchedFilesGetData = {
     body?: never;
     path: {
         /**
-         * Unmatched file ID
+         * File ID
          */
         id: string;
     };
@@ -6561,136 +6476,6 @@ export type UnmatchedFilesGetResponses = {
 };
 
 export type UnmatchedFilesGetResponse = UnmatchedFilesGetResponses[keyof UnmatchedFilesGetResponses];
-
-export type UnmatchedFilesDismissData = {
-    body?: never;
-    path: {
-        /**
-         * Unmatched file ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/unmatched-files/{id}/dismiss';
-};
-
-export type UnmatchedFilesDismissErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type UnmatchedFilesDismissError = UnmatchedFilesDismissErrors[keyof UnmatchedFilesDismissErrors];
-
-export type UnmatchedFilesDismissResponses = {
-    /**
-     * No Content
-     */
-    204: void;
-};
-
-export type UnmatchedFilesDismissResponse = UnmatchedFilesDismissResponses[keyof UnmatchedFilesDismissResponses];
-
-export type UnmatchedFilesMatchData = {
-    body: UnmatchedFilesMatchInputBodyWritable;
-    path: {
-        /**
-         * Unmatched file ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/unmatched-files/{id}/match';
-};
-
-export type UnmatchedFilesMatchErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-    /**
-     * Bad Gateway
-     */
-    502: ProblemDetails;
-};
-
-export type UnmatchedFilesMatchError = UnmatchedFilesMatchErrors[keyof UnmatchedFilesMatchErrors];
-
-export type UnmatchedFilesMatchResponses = {
-    /**
-     * OK
-     */
-    200: UnmatchedFilesMatchResponse;
-};
-
-export type UnmatchedFilesMatchResponse2 = UnmatchedFilesMatchResponses[keyof UnmatchedFilesMatchResponses];
-
-export type UnmatchedFilesRefreshData = {
-    body?: never;
-    path: {
-        /**
-         * Unmatched file ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/unmatched-files/{id}/refresh';
-};
-
-export type UnmatchedFilesRefreshErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-    /**
-     * Bad Gateway
-     */
-    502: ProblemDetails;
-};
-
-export type UnmatchedFilesRefreshError = UnmatchedFilesRefreshErrors[keyof UnmatchedFilesRefreshErrors];
-
-export type UnmatchedFilesRefreshResponses = {
-    /**
-     * OK
-     */
-    200: UnmatchedFileResponse;
-};
-
-export type UnmatchedFilesRefreshResponse = UnmatchedFilesRefreshResponses[keyof UnmatchedFilesRefreshResponses];
 
 export type UsersListData = {
     body?: never;

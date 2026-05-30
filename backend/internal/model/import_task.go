@@ -29,7 +29,7 @@ type ImportTask struct {
 	NameTemplateID uuid.UUID       `json:"nameTemplateId"`
 	DestPath       *string         `json:"destPath"`
 	ImportMethod   *string         `json:"importMethod"`
-	MediaFileID    uuid.UUID       `json:"mediaFileId"`
+	FileID         uuid.UUID       `json:"fileId"`
 	AttemptCount   int32           `json:"attemptCount"`
 	MaxAttempts    int32           `json:"maxAttempts"`
 	NextRunAt      time.Time       `json:"nextRunAt"`

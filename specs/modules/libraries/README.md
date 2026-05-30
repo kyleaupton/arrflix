@@ -68,7 +68,7 @@ There is no system-wide default — defaults are per-type. A fresh install with 
 
 - **enabled** — accepts imports, surfaces in routing UI, scannable.
 - **disabled** — invisible to new imports and routing. Existing media files keep their library reference; scan can still be triggered manually for inventory but routing won't dispatch new work here.
-- **deleted** — row removed. The schema uses `RESTRICT` on `download_job.library_id` and `import_task.library_id`, so a library cannot be deleted while in-flight work points to it. `media_file.library_id` and `unmatched_file.library_id` use `CASCADE` — deleting a library wipes its media-file index (the files on disk are untouched).
+- **deleted** — row removed. The schema uses `RESTRICT` on `download_job.library_id` and `import_task.library_id`, so a library cannot be deleted while in-flight work points to it. `file.library_id` uses `CASCADE` — deleting a library wipes its file index (the files on disk are untouched).
 
 ## Operations
 
@@ -80,7 +80,7 @@ CRUD and one verb. All routes are JWT-gated; permission scoping lives in [users]
 | `libraries-get`     | GET    | `/api/v1/libraries/{id}`          |                                                                                                |
 | `libraries-create`  | POST   | `/api/v1/libraries`               | Validates type enum + filesystem reachability of `root_path`.                                  |
 | `libraries-update`  | PUT    | `/api/v1/libraries/{id}`          | Same validations as create. Changing `root_path` is allowed but flagged in audit (see below).  |
-| `libraries-delete`  | DELETE | `/api/v1/libraries/{id}`          | 409 if jobs reference; success cascades to `media_file` + `unmatched_file` rows.               |
+| `libraries-delete`  | DELETE | `/api/v1/libraries/{id}`          | 409 if jobs reference; success cascades to `file` rows.                                          |
 | `libraries-scan`    | POST   | `/api/v1/libraries/{id}/scan`     | Kicks an async scan, returns `scanId`. Owned by [scan](../scan/README.md).                     |
 
 Permissions to keep in mind (defined in [users](../users/README.md)):
@@ -137,8 +137,9 @@ Hard free-space floors are not in v1; routing rules can express their own minimu
 | Consumer                                        | How it uses libraries                                                                                                       |
 | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | **[Routing](../routing/README.md)**             | Rules reference libraries by ID. The action set on a fired rule fills `library_id` on the resulting `download_job`.          |
-| **[Scan](../scan/README.md)**                   | Walks a library's `root_path`, attributing discovered files via `media_file.library_id` (matched) or `unmatched_file.library_id` (orphans). |
-| **Import (existing)**                           | Hardlinks completed downloads into the library's root, applying the chosen [name template](#doc-neighbors). Writes `media_file.library_id`. |
+| **[Scan](../scan/README.md)**                   | Walks a library's `root_path`, attributing discovered files via `file.library_id` (identity resolved later by [matching](../matching/README.md)). |
+| **[Files](../files/README.md)**                 | Owns the `file` entity scoped to a library via `file.library_id`. Libraries owns the root path; files owns the per-file rows under it. |
+| **Import (existing)**                           | Hardlinks completed downloads into the library's root, applying the chosen [name template](#doc-neighbors). Writes `file.library_id`. |
 | **[Hygiene](../hygiene/README.md)**             | Cleanup eligibility is evaluated within a library; cross-library moves are out of scope.                                    |
 | **[Matching](../matching/README.md)**           | Scoped per-library when resolving ambiguous matches.                                                                        |
 | **[Acquisition](../acquisition/README.md)**     | Reads health to decide whether to grab — a planned download whose target library is `unreachable` is held, not enqueued.    |
@@ -165,7 +166,7 @@ Hard free-space floors are not in v1; routing rules can express their own minimu
 
 2. **Type extensibility.** `'movie' | 'series'` is hardcoded. When (not if) we add `music` or `book` or `audiobook`, the migration + service enum has to change in lockstep, and routing's type-matching conditions need a new value. Worth a single iteration-2 pass to decide whether the enum graduates to a real table (`media_type` registry) or stays inline.
 
-3. **Path mutability after creation.** Changing `root_path` post-create is allowed today, but it silently breaks every running `import_task` that copied the path string at creation time (see #4). Options: forbid path changes once `media_file` rows exist; allow with an explicit cascade-rewrite of in-flight tasks; or migrate the import-task data model to use `library_id` instead of a raw path. Lean: third option, separately tracked.
+3. **Path mutability after creation.** Changing `root_path` post-create is allowed today, but it silently breaks every running `import_task` that copied the path string at creation time (see #4). Options: forbid path changes once `file` rows exist; allow with an explicit cascade-rewrite of in-flight tasks; or migrate the import-task data model to use `library_id` instead of a raw path. Lean: third option, separately tracked.
 
 4. **Import task carries `library_root_path` (string), not `library_id`.** This is a v0 quirk. An import task captures the path at creation time; if the library is renamed/repath'd, in-flight tasks still target the old location. Fixing this is a small data-model change. Track separately.
 
@@ -178,7 +179,7 @@ Hard free-space floors are not in v1; routing rules can express their own minimu
 8. **Move-between-libraries.** "Move this movie from Movies-HD to Movies-4K" is a real operator action that today requires manual filesystem work + re-scan. Worth a first-class operation? Probably yes eventually, but it spans hygiene + import + scan and doesn't have a clear home. Defer.
 
 9. **Per-library permissions.** `libraries.read:<id>` — can a user have CRUD access to one library but not another? Lean: not in v1; lift via `resource_id` on permission grants if real demand emerges (the [users](../users/README.md) spec already supports per-resource scoping in the grant table).
-10. **`media_file` carries the persisted parse + origin.** Re-rendering templates over a library (mass-rename) needs each file's advertised parse persisted — raw string + parsed `Quality`/`Release` + `parser_version` + `origin: grabbed|scanned|manual`; see [parsing § persisted parse](../parsing/README.md#persisted-parse). Lean: a 1:1 `media_file_parse` companion rather than widening `media_file`. Pin the shape in the data-shape pass.
+10. **Persisted parse + origin — moved to [files](../files/README.md).** Re-rendering templates over a library (mass-rename) needs each file's advertised parse persisted — raw string + parsed `Quality`/`Release` + `parser_version` + `origin: grabbed|scanned|manual`; see [parsing § persisted parse](../parsing/README.md#persisted-parse). This is the `file_parse` 1:1 companion, owned by [files](../files/README.md#the-sidecar-family); libraries owns the root, not the file rows.
 
 ## What we're explicitly not deciding here
 
