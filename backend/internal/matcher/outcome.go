@@ -154,10 +154,20 @@ type RankedCandidate struct {
 	Episode    *EpisodeRef
 	Edition    *string
 	Confidence float64
+	// Title and Year are the candidate's display identity, denormalized
+	// from the resolver's candidate so the inbox renders a suggestion card
+	// without a provider call. Tier-1 candidates source these from the
+	// validated Item; Tier-3 candidates from the search response. Empty/
+	// zero when the resolver couldn't determine them.
+	Title string
+	Year  int
+	// Type is the candidate's display kind ("movie" / "series"),
+	// denormalized alongside Title/Year so the inbox can tag the
+	// suggestion without a provider call.
+	Type string
 	// Item is the validated metadata.Item when the aggregator ran the
 	// Tier-1 validation step and matched this candidate's (post-rewrite)
 	// ExternalRef. Nil for Tier-3-only candidates or when the provider
-	// was absent — persistence code falls back to the chosen item's
-	// title/year in that case.
+	// was absent — persistence code falls back to Title/Year in that case.
 	Item *metadata.Item
 }

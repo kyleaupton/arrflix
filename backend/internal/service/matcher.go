@@ -185,7 +185,11 @@ func rankedCandidatesJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 
 	out := make([]model.SuggestedMatch, 0, len(rec.RankedCandidates))
 	for _, c := range rec.RankedCandidates {
-		title, year, typ := "", 0, ""
+		// The validated Item is the authoritative display source when the
+		// aggregator ran Tier-1 validation; Tier-3 candidates have no Item,
+		// so fall back to the title/year/type the resolver denormalized onto
+		// the candidate from its search response.
+		title, year, typ := c.Title, c.Year, c.Type
 		if c.Item != nil {
 			title = c.Item.Title
 			year = c.Item.Year

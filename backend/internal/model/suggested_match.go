@@ -9,13 +9,12 @@ import "encoding/json"
 // voted for it, and the raw evidence payload (the same per-resolver JSON
 // the match_decision row carries, capped at ~2KB per entry on write).
 //
-// Display fields (Title, Year, Type) are denormalized at write-time from
-// the metadata.Item the aggregator validated against, so the matcher
-// inbox can render a card without a second TMDB call. They are nullable
-// because a low_confidence outcome may surface a suggestion the
-// aggregator only loosely validated (Tier-3 search results don't carry
-// a fresh title/year — they come from the provider's search response
-// and Scan writes those through).
+// Display fields (Title, Year, Type) are denormalized at write-time so the
+// matcher inbox can render a card without a second TMDB call. A Tier-1
+// candidate sources them from the metadata.Item the aggregator validated
+// against; a Tier-3 candidate from the provider's search response (no Type,
+// since the search entry's kind isn't carried through). They are nullable
+// because a resolver may not have determined the title/year at all.
 //
 // Shape follows specs/modules/matching/README.md § "What evolves":
 //

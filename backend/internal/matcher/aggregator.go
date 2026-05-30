@@ -246,6 +246,13 @@ func (a *Aggregator) validateAgainstProvider(ctx context.Context, cands []Candid
 		} else {
 			c.Confidence *= validatedMultiplierValid
 		}
+		// The validated record is the authoritative display identity for a
+		// Tier-1 candidate (the resolver only knows the embedded ID, never
+		// the title). Carry it onto the candidate so the year penalty and
+		// the ranked suggestions read a real title/year/type.
+		c.Title = item.Title
+		c.Year = item.Year
+		c.Type = string(item.Type)
 		items[c.Ref] = item
 		out = append(out, c)
 	}
@@ -492,6 +499,9 @@ func rankCandidates(cands []Candidate, items map[ExternalRef]*metadata.Item, out
 		rc := RankedCandidate{
 			Ref:        c.Ref,
 			Confidence: c.Confidence,
+			Title:      c.Title,
+			Year:       c.Year,
+			Type:       c.Type,
 		}
 		if c.Episode != nil {
 			ep := *c.Episode
@@ -522,6 +532,8 @@ func rankCandidates(cands []Candidate, items map[ExternalRef]*metadata.Item, out
 			rc := RankedCandidate{
 				Ref:        c.Ref,
 				Confidence: c.Confidence,
+				Title:      c.Title,
+				Year:       c.Year,
 			}
 			if c.Episode != nil {
 				ep := *c.Episode
@@ -626,16 +638,13 @@ func yearHintFromFile(f FileRef) int {
 	return f.Parsed.Identity.Year.Value
 }
 
-// candidateYear returns the candidate's advertised year. The year is
-// attached (when available) via the metadata provider's validation step;
-// absent that call, year is 0. Reserved for future resolvers that
-// synthesize candidates with a year hint pre-validation.
-func candidateYear(_ Candidate) int {
-	// Year currently lives on metadata.Item, which the aggregator
-	// reads transiently during validation but doesn't persist on the
-	// Candidate type. When a resolver wants its own year hint to feed
-	// the mismatch penalty, this is the seam to grow.
-	return 0
+// candidateYear returns the candidate's advertised year. Tier-1
+// candidates pick it up from the validated metadata.Item; Tier-3 search
+// results carry the provider's search-response year. Zero means "unknown"
+// — the mismatch penalty's callsite skips a zero so an absent year never
+// penalizes.
+func candidateYear(c Candidate) int {
+	return c.Year
 }
 
 // bestLooksLikeSeries reports whether the chosen candidate's identity

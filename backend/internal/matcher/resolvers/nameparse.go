@@ -130,6 +130,9 @@ func (n *NameParse) Resolve(ctx context.Context, file matcher.FileRef) (matcher.
 				Source:     r.Source,
 				ExternalID: r.ExternalID,
 			},
+			Title:      r.Title,
+			Year:       r.Year,
+			Type:       string(r.Type),
 			Episode:    episode,
 			Confidence: score,
 		})
