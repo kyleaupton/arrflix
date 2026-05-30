@@ -4,9 +4,9 @@
 // `Resolver`s feeding an aggregator that handles confidence math,
 // validation against the metadata provider, and outcome banding.
 //
-// See specs/modules/matching/README.md for the design. Phase 1 (this code)
-// ships the seam, the aggregator, and the persistence shape; the real
-// resolvers (pathembed, nameparse) land in phase 2.
+// See specs/modules/matching/README.md for the design. This package
+// ships the resolver seam, the aggregator, and the persistence shape;
+// the concrete resolvers (pathembed, nameparse) register into it.
 package matcher
 
 import (
@@ -76,8 +76,8 @@ type Candidate struct {
 	// resolves confidently.
 	Episode *EpisodeRef
 	// Edition is the movie cut (e.g. "directors_cut", "extended"). Free
-	// text in phase 1; a future enum lands when edition-aware matching
-	// ships (matching spec § Killer UX moves #8).
+	// text for now; a future enum lands when edition-aware matching ships
+	// (matching spec § Killer UX moves #8).
 	Edition *string
 	// Confidence is the resolver-local certainty, 0..1.
 	Confidence float64
@@ -103,15 +103,13 @@ type EpisodeRef struct {
 }
 
 // FileRef is the matcher's view of a file. Scan produces these; the
-// matcher consumes them. Parsing is best-effort and nil-tolerant in
-// phase 1 — phase 3 wires it in when scan.go's identification logic
-// migrates onto MatcherService.
+// matcher consumes them. Parsing is best-effort and nil-tolerant.
 type FileRef struct {
 	// ID is the stable identifier of the file in match_decision.file_id.
-	// In phase 3 scan's caller populates it from the media_file /
-	// unmatched_file row it's about to write; phase 1 callers (tests,
-	// drop-in flows) can mint a fresh uuid per file. Intentionally not
-	// an FK in the schema — see the migration's column comment.
+	// Scan's caller populates it from the file row it creates before
+	// matching; direct callers (tests, drop-in flows) can mint a fresh
+	// uuid per file. Intentionally not an FK in the schema — see the
+	// migration's column comment.
 	ID uuid.UUID
 	// Path is the absolute on-disk path of the file.
 	Path string
@@ -123,8 +121,7 @@ type FileRef struct {
 	// relative path context (path-embed, path-context) consume it.
 	LibraryRoot string
 	// Parsed carries the unified parser's output for this file. Nil
-	// when scan hasn't run the parser yet (phase 1 case) or when
-	// parsing failed.
+	// when scan hasn't run the parser yet or when parsing failed.
 	Parsed *parsing.ParsedRelease
 }
 

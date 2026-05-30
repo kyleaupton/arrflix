@@ -25,9 +25,8 @@ type TmdbClient interface {
 }
 
 // TmdbProvider adapts the existing TMDB integration to MetadataProvider.
-// It's the only implementation that ships in phase 1 of the matcher work;
-// additional providers slot in alongside it once the metadata module
-// proper lands.
+// It's the only implementation today; additional providers slot in
+// alongside it once the metadata module proper lands.
 type TmdbProvider struct {
 	client TmdbClient
 }
@@ -123,8 +122,8 @@ func (p *TmdbProvider) lookupTmdb(ctx context.Context, id string) (*Item, error)
 
 // Search wraps TMDB's multi-search. Page 1 only in v1; the matcher's
 // paged-stop-on-confidence behavior (parsing spec) lives one layer up
-// in the aggregator once name-parse resolvers come online (phase 2).
-// Year and Type biases reorder the result, they never filter.
+// in the aggregator. Year and Type biases reorder the result, they
+// never filter.
 func (p *TmdbProvider) Search(ctx context.Context, query string, opts SearchOptions) ([]Candidate, error) {
 	if p.client == nil {
 		return nil, ErrProviderUnavailable

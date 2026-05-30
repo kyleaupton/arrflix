@@ -727,7 +727,7 @@ func (s *MediaService) buildFileInfosFromDownloadJobsForSeries(ctx context.Conte
 		path := job.CandidateTitle
 
 		fileInfos = append(fileInfos, model.FileInfo{
-			ID:            "", // No media_file exists yet
+			ID:            "", // No file row exists yet
 			LibraryID:     libID,
 			Path:          path,
 			Status:        "downloading",
@@ -916,7 +916,7 @@ func (s *MediaService) buildFileInfosFromDownloadJobs(ctx context.Context, tmdbI
 		path := job.CandidateTitle
 
 		fileInfos = append(fileInfos, model.FileInfo{
-			ID:            "", // No media_file exists yet
+			ID:            "", // No file row exists yet
 			LibraryID:     libID,
 			Path:          path,
 			Status:        "downloading",

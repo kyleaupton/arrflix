@@ -23,9 +23,8 @@ import (
 )
 
 // ScannerService owns filesystem discovery + persistence; the matcher
-// owns identification. Phase 3's split (per specs/modules/matching § Code
-// structure) lands here: scan's executeScan goes walk → match → enrich →
-// persist, with the match step a single MatcherService.MatchBatch call.
+// owns identification. executeScan goes walk → match → enrich → persist,
+// with the match step a single MatcherService.MatchBatch call.
 type ScannerService struct {
 	repo       *repo.Repository
 	logger     *logger.Logger
@@ -149,12 +148,10 @@ func (s *ScannerService) publishEvent(eventType, scanID, libraryID string, extra
 // Pipeline: executeScan
 // ---------------------------------------------------------------------------
 
-// executeScan is the four-phase scan loop. Phase 1 walks the library
-// rooted at library.RootPath and collects file metadata, deduping
-// against the live file path set. Phase 2 runs the matcher against the
-// collection — identification is entirely the matcher's concern from
-// here on. Phase 3 reads each MatchOutcomeRecord and persists one file
-// row per discovered file: confident / confident_review set identity;
+// executeScan walks the library rooted at library.RootPath and collects
+// file metadata (deduping against the live file path set), runs the
+// matcher against the collection, then persists one file row per
+// discovered file: confident / confident_review set identity;
 // low_confidence / ambiguous / no_match leave it NULL; partial_series
 // sets the series title with the episode left NULL. The ranked
 // candidates live on the match_decision row (written by MatchBatch), not
@@ -166,7 +163,7 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 
 	s.logger.Info().Str("library_name", library.Name).Str("library_path", library.RootPath).Msg("Starting Scan")
 
-	// Phase 1: Walk & Collect
+	// Walk & collect
 	knownPaths, err := s.loadKnownPaths(ctx, library.ID)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("Failed to bulk-load known paths, falling back to per-file checks")
@@ -253,14 +250,14 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 		return scanStats{}, err
 	}
 
-	s.logger.Info().Int("collected", len(collected)).Int("seen", stats.FilesSeen).Msg("Phase 1 complete: Walk & Collect")
+	s.logger.Info().Int("collected", len(collected)).Int("seen", stats.FilesSeen).Msg("Walk & collect complete")
 
 	if len(collected) == 0 {
 		stats.Duration = int(time.Since(start).Seconds())
 		return stats, nil
 	}
 
-	// Phase 2: Match
+	// Match.
 	//
 	// Each collected file is materialized as a `file` row (identity NULL)
 	// before matching, because match_decision.file_id is a real FK — the
@@ -285,9 +282,9 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 			NotRetryable()
 	}
 
-	s.logger.Info().Int("outcomes", len(outcomes)).Msg("Phase 2 complete: Match")
+	s.logger.Info().Int("outcomes", len(outcomes)).Msg("Match complete")
 
-	// Phase 3+4: Enrich & Persist
+	// Enrich & persist
 	for i, f := range collected {
 		if ctx.Err() != nil {
 			return scanStats{}, ctx.Err()
@@ -457,15 +454,14 @@ func (s *ScannerService) ensureFileRow(ctx context.Context, libraryID uuid.UUID,
 // written by MatchBatch); we don't store a separate flag on the file.
 //
 // The actual persistence is delegated to commitMatch, the helper shared
-// with the user-driven match-by-ID handler (Phase 4). Scan's wrapper
+// with the user-driven match-by-ID handler. Scan's wrapper
 // owns the matcher-record → commitMatchInput translation (cross-source
 // validation, episode unwrap) and the post-commit enrichment kick.
 //
 // Returns (mediaItemCreated, episodeLookupFailed, error).
 //
 // TODO(tracking): close any open wants whose identity matches this
-// outcome's ChosenRef + ChosenEpisode. Phase 4 of the matcher plan is
-// decision flows; want fulfillment hooks in when tracking lands.
+// outcome's ChosenRef + ChosenEpisode when the tracking module lands.
 // See specs/modules/matching/README.md § Drop-in fulfills wants.
 func (s *ScannerService) persistConfident(ctx context.Context, library model.Library, f collectedFile, rec matcher.MatchOutcomeRecord) (bool, bool, error) {
 	if rec.ChosenRef == nil {

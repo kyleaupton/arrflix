@@ -408,10 +408,10 @@ func (a *Aggregator) bandAndRecord(file FileRef, cands []Candidate, items map[Ex
 	}
 
 	// partial_series: the series identity resolved confidently
-	// (above LowMin and non-tied) but no Episode is attached. Phase 1
-	// won't actually produce this — no resolver emits series+episode
-	// today — but the band is wired so phase-2 episode-resolving work
-	// doesn't need a schema or aggregator change.
+	// (above LowMin and non-tied) but no Episode is attached. No resolver
+	// emits series+episode today, so this is unreachable for now — the
+	// band is wired ahead so episode-resolving work needs no schema or
+	// aggregator change.
 	if rec.Outcome != OutcomeNoMatch && best.Episode == nil && bestLooksLikeSeries(best) && file.Parsed != nil && fileLooksLikeSeries(file) {
 		rec.Outcome = OutcomePartialSeries
 	}
@@ -626,10 +626,10 @@ func yearHintFromFile(f FileRef) int {
 	return f.Parsed.Identity.Year.Value
 }
 
-// candidateYear returns the candidate's advertised year. Phase 1
-// resolvers attach the year (when available) via the metadata provider's
-// validation step; absent the call, year is 0. Reserved for future
-// resolvers that synthesize candidates with a year hint pre-validation.
+// candidateYear returns the candidate's advertised year. The year is
+// attached (when available) via the metadata provider's validation step;
+// absent that call, year is 0. Reserved for future resolvers that
+// synthesize candidates with a year hint pre-validation.
 func candidateYear(_ Candidate) int {
 	// Year currently lives on metadata.Item, which the aggregator
 	// reads transiently during validation but doesn't persist on the
@@ -639,12 +639,10 @@ func candidateYear(_ Candidate) int {
 }
 
 // bestLooksLikeSeries reports whether the chosen candidate's identity
-// is series-shaped. Phase 1 has no way to tell — resolvers attach an
-// Episode only when they have one, and Candidate carries no type tag.
-// The partial_series outcome is therefore unreachable from phase-1
-// fake resolvers unless the test attaches a series-shaped episode hint
-// later. The branch is kept so that phase-2 resolvers (which know the
-// difference) light it up automatically.
+// is series-shaped. There's no way to tell today — resolvers attach an
+// Episode only when they have one, and Candidate carries no type tag —
+// so this returns true unconditionally. The branch is kept so that
+// future resolvers which know the difference light it up automatically.
 func bestLooksLikeSeries(_ Candidate) bool {
 	return true
 }

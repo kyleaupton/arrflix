@@ -218,9 +218,8 @@ func (s *MatchDecisionsService) commitManualMatch(
 	editionPtr *string,
 	rec matcher.MatchOutcomeRecord,
 ) (model.MatchDecision, error) {
-	// Phase 1: write match_decision + supersede prior. This is the
-	// audit anchor — even if the side-effect below fails, the decision
-	// row stands.
+	// Write match_decision + supersede prior. This is the audit anchor —
+	// even if the side-effect below fails, the decision row stands.
 	decisionID, err := insertMatchOutcome(ctx, s.repo, rec)
 	if err != nil {
 		return model.MatchDecision{}, err
@@ -229,8 +228,8 @@ func (s *MatchDecisionsService) commitManualMatch(
 		return model.MatchDecision{}, err
 	}
 
-	// Phase 2: point the file's identity at the matched media_item in
-	// place. SetFileIdentity (inside commitMatch) keeps the row, its
+	// Point the file's identity at the matched media_item in place.
+	// SetFileIdentity (inside commitMatch) keeps the row, its
 	// file_state snapshot, and its file_import history intact; file.id
 	// (== file_id) is unchanged, so the decision chain stays consistent.
 	in := commitMatchInput{
@@ -376,10 +375,9 @@ func (s *MatchDecisionsService) Detach(ctx context.Context, fileID uuid.UUID, us
 	if req.Quarantine {
 		absSrc := joinLibraryPath(library, relPath)
 		// TODO(quarantine-settings): the quarantine root isn't a
-		// committed setting yet. Phase-4 leaves the seam — when a
-		// settings key like "matcher.quarantine_path" lands, read it
-		// here. For now, attempt to read the key and skip silently if
-		// unset.
+		// committed setting yet. When a settings key like
+		// "matcher.quarantine_path" lands, read it here. For now, attempt
+		// to read the key and skip silently if unset.
 		var qroot string
 		if s.settings != nil {
 			if raw, gerr := s.settings.GetRaw(ctx, "matcher.quarantine_path"); gerr == nil {

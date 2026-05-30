@@ -232,7 +232,7 @@ func entityTypeFromHint(s string) (metadata.EntityType, bool) {
 // numbering and has at least one episode number. Absolute (anime) and
 // daily namespaces are intentionally NOT translated here — that's the
 // future v2 `episode-numbering` resolver's job (matching spec § The
-// resolver catalog). Phase 2 surfaces just the season-episode shape;
+// resolver catalog). Only the season-episode shape is surfaced here;
 // anything else returns nil so the aggregator may band the file as
 // partial_series when the series identity itself resolves.
 func episodeRefFromHint(hint parsing.IdentityAttrs) *matcher.EpisodeRef {

@@ -39,7 +39,7 @@ type MatcherService struct {
 // used for Tier-1 validation; the repo is the match_decision persistence
 // boundary.
 //
-// TODO(phase-1): Config currently arrives wired up by service.New (the
+// TODO(settings): Config currently arrives wired up by service.New (the
 // caller), which hardcodes DefaultConfig(). Wire the settings-table
 // override (the per-installation Strict/Recommended/Relaxed preset)
 // when the metadata-module settings work lands; matching spec § Threshold
@@ -73,7 +73,7 @@ func NewMatcherService(
 // A nil repo skips persistence — the parity harness drives the aggregator
 // without a database.
 //
-// TODO(phase-4): want fulfillment lives downstream of a confident match.
+// TODO(tracking): want fulfillment lives downstream of a confident match.
 // When the tracking module lands, this is where a confident match
 // triggers want closure + Story-1 notifications (matching spec § Drop-in
 // fulfills wants).

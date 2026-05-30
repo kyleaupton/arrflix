@@ -33,7 +33,7 @@ type SuggestedMatch struct {
 	// ContributingResolvers names the resolvers whose candidates
 	// merged into this suggestion (e.g. ["path-embed", "name-parse"]).
 	// Read by the matcher inbox's "why didn't this match" affordance
-	// and by re-match flows in Phase 4.
+	// and by re-match flows.
 	ContributingResolvers []string `json:"contributingResolvers,omitempty"`
 	// Evidence is the per-resolver JSON payload the matcher emitted
 	// for this suggestion. Whole-row capping (8KB) lives at the

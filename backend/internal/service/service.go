@@ -87,8 +87,8 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 
 	// Matcher: the v1 resolver catalog (path-embed + name-parse) wires
 	// up via DefaultRegistry. ScannerService.MatchBatch is the only
-	// caller today; manual re-match flows (Phase 4) and drop-in flows
-	// (when drop-in detection ships) consume the same surface.
+	// caller today; manual re-match flows and drop-in flows (when
+	// drop-in detection ships) consume the same surface.
 	metadataProvider := metadata.NewTmdbProvider(tmdb)
 	matcherSvc := NewMatcherService(
 		l,

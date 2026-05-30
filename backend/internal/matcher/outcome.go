@@ -8,38 +8,34 @@ import (
 	"github.com/kyleaupton/arrflix/internal/metadata"
 )
 
-// Outcome is the confidence band the aggregator assigns to a file. Six
-// values, per the matching spec's confidence-band table — all six ship
-// in v1 and in the match_outcome DB enum, even though phase 1's lack of
-// real resolvers means only no_match fires in practice.
+// Outcome is the confidence band assigned to a file. All values are
+// present in the match_outcome DB enum, per the matching spec's
+// confidence-band table.
 type Outcome string
 
 const (
-	// OutcomeConfident: ≥ Auto threshold. Auto-written to media_file.
+	// OutcomeConfident: ≥ Auto threshold. Identity written automatically.
 	OutcomeConfident Outcome = "confident"
-	// OutcomeConfidentReview: in [ReviewLow, Auto). Auto-written but
-	// surfaced in the matcher inbox for human review.
+	// OutcomeConfidentReview: in [ReviewLow, Auto). Written automatically
+	// but surfaced in the matcher inbox for human review.
 	OutcomeConfidentReview Outcome = "confident_review"
 	// OutcomeLowConfidence: in [LowMin, ReviewLow) with a dominating
-	// candidate. Written to unmatched_file with one strong suggestion.
+	// candidate — one strong ranked suggestion, identity left unset.
 	OutcomeLowConfidence Outcome = "low_confidence"
 	// OutcomeAmbiguous: multiple candidates within ε of each other, or
-	// best candidate below LowMin but candidates exist. Written to
-	// unmatched_file with up to 5 suggestions.
+	// best candidate below LowMin but candidates exist — up to 5 ranked
+	// suggestions.
 	OutcomeAmbiguous Outcome = "ambiguous"
-	// OutcomeNoMatch: no candidates above LowMin. Written to
-	// unmatched_file with no suggestions.
+	// OutcomeNoMatch: no candidates above LowMin. No suggestions.
 	OutcomeNoMatch Outcome = "no_match"
 	// OutcomePartialSeries: series identity resolved confidently but the
-	// episode is unresolved. Phase 1 doesn't have resolvers that produce
-	// this; the band exists so phase-3 episode-resolving resolvers don't
-	// need a schema change.
+	// episode is unresolved. The band exists so episode-resolving
+	// resolvers won't need a schema change.
 	OutcomePartialSeries Outcome = "partial_series"
 	// OutcomeDetached: the user explicitly removed the file from the
 	// library scope ("this doesn't belong here"). The file may be moved
 	// to a configured quarantine path; the match_decision row preserves
-	// the audit trail. No follow-up match is expected. Phase 4 user-only
-	// outcome — the aggregator never emits this.
+	// the audit trail. User-only — the aggregator never emits this.
 	OutcomeDetached Outcome = "detached"
 )
 
@@ -63,15 +59,14 @@ var (
 	PresetRelaxed     = Thresholds{Auto: 0.70, ReviewLow: 0.5, LowMin: 0.5}
 )
 
-// Config carries aggregator-tunable knobs. Phase 1 hardcodes the
-// Recommended preset at service construction; per-library overrides
-// (matcher spec § Per-library resolver toggle UX) land later.
+// Config carries aggregator-tunable knobs. Today only the hardcoded
+// Recommended preset; per-library overrides land later (matcher spec
+// § Per-library resolver toggle UX).
 type Config struct {
 	Thresholds Thresholds
 }
 
-// DefaultConfig returns the recommended preset. The TODO in
-// MatcherService points at where the real (settings-table) wiring lands.
+// DefaultConfig returns the Recommended preset.
 func DefaultConfig() Config {
 	return Config{Thresholds: PresetRecommended}
 }
@@ -80,11 +75,8 @@ func DefaultConfig() Config {
 // file. It mirrors the `match_decision` row 1:1 — service.MatchBatch
 // hands the record to the repo, which writes it.
 type MatchOutcomeRecord struct {
-	// FileID is the identifier of the file being matched. In phase 1 the
-	// producer of the ID is the caller (typically the future scan loop);
-	// the match_decision row carries it without an FK because the file
-	// may live in either media_file or unmatched_file depending on the
-	// outcome, and the canonical producer is wired in phase 3.
+	// FileID is the file this decision is about — a real FK to file.id.
+	// The file row exists before the decision is written.
 	FileID uuid.UUID
 
 	Outcome Outcome
@@ -106,17 +98,15 @@ type MatchOutcomeRecord struct {
 	ChosenItem *metadata.Item
 
 	// RankedCandidates is the top-N post-merge candidate set, sorted by
-	// final aggregated confidence (descending). The slice is capped at
-	// RankedCandidatesLimit (5) and excludes candidates below LowMin —
-	// it mirrors what the matcher inbox surfaces as ranked suggestions.
-	// Empty for no_match; one entry for confident / confident_review /
-	// low_confidence (the chosen candidate); up to 5 for ambiguous.
-	// partial_series carries the series-level chosen candidate only.
+	// final aggregated confidence (descending), capped at
+	// RankedCandidatesLimit and excluding candidates below LowMin — what
+	// the matcher inbox surfaces. Empty for no_match; one entry for
+	// confident / confident_review / low_confidence; up to 5 for
+	// ambiguous; the series-level candidate only for partial_series.
 	//
-	// Each entry carries the validated metadata.Item when the aggregator's
-	// Tier-1 validation populated one (matching by post-rewrite
-	// ExternalRef); nil otherwise. Persistence code uses this to write
-	// per-suggestion title/year onto unmatched_file.suggested_matches
+	// Each entry carries the validated metadata.Item when Tier-1
+	// validation populated one (matched by post-rewrite ExternalRef),
+	// else nil — persistence uses it to write per-suggestion title/year
 	// without a second LookupByID.
 	RankedCandidates []RankedCandidate
 
@@ -135,8 +125,7 @@ type MatchOutcomeRecord struct {
 	Truncated bool
 
 	// DecidedBy is "auto" for aggregator-emitted decisions; user-driven
-	// re-match / un-match writes "user:<uuid>" via separate code paths
-	// (phase 4).
+	// re-match / un-match writes "user:<uuid>" via separate code paths.
 	DecidedBy string
 	DecidedAt time.Time
 }
@@ -152,10 +141,9 @@ type ResolverAudit struct {
 	TopConfidence  float64 `json:"topConfidence"`
 }
 
-// RankedCandidatesLimit caps the post-merge candidate slice the
-// aggregator carries on the outcome record. Matches the matching spec's
-// "up to 5 suggestions" semantics for ambiguous outcomes; deeper lists
-// would inflate unmatched_file.suggested_matches without adding signal.
+// RankedCandidatesLimit caps the post-merge candidate slice. Matches the
+// matching spec's "up to 5 suggestions" for ambiguous outcomes; deeper
+// lists add no signal.
 const RankedCandidatesLimit = 5
 
 // RankedCandidate is one entry in MatchOutcomeRecord.RankedCandidates —
