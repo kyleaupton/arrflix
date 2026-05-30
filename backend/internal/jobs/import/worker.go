@@ -19,6 +19,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/mediainfo"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/osdb"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/pathmapping"
 	"github.com/kyleaupton/arrflix/internal/repo"
@@ -231,10 +232,21 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 		}
 
 		fileSize := srcInfo.Size()
+
+		// Best-effort: the import is byte-identical to the source, so hashing
+		// the dest matches scan-discovered files. Nullable column; never fatal.
+		var osdbHash *string
+		if h, herr := osdb.Hash(fullDest); herr == nil {
+			osdbHash = &h
+		} else {
+			w.log.Debug().Err(herr).Str("dest", fullDest).Msg("osdb hash skipped")
+		}
+
 		if _, serr := r.UpsertFileState(ctx, repo.UpsertFileStateParams{
 			FileID:    file.ID,
 			Exists:    true,
 			SizeBytes: &fileSize,
+			OsdbHash:  osdbHash,
 		}); serr != nil {
 			return serr
 		}

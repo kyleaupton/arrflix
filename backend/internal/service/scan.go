@@ -16,6 +16,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/matcher"
 	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/osdb"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
@@ -60,11 +61,14 @@ type scanStats struct {
 	Duration            int `json:"duration"`
 }
 
-// collectedFile is the walk phase's view of one file: paths + size.
+// collectedFile is the walk phase's view of one file: paths + size +
+// OSDB content hash. OsdbHash is nil when the file is too small or
+// unreadable for hashing.
 type collectedFile struct {
 	RelPath  string
 	AbsPath  string
 	FileSize *int64
+	OsdbHash *string
 }
 
 // StartScan kicks off an async library scan. It returns the scan ID immediately.
@@ -227,10 +231,20 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 			fileSize = &size
 		}
 
+		// Best-effort: a NULL hash (too-small file / read error) is tolerated
+		// since the column is nullable.
+		var osdbHash *string
+		if h, herr := osdb.Hash(path); herr == nil {
+			osdbHash = &h
+		} else {
+			s.logger.Debug().Str("path", path).Err(herr).Msg("osdb hash skipped")
+		}
+
 		collected = append(collected, collectedFile{
 			RelPath:  relPath,
 			AbsPath:  path,
 			FileSize: fileSize,
+			OsdbHash: osdbHash,
 		})
 
 		return nil
@@ -429,6 +443,7 @@ func (s *ScannerService) ensureFileRow(ctx context.Context, libraryID uuid.UUID,
 		FileID:    id,
 		Exists:    true,
 		SizeBytes: f.FileSize,
+		OsdbHash:  f.OsdbHash,
 	}); err != nil {
 		return uuid.Nil, err
 	}
@@ -478,6 +493,7 @@ func (s *ScannerService) persistConfident(ctx context.Context, library model.Lib
 		RelPath:  f.RelPath,
 		AbsPath:  f.AbsPath,
 		FileSize: f.FileSize,
+		OsdbHash: f.OsdbHash,
 		TmdbID:   tmdbID,
 		Item:     rec.ChosenItem,
 		Edition:  rec.ChosenEdition,
@@ -544,6 +560,7 @@ func (s *ScannerService) persistPartialSeries(ctx context.Context, library model
 		RelPath:  f.RelPath,
 		AbsPath:  f.AbsPath,
 		FileSize: f.FileSize,
+		OsdbHash: f.OsdbHash,
 		TmdbID:   tmdbID,
 		Item:     rec.ChosenItem,
 		Method:   "scan",

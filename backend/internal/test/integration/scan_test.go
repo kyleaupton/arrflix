@@ -175,6 +175,79 @@ func TestScan_MatchPersistPipeline_EndToEnd(t *testing.T) {
 	}
 }
 
+// TestScan_PopulatesOsdbHash proves the OSDB content hash is computed during
+// the scan read pass and persisted to file_state.osdb_hash end-to-end. The
+// fixture is exactly 131072 (128 KiB) zero bytes: both 64 KiB chunks sum to
+// zero, so the hash is just the filesize (0x20000) → the deterministic
+// reference vector "0000000000020000". A media extension makes isMediaFile
+// accept it; no embedded ID means the matcher leaves it unidentified, which
+// is irrelevant — file_state is written for every discovered file.
+func TestScan_PopulatesOsdbHash(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	_, tmdbClient := tmdbtest.New(t)
+	app := testapp.New(t, pool, testapp.WithTMDB(tmdbClient))
+
+	const rel = "hashme.mkv"
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, rel), make([]byte, 131072), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	body := makeCreateBody("movies", "movie", root, true, false)
+	var lib model.Library
+	app.POST(t, "/api/v1/libraries", body, &lib, http.StatusCreated)
+
+	var scanOut map[string]any
+	app.POST(t, "/api/v1/libraries/"+lib.ID.String()+"/scan", nil, &scanOut, http.StatusAccepted)
+	if scanID, _ := scanOut["scanId"].(string); scanID == "" {
+		t.Fatal("scan did not return scanId")
+	}
+
+	// file_state is written during the scan read pass; wait for the row to
+	// land before reading back the hash.
+	waitForFileState(t, pool, lib.ID, rel, 30*time.Second)
+
+	var osdbHash *string
+	if err := pool.QueryRow(context.Background(), `
+		SELECT fs.osdb_hash
+		FROM file f
+		JOIN file_state fs ON fs.file_id = f.id
+		WHERE f.library_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
+	`, lib.ID, rel).Scan(&osdbHash); err != nil {
+		t.Fatalf("read file_state.osdb_hash: %v", err)
+	}
+	if osdbHash == nil {
+		t.Fatal("osdb_hash is NULL; expected hash to be populated")
+	}
+	if *osdbHash != "0000000000020000" {
+		t.Errorf("osdb_hash = %q, want %q", *osdbHash, "0000000000020000")
+	}
+}
+
+// waitForFileState polls until a file_state row exists for the given library
+// path or the timeout fires.
+func waitForFileState(t *testing.T, pool *pgxpool.Pool, libraryID uuid.UUID, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		var count int
+		if err := pool.QueryRow(context.Background(), `
+			SELECT count(*)
+			FROM file f
+			JOIN file_state fs ON fs.file_id = f.id
+			WHERE f.library_id = $1 AND f.path = $2 AND f.deleted_at IS NULL
+		`, libraryID, path).Scan(&count); err != nil {
+			t.Fatalf("count file_state: %v", err)
+		}
+		if count >= 1 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for file_state row for %q", path)
+}
+
 // waitForRows polls until the named table has >=expected rows or the
 // timeout fires.
 func waitForRows(t *testing.T, pool *pgxpool.Pool, table string, expected int, timeout time.Duration) {

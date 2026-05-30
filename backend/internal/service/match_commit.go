@@ -41,6 +41,9 @@ type commitMatchInput struct {
 	// FileSize is the on-disk file size in bytes. nil leaves the column
 	// unset on file_state.
 	FileSize *int64
+	// OsdbHash is the OSDB content hash. nil leaves the column unset on
+	// file_state (too-small file / read error at walk time).
+	OsdbHash *string
 	// TmdbID is the validated TMDB identifier the file is being matched
 	// to.
 	TmdbID int64
@@ -230,6 +233,7 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 			FileID:    f.ID,
 			Exists:    true,
 			SizeBytes: in.FileSize,
+			OsdbHash:  in.OsdbHash,
 		}); serr != nil {
 			return serr
 		}
