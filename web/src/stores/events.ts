@@ -202,6 +202,18 @@ export const useEventsStore = defineStore('events', () => {
   }
 
   /**
+   * Tear the connection down and forget the session identity. Used on logout:
+   * unlike disconnect() (which keeps sessionId/lastEventId so a reconnect can
+   * resume), reset() clears them so the next login starts a clean session and
+   * never presents the previous user's session id.
+   */
+  function reset() {
+    disconnect()
+    sessionId.value = null
+    lastEventId = undefined
+  }
+
+  /**
    * Force-drop the current connection and re-establish it.
    * Useful as an escape hatch if the connection is in a bad state.
    */
@@ -271,6 +283,7 @@ export const useEventsStore = defineStore('events', () => {
     connect,
     disconnect,
     reconnect,
+    reset,
     subscribe,
     unsubscribe,
   }

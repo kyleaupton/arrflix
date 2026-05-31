@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Film, Tv, RefreshCw, RotateCw } from 'lucide-vue-next'
-import type { DownloadJob } from '@/stores/downloadJobs'
+import type { DownloadJob } from '@/composables/useDownloadJobs'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'

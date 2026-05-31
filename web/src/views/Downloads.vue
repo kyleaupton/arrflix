@@ -1,16 +1,40 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed } from 'vue'
 import { Download, AlertTriangle } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { useEventsStore } from '@/stores/events'
-import { useDownloadJobsStore, type DownloadJob, type DownloadFilter } from '@/stores/downloadJobs'
+import { useDownloadJobsStore, type DownloadFilter } from '@/stores/downloadJobs'
+import {
+  useDownloadJobsLive,
+  useDownloadJobMutations,
+  type DownloadJob,
+} from '@/composables/useDownloadJobs'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import DownloadCard from '@/components/downloads/DownloadCard.vue'
 import DownloadDetailDrawer from '@/components/downloads/DownloadDetailDrawer.vue'
 
 const events = useEventsStore()
-const jobs = useDownloadJobsStore()
+const ui = useDownloadJobsStore()
+const { isLoading, jobs, activeJobs, needsAttentionJobs, completedJobs } = useDownloadJobsLive()
+const { cancelJob, reimportFailed, retryDownload } = useDownloadJobMutations()
+
+// filtered/visible combine the live groups (server state) with the UI filter +
+// page size (store state), so they live here at the seam rather than in either.
+const filteredJobs = computed(() => {
+  switch (ui.filter) {
+    case 'active':
+      return activeJobs.value
+    case 'attention':
+      return needsAttentionJobs.value
+    case 'completed':
+      return completedJobs.value
+    default:
+      return jobs.value
+  }
+})
+const visibleJobs = computed(() => filteredJobs.value.slice(0, ui.visibleCount))
+const hasMore = computed(() => filteredJobs.value.length > ui.visibleCount)
 
 const filters: { key: DownloadFilter; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -22,23 +46,23 @@ const filters: { key: DownloadFilter; label: string }[] = [
 function filterCount(key: DownloadFilter): number {
   switch (key) {
     case 'active':
-      return jobs.activeJobs.length
+      return activeJobs.value.length
     case 'attention':
-      return jobs.needsAttentionJobs.length
+      return needsAttentionJobs.value.length
     case 'completed':
-      return jobs.completedJobs.length
+      return completedJobs.value.length
     default:
-      return jobs.jobsSorted.length
+      return jobs.value.length
   }
 }
 
 const handleViewDetails = (job: DownloadJob) => {
-  jobs.openDetailDrawer(job.id)
+  ui.openDetailDrawer(job.id)
 }
 
-const handleReimport = async (job: DownloadJob, all: boolean) => {
+const handleReimport = async (jobId: string, all: boolean) => {
   try {
-    const result = await jobs.reimportFailed(job.id, all)
+    const result = await reimportFailed(jobId, all)
     const count = result?.created_tasks?.length ?? 0
     if (count > 0) {
       toast.success(`Created ${count} reimport task${count > 1 ? 's' : ''}`)
@@ -50,49 +74,24 @@ const handleReimport = async (job: DownloadJob, all: boolean) => {
   }
 }
 
-const handleCancelJob = async (job: DownloadJob) => {
+const handleCancelJob = async (jobId: string) => {
   try {
-    await jobs.cancelJob(job.id)
+    await cancelJob(jobId)
     toast.success('Download cancelled')
   } catch {
     toast.error('Failed to cancel download')
   }
 }
 
-const handleDrawerReimport = (jobId: string, all: boolean) => {
-  const job = jobs.getJobById(jobId)
-  if (job) {
-    handleReimport(job, all)
-  }
-}
-
-const handleRetry = async (job: DownloadJob) => {
+const handleRetry = async (jobId: string) => {
   try {
-    await jobs.retryDownload(job.id)
+    await retryDownload(jobId)
+    ui.closeDetailDrawer()
     toast.success('Download retry started')
   } catch {
     toast.error('Failed to retry download')
   }
 }
-
-const handleDrawerRetry = (jobId: string) => {
-  const job = jobs.getJobById(jobId)
-  if (job) {
-    handleRetry(job)
-  }
-}
-
-const handleDrawerCancel = (jobId: string) => {
-  const job = jobs.getJobById(jobId)
-  if (job) {
-    handleCancelJob(job)
-  }
-}
-
-onMounted(async () => {
-  jobs.connectLive()
-  await jobs.refresh()
-})
 </script>
 
 <template>
@@ -111,18 +110,18 @@ onMounted(async () => {
             :key="f.key"
             class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors"
             :class="
-              jobs.filter === f.key
+              ui.filter === f.key
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-muted text-muted-foreground hover:bg-muted/80'
             "
-            @click="jobs.setFilter(f.key)"
+            @click="ui.setFilter(f.key)"
           >
             {{ f.label }}
             <span
               v-if="filterCount(f.key) > 0"
               class="rounded-full px-1.5 py-0.5 text-[10px] leading-none font-semibold"
               :class="
-                jobs.filter === f.key
+                ui.filter === f.key
                   ? 'bg-primary-foreground/20 text-primary-foreground'
                   : 'bg-foreground/10 text-muted-foreground'
               "
@@ -148,27 +147,27 @@ onMounted(async () => {
 
       <!-- Attention banner -->
       <div
-        v-if="jobs.needsAttentionJobs.length > 0 && jobs.filter !== 'attention'"
+        v-if="needsAttentionJobs.length > 0 && ui.filter !== 'attention'"
         class="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3"
       >
         <AlertTriangle class="size-4 text-destructive shrink-0" />
         <span class="text-sm text-destructive">
-          {{ jobs.needsAttentionJobs.length }}
-          download{{ jobs.needsAttentionJobs.length > 1 ? 's' : '' }} need{{
-            jobs.needsAttentionJobs.length === 1 ? 's' : ''
+          {{ needsAttentionJobs.length }}
+          download{{ needsAttentionJobs.length > 1 ? 's' : '' }} need{{
+            needsAttentionJobs.length === 1 ? 's' : ''
           }}
           attention
         </span>
         <button
           class="ml-auto text-xs font-medium text-destructive hover:underline"
-          @click="jobs.setFilter('attention')"
+          @click="ui.setFilter('attention')"
         >
           View
         </button>
       </div>
 
       <!-- Loading state -->
-      <div v-if="jobs.isLoading" class="space-y-3">
+      <div v-if="isLoading" class="space-y-3">
         <Skeleton class="h-20 w-full rounded-lg" />
         <Skeleton class="h-20 w-full rounded-lg" />
         <Skeleton class="h-20 w-full rounded-lg" />
@@ -176,7 +175,7 @@ onMounted(async () => {
 
       <!-- Empty state -->
       <div
-        v-else-if="!jobs.jobsSorted.length"
+        v-else-if="!jobs.length"
         class="flex flex-col items-center justify-center py-16 text-muted-foreground"
       >
         <Download class="size-10 mb-3 opacity-50" />
@@ -185,35 +184,35 @@ onMounted(async () => {
 
       <!-- Empty filter state -->
       <div
-        v-else-if="!jobs.filteredJobs.length"
+        v-else-if="!filteredJobs.length"
         class="flex flex-col items-center justify-center py-16 text-muted-foreground"
       >
-        <p class="text-sm">No {{ jobs.filter === 'all' ? '' : jobs.filter }} downloads</p>
+        <p class="text-sm">No {{ ui.filter === 'all' ? '' : ui.filter }} downloads</p>
       </div>
 
       <!-- Flat job list -->
       <div v-else class="space-y-3">
         <DownloadCard
-          v-for="job in jobs.visibleJobs"
+          v-for="job in visibleJobs"
           :key="job.id"
           :job="job"
           @click="handleViewDetails"
-          @cancel="handleCancelJob"
-          @retry="handleRetry"
-          @reimport="handleReimport"
+          @cancel="(job) => handleCancelJob(job.id)"
+          @retry="(job) => handleRetry(job.id)"
+          @reimport="(job, all) => handleReimport(job.id, all)"
         />
 
-        <div v-if="jobs.hasMore" class="flex justify-center pt-2">
-          <Button variant="ghost" size="sm" @click="jobs.showMore()"> Show more </Button>
+        <div v-if="hasMore" class="flex justify-center pt-2">
+          <Button variant="ghost" size="sm" @click="ui.showMore()"> Show more </Button>
         </div>
       </div>
     </div>
 
     <!-- Detail Drawer -->
     <DownloadDetailDrawer
-      @reimport="handleDrawerReimport"
-      @cancel="handleDrawerCancel"
-      @retry="handleDrawerRetry"
+      @reimport="handleReimport"
+      @cancel="handleCancelJob"
+      @retry="handleRetry"
     />
   </div>
 </template>

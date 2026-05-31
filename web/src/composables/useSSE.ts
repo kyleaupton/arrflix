@@ -7,10 +7,12 @@ import { useEventsStore } from '@/stores/events'
 // calling scope (component/composable) and tear it down automatically.
 //
 // They also re-sync on the store's internal lifecycle events — `_reconnected`
-// (a drop that may have outrun the replay window) and `_resume_gap` (the replay
-// buffer was exhausted) — by invalidating the key so the cache refetches a
-// fresh baseline. Delta consumers can't safely apply deltas across such a gap,
-// so they fall back to a refetch too.
+// (a drop that may have outrun the replay window), `_resume_gap` (the replay
+// buffer was exhausted), and `_visibility_restored` (the tab woke and may have
+// missed events) — by invalidating the key so the cache refetches a fresh
+// baseline. Delta consumers can't safely apply deltas across such a gap, so
+// they fall back to a refetch too.
+const RESYNC_EVENTS = ['_reconnected', '_resume_gap', '_visibility_restored'] as const
 
 // useSSEMutation — Pattern A (snapshot + delta). Applies each event payload to
 // the cached query data via `applyDelta`, mutating in place without a refetch.
@@ -29,13 +31,11 @@ export function useSSEMutation<TData, TPayload>(
   })
 
   const resync = () => queryClient.invalidateQueries({ queryKey })
-  const offReconnect = events.on('_reconnected', resync)
-  const offGap = events.on('_resume_gap', resync)
+  const offResync = RESYNC_EVENTS.map((e) => events.on(e, resync))
 
   onScopeDispose(() => {
     offDelta()
-    offReconnect()
-    offGap()
+    offResync.forEach((off) => off())
   })
 }
 
@@ -49,12 +49,10 @@ export function useSSEInvalidation(queryKey: QueryKey, eventName: string) {
   const invalidate = () => queryClient.invalidateQueries({ queryKey })
 
   const offEvent = events.on(eventName, invalidate)
-  const offReconnect = events.on('_reconnected', invalidate)
-  const offGap = events.on('_resume_gap', invalidate)
+  const offResync = RESYNC_EVENTS.map((e) => events.on(e, invalidate))
 
   onScopeDispose(() => {
     offEvent()
-    offReconnect()
-    offGap()
+    offResync.forEach((off) => off())
   })
 }

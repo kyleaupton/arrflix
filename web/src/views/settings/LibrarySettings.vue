@@ -80,8 +80,8 @@ const activeScans = reactive(new Map<string, ScanProgress>())
 const unsubscribers: (() => void)[] = []
 
 onMounted(() => {
-  events.connect(['scan_started', 'scan_progress', 'scan_completed', 'scan_failed'])
-
+  // The app-wide SSE stream (opened in App.vue) already carries scan events;
+  // just register listeners for the ones this page renders.
   unsubscribers.push(
     events.on('scan_started', (data) => {
       const d = data as ScanEventData

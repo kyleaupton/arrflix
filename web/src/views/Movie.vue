@@ -88,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useQuery } from '@tanstack/vue-query'
@@ -108,14 +108,14 @@ import DataTable from '@/components/tables/DataTable.vue'
 import { movieFilesColumns } from '@/components/tables/configs/movieFilesTableConfig'
 import { useModal } from '@/composables/useModal'
 import { buildMetadataSubtitle } from '@/lib/utils'
-import { useDownloadJobsStore } from '@/stores/downloadJobs'
+import { useDownloadJobsLive, isJobActive } from '@/composables/useDownloadJobs'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
 import type { FileInfo } from '@/client/types.gen'
 
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
 const modal = useModal()
-const downloadJobs = useDownloadJobsStore()
+const { getJobById } = useDownloadJobsLive()
 
 const id = computed(() => {
   const castAttept = Number(Array.isArray(route.params.id) ? route.params.id[0] : route.params.id)
@@ -189,9 +189,9 @@ const filesWithProgress = computed(() => {
   if (!data.value?.files) return []
 
   return data.value.files.map((file): FileInfo => {
-    // If file has downloadJobId, get latest progress from store
+    // If file has downloadJobId, get latest progress from the live jobs cache
     if (file.downloadJobId) {
-      const job = downloadJobs.getJobById(file.downloadJobId)
+      const job = getJobById(file.downloadJobId)
       if (job) {
         return {
           ...file,
@@ -210,8 +210,8 @@ const isDownloading = computed(() => {
 
   return data.value.files.some((file) => {
     if (!file.downloadJobId) return false
-    const job = downloadJobs.getJobById(file.downloadJobId)
-    return job ? downloadJobs.isJobActive(job) : false
+    const job = getJobById(file.downloadJobId)
+    return job ? isJobActive(job) : false
   })
 })
 
@@ -228,11 +228,6 @@ function mapJobStatusToFileStatus(jobStatus: string): string {
       return 'downloading' // fallback
   }
 }
-
-// Connect to live updates on mount
-onMounted(() => {
-  downloadJobs.connectLive()
-})
 
 const searchForDownloadCandidates = () => {
   modal.open(DownloadCandidatesDialog, {

@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
+import { downloadJobsListImportTasksOptions } from '@/client/@tanstack/vue-query.gen'
 import { useDownloadJobsStore } from '@/stores/downloadJobs'
+import { useDownloadJobsLive } from '@/composables/useDownloadJobs'
 import {
   Sheet,
   SheetContent,
@@ -19,7 +22,8 @@ import type { ImportTask } from '@/client/types.gen'
 import { statusConfig } from './statusConfig'
 import { formatBytes, formatSpeed, formatEta } from '@/lib/format'
 
-const jobs = useDownloadJobsStore()
+const ui = useDownloadJobsStore()
+const { getJobById } = useDownloadJobsLive()
 
 const emit = defineEmits<{
   (e: 'reimport', jobId: string, all: boolean): void
@@ -36,8 +40,19 @@ const taskStatusConfig: Record<string, { label: string; class: string }> = {
   cancelled: { label: 'Cancelled', class: 'bg-gray-600 text-white' },
 }
 
-const job = computed(() => jobs.selectedJob)
-const isOpen = computed(() => jobs.isDetailDrawerOpen)
+const job = computed(() => (ui.selectedJobId ? (getJobById(ui.selectedJobId) ?? null) : null))
+const isOpen = computed(() => ui.isDetailDrawerOpen)
+
+// Import tasks for the open job. The reactive key refetches when the selected
+// job changes; reimport mutations invalidate this query to pull fresh rows.
+const importTasksQuery = useQuery(
+  computed(() => ({
+    ...downloadJobsListImportTasksOptions({ path: { id: ui.selectedJobId ?? '' } }),
+    enabled: isOpen.value && !!ui.selectedJobId,
+  })),
+)
+const drawerImportTasks = computed(() => importTasksQuery.data.value ?? [])
+const isLoadingImportTasks = importTasksQuery.isLoading
 
 const statusLabel = computed(() => {
   if (!job.value) return 'Unknown'
@@ -88,19 +103,9 @@ const drawerSubtitle = computed(() => {
   return parts.join(' \u00B7 ')
 })
 
-// Refresh import tasks when job updates
-watch(
-  () => job.value?.id,
-  (newId) => {
-    if (newId && isOpen.value) {
-      jobs.loadImportTasks(newId)
-    }
-  },
-)
-
 function handleOpenChange(open: boolean) {
   if (!open) {
-    jobs.closeDetailDrawer()
+    ui.closeDetailDrawer()
   }
 }
 
@@ -245,14 +250,14 @@ function getTaskStatusConfig(status: string) {
             <h4 class="text-sm font-medium">Import Tasks</h4>
 
             <!-- Loading state -->
-            <div v-if="jobs.isLoadingImportTasks" class="space-y-2">
+            <div v-if="isLoadingImportTasks" class="space-y-2">
               <Skeleton class="h-16 w-full" />
               <Skeleton class="h-16 w-full" />
             </div>
 
             <!-- Empty state -->
             <div
-              v-else-if="jobs.drawerImportTasks.length === 0"
+              v-else-if="drawerImportTasks.length === 0"
               class="text-sm text-muted-foreground py-4 text-center"
             >
               No import tasks yet
@@ -261,7 +266,7 @@ function getTaskStatusConfig(status: string) {
             <!-- Task list -->
             <div v-else class="space-y-2">
               <div
-                v-for="task in jobs.drawerImportTasks"
+                v-for="task in drawerImportTasks"
                 :key="task.id"
                 class="p-3 border rounded-lg space-y-2"
                 :class="{

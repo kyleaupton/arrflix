@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
+import { useEventsStore } from '@/stores/events'
 import ImmersiveLayout from '@/layouts/ImmersiveLayout.vue'
 import DialogContainer from '@/components/DialogContainer.vue'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -12,6 +13,7 @@ import { Toaster } from '@/components/ui/sonner'
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const eventsStore = useEventsStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -19,6 +21,19 @@ const route = useRoute()
 if (appStore.needsSetup && route.path !== '/setup') {
   router.push('/setup')
 }
+
+// One app-wide SSE stream for the whole session: open it once the user is
+// authenticated, tear it down on logout. The stream carries all of the user's
+// events (no connect-time topic filter); feature code just registers listeners
+// via the events store / useSSE composables — it never opens its own stream.
+watch(
+  () => authStore.isAuthenticated,
+  (authed) => {
+    if (authed) eventsStore.connect()
+    else eventsStore.reset()
+  },
+  { immediate: true },
+)
 
 // Track navbar opaque state separately so it updates after the leave transition,
 // preventing the navbar from snapping before the old page has faded out.
