@@ -3315,8 +3315,11 @@ components:
       properties:
         ok:
           type: boolean
+        sessionId:
+          type: string
       required:
         - ok
+        - sessionId
       type: object
     ReimportResult:
       additionalProperties: false

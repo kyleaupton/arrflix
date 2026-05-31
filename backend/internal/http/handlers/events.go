@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 	"github.com/kyleaupton/arrflix/internal/realtime"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
@@ -29,25 +30,59 @@ type EventsStreamInput struct {
 }
 
 func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send streamSender) {
-	allowed := map[string]bool{}
-	for _, t := range input.Types {
-		if t != "" {
-			allowed[t] = true
-		}
+	// Resolve the authenticated user from the JWT subject. The chi JWT
+	// middleware should already have rejected an unauthenticated request, so a
+	// missing/unparseable subject here is anomalous — close the stream defensively
+	// rather than subscribing an unscoped session.
+	userID, err := userIDFromContext(ctx, "EventsHandler.Stream")
+	if err != nil {
+		return
 	}
+
 	typeAllowed := func(t string) bool {
-		if len(allowed) == 0 {
+		if len(input.Types) == 0 {
 			return true
 		}
-		return allowed[t]
+		for _, allowed := range input.Types {
+			if allowed == t {
+				return true
+			}
+		}
+		return false
 	}
 
 	emit := func(e realtime.Event) bool {
 		return send(streamFrame{ID: e.ID, Event: e.Name, Data: e.Data}) == nil
 	}
 
+	if h.broker == nil {
+		// No broker to scope against: still emit ready (with a freshly allocated
+		// session id) and the snapshot for parity, then hold the connection open
+		// until the client disconnects.
+		if typeAllowed(realtime.NameReady) {
+			if !emit(realtime.Ready(uuid.New().String())) {
+				return
+			}
+		}
+		if typeAllowed(realtime.NameDownloadJobsSnapshot) && h.svc != nil {
+			if jobs, err := h.svc.DownloadJobs.ListWithImportSummary(ctx); err == nil {
+				if !emit(realtime.DownloadJobsSnapshot(jobs)) {
+					return
+				}
+			}
+		}
+		<-ctx.Done()
+		return
+	}
+
+	session, cancel := h.broker.Subscribe(sse.SubscribeParams{
+		UserID: userID,
+		Topics: input.Types,
+	})
+	defer cancel()
+
 	if typeAllowed(realtime.NameReady) {
-		if !emit(realtime.Ready()) {
+		if !emit(realtime.Ready(session.ID.String())) {
 			return
 		}
 	}
@@ -63,16 +98,6 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 		}
 	}
 
-	if h.broker == nil {
-		// Hold the connection open until the client disconnects rather than
-		// closing it eagerly when there's nothing to subscribe to.
-		<-ctx.Done()
-		return
-	}
-
-	sub, cancel := h.broker.Subscribe()
-	defer cancel()
-
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
 
@@ -86,16 +111,13 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 					return
 				}
 			}
-		case ev, ok := <-sub:
+		case ev, ok := <-session.Events():
 			if !ok {
 				return
 			}
-			if !typeAllowed(ev.Type) {
-				continue
-			}
-			// The broker is the source of truth for the wire frame: name, id,
-			// and pre-marshaled data map straight through. The realtime
-			// constructors already produced this shape at the publish site.
+			// The broker already filtered this event by recipient and the
+			// session's topic set; name, id, and pre-marshaled data map straight
+			// through to the wire frame.
 			if send(streamFrame{ID: ev.ID, Event: ev.Type, Data: ev.Data}) != nil {
 				return
 			}

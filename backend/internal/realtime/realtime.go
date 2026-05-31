@@ -18,41 +18,22 @@ import (
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
 
-// RecipientKind enumerates the coarse delivery tags a producer can stamp on
-// an event. The broker filters per-session against connect-time eligibility;
-// this phase carries the tag but does not yet filter (every event fans out to
-// every subscriber — per-user scoping is a later phase).
-type RecipientKind string
-
-const (
-	// RecipientBroadcast delivers to every active session.
-	RecipientBroadcast RecipientKind = "broadcast"
-	// RecipientAdmins delivers to every session belonging to a current admin.
-	RecipientAdmins RecipientKind = "admins"
-	// RecipientUser delivers only to the named user's sessions.
-	RecipientUser RecipientKind = "user"
-)
-
-// Recipient is the delivery tag on an event. UserID is meaningful only when
-// Kind is RecipientUser.
-type Recipient struct {
-	Kind   RecipientKind
-	UserID uuid.UUID
-}
+// Recipient is the delivery tag a producer stamps on an event. It lives in the
+// sse package because the broker filters by it; these aliases keep the
+// producer-facing spelling (realtime.Broadcast, realtime.User(id)) terse.
+type Recipient = sse.Recipient
 
 // Broadcast targets every active session.
-var Broadcast = Recipient{Kind: RecipientBroadcast}
+var Broadcast = sse.Broadcast
 
 // Admins targets every session belonging to a current admin.
-var Admins = Recipient{Kind: RecipientAdmins}
+var Admins = sse.Admins
 
 // User targets one specific user's sessions.
-func User(id uuid.UUID) Recipient {
-	return Recipient{Kind: RecipientUser, UserID: id}
-}
+func User(id uuid.UUID) Recipient { return sse.User(id) }
 
 // Event is a single realtime message. Name is the wire `event:` line;
-// Recipient is the delivery tag (carried, not yet filtered); Data is the
+// Recipient is the delivery tag the broker filters per session; Data is the
 // pre-marshaled JSON payload written verbatim as the `data:` line; ID is the
 // sortable wire `id:` line used for Last-Event-ID resume.
 type Event struct {
@@ -68,8 +49,7 @@ type Event struct {
 // new dependency.
 //
 // ctx is unused this phase; it is retained for the recipient-resolution path
-// a later phase wires in. The Recipient field is likewise carried but not yet
-// honored by the broker.
+// a later phase wires in.
 func Emit(_ context.Context, broker *sse.Broker, e Event) {
 	if broker == nil {
 		return
@@ -85,9 +65,10 @@ func Emit(_ context.Context, broker *sse.Broker, e Event) {
 		}
 	}
 	broker.Publish(sse.Event{
-		Type: e.Name,
-		Data: e.Data,
-		ID:   e.ID,
+		Type:      e.Name,
+		Data:      e.Data,
+		ID:        e.ID,
+		Recipient: e.Recipient,
 	})
 }
 

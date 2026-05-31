@@ -1408,6 +1408,7 @@ export type ProblemDetails = {
 
 export type ReadyPayload = {
     ok: boolean;
+    sessionId: string;
 };
 
 export type ReimportResult = {
