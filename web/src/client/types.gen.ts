@@ -1420,6 +1420,10 @@ export type ReimportResult = {
     skipped_count: number;
 };
 
+export type ResumeGapPayload = {
+    reason: string;
+};
+
 export type Role = {
     builtIn: boolean;
     createdAt: string;
@@ -3600,12 +3604,22 @@ export type DownloadersTestResponse = DownloadersTestResponses[keyof Downloaders
 
 export type EventsStreamData = {
     body?: never;
+    headers?: {
+        /**
+         * The id of the last event the client received; resumes the stream from just after it within the reattached session.
+         */
+        'Last-Event-ID'?: string;
+    };
     path?: never;
     query?: {
         /**
          * Filter to specific event names; repeatable. Empty = all events.
          */
         type?: Array<string> | null;
+        /**
+         * Reattach to a prior session (from the ready event) to resume via Last-Event-ID. Omit for a fresh session.
+         */
+        session?: string;
     };
     url: '/api/v1/events';
 };
@@ -3686,6 +3700,20 @@ export type EventsStreamResponses = {
          * The event name.
          */
         event: 'ready';
+        /**
+         * The event ID (sortable; used for Last-Event-ID resume).
+         */
+        id?: string;
+        /**
+         * The retry time in milliseconds.
+         */
+        retry?: number;
+    } | {
+        data: ResumeGapPayload;
+        /**
+         * The event name.
+         */
+        event: 'resume_gap';
         /**
          * The event ID (sortable; used for Last-Event-ID resume).
          */

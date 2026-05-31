@@ -44,11 +44,13 @@ func main() {
 	// Repo
 	repo := repo.New(pool)
 
+	// Root context (drives the SSE broker's session sweeper, services, etc.)
+	ctx := context.Background()
+
 	// In-process SSE broker
-	broker := sse.NewBroker()
+	broker := sse.NewBroker(ctx)
 
 	// Services
-	ctx := context.Background()
 	services := service.New(ctx, repo, logg, &cfg, broker, service.WithJWTSecret(cfg.JWTSecret))
 
 	// Seed settings from env vars (e.g. TMDB_API_KEY) for backwards compat

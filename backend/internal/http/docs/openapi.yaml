@@ -3344,6 +3344,14 @@ components:
         - created_tasks
         - skipped_count
       type: object
+    ResumeGapPayload:
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+      required:
+        - reason
+      type: object
     Role:
       additionalProperties: false
       properties:
@@ -5179,6 +5187,20 @@ paths:
             type:
               - array
               - "null"
+        - description: Reattach to a prior session (from the ready event) to resume via Last-Event-ID. Omit for a fresh session.
+          explode: false
+          in: query
+          name: session
+          schema:
+            description: Reattach to a prior session (from the ready event) to resume via Last-Event-ID. Omit for a fresh session.
+            format: uuid
+            type: string
+        - description: The id of the last event the client received; resumes the stream from just after it within the reattached session.
+          in: header
+          name: Last-Event-ID
+          schema:
+            description: The id of the last event the client received; resumes the stream from just after it within the reattached session.
+            type: string
       responses:
         "200":
           content:
@@ -5280,6 +5302,24 @@ paths:
                         - data
                         - event
                       title: Event ready
+                      type: object
+                    - properties:
+                        data:
+                          $ref: "#/components/schemas/ResumeGapPayload"
+                        event:
+                          const: resume_gap
+                          description: The event name.
+                          type: string
+                        id:
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
+                        retry:
+                          description: The retry time in milliseconds.
+                          type: integer
+                      required:
+                        - data
+                        - event
+                      title: Event resume_gap
                       type: object
                     - properties:
                         data:
