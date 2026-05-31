@@ -30,6 +30,8 @@ type InsertMatchDecisionParams struct {
 	Evidence           json.RawMessage
 	EvidenceTruncated  bool
 	DecidedBy          string
+	ParsedSnapshot     json.RawMessage
+	DecidedWith        json.RawMessage
 }
 
 // InsertMatchDecision writes a match_decision row and returns the
@@ -59,6 +61,8 @@ func (r *Repository) InsertMatchDecision(ctx context.Context, params InsertMatch
 		Evidence:           evidence,
 		EvidenceTruncated:  params.EvidenceTruncated,
 		DecidedBy:          params.DecidedBy,
+		ParsedSnapshot:     params.ParsedSnapshot,
+		DecidedWith:        params.DecidedWith,
 	})
 	if err != nil {
 		return 0, apperrors.FromPg(err, "create match decision for file %s", params.FileID)
@@ -98,6 +102,8 @@ func toModelMatchDecision(row dbgen.MatchDecision) model.MatchDecision {
 		DecidedBy:          row.DecidedBy,
 		DecidedAt:          row.DecidedAt,
 		SupersededBy:       row.SupersededBy,
+		ParsedSnapshot:     json.RawMessage(row.ParsedSnapshot),
+		DecidedWith:        json.RawMessage(row.DecidedWith),
 	}
 	if row.SupersededAt.Valid {
 		t := row.SupersededAt.Time

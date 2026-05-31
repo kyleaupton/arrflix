@@ -161,7 +161,7 @@ Doing both — **tiered execution, parallel aggregation when needed** — gives 
 | `low_confidence`     | 0.5–0.7    | file left unidentified (`media_item_id` NULL); decision carries one strong suggestion                      |
 | `ambiguous`          | < 0.5 or multiple-candidate-tie | file left unidentified; decision carries up to 5 ranked suggestions       |
 | `no_match`           | nothing ≥ 0.5 | file left unidentified; decision carries no suggestions                              |
-| `partial_series`     | series confident, episode unresolved | series identity on the file (`media_item_id` set, `episode_id` NULL); `partial_series` is derived, not stored             |
+| `partial_series`     | series confident, episode unresolved | series identity on the file (`media_item_id` set, `episode_id` NULL); `partial_series` is a stored outcome band on the decision (series identity resolved, episode unresolved)             |
 
 ### Threshold presets
 

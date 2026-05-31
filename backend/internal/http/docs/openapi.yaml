@@ -322,6 +322,39 @@ components:
         - job
         - department
       type: object
+    DecidedWithDTO:
+      additionalProperties: false
+      properties:
+        preset:
+          description: "Preset the thresholds matched: 'strict' | 'recommended' | 'relaxed' | 'custom'"
+          type: string
+        thresholds:
+          $ref: "#/components/schemas/DecidedWithDTOThresholdsStruct"
+          description: Confidence band thresholds
+      required:
+        - preset
+        - thresholds
+      type: object
+    DecidedWithDTOThresholdsStruct:
+      additionalProperties: false
+      properties:
+        auto:
+          description: Auto-match confidence floor
+          format: double
+          type: number
+        lowMin:
+          description: Low-confidence floor
+          format: double
+          type: number
+        reviewLow:
+          description: Confident-but-review floor
+          format: double
+          type: number
+      required:
+        - auto
+        - reviewLow
+        - lowMin
+      type: object
     DownloadCandidate:
       additionalProperties: false
       properties:
@@ -2036,6 +2069,77 @@ components:
         - updatedAt
         - errorKind
       type: object
+    InboxItem:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/InboxItem.json
+          format: uri
+          readOnly: true
+          type: string
+        confidence:
+          format: double
+          type: number
+        discoveredAt:
+          type: string
+        fileSize:
+          format: int64
+          type: integer
+        id:
+          type: string
+        libraryId:
+          type: string
+        outcome:
+          type: string
+        partialSeries:
+          type: boolean
+        path:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        year:
+          format: int64
+          type: integer
+      required:
+        - id
+        - libraryId
+        - path
+        - discoveredAt
+        - outcome
+        - confidence
+      type: object
+    InboxPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/InboxPage.json
+          format: uri
+          readOnly: true
+          type: string
+        countsByOutcome:
+          additionalProperties:
+            format: int64
+            type: integer
+          type: object
+        data:
+          items:
+            $ref: "#/components/schemas/InboxItem"
+          type:
+            - array
+            - "null"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+      required:
+        - data
+        - pagination
+        - countsByOutcome
+      type: object
     IndexerBatchTestResult:
       additionalProperties: false
       properties:
@@ -2424,37 +2528,6 @@ components:
         - enabled
         - default
       type: object
-    ListResult:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ListResult.json
-          format: uri
-          readOnly: true
-          type: string
-        items:
-          items:
-            $ref: "#/components/schemas/UnmatchedFileResponse"
-          type:
-            - array
-            - "null"
-        page:
-          format: int64
-          type: integer
-        pageSize:
-          format: int64
-          type: integer
-        totalCount:
-          format: int64
-          type: integer
-      required:
-        - items
-        - totalCount
-        - page
-        - pageSize
-      type: object
     LoginInputBody:
       additionalProperties: false
       properties:
@@ -2520,6 +2593,9 @@ components:
         decidedBy:
           description: "'auto' | 'user:<uuid>' | 'rule:<uuid>'"
           type: string
+        decidedWith:
+          $ref: "#/components/schemas/DecidedWithDTO"
+          description: The threshold band this decision ran under
         evidence:
           description: Per-resolver raw evidence (capped at 8KB)
         evidenceTruncated:
@@ -2541,6 +2617,16 @@ components:
             - partial_series
             - detached
           type: string
+        parsedSnapshot:
+          $ref: "#/components/schemas/ParsedSnapshotDTO"
+          description: What the parser saw at decision time
+        rankedCandidates:
+          description: Ranked alternative identities the matcher surfaced; the decide-pane suggestion set
+          items:
+            $ref: "#/components/schemas/SuggestedMatch"
+          type:
+            - array
+            - "null"
         resolversConsulted:
           description: Per-resolver audit array
         supersededAt:
@@ -2927,6 +3013,30 @@ components:
         - page
         - pageSize
         - totalPages
+      type: object
+    ParsedSnapshotDTO:
+      additionalProperties: false
+      properties:
+        episode:
+          description: Parsed episode number (series only)
+          format: int64
+          type: integer
+        season:
+          description: Parsed season number (series only)
+          format: int64
+          type: integer
+        title:
+          description: Parsed title
+          type: string
+        type:
+          description: Parsed media type ('movie' or 'series')
+          type: string
+        year:
+          description: Parsed release year
+          format: int64
+          type: integer
+      required:
+        - title
       type: object
     PersonDetail:
       additionalProperties: false
@@ -3666,6 +3776,43 @@ components:
       required:
         - success
       type: object
+    SuggestedExternalRef:
+      additionalProperties: false
+      properties:
+        externalId:
+          type: string
+        source:
+          type: string
+      required:
+        - source
+        - externalId
+      type: object
+    SuggestedMatch:
+      additionalProperties: false
+      properties:
+        confidence:
+          format: double
+          type: number
+        contributingResolvers:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        evidence: {}
+        externalRef:
+          $ref: "#/components/schemas/SuggestedExternalRef"
+        title:
+          type: string
+        type:
+          type: string
+        year:
+          format: int64
+          type: integer
+      required:
+        - externalRef
+        - confidence
+      type: object
     TestResult:
       additionalProperties: false
       properties:
@@ -3689,35 +3836,6 @@ components:
       required:
         - success
         - message
-      type: object
-    UnmatchedFileResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/UnmatchedFileResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        discoveredAt:
-          type: string
-        fileSize:
-          format: int64
-          type: integer
-        id:
-          type: string
-        libraryId:
-          type: string
-        partialSeries:
-          type: boolean
-        path:
-          type: string
-      required:
-        - id
-        - libraryId
-        - path
-        - discoveredAt
       type: object
     UpdateDetails:
       additionalProperties: false
@@ -5158,15 +5276,15 @@ paths:
         - files
   /api/v1/files/{fileId}/match:
     post:
-      description: Unified endpoint for match-by-ID (file currently in the inbox) and re-match (changing identity on an existing media_file). Validates the supplied (source, externalId) against the metadata provider; on a 404 returns NotFound and writes no decision row. On success, writes a confident match_decision row, supersedes the prior, and applies the persistence side-effect (delete unmatched_file + create media_file, or update media_file identity).
+      description: Unified endpoint for match-by-ID (file currently in the inbox) and re-match (changing identity on an existing file). Validates the supplied (source, externalId) against the metadata provider; on a 404 returns NotFound and writes no decision row. On success, writes a confident match_decision row, supersedes the prior, and sets the file's identity.
       operationId: files-match
       parameters:
-        - description: Stable file id (media_file or unmatched_file row)
+        - description: Stable file id (file row)
           in: path
           name: fileId
           required: true
           schema:
-            description: Stable file id (media_file or unmatched_file row)
+            description: Stable file id (file row)
             format: uuid
             type: string
       requestBody:
@@ -5271,7 +5389,7 @@ paths:
         - files
   /api/v1/files/{fileId}/unmatch:
     post:
-      description: "Writes a no_match decision and transitions the file from media_file to unmatched_file with no suggestions. File stays on disk. Idempotent: returns the current decision unchanged when the file is already unmatched."
+      description: "Writes a no_match decision and clears the file's identity, leaving no suggestions. File stays on disk. Idempotent: returns the current decision unchanged when the file is already unmatched."
       operationId: files-unmatch
       parameters:
         - description: Stable file id
@@ -8259,7 +8377,7 @@ paths:
         - setup
   /api/v1/unmatched-files:
     get:
-      description: Paginated list of files with no resolved identity (media_item_id IS NULL). Optional libraryId filter. Match/un-match/detach are on /api/v1/files/{fileId}/*.
+      description: "Paginated matcher inbox: files whose current match decision banded to something other than confident/detached (includes confident_review and partial_series). Optional libraryId and outcome filters; response carries per-band counts. Match/un-match/detach are on /api/v1/files/{fileId}/*."
       operationId: unmatched-files-list
       parameters:
         - description: Optional library filter (uuid.Nil / omitted = no filter)
@@ -8269,6 +8387,19 @@ paths:
           schema:
             description: Optional library filter (uuid.Nil / omitted = no filter)
             format: uuid
+            type: string
+        - description: Optional outcome-band filter
+          explode: false
+          in: query
+          name: outcome
+          schema:
+            description: Optional outcome-band filter
+            enum:
+              - confident_review
+              - low_confidence
+              - ambiguous
+              - no_match
+              - partial_series
             type: string
         - description: Page number (1-indexed)
           explode: false
@@ -8296,7 +8427,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ListResult"
+                $ref: "#/components/schemas/InboxPage"
           description: OK
         default:
           content:
@@ -8324,7 +8455,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/UnmatchedFileResponse"
+                $ref: "#/components/schemas/InboxItem"
           description: OK
         "404":
           content:

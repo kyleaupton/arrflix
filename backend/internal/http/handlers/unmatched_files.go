@@ -6,15 +6,16 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/service"
 )
 
 // ----- Handler -----
 
-// UnmatchedFiles exposes the read surface over files needing review
-// (file.media_item_id IS NULL). The decision flows (match, un-match,
-// detach, evidence read) live on the /files/{fileId}/* endpoints in
-// match_decisions.go.
+// UnmatchedFiles exposes the read surface over the matcher inbox — files
+// whose current match_decision banded to something other than confident /
+// detached. The decision flows (match, un-match, detach, evidence read)
+// live on the /files/{fileId}/* endpoints in match_decisions.go.
 type UnmatchedFiles struct{ svc *service.Services }
 
 func NewUnmatchedFiles(s *service.Services) *UnmatchedFiles { return &UnmatchedFiles{svc: s} }
@@ -22,15 +23,18 @@ func NewUnmatchedFiles(s *service.Services) *UnmatchedFiles { return &UnmatchedF
 // ----- List -----
 
 // UnmatchedFilesListInput uses uuid.Nil as the "no filter" sentinel because
-// huma doesn't accept pointer types for query params.
+// huma doesn't accept pointer types for query params. Outcome is an
+// optional band filter; confident / detached are never valid inbox bands,
+// so they're absent from the enum.
 type UnmatchedFilesListInput struct {
 	LibraryID uuid.UUID `query:"libraryId" format:"uuid" doc:"Optional library filter (uuid.Nil / omitted = no filter)"`
+	Outcome   string    `query:"outcome" enum:"confident_review,low_confidence,ambiguous,no_match,partial_series" doc:"Optional outcome-band filter"`
 	Page      int       `query:"page" minimum:"1" default:"1" doc:"Page number (1-indexed)"`
 	PageSize  int       `query:"pageSize" minimum:"1" maximum:"100" default:"20" doc:"Page size (1-100)"`
 }
 
 type UnmatchedFilesListOutput struct {
-	Body service.ListResult
+	Body model.InboxPage
 }
 
 func (h *UnmatchedFiles) List(ctx context.Context, input *UnmatchedFilesListInput) (*UnmatchedFilesListOutput, error) {
@@ -41,6 +45,10 @@ func (h *UnmatchedFiles) List(ctx context.Context, input *UnmatchedFilesListInpu
 	if input.LibraryID != uuid.Nil {
 		id := input.LibraryID
 		params.LibraryID = &id
+	}
+	if input.Outcome != "" {
+		outcome := input.Outcome
+		params.Outcome = &outcome
 	}
 	out, err := h.svc.UnmatchedFiles.List(ctx, params)
 	if err != nil {
@@ -56,7 +64,7 @@ type UnmatchedFilesGetInput struct {
 }
 
 type UnmatchedFilesGetOutput struct {
-	Body service.UnmatchedFileResponse
+	Body model.InboxItem
 }
 
 func (h *UnmatchedFiles) Get(ctx context.Context, input *UnmatchedFilesGetInput) (*UnmatchedFilesGetOutput, error) {
@@ -75,7 +83,7 @@ func (h *UnmatchedFiles) RegisterHumachi(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/unmatched-files",
 		Summary:     "List files needing review",
-		Description: "Paginated list of files with no resolved identity (media_item_id IS NULL). Optional libraryId filter. Match/un-match/detach are on /api/v1/files/{fileId}/*.",
+		Description: "Paginated matcher inbox: files whose current match decision banded to something other than confident/detached (includes confident_review and partial_series). Optional libraryId and outcome filters; response carries per-band counts. Match/un-match/detach are on /api/v1/files/{fileId}/*.",
 		Tags:        []string{"unmatched-files"},
 	}, h.List)
 

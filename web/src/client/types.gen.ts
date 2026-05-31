@@ -161,6 +161,32 @@ export type CrewMember = {
     tmdbId: number;
 };
 
+export type DecidedWithDto = {
+    /**
+     * Preset the thresholds matched: 'strict' | 'recommended' | 'relaxed' | 'custom'
+     */
+    preset: string;
+    /**
+     * Confidence band thresholds
+     */
+    thresholds: DecidedWithDtoThresholdsStruct;
+};
+
+export type DecidedWithDtoThresholdsStruct = {
+    /**
+     * Auto-match confidence floor
+     */
+    auto: number;
+    /**
+     * Low-confidence floor
+     */
+    lowMin: number;
+    /**
+     * Confident-but-review floor
+     */
+    reviewLow: number;
+};
+
 export type DownloadCandidate = {
     age: number;
     ageHours: number;
@@ -785,6 +811,36 @@ export type ImportTaskWithDetails = {
     updatedAt: string;
 };
 
+export type InboxItem = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    confidence: number;
+    discoveredAt: string;
+    fileSize?: number;
+    id: string;
+    libraryId: string;
+    outcome: string;
+    partialSeries?: boolean;
+    path: string;
+    title?: string;
+    type?: string;
+    year?: number;
+};
+
+export type InboxPage = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    countsByOutcome: {
+        [key: string]: number;
+    };
+    data: Array<InboxItem> | null;
+    pagination: Pagination;
+};
+
 export type IndexerBatchTestResult = {
     error?: string;
     indexerId: number;
@@ -945,17 +1001,6 @@ export type LibraryWriteBody = {
     type: 'movie' | 'series';
 };
 
-export type ListResult = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    items: Array<UnmatchedFileResponse> | null;
-    page: number;
-    pageSize: number;
-    totalCount: number;
-};
-
 export type LoginInputBody = {
     /**
      * A URL to the JSON Schema for this object.
@@ -998,6 +1043,10 @@ export type MatchDecisionResponse = {
      */
     decidedBy: string;
     /**
+     * The threshold band this decision ran under
+     */
+    decidedWith?: DecidedWithDto;
+    /**
      * Per-resolver raw evidence (capped at 8KB)
      */
     evidence: unknown;
@@ -1011,6 +1060,14 @@ export type MatchDecisionResponse = {
      */
     id: number;
     outcome: 'confident' | 'confident_review' | 'low_confidence' | 'ambiguous' | 'no_match' | 'partial_series' | 'detached';
+    /**
+     * What the parser saw at decision time
+     */
+    parsedSnapshot?: ParsedSnapshotDto;
+    /**
+     * Ranked alternative identities the matcher surfaced; the decide-pane suggestion set
+     */
+    rankedCandidates?: Array<SuggestedMatch> | null;
     /**
      * Per-resolver audit array
      */
@@ -1193,6 +1250,29 @@ export type Pagination = {
     pageSize: number;
     total: number;
     totalPages: number;
+};
+
+export type ParsedSnapshotDto = {
+    /**
+     * Parsed episode number (series only)
+     */
+    episode?: number;
+    /**
+     * Parsed season number (series only)
+     */
+    season?: number;
+    /**
+     * Parsed title
+     */
+    title: string;
+    /**
+     * Parsed media type ('movie' or 'series')
+     */
+    type?: string;
+    /**
+     * Parsed release year
+     */
+    year?: number;
 };
 
 export type PersonDetail = {
@@ -1569,6 +1649,21 @@ export type SignupResponse = {
     success: boolean;
 };
 
+export type SuggestedExternalRef = {
+    externalId: string;
+    source: string;
+};
+
+export type SuggestedMatch = {
+    confidence: number;
+    contributingResolvers?: Array<string> | null;
+    evidence?: unknown;
+    externalRef: SuggestedExternalRef;
+    title?: string;
+    type?: string;
+    year?: number;
+};
+
 export type TestResult = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1579,19 +1674,6 @@ export type TestResult = {
     success: boolean;
     version?: string;
     webApiVersion?: string;
-};
-
-export type UnmatchedFileResponse = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    discoveredAt: string;
-    fileSize?: number;
-    id: string;
-    libraryId: string;
-    partialSeries?: boolean;
-    path: string;
 };
 
 export type UpdateDetails = {
@@ -1996,6 +2078,28 @@ export type ImportTaskWithDetailsWritable = {
     updatedAt: string;
 };
 
+export type InboxItemWritable = {
+    confidence: number;
+    discoveredAt: string;
+    fileSize?: number;
+    id: string;
+    libraryId: string;
+    outcome: string;
+    partialSeries?: boolean;
+    path: string;
+    title?: string;
+    type?: string;
+    year?: number;
+};
+
+export type InboxPageWritable = {
+    countsByOutcome: {
+        [key: string]: number;
+    };
+    data: Array<InboxItemWritable> | null;
+    pagination: Pagination;
+};
+
 export type IndexerInputWritable = {
     appProfileId: number;
     configContract: string;
@@ -2094,13 +2198,6 @@ export type LibraryWriteBodyWritable = {
     type: 'movie' | 'series';
 };
 
-export type ListResultWritable = {
-    items: Array<UnmatchedFileResponseWritable> | null;
-    page: number;
-    pageSize: number;
-    totalCount: number;
-};
-
 export type LoginInputBodyWritable = {
     /**
      * Username or email
@@ -2131,6 +2228,10 @@ export type MatchDecisionResponseWritable = {
      */
     decidedBy: string;
     /**
+     * The threshold band this decision ran under
+     */
+    decidedWith?: DecidedWithDto;
+    /**
      * Per-resolver raw evidence (capped at 8KB)
      */
     evidence: unknown;
@@ -2144,6 +2245,14 @@ export type MatchDecisionResponseWritable = {
      */
     id: number;
     outcome: 'confident' | 'confident_review' | 'low_confidence' | 'ambiguous' | 'no_match' | 'partial_series' | 'detached';
+    /**
+     * What the parser saw at decision time
+     */
+    parsedSnapshot?: ParsedSnapshotDto;
+    /**
+     * Ranked alternative identities the matcher surfaced; the decide-pane suggestion set
+     */
+    rankedCandidates?: Array<SuggestedMatch> | null;
     /**
      * Per-resolver audit array
      */
@@ -2491,15 +2600,6 @@ export type TestResultWritable = {
     success: boolean;
     version?: string;
     webApiVersion?: string;
-};
-
-export type UnmatchedFileResponseWritable = {
-    discoveredAt: string;
-    fileSize?: number;
-    id: string;
-    libraryId: string;
-    partialSeries?: boolean;
-    path: string;
 };
 
 export type UserWritable = {
@@ -3650,7 +3750,7 @@ export type FilesMatchData = {
     body: FileMatchBodyWritable;
     path: {
         /**
-         * Stable file id (media_file or unmatched_file row)
+         * Stable file id (file row)
          */
         fileId: string;
     };
@@ -6410,6 +6510,10 @@ export type UnmatchedFilesListData = {
          */
         libraryId?: string;
         /**
+         * Optional outcome-band filter
+         */
+        outcome?: 'confident_review' | 'low_confidence' | 'ambiguous' | 'no_match' | 'partial_series';
+        /**
          * Page number (1-indexed)
          */
         page?: number;
@@ -6434,7 +6538,7 @@ export type UnmatchedFilesListResponses = {
     /**
      * OK
      */
-    200: ListResult;
+    200: InboxPage;
 };
 
 export type UnmatchedFilesListResponse = UnmatchedFilesListResponses[keyof UnmatchedFilesListResponses];
@@ -6472,7 +6576,7 @@ export type UnmatchedFilesGetResponses = {
     /**
      * OK
      */
-    200: UnmatchedFileResponse;
+    200: InboxItem;
 };
 
 export type UnmatchedFilesGetResponse = UnmatchedFilesGetResponses[keyof UnmatchedFilesGetResponses];

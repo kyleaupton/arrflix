@@ -36,21 +36,47 @@ func NewMatchDecisions(s *service.Services) *MatchDecisions { return &MatchDecis
 // JSON-string timestamps (RFC3339) and a flattened chosenRef shape so
 // the FE doesn't have to know about pointer-shaped optional fields.
 type MatchDecisionResponse struct {
-	ID                 int64           `json:"id" doc:"Decision id (BIGSERIAL)"`
-	FileID             string          `json:"fileId" doc:"Stable file id (UUID)"`
-	Outcome            string          `json:"outcome" enum:"confident,confident_review,low_confidence,ambiguous,no_match,partial_series,detached"`
-	ChosenRef          *ExternalRefDTO `json:"chosenRef,omitempty"`
-	ChosenItem         *MetadataItem   `json:"chosenItem,omitempty"`
-	ChosenEpisode      *EpisodeRefDTO  `json:"chosenEpisode,omitempty"`
-	ChosenEdition      *string         `json:"chosenEdition,omitempty"`
-	Confidence         float64         `json:"confidence"`
-	ResolversConsulted json.RawMessage `json:"resolversConsulted" doc:"Per-resolver audit array"`
-	Evidence           json.RawMessage `json:"evidence" doc:"Per-resolver raw evidence (capped at 8KB)"`
-	EvidenceTruncated  bool            `json:"evidenceTruncated"`
-	DecidedBy          string          `json:"decidedBy" doc:"'auto' | 'user:<uuid>' | 'rule:<uuid>'"`
-	DecidedAt          string          `json:"decidedAt" format:"date-time"`
-	SupersededAt       *string         `json:"supersededAt,omitempty" format:"date-time"`
-	SupersededBy       *int64          `json:"supersededBy,omitempty"`
+	ID                 int64                  `json:"id" doc:"Decision id (BIGSERIAL)"`
+	FileID             string                 `json:"fileId" doc:"Stable file id (UUID)"`
+	Outcome            string                 `json:"outcome" enum:"confident,confident_review,low_confidence,ambiguous,no_match,partial_series,detached"`
+	ChosenRef          *ExternalRefDTO        `json:"chosenRef,omitempty"`
+	ChosenItem         *MetadataItem          `json:"chosenItem,omitempty"`
+	ChosenEpisode      *EpisodeRefDTO         `json:"chosenEpisode,omitempty"`
+	ChosenEdition      *string                `json:"chosenEdition,omitempty"`
+	Confidence         float64                `json:"confidence"`
+	ResolversConsulted json.RawMessage        `json:"resolversConsulted" doc:"Per-resolver audit array"`
+	Evidence           json.RawMessage        `json:"evidence" doc:"Per-resolver raw evidence (capped at 8KB)"`
+	EvidenceTruncated  bool                   `json:"evidenceTruncated"`
+	RankedCandidates   []model.SuggestedMatch `json:"rankedCandidates,omitempty" doc:"Ranked alternative identities the matcher surfaced; the decide-pane suggestion set"`
+	ParsedSnapshot     *ParsedSnapshotDTO     `json:"parsedSnapshot,omitempty" doc:"What the parser saw at decision time"`
+	DecidedWith        *DecidedWithDTO        `json:"decidedWith,omitempty" doc:"The threshold band this decision ran under"`
+	DecidedBy          string                 `json:"decidedBy" doc:"'auto' | 'user:<uuid>' | 'rule:<uuid>'"`
+	DecidedAt          string                 `json:"decidedAt" format:"date-time"`
+	SupersededAt       *string                `json:"supersededAt,omitempty" format:"date-time"`
+	SupersededBy       *int64                 `json:"supersededBy,omitempty"`
+}
+
+// ParsedSnapshotDTO is the wire shape for the parser's view at decision
+// time. Keys mirror matcher.ParsedSnapshot so the stored JSONB blob
+// unmarshals directly.
+type ParsedSnapshotDTO struct {
+	Title   string `json:"title" doc:"Parsed title"`
+	Year    int    `json:"year,omitempty" doc:"Parsed release year"`
+	Type    string `json:"type,omitempty" doc:"Parsed media type ('movie' or 'series')"`
+	Season  *int   `json:"season,omitempty" doc:"Parsed season number (series only)"`
+	Episode *int   `json:"episode,omitempty" doc:"Parsed episode number (series only)"`
+}
+
+// DecidedWithDTO is the wire shape for the threshold band a decision ran
+// under. Keys mirror the service's decided_with JSONB write
+// ({preset, thresholds:{auto, reviewLow, lowMin}}).
+type DecidedWithDTO struct {
+	Preset     string `json:"preset" doc:"Preset the thresholds matched: 'strict' | 'recommended' | 'relaxed' | 'custom'"`
+	Thresholds struct {
+		Auto      float64 `json:"auto" doc:"Auto-match confidence floor"`
+		ReviewLow float64 `json:"reviewLow" doc:"Confident-but-review floor"`
+		LowMin    float64 `json:"lowMin" doc:"Low-confidence floor"`
+	} `json:"thresholds" doc:"Confidence band thresholds"`
 }
 
 // ExternalRefDTO is the wire shape for a (source, externalId) pair.
@@ -113,6 +139,27 @@ func decisionToResponse(d model.MatchDecision, item *metadata.Item) MatchDecisio
 			Title:      item.Title,
 			Year:       item.Year,
 			Redirected: item.Redirected,
+		}
+	}
+	// The JSONB blobs below are our own DB writes; a malformed blob is a
+	// persist-time bug, not user input, so unmarshal best-effort and leave
+	// the field absent rather than threading an error to four callers.
+	if len(d.RankedCandidates) > 0 {
+		var ranked []model.SuggestedMatch
+		if err := json.Unmarshal(d.RankedCandidates, &ranked); err == nil {
+			resp.RankedCandidates = ranked
+		}
+	}
+	if len(d.ParsedSnapshot) > 0 {
+		var parsed ParsedSnapshotDTO
+		if err := json.Unmarshal(d.ParsedSnapshot, &parsed); err == nil {
+			resp.ParsedSnapshot = &parsed
+		}
+	}
+	if len(d.DecidedWith) > 0 {
+		var decided DecidedWithDTO
+		if err := json.Unmarshal(d.DecidedWith, &decided); err == nil {
+			resp.DecidedWith = &decided
 		}
 	}
 	return resp

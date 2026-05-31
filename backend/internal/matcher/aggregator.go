@@ -380,6 +380,11 @@ func (a *Aggregator) bandAndRecord(file FileRef, cands []Candidate, items map[Ex
 		ResolversConsulted: audits,
 		DecidedBy:          "auto",
 		DecidedAt:          time.Now().UTC(),
+		// Audit denormalizations: the band this decision ran under and the
+		// parser's view at decision time. Display-only for the inbox; the
+		// banding math below doesn't read either back.
+		DecidedWith:    a.cfg.Thresholds,
+		ParsedSnapshot: parsedSnapshot(file),
 	}
 
 	rec.Evidence, rec.Truncated = capEvidence(evidence)
@@ -667,4 +672,40 @@ func fileLooksLikeSeries(f FileRef) bool {
 	}
 	n := f.Parsed.Identity.Numbering
 	return n.Kind != "" || len(n.EpisodeNumbers.Value) > 0 || len(n.AbsoluteNumbers.Value) > 0
+}
+
+// parsedSnapshot freezes the parser's identity view into the display
+// shape the inbox decide pane reads back. Nil when the file carried no
+// parse — the snapshot is absent even on a no_match, so the pane knows
+// to fall back rather than render an empty "parsed as".
+//
+// Season/Episode collapse multi-episode numbering to a single
+// representative pair (season + first episode), preferring season_episode
+// numbering and falling back to the first absolute number for anime. This
+// is display-only prefill; the authoritative numbering lives in the file's
+// full parse, not here.
+func parsedSnapshot(f FileRef) *ParsedSnapshot {
+	if f.Parsed == nil {
+		return nil
+	}
+	id := f.Parsed.Identity
+	snap := &ParsedSnapshot{
+		Title: id.Title.Value,
+		Year:  id.Year.Value,
+		Type:  id.TypeHint.Value,
+	}
+	n := id.Numbering
+	if n.Season.Value != 0 {
+		s := n.Season.Value
+		snap.Season = &s
+	}
+	switch {
+	case len(n.EpisodeNumbers.Value) > 0:
+		e := n.EpisodeNumbers.Value[0]
+		snap.Episode = &e
+	case len(n.AbsoluteNumbers.Value) > 0:
+		e := n.AbsoluteNumbers.Value[0]
+		snap.Episode = &e
+	}
+	return snap
 }

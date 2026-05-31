@@ -59,6 +59,24 @@ var (
 	PresetRelaxed     = Thresholds{Auto: 0.70, ReviewLow: 0.5, LowMin: 0.5}
 )
 
+// PresetName maps a Thresholds value back to the named preset it matches,
+// or "custom" when it matches none. Fills decided_with.preset so the
+// audit trail records the preset by name, and a future "you changed
+// presets — re-evaluate?" prompt can compare the decision's preset to the
+// installation's current one without value-by-value math.
+func (t Thresholds) PresetName() string {
+	switch t {
+	case PresetStrict:
+		return "strict"
+	case PresetRecommended:
+		return "recommended"
+	case PresetRelaxed:
+		return "relaxed"
+	default:
+		return "custom"
+	}
+}
+
 // Config carries aggregator-tunable knobs. Today only the hardcoded
 // Recommended preset; per-library overrides land later (matcher spec
 // § Per-library resolver toggle UX).
@@ -128,6 +146,30 @@ type MatchOutcomeRecord struct {
 	// re-match / un-match writes "user:<uuid>" via separate code paths.
 	DecidedBy string
 	DecidedAt time.Time
+
+	// ParsedSnapshot is what the parser saw for this file at decision time,
+	// denormalized for the inbox decide pane. Display/audit only — nothing
+	// reads it back for matching logic. Nil when the file had no parse
+	// (file.Parsed nil), so the snapshot is absent even on a no_match.
+	ParsedSnapshot *ParsedSnapshot
+
+	// DecidedWith is the threshold band this decision was made under,
+	// stamped from the aggregator's config. Display/audit only; carries
+	// the preset name via Thresholds.PresetName when persisted. Zero for
+	// user-driven decisions that don't run the banding math.
+	DecidedWith Thresholds
+}
+
+// ParsedSnapshot is the parser's view of a file frozen at decision time —
+// the subset the inbox decide pane renders. Season/Episode are pointers
+// so "no numbering" (movie, or unparsed) is distinct from season/episode
+// zero. Display/audit only; the aggregator fills it from FileRef.Parsed.
+type ParsedSnapshot struct {
+	Title   string `json:"title"`
+	Year    int    `json:"year"`
+	Type    string `json:"type"`
+	Season  *int   `json:"season,omitempty"`
+	Episode *int   `json:"episode,omitempty"`
 }
 
 // ResolverAudit is the per-resolver line item in

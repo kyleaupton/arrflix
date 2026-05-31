@@ -512,7 +512,7 @@ export const filesDetachMutation = (options?: Partial<Options<FilesDetachData>>)
 
 /**
  * Match a file to a media identity
- * Unified endpoint for match-by-ID (file currently in the inbox) and re-match (changing identity on an existing media_file). Validates the supplied (source, externalId) against the metadata provider; on a 404 returns NotFound and writes no decision row. On success, writes a confident match_decision row, supersedes the prior, and applies the persistence side-effect (delete unmatched_file + create media_file, or update media_file identity).
+ * Unified endpoint for match-by-ID (file currently in the inbox) and re-match (changing identity on an existing file). Validates the supplied (source, externalId) against the metadata provider; on a 404 returns NotFound and writes no decision row. On success, writes a confident match_decision row, supersedes the prior, and sets the file's identity.
  */
 export const filesMatchMutation = (options?: Partial<Options<FilesMatchData>>): UseMutationOptions<FilesMatchResponse, FilesMatchError, Options<FilesMatchData>> => {
     const mutationOptions: UseMutationOptions<FilesMatchResponse, FilesMatchError, Options<FilesMatchData>> = {
@@ -551,7 +551,7 @@ export const filesMatchDecisionOptions = (options: Options<FilesMatchDecisionDat
 
 /**
  * Un-match a file (back to the inbox)
- * Writes a no_match decision and transitions the file from media_file to unmatched_file with no suggestions. File stays on disk. Idempotent: returns the current decision unchanged when the file is already unmatched.
+ * Writes a no_match decision and clears the file's identity, leaving no suggestions. File stays on disk. Idempotent: returns the current decision unchanged when the file is already unmatched.
  */
 export const filesUnmatchMutation = (options?: Partial<Options<FilesUnmatchData>>): UseMutationOptions<FilesUnmatchResponse, FilesUnmatchError, Options<FilesUnmatchData>> => {
     const mutationOptions: UseMutationOptions<FilesUnmatchResponse, FilesUnmatchError, Options<FilesUnmatchData>> = {
@@ -1986,7 +1986,7 @@ export const unmatchedFilesListQueryKey = (options?: Options<UnmatchedFilesListD
 
 /**
  * List files needing review
- * Paginated list of files with no resolved identity (media_item_id IS NULL). Optional libraryId filter. Match/un-match/detach are on /api/v1/files/{fileId}*.
+ * Paginated matcher inbox: files whose current match decision banded to something other than confident/detached (includes confident_review and partial_series). Optional libraryId and outcome filters; response carries per-band counts. Match/un-match/detach are on /api/v1/files/{fileId}*.
  */
 export const unmatchedFilesListOptions = (options?: Options<UnmatchedFilesListData>) => {
     return queryOptions({
@@ -2007,7 +2007,7 @@ export const unmatchedFilesListInfiniteQueryKey = (options?: Options<UnmatchedFi
 
 /**
  * List files needing review
- * Paginated list of files with no resolved identity (media_item_id IS NULL). Optional libraryId filter. Match/un-match/detach are on /api/v1/files/{fileId}*.
+ * Paginated matcher inbox: files whose current match decision banded to something other than confident/detached (includes confident_review and partial_series). Optional libraryId and outcome filters; response carries per-band counts. Match/un-match/detach are on /api/v1/files/{fileId}*.
  */
 export const unmatchedFilesListInfiniteOptions = (options?: Options<UnmatchedFilesListData>) => {
     return infiniteQueryOptions<UnmatchedFilesListResponse, UnmatchedFilesListError, InfiniteData<UnmatchedFilesListResponse>, QueryKey<Options<UnmatchedFilesListData>>, number | Pick<QueryKey<Options<UnmatchedFilesListData>>[0], 'body' | 'headers' | 'path' | 'query'>>(

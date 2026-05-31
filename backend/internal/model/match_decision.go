@@ -44,4 +44,14 @@ type MatchDecision struct {
 	DecidedAt          time.Time       `json:"decidedAt"`
 	SupersededAt       *time.Time      `json:"supersededAt,omitempty"`
 	SupersededBy       *int64          `json:"supersededBy,omitempty"`
+	// ParsedSnapshot is what the parser saw at decision time ({title,
+	// year, type, season, episode}), denormalized for the inbox decide
+	// pane. Display/audit only — nothing reads it for logic. NULL when the
+	// file had no parse.
+	ParsedSnapshot json.RawMessage `json:"parsedSnapshot,omitempty"`
+	// DecidedWith is the threshold band this decision ran under
+	// ({preset, thresholds:{auto, reviewLow, lowMin}}). Powers a future
+	// preset-change re-evaluation prompt and sharpens the audit. NULL for
+	// user-driven decisions that don't run the banding math.
+	DecidedWith json.RawMessage `json:"decidedWith,omitempty"`
 }

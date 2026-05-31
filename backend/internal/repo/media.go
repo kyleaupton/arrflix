@@ -22,10 +22,12 @@ type LibraryQueryParams struct {
 	Offset     int32
 }
 
-// FilesReviewQueryParams contains parameters for the paginated
-// "files needing review" query (file.media_item_id IS NULL).
-type FilesReviewQueryParams struct {
+// InboxQueryParams contains parameters for the paginated matcher-inbox
+// query (current match_decision banded to something other than
+// confident / detached). LibraryID and Outcome are optional filters.
+type InboxQueryParams struct {
 	LibraryID *uuid.UUID
+	Outcome   *string
 	PageSize  int32
 	Offset    int32
 }
@@ -72,8 +74,9 @@ type MediaRepo interface {
 	ClearFileIdentity(ctx context.Context, id uuid.UUID) (model.File, error)
 	SoftDeleteFile(ctx context.Context, id uuid.UUID) (model.File, error)
 	ListFilesForItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.FileWithState, error)
-	ListFilesNeedingReview(ctx context.Context, params FilesReviewQueryParams) ([]model.File, error)
-	CountFilesNeedingReview(ctx context.Context, libraryID *uuid.UUID) (int64, error)
+	ListInboxItems(ctx context.Context, params InboxQueryParams) ([]model.InboxItem, error)
+	GetInboxItem(ctx context.Context, fileID uuid.UUID) (model.InboxItem, error)
+	CountInboxByOutcome(ctx context.Context, libraryID *uuid.UUID) (map[string]int64, error)
 	ListEpisodeAvailabilityForSeries(ctx context.Context, mediaItemID uuid.UUID) ([]model.SeriesEpisodeAvailability, error)
 
 	// File state
@@ -812,33 +815,97 @@ func (r *Repository) ListFilesForItem(ctx context.Context, mediaItemID uuid.UUID
 	return out, nil
 }
 
-func (r *Repository) ListFilesNeedingReview(ctx context.Context, params FilesReviewQueryParams) ([]model.File, error) {
+// toModelInboxItem translates a ListInboxItemsRow / GetInboxItemRow (the
+// two queries share a column shape) into the domain model.InboxItem.
+// PartialSeries is read straight off the stored outcome — it's a band the
+// matcher writes, not something re-derived from episode_id here.
+func toModelInboxItem(
+	id, libraryID pgtype.UUID,
+	path string,
+	createdAt time.Time,
+	sizeBytes *int64,
+	outcome dbgen.MatchOutcome,
+	confidence float64,
+	displayTitle string,
+	displayYear *int32,
+	displayType string,
+) model.InboxItem {
+	item := model.InboxItem{
+		ID:            uuidFromPgtype(id).String(),
+		LibraryID:     uuidFromPgtype(libraryID).String(),
+		Path:          path,
+		FileSize:      sizeBytes,
+		DiscoveredAt:  createdAt.Format(time.RFC3339),
+		Outcome:       string(outcome),
+		Confidence:    confidence,
+		Title:         displayTitle,
+		Type:          displayType,
+		PartialSeries: outcome == dbgen.MatchOutcomePartialSeries,
+	}
+	// year 0 means the parser found no year; surface it as unknown (nil)
+	// rather than the literal "0" the inbox would otherwise render.
+	if displayYear != nil && *displayYear != 0 {
+		y := int(*displayYear)
+		item.Year = &y
+	}
+	return item
+}
+
+func (r *Repository) ListInboxItems(ctx context.Context, params InboxQueryParams) ([]model.InboxItem, error) {
 	var libID pgtype.UUID
 	if params.LibraryID != nil {
 		libID = pgtypeFromUUID(*params.LibraryID)
 	}
-	rows, err := r.Q.ListFilesNeedingReview(ctx, dbgen.ListFilesNeedingReviewParams{
+	var outcome dbgen.NullMatchOutcome
+	if params.Outcome != nil {
+		outcome = dbgen.NullMatchOutcome{MatchOutcome: dbgen.MatchOutcome(*params.Outcome), Valid: true}
+	}
+	rows, err := r.Q.ListInboxItems(ctx, dbgen.ListInboxItemsParams{
 		LibraryID: libID,
+		Outcome:   outcome,
 		PageSize:  params.PageSize,
 		OffsetVal: params.Offset,
 	})
 	if err != nil {
-		return nil, apperrors.FromPg(err, "list files needing review")
+		return nil, apperrors.FromPg(err, "list inbox items")
 	}
-	out := make([]model.File, 0, len(rows))
+	out := make([]model.InboxItem, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, toModelFile(row))
+		out = append(out, toModelInboxItem(
+			row.ID, row.LibraryID, row.Path, row.CreatedAt, row.SizeBytes,
+			row.Outcome, row.Confidence, row.DisplayTitle, row.DisplayYear, row.DisplayType,
+		))
 	}
 	return out, nil
 }
 
-func (r *Repository) CountFilesNeedingReview(ctx context.Context, libraryID *uuid.UUID) (int64, error) {
+func (r *Repository) GetInboxItem(ctx context.Context, fileID uuid.UUID) (model.InboxItem, error) {
+	row, err := r.Q.GetInboxItem(ctx, pgtypeFromUUID(fileID))
+	if err != nil {
+		return model.InboxItem{}, apperrors.FromPg(err, "inbox item %s not found", fileID)
+	}
+	return toModelInboxItem(
+		row.ID, row.LibraryID, row.Path, row.CreatedAt, row.SizeBytes,
+		row.Outcome, row.Confidence, row.DisplayTitle, row.DisplayYear, row.DisplayType,
+	), nil
+}
+
+// CountInboxByOutcome returns per-band inbox totals for the optional
+// library scope. Bands with zero files are absent from the map.
+func (r *Repository) CountInboxByOutcome(ctx context.Context, libraryID *uuid.UUID) (map[string]int64, error) {
 	var libID pgtype.UUID
 	if libraryID != nil {
 		libID = pgtypeFromUUID(*libraryID)
 	}
-	count, err := r.Q.CountFilesNeedingReview(ctx, libID)
-	return count, apperrors.FromPg(err, "count files needing review")
+	rows, err := r.Q.CountInboxByOutcome(ctx, libID)
+	if err != nil {
+		return nil, apperrors.FromPg(err, "count inbox by outcome")
+	}
+	out := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		out[string(row.Outcome)] = row.Count
+	}
+	return out, nil
 }
 
 func (r *Repository) ListEpisodeAvailabilityForSeries(ctx context.Context, mediaItemID uuid.UUID) ([]model.SeriesEpisodeAvailability, error) {

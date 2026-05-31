@@ -131,6 +131,16 @@ func insertMatchOutcome(ctx context.Context, r *repo.Repository, rec matcher.Mat
 		return 0, err
 	}
 
+	parsedJSON, err := parsedSnapshotJSON(rec)
+	if err != nil {
+		return 0, err
+	}
+
+	decidedWithJSON, err := decidedWithJSON(rec)
+	if err != nil {
+		return 0, err
+	}
+
 	params := repo.InsertMatchDecisionParams{
 		FileID:             rec.FileID,
 		Outcome:            string(rec.Outcome),
@@ -140,6 +150,8 @@ func insertMatchOutcome(ctx context.Context, r *repo.Repository, rec matcher.Mat
 		Evidence:           rec.Evidence,
 		EvidenceTruncated:  rec.Truncated,
 		DecidedBy:          rec.DecidedBy,
+		ParsedSnapshot:     parsedJSON,
+		DecidedWith:        decidedWithJSON,
 	}
 	if rec.ChosenRef != nil {
 		src := string(rec.ChosenRef.Source)
@@ -212,6 +224,50 @@ func rankedCandidatesJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 	if err != nil {
 		return nil, apperrors.Internalf("marshal ranked_candidates: %v", err).
 			Op("rankedCandidatesJSON").
+			NotRetryable()
+	}
+	return b, nil
+}
+
+// parsedSnapshotJSON marshals the outcome's parser snapshot into the
+// match_decision.parsed_snapshot JSONB shape — what the parser saw at
+// decision time, read back by the inbox decide pane. Nil snapshot (the
+// file had no parse) yields nil bytes (NULL column).
+func parsedSnapshotJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
+	if rec.ParsedSnapshot == nil {
+		return nil, nil
+	}
+	b, err := json.Marshal(rec.ParsedSnapshot)
+	if err != nil {
+		return nil, apperrors.Internalf("marshal parsed_snapshot: %v", err).
+			Op("parsedSnapshotJSON").
+			NotRetryable()
+	}
+	return b, nil
+}
+
+// decidedWithJSON marshals the band this decision ran under into the
+// match_decision.decided_with JSONB shape: {preset, thresholds:{auto,
+// reviewLow, lowMin}}. The preset name comes from Thresholds.PresetName so
+// the audit records "recommended" rather than re-deriving it from values.
+func decidedWithJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
+	t := rec.DecidedWith
+	payload := struct {
+		Preset     string `json:"preset"`
+		Thresholds struct {
+			Auto      float64 `json:"auto"`
+			ReviewLow float64 `json:"reviewLow"`
+			LowMin    float64 `json:"lowMin"`
+		} `json:"thresholds"`
+	}{Preset: t.PresetName()}
+	payload.Thresholds.Auto = t.Auto
+	payload.Thresholds.ReviewLow = t.ReviewLow
+	payload.Thresholds.LowMin = t.LowMin
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return nil, apperrors.Internalf("marshal decided_with: %v", err).
+			Op("decidedWithJSON").
 			NotRetryable()
 	}
 	return b, nil
