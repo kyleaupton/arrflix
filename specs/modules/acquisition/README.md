@@ -373,7 +373,7 @@ Dependency, owned by [metadata](../metadata/README.md):
 
 ## Event bus / messaging
 
-The pipeline relies on events flowing between components. The [realtime](../realtime/README.md) module handles user-facing server-to-client updates well; we likely need an **internal event bus** in addition for worker-to-worker signaling. Concretely:
+The pipeline relies on events flowing between components. The [realtime](../realtime/README.md) module handles user-facing server-to-client updates (lossy, server→browser); worker-to-worker signaling is the opposite contract (durable, must-not-drop) and is owned by the [work-dispatch pattern](../../patterns/work-dispatch/README.md) — `LISTEN/NOTIFY` wake-up hints over the claim-queue. The "internal event bus" referenced below is that pattern; the `want.created` / `want.regate_failed` / due-signal wake-ups land there, not on the realtime broker. Concretely:
 
 | Event                | Producer                                     | Consumers                                |
 | -------------------- | -------------------------------------------- | ---------------------------------------- |
@@ -387,7 +387,7 @@ The pipeline relies on events flowing between components. The [realtime](../real
 | `tracking.archived`  | TrackingService                              | SSE, NotificationService                 |
 | `upgrade.proposed`   | AcquisitionWorker                            | NotificationService                      |
 
-In-process pub/sub is sufficient for v1 — single container, all workers in the same Go process. If we ever split into separate processes, this graduates to a real bus.
+All workers run in one Go process (single container). Durable, must-not-drop wake-ups (`want.created` and friends) use the [work-dispatch pattern](../../patterns/work-dispatch/README.md)'s `LISTEN/NOTIFY`-hint-over-claim-queue — the row is the truth, the notify is a latency hint. Purely ephemeral, co-located hand-offs with no durability need can stay a Go channel. If the deployment ever splits into separate processes, the durable path already routes through Postgres and needs no change; only the ephemeral channels would graduate to a real bus.
 
 ## No settings page
 
