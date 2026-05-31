@@ -42,18 +42,41 @@ func (q *Queries) ClearFileIdentity(ctx context.Context, id pgtype.UUID) (File, 
 	return i, err
 }
 
-const countFilesNeedingReview = `-- name: CountFilesNeedingReview :one
-select count(*) from file
-where media_item_id is null
-  and deleted_at is null
-  and ($1::uuid is null or library_id = $1)
+const countInboxByOutcome = `-- name: CountInboxByOutcome :many
+select md.outcome, count(*) as count
+from file f
+join match_decision md on md.file_id = f.id and md.superseded_at is null
+where f.deleted_at is null
+  and md.outcome not in ('confident', 'detached')
+  and ($1::uuid is null or f.library_id = $1)
+group by md.outcome
 `
 
-func (q *Queries) CountFilesNeedingReview(ctx context.Context, libraryID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countFilesNeedingReview, libraryID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+type CountInboxByOutcomeRow struct {
+	Outcome MatchOutcome `json:"outcome"`
+	Count   int64        `json:"count"`
+}
+
+// Per-band totals over the same inbox join, library filter applied, no
+// pagination. The service folds these into a map and derives the page Total.
+func (q *Queries) CountInboxByOutcome(ctx context.Context, libraryID pgtype.UUID) ([]CountInboxByOutcomeRow, error) {
+	rows, err := q.db.Query(ctx, countInboxByOutcome, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountInboxByOutcomeRow
+	for rows.Next() {
+		var i CountInboxByOutcomeRow
+		if err := rows.Scan(&i.Outcome, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const countMediaItems = `-- name: CountMediaItems :one
@@ -384,6 +407,61 @@ func (q *Queries) GetFileState(ctx context.Context, fileID pgtype.UUID) (FileSta
 		&i.SizeBytes,
 		&i.OsdbHash,
 		&i.LastVerifiedAt,
+	)
+	return i, err
+}
+
+const getInboxItem = `-- name: GetInboxItem :one
+select
+  f.id,
+  f.library_id,
+  f.path,
+  f.created_at,
+  fs.size_bytes,
+  md.outcome,
+  md.confidence,
+  coalesce(mi.title, md.parsed_snapshot->>'title', '')     as display_title,
+  coalesce(mi.year, (md.parsed_snapshot->>'year')::int)    as display_year,
+  coalesce(mi.type, md.parsed_snapshot->>'type', '')       as display_type
+from file f
+join match_decision md on md.file_id = f.id and md.superseded_at is null
+left join file_state fs on f.id = fs.file_id
+left join media_item mi on f.media_item_id = mi.id
+where f.id = $1
+  and f.deleted_at is null
+  and md.outcome not in ('confident', 'detached')
+`
+
+type GetInboxItemRow struct {
+	ID           pgtype.UUID  `json:"id"`
+	LibraryID    pgtype.UUID  `json:"library_id"`
+	Path         string       `json:"path"`
+	CreatedAt    time.Time    `json:"created_at"`
+	SizeBytes    *int64       `json:"size_bytes"`
+	Outcome      MatchOutcome `json:"outcome"`
+	Confidence   float64      `json:"confidence"`
+	DisplayTitle string       `json:"display_title"`
+	DisplayYear  *int32       `json:"display_year"`
+	DisplayType  string       `json:"display_type"`
+}
+
+// One inbox row by file id — same joins as ListInboxItems, no outcome
+// filter. Excludes soft-deleted and confident/detached files, so a file
+// not awaiting review returns no row.
+func (q *Queries) GetInboxItem(ctx context.Context, fileID pgtype.UUID) (GetInboxItemRow, error) {
+	row := q.db.QueryRow(ctx, getInboxItem, fileID)
+	var i GetInboxItemRow
+	err := row.Scan(
+		&i.ID,
+		&i.LibraryID,
+		&i.Path,
+		&i.CreatedAt,
+		&i.SizeBytes,
+		&i.Outcome,
+		&i.Confidence,
+		&i.DisplayTitle,
+		&i.DisplayYear,
+		&i.DisplayType,
 	)
 	return i, err
 }
@@ -817,53 +895,6 @@ func (q *Queries) ListFilesForItem(ctx context.Context, mediaItemID pgtype.UUID)
 	return items, nil
 }
 
-const listFilesNeedingReview = `-- name: ListFilesNeedingReview :many
-select id, library_id, path, media_item_id, episode_id, edition, created_at, updated_at, deleted_at from file
-where media_item_id is null
-  and deleted_at is null
-  and ($1::uuid is null or library_id = $1)
-order by created_at desc
-limit $3::int offset $2::int
-`
-
-type ListFilesNeedingReviewParams struct {
-	LibraryID pgtype.UUID `json:"library_id"`
-	OffsetVal int32       `json:"offset_val"`
-	PageSize  int32       `json:"page_size"`
-}
-
-// Files with no resolved identity — the matcher inbox over the unified
-// file table. Optional library filter; soft-deleted rows excluded.
-func (q *Queries) ListFilesNeedingReview(ctx context.Context, arg ListFilesNeedingReviewParams) ([]File, error) {
-	rows, err := q.db.Query(ctx, listFilesNeedingReview, arg.LibraryID, arg.OffsetVal, arg.PageSize)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []File
-	for rows.Next() {
-		var i File
-		if err := rows.Scan(
-			&i.ID,
-			&i.LibraryID,
-			&i.Path,
-			&i.MediaItemID,
-			&i.EpisodeID,
-			&i.Edition,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.DeletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listFilesNeedingVerification = `-- name: ListFilesNeedingVerification :many
 select f.id, f.library_id, f.path, f.media_item_id, f.episode_id, f.edition, f.created_at, f.updated_at, f.deleted_at, fs.exists, fs.size_bytes, fs.last_verified_at
 from file f
@@ -987,6 +1018,94 @@ func (q *Queries) ListImportsForImportTask(ctx context.Context, importTaskID pgt
 			&i.AttemptedAt,
 			&i.Success,
 			&i.ErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInboxItems = `-- name: ListInboxItems :many
+select
+  f.id,
+  f.library_id,
+  f.path,
+  f.created_at,
+  fs.size_bytes,
+  md.outcome,
+  md.confidence,
+  coalesce(mi.title, md.parsed_snapshot->>'title', '')     as display_title,
+  coalesce(mi.year, (md.parsed_snapshot->>'year')::int)    as display_year,
+  coalesce(mi.type, md.parsed_snapshot->>'type', '')       as display_type
+from file f
+join match_decision md on md.file_id = f.id and md.superseded_at is null
+left join file_state fs on f.id = fs.file_id
+left join media_item mi on f.media_item_id = mi.id
+where f.deleted_at is null
+  and md.outcome not in ('confident', 'detached')
+  and ($1::uuid is null or f.library_id = $1)
+  and ($2::match_outcome is null or md.outcome = $2)
+order by f.created_at desc
+limit $4::int offset $3::int
+`
+
+type ListInboxItemsParams struct {
+	LibraryID pgtype.UUID      `json:"library_id"`
+	Outcome   NullMatchOutcome `json:"outcome"`
+	OffsetVal int32            `json:"offset_val"`
+	PageSize  int32            `json:"page_size"`
+}
+
+type ListInboxItemsRow struct {
+	ID           pgtype.UUID  `json:"id"`
+	LibraryID    pgtype.UUID  `json:"library_id"`
+	Path         string       `json:"path"`
+	CreatedAt    time.Time    `json:"created_at"`
+	SizeBytes    *int64       `json:"size_bytes"`
+	Outcome      MatchOutcome `json:"outcome"`
+	Confidence   float64      `json:"confidence"`
+	DisplayTitle string       `json:"display_title"`
+	DisplayYear  *int32       `json:"display_year"`
+	DisplayType  string       `json:"display_type"`
+}
+
+// The matcher inbox: every live file whose current (non-superseded)
+// match_decision banded to something other than confident or detached.
+// Pulls in confident_review / partial_series — identity set but flagged —
+// which a bare "media_item_id IS NULL" predicate would drop.
+//
+// Display title/year/type COALESCE the identified media_item over the
+// decision's parsed_snapshot. file_state is left-joined for the size (no
+// per-row N+1). Optional library and outcome filters.
+func (q *Queries) ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]ListInboxItemsRow, error) {
+	rows, err := q.db.Query(ctx, listInboxItems,
+		arg.LibraryID,
+		arg.Outcome,
+		arg.OffsetVal,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInboxItemsRow
+	for rows.Next() {
+		var i ListInboxItemsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.LibraryID,
+			&i.Path,
+			&i.CreatedAt,
+			&i.SizeBytes,
+			&i.Outcome,
+			&i.Confidence,
+			&i.DisplayTitle,
+			&i.DisplayYear,
+			&i.DisplayType,
 		); err != nil {
 			return nil, err
 		}

@@ -15,7 +15,8 @@ const getCurrentMatchDecision = `-- name: GetCurrentMatchDecision :one
 select id, file_id, outcome, chosen_source, chosen_external_id,
        chosen_season, chosen_episode, chosen_edition, confidence,
        ranked_candidates, resolvers_consulted, evidence, evidence_truncated,
-       decided_by, decided_at, superseded_at, superseded_by
+       decided_by, decided_at, superseded_at, superseded_by,
+       parsed_snapshot, decided_with
 from match_decision
 where file_id = $1
   and superseded_at is null
@@ -45,6 +46,8 @@ func (q *Queries) GetCurrentMatchDecision(ctx context.Context, fileID pgtype.UUI
 		&i.DecidedAt,
 		&i.SupersededAt,
 		&i.SupersededBy,
+		&i.ParsedSnapshot,
+		&i.DecidedWith,
 	)
 	return i, err
 }
@@ -64,7 +67,9 @@ insert into match_decision (
     resolvers_consulted,
     evidence,
     evidence_truncated,
-    decided_by
+    decided_by,
+    parsed_snapshot,
+    decided_with
 )
 values (
     $1,
@@ -79,7 +84,9 @@ values (
     $10,
     $11,
     $12,
-    $13
+    $13,
+    $14,
+    $15
 )
 returning id
 `
@@ -98,6 +105,8 @@ type InsertMatchDecisionParams struct {
 	Evidence           []byte       `json:"evidence"`
 	EvidenceTruncated  bool         `json:"evidence_truncated"`
 	DecidedBy          string       `json:"decided_by"`
+	ParsedSnapshot     []byte       `json:"parsed_snapshot"`
+	DecidedWith        []byte       `json:"decided_with"`
 }
 
 // Match decision queries — the matcher's decision-log artifact.
@@ -117,6 +126,8 @@ func (q *Queries) InsertMatchDecision(ctx context.Context, arg InsertMatchDecisi
 		arg.Evidence,
 		arg.EvidenceTruncated,
 		arg.DecidedBy,
+		arg.ParsedSnapshot,
+		arg.DecidedWith,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -127,7 +138,8 @@ const listMatchDecisionHistoryForFile = `-- name: ListMatchDecisionHistoryForFil
 select id, file_id, outcome, chosen_source, chosen_external_id,
        chosen_season, chosen_episode, chosen_edition, confidence,
        ranked_candidates, resolvers_consulted, evidence, evidence_truncated,
-       decided_by, decided_at, superseded_at, superseded_by
+       decided_by, decided_at, superseded_at, superseded_by,
+       parsed_snapshot, decided_with
 from match_decision
 where file_id = $1
 order by decided_at desc
@@ -163,6 +175,8 @@ func (q *Queries) ListMatchDecisionHistoryForFile(ctx context.Context, fileID pg
 			&i.DecidedAt,
 			&i.SupersededAt,
 			&i.SupersededBy,
+			&i.ParsedSnapshot,
+			&i.DecidedWith,
 		); err != nil {
 			return nil, err
 		}

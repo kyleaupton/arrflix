@@ -246,6 +246,12 @@ func (a *Aggregator) validateAgainstProvider(ctx context.Context, cands []Candid
 		} else {
 			c.Confidence *= validatedMultiplierValid
 		}
+		// The validated record is the display identity for a Tier-1
+		// candidate — the resolver only knew the embedded ID. The year
+		// penalty and ranked suggestions read these.
+		c.Title = item.Title
+		c.Year = item.Year
+		c.Type = string(item.Type)
 		items[c.Ref] = item
 		out = append(out, c)
 	}
@@ -373,6 +379,8 @@ func (a *Aggregator) bandAndRecord(file FileRef, cands []Candidate, items map[Ex
 		ResolversConsulted: audits,
 		DecidedBy:          "auto",
 		DecidedAt:          time.Now().UTC(),
+		DecidedWith:        a.cfg.Thresholds,
+		ParsedSnapshot:     parsedSnapshot(file),
 	}
 
 	rec.Evidence, rec.Truncated = capEvidence(evidence)
@@ -492,6 +500,10 @@ func rankCandidates(cands []Candidate, items map[ExternalRef]*metadata.Item, out
 		rc := RankedCandidate{
 			Ref:        c.Ref,
 			Confidence: c.Confidence,
+			Title:      c.Title,
+			Year:       c.Year,
+			Type:       c.Type,
+			PosterPath: c.PosterPath,
 		}
 		if c.Episode != nil {
 			ep := *c.Episode
@@ -522,6 +534,9 @@ func rankCandidates(cands []Candidate, items map[ExternalRef]*metadata.Item, out
 			rc := RankedCandidate{
 				Ref:        c.Ref,
 				Confidence: c.Confidence,
+				Title:      c.Title,
+				Year:       c.Year,
+				PosterPath: c.PosterPath,
 			}
 			if c.Episode != nil {
 				ep := *c.Episode
@@ -626,16 +641,11 @@ func yearHintFromFile(f FileRef) int {
 	return f.Parsed.Identity.Year.Value
 }
 
-// candidateYear returns the candidate's advertised year. The year is
-// attached (when available) via the metadata provider's validation step;
-// absent that call, year is 0. Reserved for future resolvers that
-// synthesize candidates with a year hint pre-validation.
-func candidateYear(_ Candidate) int {
-	// Year currently lives on metadata.Item, which the aggregator
-	// reads transiently during validation but doesn't persist on the
-	// Candidate type. When a resolver wants its own year hint to feed
-	// the mismatch penalty, this is the seam to grow.
-	return 0
+// candidateYear returns the candidate's advertised year, or zero for
+// unknown. The mismatch-penalty callsite skips a zero so an absent year
+// never penalizes.
+func candidateYear(c Candidate) int {
+	return c.Year
 }
 
 // bestLooksLikeSeries reports whether the chosen candidate's identity
@@ -658,4 +668,36 @@ func fileLooksLikeSeries(f FileRef) bool {
 	}
 	n := f.Parsed.Identity.Numbering
 	return n.Kind != "" || len(n.EpisodeNumbers.Value) > 0 || len(n.AbsoluteNumbers.Value) > 0
+}
+
+// parsedSnapshot freezes the parser's identity view into the ParsedSnapshot
+// the decide pane renders. Nil when the file carried no parse.
+//
+// Season/Episode collapse multi-episode numbering to a single pair (season
+// + first episode), preferring season_episode numbering and falling back
+// to the first absolute number for anime.
+func parsedSnapshot(f FileRef) *ParsedSnapshot {
+	if f.Parsed == nil {
+		return nil
+	}
+	id := f.Parsed.Identity
+	snap := &ParsedSnapshot{
+		Title: id.Title.Value,
+		Year:  id.Year.Value,
+		Type:  id.TypeHint.Value,
+	}
+	n := id.Numbering
+	if n.Season.Value != 0 {
+		s := n.Season.Value
+		snap.Season = &s
+	}
+	switch {
+	case len(n.EpisodeNumbers.Value) > 0:
+		e := n.EpisodeNumbers.Value[0]
+		snap.Episode = &e
+	case len(n.AbsoluteNumbers.Value) > 0:
+		e := n.AbsoluteNumbers.Value[0]
+		snap.Episode = &e
+	}
+	return snap
 }

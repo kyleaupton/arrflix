@@ -70,6 +70,13 @@ type ResolverResult struct {
 // the final number that drives the outcome band.
 type Candidate struct {
 	Ref ExternalRef
+	// Display identity, carried through to the ranked suggestions so a
+	// search-derived candidate renders without a second provider call.
+	// Empty/zero when the resolver couldn't determine a field.
+	Title      string
+	Year       int
+	Type       string // metadata.EntityType as a string: "movie" / "series"
+	PosterPath string
 	// Episode is set only for series-shaped identities. Nil means the
 	// resolver didn't have enough signal to pin the episode; the
 	// aggregator may surface that as partial_series if the series itself

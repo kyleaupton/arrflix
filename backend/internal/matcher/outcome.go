@@ -59,6 +59,21 @@ var (
 	PresetRelaxed     = Thresholds{Auto: 0.70, ReviewLow: 0.5, LowMin: 0.5}
 )
 
+// PresetName returns the named preset matching these thresholds, or
+// "custom" if none. Recorded in decided_with.preset.
+func (t Thresholds) PresetName() string {
+	switch t {
+	case PresetStrict:
+		return "strict"
+	case PresetRecommended:
+		return "recommended"
+	case PresetRelaxed:
+		return "relaxed"
+	default:
+		return "custom"
+	}
+}
+
 // Config carries aggregator-tunable knobs. Today only the hardcoded
 // Recommended preset; per-library overrides land later (matcher spec
 // § Per-library resolver toggle UX).
@@ -128,6 +143,25 @@ type MatchOutcomeRecord struct {
 	// re-match / un-match writes "user:<uuid>" via separate code paths.
 	DecidedBy string
 	DecidedAt time.Time
+
+	// ParsedSnapshot is what the parser saw at decision time, for the inbox
+	// decide pane. Nil when the file had no parse. Display/audit only.
+	ParsedSnapshot *ParsedSnapshot
+
+	// DecidedWith is the threshold band this decision ran under. Zero for
+	// user-driven decisions, which aren't banded. Display/audit only.
+	DecidedWith Thresholds
+}
+
+// ParsedSnapshot is the subset of the parser's view the decide pane
+// renders. Season/Episode are pointers so "no numbering" is distinct from
+// season/episode zero.
+type ParsedSnapshot struct {
+	Title   string `json:"title"`
+	Year    int    `json:"year"`
+	Type    string `json:"type"`
+	Season  *int   `json:"season,omitempty"`
+	Episode *int   `json:"episode,omitempty"`
 }
 
 // ResolverAudit is the per-resolver line item in
@@ -154,10 +188,15 @@ type RankedCandidate struct {
 	Episode    *EpisodeRef
 	Edition    *string
 	Confidence float64
-	// Item is the validated metadata.Item when the aggregator ran the
-	// Tier-1 validation step and matched this candidate's (post-rewrite)
-	// ExternalRef. Nil for Tier-3-only candidates or when the provider
-	// was absent — persistence code falls back to the chosen item's
-	// title/year in that case.
+	// Display identity, carried from the resolver's Candidate. Empty/zero
+	// when undetermined.
+	Title      string
+	Year       int
+	Type       string
+	PosterPath string
+	// Item is the validated metadata.Item when the aggregator ran Tier-1
+	// validation and matched this candidate's (post-rewrite) ExternalRef.
+	// Nil for Tier-3-only candidates or when the provider was absent —
+	// persistence falls back to Title/Year then.
 	Item *metadata.Item
 }

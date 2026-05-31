@@ -22,6 +22,34 @@ type Page[T any] struct {
 // OpenAPI spec, which would change every client type name on regeneration).
 type PaginatedLibraryResponse = Page[LibraryItem]
 
+// InboxItem is one row of the matcher inbox. Title/Year/Type are display
+// fields, COALESCEd from the identified media_item over the decision's
+// parsed snapshot — so a flagged-but-identified file shows its real title
+// and an unidentified one shows what the parser saw.
+type InboxItem struct {
+	ID            string  `json:"id"`
+	LibraryID     string  `json:"libraryId"`
+	Path          string  `json:"path"`
+	FileSize      *int64  `json:"fileSize,omitempty"`
+	DiscoveredAt  string  `json:"discoveredAt"`
+	Outcome       string  `json:"outcome"`
+	Confidence    float64 `json:"confidence"`
+	Title         string  `json:"title,omitempty"`
+	Year          *int    `json:"year,omitempty"`
+	Type          string  `json:"type,omitempty"`
+	PartialSeries bool    `json:"partialSeries,omitempty"`
+}
+
+// InboxPage is the inbox list envelope: the {data, pagination} shape the
+// library endpoint uses, plus per-band countsByOutcome. Concrete rather
+// than Page[InboxItem] so the extra field fits and the OpenAPI schema name
+// stays stable (generics mangle to Page-model_InboxItem).
+type InboxPage struct {
+	Data            []InboxItem      `json:"data"`
+	Pagination      Pagination       `json:"pagination"`
+	CountsByOutcome map[string]int64 `json:"countsByOutcome"`
+}
+
 // LibraryItem is the enriched media item returned by the library endpoint
 type LibraryItem struct {
 	ID         string `json:"id"`

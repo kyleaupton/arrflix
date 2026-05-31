@@ -64,7 +64,17 @@ CREATE TABLE match_decision (
     -- the prior current row at it. Reversibility (the antidote to
     -- Sonarr's irreversible-wrong-match story) walks this chain.
     superseded_at       TIMESTAMPTZ,
-    superseded_by       BIGINT REFERENCES match_decision(id)
+    superseded_by       BIGINT REFERENCES match_decision(id),
+    -- parsed_snapshot is what the parser saw at decision time:
+    -- {title, year, type, season, episode}, captured even on a no_match.
+    -- Drives the decide pane's display and season/episode prefill.
+    -- NULL when the file had no parse.
+    parsed_snapshot     JSONB,
+    -- decided_with is the threshold band the decision ran under:
+    -- {preset, thresholds:{auto, reviewLow, lowMin}}. Sharpens the audit
+    -- trail and lets a later preset change re-evaluate affected decisions.
+    -- NULL for user-driven decisions (detach / un-match), which aren't banded.
+    decided_with        JSONB
 );
 
 CREATE INDEX match_decision_file_id_idx ON match_decision (file_id);

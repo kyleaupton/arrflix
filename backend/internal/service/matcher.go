@@ -131,6 +131,16 @@ func insertMatchOutcome(ctx context.Context, r *repo.Repository, rec matcher.Mat
 		return 0, err
 	}
 
+	parsedJSON, err := parsedSnapshotJSON(rec)
+	if err != nil {
+		return 0, err
+	}
+
+	decidedWithJSON, err := decidedWithJSON(rec)
+	if err != nil {
+		return 0, err
+	}
+
 	params := repo.InsertMatchDecisionParams{
 		FileID:             rec.FileID,
 		Outcome:            string(rec.Outcome),
@@ -140,6 +150,8 @@ func insertMatchOutcome(ctx context.Context, r *repo.Repository, rec matcher.Mat
 		Evidence:           rec.Evidence,
 		EvidenceTruncated:  rec.Truncated,
 		DecidedBy:          rec.DecidedBy,
+		ParsedSnapshot:     parsedJSON,
+		DecidedWith:        decidedWithJSON,
 	}
 	if rec.ChosenRef != nil {
 		src := string(rec.ChosenRef.Source)
@@ -185,11 +197,19 @@ func rankedCandidatesJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 
 	out := make([]model.SuggestedMatch, 0, len(rec.RankedCandidates))
 	for _, c := range rec.RankedCandidates {
-		title, year, typ := "", 0, ""
+		// The validated Item is the display source when present; Tier-3
+		// candidates have none, so fall back to the resolver's denormalized
+		// fields.
+		title, year, typ := c.Title, c.Year, c.Type
+		poster := c.PosterPath
 		if c.Item != nil {
 			title = c.Item.Title
 			year = c.Item.Year
 			typ = string(c.Item.Type)
+			// Don't let an Item without a poster blank out the search's.
+			if c.Item.PosterPath != "" {
+				poster = c.Item.PosterPath
+			}
 		}
 		out = append(out, model.SuggestedMatch{
 			ExternalRef: model.SuggestedExternalRef{
@@ -202,12 +222,58 @@ func rankedCandidatesJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 			Title:                 title,
 			Year:                  year,
 			Type:                  typ,
+			PosterPath:            poster,
 		})
 	}
 	b, err := json.Marshal(out)
 	if err != nil {
 		return nil, apperrors.Internalf("marshal ranked_candidates: %v", err).
 			Op("rankedCandidatesJSON").
+			NotRetryable()
+	}
+	return b, nil
+}
+
+// parsedSnapshotJSON marshals the parser snapshot for the parsed_snapshot
+// JSONB column. A nil snapshot yields nil bytes (NULL column).
+func parsedSnapshotJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
+	if rec.ParsedSnapshot == nil {
+		return nil, nil
+	}
+	b, err := json.Marshal(rec.ParsedSnapshot)
+	if err != nil {
+		return nil, apperrors.Internalf("marshal parsed_snapshot: %v", err).
+			Op("parsedSnapshotJSON").
+			NotRetryable()
+	}
+	return b, nil
+}
+
+// decidedWithJSON marshals the decision's threshold band for the
+// decided_with JSONB column: {preset, thresholds:{auto, reviewLow, lowMin}}.
+// A zero Thresholds (user-driven, unbanded decision) yields nil bytes
+// (NULL column) rather than a misleading all-zero "custom" band.
+func decidedWithJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
+	t := rec.DecidedWith
+	if t == (matcher.Thresholds{}) {
+		return nil, nil
+	}
+	payload := struct {
+		Preset     string `json:"preset"`
+		Thresholds struct {
+			Auto      float64 `json:"auto"`
+			ReviewLow float64 `json:"reviewLow"`
+			LowMin    float64 `json:"lowMin"`
+		} `json:"thresholds"`
+	}{Preset: t.PresetName()}
+	payload.Thresholds.Auto = t.Auto
+	payload.Thresholds.ReviewLow = t.ReviewLow
+	payload.Thresholds.LowMin = t.LowMin
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return nil, apperrors.Internalf("marshal decided_with: %v", err).
+			Op("decidedWithJSON").
 			NotRetryable()
 	}
 	return b, nil

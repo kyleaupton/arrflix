@@ -29,6 +29,10 @@ const router = createRouter({
       component: () => import('@/views/Library.vue'),
     },
     {
+      path: '/library/matching',
+      component: () => import('@/views/MatchingInbox.vue'),
+    },
+    {
       path: '/search',
       component: () => import('@/views/Search.vue'),
       meta: { layout: 'immersive' },

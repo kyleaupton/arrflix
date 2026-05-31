@@ -434,6 +434,8 @@ type MatchDecision struct {
 	DecidedAt          time.Time          `json:"decided_at"`
 	SupersededAt       pgtype.Timestamptz `json:"superseded_at"`
 	SupersededBy       *int64             `json:"superseded_by"`
+	ParsedSnapshot     []byte             `json:"parsed_snapshot"`
+	DecidedWith        []byte             `json:"decided_with"`
 }
 
 type MediaEpisode struct {

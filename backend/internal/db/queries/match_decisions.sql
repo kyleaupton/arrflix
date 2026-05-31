@@ -15,7 +15,9 @@ insert into match_decision (
     resolvers_consulted,
     evidence,
     evidence_truncated,
-    decided_by
+    decided_by,
+    parsed_snapshot,
+    decided_with
 )
 values (
     sqlc.arg(file_id),
@@ -30,7 +32,9 @@ values (
     sqlc.arg(resolvers_consulted),
     sqlc.arg(evidence),
     sqlc.arg(evidence_truncated),
-    sqlc.arg(decided_by)
+    sqlc.arg(decided_by),
+    sqlc.arg(parsed_snapshot),
+    sqlc.arg(decided_with)
 )
 returning id;
 
@@ -51,7 +55,8 @@ where file_id = sqlc.arg(file_id)
 select id, file_id, outcome, chosen_source, chosen_external_id,
        chosen_season, chosen_episode, chosen_edition, confidence,
        ranked_candidates, resolvers_consulted, evidence, evidence_truncated,
-       decided_by, decided_at, superseded_at, superseded_by
+       decided_by, decided_at, superseded_at, superseded_by,
+       parsed_snapshot, decided_with
 from match_decision
 where file_id = sqlc.arg(file_id)
   and superseded_at is null
@@ -65,7 +70,8 @@ limit 1;
 select id, file_id, outcome, chosen_source, chosen_external_id,
        chosen_season, chosen_episode, chosen_edition, confidence,
        ranked_candidates, resolvers_consulted, evidence, evidence_truncated,
-       decided_by, decided_at, superseded_at, superseded_by
+       decided_by, decided_at, superseded_at, superseded_by,
+       parsed_snapshot, decided_with
 from match_decision
 where file_id = sqlc.arg(file_id)
 order by decided_at desc;

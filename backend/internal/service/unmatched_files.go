@@ -10,12 +10,11 @@ import (
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
-// UnmatchedFilesService is the read surface over "files needing review" —
-// files whose identity hasn't been resolved (file.media_item_id IS NULL).
-// "Unmatched" is now a query over the unified file table, not a separate
-// entity; the ranked suggestions and decision flows live on the
-// match_decision endpoints (/files/{id}/match, /unmatch, /detach,
-// /match-decision).
+// UnmatchedFilesService is the read surface over the matcher inbox — every
+// file whose current (non-superseded) match_decision banded to something
+// other than confident or detached. That keeps confident_review /
+// partial_series (identity set but flagged) in the inbox. Decision flows
+// live on the /files/{id}/* match_decision endpoints.
 type UnmatchedFilesService struct {
 	repo   *repo.Repository
 	logger *logger.Logger
@@ -26,36 +25,19 @@ func NewUnmatchedFilesService(r *repo.Repository, l *logger.Logger, tmdb *TmdbSe
 	return &UnmatchedFilesService{repo: r, logger: l, tmdb: tmdb}
 }
 
-// UnmatchedFileResponse is the API response for a file needing review.
-// partial_series is derived: media_item_id set with episode_id NULL on a
-// series file. Ranked suggestions are read from the file's current
-// match_decision (the /files/{id}/match-decision endpoint), not here.
-type UnmatchedFileResponse struct {
-	ID            string `json:"id"`
-	LibraryID     string `json:"libraryId"`
-	Path          string `json:"path"`
-	FileSize      *int64 `json:"fileSize,omitempty"`
-	DiscoveredAt  string `json:"discoveredAt"`
-	PartialSeries bool   `json:"partialSeries,omitempty"`
-}
-
-// ListParams contains parameters for listing files needing review.
+// ListParams contains parameters for listing inbox files. Outcome is an
+// optional band filter; nil lists every band.
 type ListParams struct {
 	LibraryID *uuid.UUID
+	Outcome   *string
 	Page      int
 	PageSize  int
 }
 
-// ListResult contains a paginated list of files needing review.
-type ListResult struct {
-	Items      []UnmatchedFileResponse `json:"items"`
-	TotalCount int64                   `json:"totalCount"`
-	Page       int                     `json:"page"`
-	PageSize   int                     `json:"pageSize"`
-}
-
-// List returns a paginated list of files needing review (identity NULL).
-func (s *UnmatchedFilesService) List(ctx context.Context, params ListParams) (ListResult, error) {
+// List returns a page of inbox files plus the per-band counts. The page
+// Total is derived from those counts (sum of all bands, or the selected
+// band) — no separate COUNT(*).
+func (s *UnmatchedFilesService) List(ctx context.Context, params ListParams) (model.InboxPage, error) {
 	if params.PageSize <= 0 {
 		params.PageSize = 20
 	}
@@ -65,65 +47,54 @@ func (s *UnmatchedFilesService) List(ctx context.Context, params ListParams) (Li
 
 	offset := int32((params.Page - 1) * params.PageSize)
 
-	files, err := s.repo.ListFilesNeedingReview(ctx, repo.FilesReviewQueryParams{
+	items, err := s.repo.ListInboxItems(ctx, repo.InboxQueryParams{
 		LibraryID: params.LibraryID,
+		Outcome:   params.Outcome,
 		PageSize:  int32(params.PageSize),
 		Offset:    offset,
 	})
 	if err != nil {
-		return ListResult{}, err
+		return model.InboxPage{}, err
 	}
 
-	count, err := s.repo.CountFilesNeedingReview(ctx, params.LibraryID)
+	counts, err := s.repo.CountInboxByOutcome(ctx, params.LibraryID)
 	if err != nil {
-		return ListResult{}, err
+		return model.InboxPage{}, err
 	}
 
-	items := make([]UnmatchedFileResponse, 0, len(files))
-	for _, f := range files {
-		resp, rerr := s.toResponse(ctx, f)
-		if rerr != nil {
-			return ListResult{}, rerr
+	var total int64
+	if params.Outcome != nil {
+		total = counts[*params.Outcome]
+	} else {
+		for _, c := range counts {
+			total += c
 		}
-		items = append(items, resp)
 	}
 
-	return ListResult{
-		Items:      items,
-		TotalCount: count,
-		Page:       params.Page,
-		PageSize:   params.PageSize,
+	totalPages := 0
+	if params.PageSize > 0 {
+		totalPages = int((total + int64(params.PageSize) - 1) / int64(params.PageSize))
+	}
+
+	return model.InboxPage{
+		Data: items,
+		Pagination: model.Pagination{
+			Total:      total,
+			Page:       params.Page,
+			PageSize:   params.PageSize,
+			TotalPages: totalPages,
+		},
+		CountsByOutcome: counts,
 	}, nil
 }
 
-// Get returns a single file needing review by ID. Returns NotFound when
-// the file is identified (not in the review set) or doesn't exist.
-func (s *UnmatchedFilesService) Get(ctx context.Context, id uuid.UUID) (UnmatchedFileResponse, error) {
-	file, err := s.repo.GetFile(ctx, id)
-	if err != nil {
-		return UnmatchedFileResponse{}, err
+// Get returns a single inbox file by ID. The inbox query excludes
+// soft-deleted and confident/detached files, so a file not awaiting review
+// reads as not-found (repo's FromPg maps no-rows to 404).
+func (s *UnmatchedFilesService) Get(ctx context.Context, id uuid.UUID) (model.InboxItem, error) {
+	item, err := s.repo.GetInboxItem(ctx, id)
+	if apperrors.IsNotFound(err) {
+		return model.InboxItem{}, apperrors.Wrap(err, "file %s is not awaiting review", id)
 	}
-	if file.MediaItemID != nil {
-		return UnmatchedFileResponse{}, apperrors.NotFoundf("file %s is not awaiting review", id).
-			Op("UnmatchedFilesService.Get")
-	}
-	return s.toResponse(ctx, file)
-}
-
-// toResponse maps a file row to the wire shape. partial_series is derived
-// from the series-with-no-episode shape; here, review files have NULL
-// media_item_id so partial_series is always false (a partial-series file
-// carries the series id and isn't in this set).
-func (s *UnmatchedFilesService) toResponse(ctx context.Context, f model.File) (UnmatchedFileResponse, error) {
-	var size *int64
-	if state, err := s.repo.GetFileState(ctx, f.ID); err == nil {
-		size = state.SizeBytes
-	}
-	return UnmatchedFileResponse{
-		ID:           f.ID.String(),
-		LibraryID:    f.LibraryID.String(),
-		Path:         f.Path,
-		FileSize:     size,
-		DiscoveredAt: f.CreatedAt.Format("2006-01-02T15:04:05Z"),
-	}, nil
+	return item, err
 }

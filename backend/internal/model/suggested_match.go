@@ -9,13 +9,10 @@ import "encoding/json"
 // voted for it, and the raw evidence payload (the same per-resolver JSON
 // the match_decision row carries, capped at ~2KB per entry on write).
 //
-// Display fields (Title, Year, Type) are denormalized at write-time from
-// the metadata.Item the aggregator validated against, so the matcher
-// inbox can render a card without a second TMDB call. They are nullable
-// because a low_confidence outcome may surface a suggestion the
-// aggregator only loosely validated (Tier-3 search results don't carry
-// a fresh title/year — they come from the provider's search response
-// and Scan writes those through).
+// Display fields (Title, Year, Type, PosterPath) are denormalized at
+// write-time so the inbox renders a card without a second TMDB call: from
+// the validated metadata.Item for a Tier-1 candidate, or the search
+// response for Tier-3. Nullable when the resolver determined no title/year.
 //
 // Shape follows specs/modules/matching/README.md § "What evolves":
 //
@@ -40,14 +37,11 @@ type SuggestedMatch struct {
 	// match_decision level; per-suggestion entries are capped softer
 	// (~2KB) at scan persist time so 5 suggestions still fit in a
 	// reasonably-sized JSONB column.
-	Evidence json.RawMessage `json:"evidence,omitempty"`
-	// Title/Year/Type are denormalized for display. Empty/zero when
-	// the aggregator didn't validate the candidate (e.g. a Tier-3
-	// search result the matcher decided wasn't strong enough to
-	// validate up-front).
-	Title string `json:"title,omitempty"`
-	Year  int    `json:"year,omitempty"`
-	Type  string `json:"type,omitempty"` // "movie" or "series"
+	Evidence   json.RawMessage `json:"evidence,omitempty"`
+	Title      string          `json:"title,omitempty"`
+	Year       int             `json:"year,omitempty"`
+	Type       string          `json:"type,omitempty"`       // "movie" or "series"
+	PosterPath string          `json:"posterPath,omitempty"` // provider poster path, e.g. TMDB "/abc.jpg"
 }
 
 // SuggestedExternalRef mirrors matcher.ExternalRef on the wire without

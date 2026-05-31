@@ -164,21 +164,70 @@ left join file_state fs on f.id = fs.file_id
 where f.media_item_id = $1 and f.deleted_at is null
 order by f.created_at desc;
 
--- name: ListFilesNeedingReview :many
--- Files with no resolved identity — the matcher inbox over the unified
--- file table. Optional library filter; soft-deleted rows excluded.
-select * from file
-where media_item_id is null
-  and deleted_at is null
-  and (sqlc.narg(library_id)::uuid is null or library_id = sqlc.narg(library_id))
-order by created_at desc
+-- name: ListInboxItems :many
+-- The matcher inbox: every live file whose current (non-superseded)
+-- match_decision banded to something other than confident or detached.
+-- Pulls in confident_review / partial_series — identity set but flagged —
+-- which a bare "media_item_id IS NULL" predicate would drop.
+--
+-- Display title/year/type COALESCE the identified media_item over the
+-- decision's parsed_snapshot. file_state is left-joined for the size (no
+-- per-row N+1). Optional library and outcome filters.
+select
+  f.id,
+  f.library_id,
+  f.path,
+  f.created_at,
+  fs.size_bytes,
+  md.outcome,
+  md.confidence,
+  coalesce(mi.title, md.parsed_snapshot->>'title', '')     as display_title,
+  coalesce(mi.year, (md.parsed_snapshot->>'year')::int)    as display_year,
+  coalesce(mi.type, md.parsed_snapshot->>'type', '')       as display_type
+from file f
+join match_decision md on md.file_id = f.id and md.superseded_at is null
+left join file_state fs on f.id = fs.file_id
+left join media_item mi on f.media_item_id = mi.id
+where f.deleted_at is null
+  and md.outcome not in ('confident', 'detached')
+  and (sqlc.narg(library_id)::uuid is null or f.library_id = sqlc.narg(library_id))
+  and (sqlc.narg(outcome)::match_outcome is null or md.outcome = sqlc.narg(outcome))
+order by f.created_at desc
 limit sqlc.arg(page_size)::int offset sqlc.arg(offset_val)::int;
 
--- name: CountFilesNeedingReview :one
-select count(*) from file
-where media_item_id is null
-  and deleted_at is null
-  and (sqlc.narg(library_id)::uuid is null or library_id = sqlc.narg(library_id));
+-- name: GetInboxItem :one
+-- One inbox row by file id — same joins as ListInboxItems, no outcome
+-- filter. Excludes soft-deleted and confident/detached files, so a file
+-- not awaiting review returns no row.
+select
+  f.id,
+  f.library_id,
+  f.path,
+  f.created_at,
+  fs.size_bytes,
+  md.outcome,
+  md.confidence,
+  coalesce(mi.title, md.parsed_snapshot->>'title', '')     as display_title,
+  coalesce(mi.year, (md.parsed_snapshot->>'year')::int)    as display_year,
+  coalesce(mi.type, md.parsed_snapshot->>'type', '')       as display_type
+from file f
+join match_decision md on md.file_id = f.id and md.superseded_at is null
+left join file_state fs on f.id = fs.file_id
+left join media_item mi on f.media_item_id = mi.id
+where f.id = sqlc.arg(file_id)
+  and f.deleted_at is null
+  and md.outcome not in ('confident', 'detached');
+
+-- name: CountInboxByOutcome :many
+-- Per-band totals over the same inbox join, library filter applied, no
+-- pagination. The service folds these into a map and derives the page Total.
+select md.outcome, count(*) as count
+from file f
+join match_decision md on md.file_id = f.id and md.superseded_at is null
+where f.deleted_at is null
+  and md.outcome not in ('confident', 'detached')
+  and (sqlc.narg(library_id)::uuid is null or f.library_id = sqlc.narg(library_id))
+group by md.outcome;
 
 -- name: ListEpisodeAvailabilityForSeries :many
 select
