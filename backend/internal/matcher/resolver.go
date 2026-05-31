@@ -83,6 +83,10 @@ type Candidate struct {
 	// suggestion icon and to decide whether a match-by-ID needs episode
 	// inputs. Empty when the resolver couldn't determine it.
 	Type string
+	// PosterPath is the candidate's poster image path, denormalized from
+	// the resolver's search result so the inbox renders a suggestion
+	// thumbnail without a second provider call. Empty when unknown.
+	PosterPath string
 	// Episode is set only for series-shaped identities. Nil means the
 	// resolver didn't have enough signal to pin the episode; the
 	// aggregator may surface that as partial_series if the series itself

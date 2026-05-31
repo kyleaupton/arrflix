@@ -47,6 +47,12 @@ type SuggestedMatch struct {
 	Title string `json:"title,omitempty"`
 	Year  int    `json:"year,omitempty"`
 	Type  string `json:"type,omitempty"` // "movie" or "series"
+	// PosterPath is the provider's poster image path (e.g. TMDB
+	// "/abc.jpg"), denormalized at write time so the inbox suggestion card
+	// renders a thumbnail without a second provider call. A Tier-1
+	// candidate prefers the validated Item's poster; empty when neither
+	// the resolver nor the provider supplied one.
+	PosterPath string `json:"posterPath,omitempty"`
 }
 
 // SuggestedExternalRef mirrors matcher.ExternalRef on the wire without

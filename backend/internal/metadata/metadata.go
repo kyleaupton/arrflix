@@ -76,6 +76,11 @@ type Item struct {
 	// date hasn't been set. The aggregator's year-penalty treats 0 as
 	// "unknown" rather than "1900-style hard miss".
 	Year int
+	// PosterPath is the provider's poster image path (e.g. TMDB
+	// "/abc.jpg"), denormalized so the matcher inbox can render a
+	// suggestion thumbnail without a second provider call. Empty when the
+	// provider didn't return one.
+	PosterPath string
 	// Redirected is true when LookupByID followed a merge — i.e. the
 	// upstream returned a different ID than the one requested. ExternalID
 	// in that case is the new (canonical) ID; callers should record the
@@ -93,6 +98,10 @@ type Candidate struct {
 	Title      string
 	Year       int
 	Popularity float64
+	// PosterPath mirrors Item.PosterPath for search results — the
+	// provider's poster image path, carried through to the inbox
+	// suggestion card.
+	PosterPath string
 }
 
 // SearchOptions narrows a Search call. Both filters are soft: an

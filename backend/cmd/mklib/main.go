@@ -49,7 +49,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		input = f
 	} else {
 		input = os.Stdin

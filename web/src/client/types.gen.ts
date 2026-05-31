@@ -1659,6 +1659,7 @@ export type SuggestedMatch = {
     contributingResolvers?: Array<string> | null;
     evidence?: unknown;
     externalRef: SuggestedExternalRef;
+    posterPath?: string;
     title?: string;
     type?: string;
     year?: number;

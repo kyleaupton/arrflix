@@ -3802,6 +3802,8 @@ components:
         evidence: {}
         externalRef:
           $ref: "#/components/schemas/SuggestedExternalRef"
+        posterPath:
+          type: string
         title:
           type: string
         type:

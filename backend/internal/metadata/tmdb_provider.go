@@ -96,6 +96,7 @@ func (p *TmdbProvider) lookupTmdb(ctx context.Context, id string) (*Item, error)
 			Type:       EntityMovie,
 			Title:      movie.Title,
 			Year:       yr,
+			PosterPath: movie.PosterPath,
 			Redirected: returnedID != id,
 		}, nil
 	} else if err != nil && !isNotFound(err) {
@@ -111,6 +112,7 @@ func (p *TmdbProvider) lookupTmdb(ctx context.Context, id string) (*Item, error)
 			Type:       EntitySeries,
 			Title:      series.Name,
 			Year:       yr,
+			PosterPath: series.PosterPath,
 			Redirected: returnedID != id,
 		}, nil
 	} else if err != nil && !isNotFound(err) {
@@ -152,6 +154,7 @@ func (p *TmdbProvider) Search(ctx context.Context, query string, opts SearchOpti
 				Title:      r.Title,
 				Year:       yr,
 				Popularity: float64(r.Popularity),
+				PosterPath: r.PosterPath,
 			})
 		case "tv":
 			yr, _ := splitYear(r.FirstAirDate)
@@ -162,6 +165,7 @@ func (p *TmdbProvider) Search(ctx context.Context, query string, opts SearchOpti
 				Title:      r.Name,
 				Year:       yr,
 				Popularity: float64(r.Popularity),
+				PosterPath: r.PosterPath,
 			})
 		default:
 			// person results have no media identity — drop silently.

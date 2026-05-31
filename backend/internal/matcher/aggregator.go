@@ -507,6 +507,7 @@ func rankCandidates(cands []Candidate, items map[ExternalRef]*metadata.Item, out
 			Title:      c.Title,
 			Year:       c.Year,
 			Type:       c.Type,
+			PosterPath: c.PosterPath,
 		}
 		if c.Episode != nil {
 			ep := *c.Episode
@@ -539,6 +540,7 @@ func rankCandidates(cands []Candidate, items map[ExternalRef]*metadata.Item, out
 				Confidence: c.Confidence,
 				Title:      c.Title,
 				Year:       c.Year,
+				PosterPath: c.PosterPath,
 			}
 			if c.Episode != nil {
 				ep := *c.Episode

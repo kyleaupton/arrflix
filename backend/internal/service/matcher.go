@@ -202,10 +202,16 @@ func rankedCandidatesJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 		// so fall back to the title/year/type the resolver denormalized onto
 		// the candidate from its search response.
 		title, year, typ := c.Title, c.Year, c.Type
+		poster := c.PosterPath
 		if c.Item != nil {
 			title = c.Item.Title
 			year = c.Item.Year
 			typ = string(c.Item.Type)
+			// Prefer the validated Item's poster, but don't let an
+			// Item without one blank out a poster the search carried.
+			if c.Item.PosterPath != "" {
+				poster = c.Item.PosterPath
+			}
 		}
 		out = append(out, model.SuggestedMatch{
 			ExternalRef: model.SuggestedExternalRef{
@@ -218,6 +224,7 @@ func rankedCandidatesJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 			Title:                 title,
 			Year:                  year,
 			Type:                  typ,
+			PosterPath:            poster,
 		})
 	}
 	b, err := json.Marshal(out)

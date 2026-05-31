@@ -207,6 +207,11 @@ type RankedCandidate struct {
 	// denormalized alongside Title/Year so the inbox can tag the
 	// suggestion without a provider call.
 	Type string
+	// PosterPath is the candidate's poster image path, denormalized
+	// alongside Title/Year/Type so the inbox suggestion card renders a
+	// thumbnail without a provider call. A Tier-1 candidate's poster is
+	// preferred from the validated Item at persist time when present.
+	PosterPath string
 	// Item is the validated metadata.Item when the aggregator ran the
 	// Tier-1 validation step and matched this candidate's (post-rewrite)
 	// ExternalRef. Nil for Tier-3-only candidates or when the provider
