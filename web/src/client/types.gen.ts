@@ -539,6 +539,28 @@ export type EvaluationTrace = {
     policies: Array<PolicyEvaluation> | null;
 };
 
+export type EventsSubscriptionsAddInputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Topics to add to the session's filter.
+     */
+    topics: Array<string> | null;
+};
+
+export type EventsSubscriptionsListOutputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * The session's current topic filter. Empty means all events.
+     */
+    topics: Array<string> | null;
+};
+
 export type ExternalRefDto = {
     externalId: string;
     source: 'tmdb' | 'imdb' | 'tvdb';
@@ -1699,6 +1721,17 @@ export type SignupResponse = {
     success: boolean;
 };
 
+export type SubscriptionSnapshots = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Present when 'download_job_updated' was subscribed; seeds the download-jobs cache.
+     */
+    downloadJobs?: Array<DownloadJobWithSummary> | null;
+};
+
 export type SuggestedExternalRef = {
     externalId: string;
     source: string;
@@ -2027,6 +2060,20 @@ export type EvaluationTraceWritable = {
     context?: ContextSnapshot;
     finalPlan: Plan;
     policies: Array<PolicyEvaluation> | null;
+};
+
+export type EventsSubscriptionsAddInputBodyWritable = {
+    /**
+     * Topics to add to the session's filter.
+     */
+    topics: Array<string> | null;
+};
+
+export type EventsSubscriptionsListOutputBodyWritable = {
+    /**
+     * The session's current topic filter. Empty means all events.
+     */
+    topics: Array<string> | null;
 };
 
 export type FeedWritable = {
@@ -2643,6 +2690,13 @@ export type SignupResponseWritable = {
      * Always true on success
      */
     success: boolean;
+};
+
+export type SubscriptionSnapshotsWritable = {
+    /**
+     * Present when 'download_job_updated' was subscribed; seeds the download-jobs cache.
+     */
+    downloadJobs?: Array<DownloadJobWithSummaryWritable> | null;
 };
 
 export type TestResultWritable = {
@@ -3782,6 +3836,106 @@ export type EventsStreamResponses = {
 };
 
 export type EventsStreamResponse = EventsStreamResponses[keyof EventsStreamResponses];
+
+export type EventsSubscriptionsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/events/subscriptions';
+};
+
+export type EventsSubscriptionsListErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type EventsSubscriptionsListError = EventsSubscriptionsListErrors[keyof EventsSubscriptionsListErrors];
+
+export type EventsSubscriptionsListResponses = {
+    /**
+     * OK
+     */
+    200: EventsSubscriptionsListOutputBody;
+};
+
+export type EventsSubscriptionsListResponse = EventsSubscriptionsListResponses[keyof EventsSubscriptionsListResponses];
+
+export type EventsSubscriptionsAddData = {
+    body: EventsSubscriptionsAddInputBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/events/subscriptions';
+};
+
+export type EventsSubscriptionsAddErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type EventsSubscriptionsAddError = EventsSubscriptionsAddErrors[keyof EventsSubscriptionsAddErrors];
+
+export type EventsSubscriptionsAddResponses = {
+    /**
+     * OK
+     */
+    200: SubscriptionSnapshots;
+};
+
+export type EventsSubscriptionsAddResponse = EventsSubscriptionsAddResponses[keyof EventsSubscriptionsAddResponses];
+
+export type EventsSubscriptionsRemoveData = {
+    body?: never;
+    path: {
+        /**
+         * Topic to drop from the session's filter.
+         */
+        topic: string;
+    };
+    query?: never;
+    url: '/api/v1/events/subscriptions/{topic}';
+};
+
+export type EventsSubscriptionsRemoveErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type EventsSubscriptionsRemoveError = EventsSubscriptionsRemoveErrors[keyof EventsSubscriptionsRemoveErrors];
+
+export type EventsSubscriptionsRemoveResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type EventsSubscriptionsRemoveResponse = EventsSubscriptionsRemoveResponses[keyof EventsSubscriptionsRemoveResponses];
 
 export type FilesDetachData = {
     body: MatchDecisionsDetachInputBodyWritable;

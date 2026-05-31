@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -304,6 +305,69 @@ func (b *Broker) runSweeper(ctx context.Context) {
 			b.sweep()
 		}
 	}
+}
+
+// ownedSession returns the session by id only if it exists AND belongs to
+// userID. A missing or foreign session yields (nil, false) — callers map both
+// to a 404 so session existence never leaks across users.
+func (b *Broker) ownedSession(sessionID, userID uuid.UUID) (*Session, bool) {
+	b.mu.RLock()
+	s, ok := b.sessions[sessionID]
+	b.mu.RUnlock()
+	if !ok || s.UserID != userID {
+		return nil, false
+	}
+	return s, true
+}
+
+// Topics returns the session's current topic filter (sorted) if the session
+// exists and is owned by userID. The bool is false for a missing/foreign
+// session. An empty slice means "all events" per topicAllowed.
+func (b *Broker) Topics(sessionID, userID uuid.UUID) ([]string, bool) {
+	s, ok := b.ownedSession(sessionID, userID)
+	if !ok {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.topics))
+	for t := range s.topics {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out, true
+}
+
+// AddTopics adds topics to the session's filter. Returns false for a
+// missing/foreign session. Note the semantic flip the spec defines: a session
+// that connected with no `?type=` filter sees all events (empty set), but once
+// any explicit topic is added the filter becomes restrictive.
+func (b *Broker) AddTopics(sessionID, userID uuid.UUID, topics []string) bool {
+	s, ok := b.ownedSession(sessionID, userID)
+	if !ok {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range topics {
+		if t != "" {
+			s.topics[t] = true
+		}
+	}
+	return true
+}
+
+// RemoveTopic drops a topic from the session's filter. Removing a topic the
+// session never held is a no-op. Returns false for a missing/foreign session.
+func (b *Broker) RemoveTopic(sessionID, userID uuid.UUID, topic string) bool {
+	s, ok := b.ownedSession(sessionID, userID)
+	if !ok {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.topics, topic)
+	return true
 }
 
 // recipientMatches reports whether an event's recipient tag targets the given

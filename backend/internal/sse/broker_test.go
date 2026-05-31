@@ -301,6 +301,72 @@ func TestStaleCancelDoesNotDetachReattachedSession(t *testing.T) {
 	second.Cancel()
 }
 
+func TestTopicMutationRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	b := newBroker((&fakeClock{t: time.Unix(0, 0)}).now)
+	user := uuid.New()
+	att := b.Attach(AttachParams{UserID: user})
+	defer att.Cancel()
+	sid := att.Session.ID
+
+	if topics, ok := b.Topics(sid, user); !ok || len(topics) != 0 {
+		t.Fatalf("fresh session topics = %v ok=%v, want empty set", topics, ok)
+	}
+
+	if !b.AddTopics(sid, user, []string{"scan_progress", "download_job_updated", ""}) {
+		t.Fatal("AddTopics returned false for the owner")
+	}
+	got, ok := b.Topics(sid, user)
+	if !ok || !equalIDs(got, "download_job_updated", "scan_progress") {
+		t.Fatalf("topics after add = %v, want the two non-empty topics sorted", got)
+	}
+
+	if !b.RemoveTopic(sid, user, "scan_progress") {
+		t.Fatal("RemoveTopic returned false for the owner")
+	}
+	// Removing a topic never held is a no-op success.
+	if !b.RemoveTopic(sid, user, "never_subscribed") {
+		t.Fatal("RemoveTopic of an absent topic should still succeed")
+	}
+	got, _ = b.Topics(sid, user)
+	if !equalIDs(got, "download_job_updated") {
+		t.Fatalf("topics after remove = %v, want only download_job_updated", got)
+	}
+}
+
+func TestTopicMutationRejectsForeignAndMissing(t *testing.T) {
+	t.Parallel()
+
+	b := newBroker((&fakeClock{t: time.Unix(0, 0)}).now)
+	owner := uuid.New()
+	intruder := uuid.New()
+	att := b.Attach(AttachParams{UserID: owner})
+	defer att.Cancel()
+	sid := att.Session.ID
+
+	// Foreign user must not see or mutate the session — existence never leaks.
+	if _, ok := b.Topics(sid, intruder); ok {
+		t.Fatal("Topics leaked a foreign session")
+	}
+	if b.AddTopics(sid, intruder, []string{"scan_progress"}) {
+		t.Fatal("AddTopics mutated a foreign session")
+	}
+	if b.RemoveTopic(sid, intruder, "scan_progress") {
+		t.Fatal("RemoveTopic mutated a foreign session")
+	}
+
+	// The intruder's rejected add must not have leaked into the owner's set.
+	if got, _ := b.Topics(sid, owner); len(got) != 0 {
+		t.Fatalf("owner topics = %v, want untouched", got)
+	}
+
+	// Unknown session id → not found for everyone.
+	if _, ok := b.Topics(uuid.New(), owner); ok {
+		t.Fatal("Topics returned ok for an unknown session")
+	}
+}
+
 // syntheticID renders a zero-padded, lexicographically sortable id for bulk
 // publishes.
 func syntheticID(i int) string {

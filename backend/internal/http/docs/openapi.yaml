@@ -1346,6 +1346,47 @@ components:
         - policies
         - finalPlan
       type: object
+    EventsSubscriptionsAddInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/EventsSubscriptionsAddInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        topics:
+          description: Topics to add to the session's filter.
+          items:
+            type: string
+          minItems: 1
+          type:
+            - array
+            - "null"
+      required:
+        - topics
+      type: object
+    EventsSubscriptionsListOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/EventsSubscriptionsListOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        topics:
+          description: The session's current topic filter. Empty means all events.
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - topics
+      type: object
     ExternalRefDTO:
       additionalProperties: false
       properties:
@@ -3907,6 +3948,24 @@ components:
       required:
         - success
       type: object
+    SubscriptionSnapshots:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/SubscriptionSnapshots.json
+          format: uri
+          readOnly: true
+          type: string
+        downloadJobs:
+          description: Present when 'download_job_updated' was subscribed; seeds the download-jobs cache.
+          items:
+            $ref: "#/components/schemas/DownloadJobWithSummary"
+          type:
+            - array
+            - "null"
+      type: object
     SuggestedExternalRef:
       additionalProperties: false
       properties:
@@ -5403,6 +5462,104 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Error
       summary: Subscribe to server-sent events
+      tags:
+        - events
+  /api/v1/events/subscriptions:
+    get:
+      description: Returns the current topic filter for the session identified by the X-Realtime-Session header, so a reconnecting client can resync.
+      operationId: events-subscriptions-list
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventsSubscriptionsListOutputBody"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: List the session's subscribed topics
+      tags:
+        - events
+    post:
+      description: Adds topics to the session's filter and returns the initial snapshot for any subscribed topic that carries one (download-jobs today).
+      operationId: events-subscriptions-add
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventsSubscriptionsAddInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionSnapshots"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Subscribe the session to topics
+      tags:
+        - events
+  /api/v1/events/subscriptions/{topic}:
+    delete:
+      operationId: events-subscriptions-remove
+      parameters:
+        - description: Topic to drop from the session's filter.
+          in: path
+          name: topic
+          required: true
+          schema:
+            description: Topic to drop from the session's filter.
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Unsubscribe the session from a topic
       tags:
         - events
   /api/v1/files/{fileId}/detach:
