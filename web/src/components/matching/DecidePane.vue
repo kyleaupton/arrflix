@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { toast } from 'vue-sonner'
 import { MousePointerClick, Link2Off, EyeOff, ChevronRight } from 'lucide-vue-next'
@@ -60,13 +60,6 @@ const snapshotEpisode = computed<EpisodeRefDto | undefined>(() => {
   }
   return undefined
 })
-
-watch(
-  () => props.fileId,
-  () => {
-    actionError.value = null
-  },
-)
 
 function afterDecision(message: string) {
   return () => {

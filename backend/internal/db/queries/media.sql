@@ -166,16 +166,13 @@ order by f.created_at desc;
 
 -- name: ListInboxItems :many
 -- The matcher inbox: every live file whose current (non-superseded)
--- match_decision banded to something other than confident (auto-matched,
--- not in the inbox) or detached (user already said "doesn't belong").
--- This pulls in confident_review / partial_series — identity set but
--- flagged — which a bare "media_item_id IS NULL" predicate would drop.
+-- match_decision banded to something other than confident or detached.
+-- Pulls in confident_review / partial_series — identity set but flagged —
+-- which a bare "media_item_id IS NULL" predicate would drop.
 --
--- The join walks match_decision_current_idx (file_id WHERE superseded_at
--- IS NULL). Display title/year/type COALESCE the identified media_item
--- over the decision's parsed_snapshot. file_state is left-joined for the
--- size, replacing a per-row GetFileState (no N+1). Optional library and
--- outcome filters.
+-- Display title/year/type COALESCE the identified media_item over the
+-- decision's parsed_snapshot. file_state is left-joined for the size (no
+-- per-row N+1). Optional library and outcome filters.
 select
   f.id,
   f.library_id,
@@ -200,10 +197,8 @@ limit sqlc.arg(page_size)::int offset sqlc.arg(offset_val)::int;
 
 -- name: GetInboxItem :one
 -- One inbox row by file id — same joins as ListInboxItems, no outcome
--- filter (the caller distinguishes "in the inbox" via the returned
--- outcome). Soft-deleted files and files whose current decision is
--- confident/detached are excluded, so this returns no row for a file
--- that isn't awaiting review.
+-- filter. Excludes soft-deleted and confident/detached files, so a file
+-- not awaiting review returns no row.
 select
   f.id,
   f.library_id,
@@ -224,10 +219,8 @@ where f.id = sqlc.arg(file_id)
   and md.outcome not in ('confident', 'detached');
 
 -- name: CountInboxByOutcome :many
--- Per-band totals over the same inbox join, library filter applied but
--- no outcome filter and no pagination. The service folds these into a
--- map and derives the page Total (sum of all bands, or the selected
--- band's count when an outcome filter is active).
+-- Per-band totals over the same inbox join, library filter applied, no
+-- pagination. The service folds these into a map and derives the page Total.
 select md.outcome, count(*) as count
 from file f
 join match_decision md on md.file_id = f.id and md.superseded_at is null

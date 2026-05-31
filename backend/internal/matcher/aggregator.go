@@ -246,10 +246,9 @@ func (a *Aggregator) validateAgainstProvider(ctx context.Context, cands []Candid
 		} else {
 			c.Confidence *= validatedMultiplierValid
 		}
-		// The validated record is the authoritative display identity for a
-		// Tier-1 candidate (the resolver only knows the embedded ID, never
-		// the title). Carry it onto the candidate so the year penalty and
-		// the ranked suggestions read a real title/year/type.
+		// The validated record is the display identity for a Tier-1
+		// candidate — the resolver only knew the embedded ID. The year
+		// penalty and ranked suggestions read these.
 		c.Title = item.Title
 		c.Year = item.Year
 		c.Type = string(item.Type)
@@ -380,11 +379,8 @@ func (a *Aggregator) bandAndRecord(file FileRef, cands []Candidate, items map[Ex
 		ResolversConsulted: audits,
 		DecidedBy:          "auto",
 		DecidedAt:          time.Now().UTC(),
-		// Audit denormalizations: the band this decision ran under and the
-		// parser's view at decision time. Display-only for the inbox; the
-		// banding math below doesn't read either back.
-		DecidedWith:    a.cfg.Thresholds,
-		ParsedSnapshot: parsedSnapshot(file),
+		DecidedWith:        a.cfg.Thresholds,
+		ParsedSnapshot:     parsedSnapshot(file),
 	}
 
 	rec.Evidence, rec.Truncated = capEvidence(evidence)
@@ -645,11 +641,9 @@ func yearHintFromFile(f FileRef) int {
 	return f.Parsed.Identity.Year.Value
 }
 
-// candidateYear returns the candidate's advertised year. Tier-1
-// candidates pick it up from the validated metadata.Item; Tier-3 search
-// results carry the provider's search-response year. Zero means "unknown"
-// — the mismatch penalty's callsite skips a zero so an absent year never
-// penalizes.
+// candidateYear returns the candidate's advertised year, or zero for
+// unknown. The mismatch-penalty callsite skips a zero so an absent year
+// never penalizes.
 func candidateYear(c Candidate) int {
 	return c.Year
 }
@@ -676,16 +670,12 @@ func fileLooksLikeSeries(f FileRef) bool {
 	return n.Kind != "" || len(n.EpisodeNumbers.Value) > 0 || len(n.AbsoluteNumbers.Value) > 0
 }
 
-// parsedSnapshot freezes the parser's identity view into the display
-// shape the inbox decide pane reads back. Nil when the file carried no
-// parse — the snapshot is absent even on a no_match, so the pane knows
-// to fall back rather than render an empty "parsed as".
+// parsedSnapshot freezes the parser's identity view into the ParsedSnapshot
+// the decide pane renders. Nil when the file carried no parse.
 //
-// Season/Episode collapse multi-episode numbering to a single
-// representative pair (season + first episode), preferring season_episode
-// numbering and falling back to the first absolute number for anime. This
-// is display-only prefill; the authoritative numbering lives in the file's
-// full parse, not here.
+// Season/Episode collapse multi-episode numbering to a single pair (season
+// + first episode), preferring season_episode numbering and falling back
+// to the first absolute number for anime.
 func parsedSnapshot(f FileRef) *ParsedSnapshot {
 	if f.Parsed == nil {
 		return nil

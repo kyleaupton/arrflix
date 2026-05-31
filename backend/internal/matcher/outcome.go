@@ -59,11 +59,8 @@ var (
 	PresetRelaxed     = Thresholds{Auto: 0.70, ReviewLow: 0.5, LowMin: 0.5}
 )
 
-// PresetName maps a Thresholds value back to the named preset it matches,
-// or "custom" when it matches none. Fills decided_with.preset so the
-// audit trail records the preset by name, and a future "you changed
-// presets — re-evaluate?" prompt can compare the decision's preset to the
-// installation's current one without value-by-value math.
+// PresetName returns the named preset matching these thresholds, or
+// "custom" if none. Recorded in decided_with.preset.
 func (t Thresholds) PresetName() string {
 	switch t {
 	case PresetStrict:
@@ -147,23 +144,18 @@ type MatchOutcomeRecord struct {
 	DecidedBy string
 	DecidedAt time.Time
 
-	// ParsedSnapshot is what the parser saw for this file at decision time,
-	// denormalized for the inbox decide pane. Display/audit only — nothing
-	// reads it back for matching logic. Nil when the file had no parse
-	// (file.Parsed nil), so the snapshot is absent even on a no_match.
+	// ParsedSnapshot is what the parser saw at decision time, for the inbox
+	// decide pane. Nil when the file had no parse. Display/audit only.
 	ParsedSnapshot *ParsedSnapshot
 
-	// DecidedWith is the threshold band this decision was made under,
-	// stamped from the aggregator's config. Display/audit only; carries
-	// the preset name via Thresholds.PresetName when persisted. Zero for
-	// user-driven decisions that don't run the banding math.
+	// DecidedWith is the threshold band this decision ran under. Zero for
+	// user-driven decisions, which aren't banded. Display/audit only.
 	DecidedWith Thresholds
 }
 
-// ParsedSnapshot is the parser's view of a file frozen at decision time —
-// the subset the inbox decide pane renders. Season/Episode are pointers
-// so "no numbering" (movie, or unparsed) is distinct from season/episode
-// zero. Display/audit only; the aggregator fills it from FileRef.Parsed.
+// ParsedSnapshot is the subset of the parser's view the decide pane
+// renders. Season/Episode are pointers so "no numbering" is distinct from
+// season/episode zero.
 type ParsedSnapshot struct {
 	Title   string `json:"title"`
 	Year    int    `json:"year"`
@@ -196,25 +188,15 @@ type RankedCandidate struct {
 	Episode    *EpisodeRef
 	Edition    *string
 	Confidence float64
-	// Title and Year are the candidate's display identity, denormalized
-	// from the resolver's candidate so the inbox renders a suggestion card
-	// without a provider call. Tier-1 candidates source these from the
-	// validated Item; Tier-3 candidates from the search response. Empty/
-	// zero when the resolver couldn't determine them.
-	Title string
-	Year  int
-	// Type is the candidate's display kind ("movie" / "series"),
-	// denormalized alongside Title/Year so the inbox can tag the
-	// suggestion without a provider call.
-	Type string
-	// PosterPath is the candidate's poster image path, denormalized
-	// alongside Title/Year/Type so the inbox suggestion card renders a
-	// thumbnail without a provider call. A Tier-1 candidate's poster is
-	// preferred from the validated Item at persist time when present.
+	// Display identity, carried from the resolver's Candidate. Empty/zero
+	// when undetermined.
+	Title      string
+	Year       int
+	Type       string
 	PosterPath string
-	// Item is the validated metadata.Item when the aggregator ran the
-	// Tier-1 validation step and matched this candidate's (post-rewrite)
-	// ExternalRef. Nil for Tier-3-only candidates or when the provider
-	// was absent — persistence code falls back to Title/Year in that case.
+	// Item is the validated metadata.Item when the aggregator ran Tier-1
+	// validation and matched this candidate's (post-rewrite) ExternalRef.
+	// Nil for Tier-3-only candidates or when the provider was absent —
+	// persistence falls back to Title/Year then.
 	Item *metadata.Item
 }

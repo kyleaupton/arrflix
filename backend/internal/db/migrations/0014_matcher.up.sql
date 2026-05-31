@@ -65,18 +65,15 @@ CREATE TABLE match_decision (
     -- Sonarr's irreversible-wrong-match story) walks this chain.
     superseded_at       TIMESTAMPTZ,
     superseded_by       BIGINT REFERENCES match_decision(id),
-    -- parsed_snapshot is what the parser saw at decision time, captured
-    -- even on a no_match: {title, year, type, season, episode}. Lets the
-    -- inbox decide pane render "parsed as X (year)", pick the
-    -- movie-vs-series layout, and prefill season/episode without re-running
-    -- the parser. Display/audit only — nothing reads it back for logic.
-    -- NULL when scan handed the matcher a file with no parse.
+    -- parsed_snapshot is what the parser saw at decision time:
+    -- {title, year, type, season, episode}, captured even on a no_match.
+    -- Drives the decide pane's display and season/episode prefill.
+    -- NULL when the file had no parse.
     parsed_snapshot     JSONB,
-    -- decided_with is the threshold band the decision was made under:
-    -- {preset, thresholds:{auto, reviewLow, lowMin}}. Enables a future
-    -- "you changed presets — re-evaluate?" prompt and sharpens the audit
-    -- trail ("this banded confident_review only because Auto was 0.95").
-    -- NULL for user-driven decisions (detach / un-match) that aren't banded.
+    -- decided_with is the threshold band the decision ran under:
+    -- {preset, thresholds:{auto, reviewLow, lowMin}}. Sharpens the audit
+    -- trail and lets a later preset change re-evaluate affected decisions.
+    -- NULL for user-driven decisions (detach / un-match), which aren't banded.
     decided_with        JSONB
 );
 

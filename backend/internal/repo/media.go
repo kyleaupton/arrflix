@@ -22,9 +22,8 @@ type LibraryQueryParams struct {
 	Offset     int32
 }
 
-// InboxQueryParams contains parameters for the paginated matcher-inbox
-// query (current match_decision banded to something other than
-// confident / detached). LibraryID and Outcome are optional filters.
+// InboxQueryParams holds the paginated matcher-inbox query params.
+// LibraryID and Outcome are optional filters.
 type InboxQueryParams struct {
 	LibraryID *uuid.UUID
 	Outcome   *string
@@ -815,10 +814,8 @@ func (r *Repository) ListFilesForItem(ctx context.Context, mediaItemID uuid.UUID
 	return out, nil
 }
 
-// toModelInboxItem translates a ListInboxItemsRow / GetInboxItemRow (the
-// two queries share a column shape) into the domain model.InboxItem.
-// PartialSeries is read straight off the stored outcome — it's a band the
-// matcher writes, not something re-derived from episode_id here.
+// toModelInboxItem maps a ListInboxItemsRow / GetInboxItemRow (shared
+// column shape) to model.InboxItem.
 func toModelInboxItem(
 	id, libraryID pgtype.UUID,
 	path string,
@@ -842,8 +839,7 @@ func toModelInboxItem(
 		Type:          displayType,
 		PartialSeries: outcome == dbgen.MatchOutcomePartialSeries,
 	}
-	// year 0 means the parser found no year; surface it as unknown (nil)
-	// rather than the literal "0" the inbox would otherwise render.
+	// Year 0 means unknown — surface as nil, not a literal "0".
 	if displayYear != nil && *displayYear != 0 {
 		y := int(*displayYear)
 		item.Year = &y

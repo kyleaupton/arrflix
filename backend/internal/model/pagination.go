@@ -22,13 +22,10 @@ type Page[T any] struct {
 // OpenAPI spec, which would change every client type name on regeneration).
 type PaginatedLibraryResponse = Page[LibraryItem]
 
-// InboxItem is one row of the matcher inbox: a file whose current
-// (non-superseded) match_decision has an outcome other than confident /
-// detached. Title/Year/Type are the display fields, COALESCEd from the
-// identified media_item (when one is set) over the decision's parsed
-// snapshot, so a flagged-but-identified file (confident_review,
-// partial_series) renders its real title and an unidentified one
-// (low_confidence, ambiguous, no_match) renders what the parser saw.
+// InboxItem is one row of the matcher inbox. Title/Year/Type are display
+// fields, COALESCEd from the identified media_item over the decision's
+// parsed snapshot — so a flagged-but-identified file shows its real title
+// and an unidentified one shows what the parser saw.
 type InboxItem struct {
 	ID            string  `json:"id"`
 	LibraryID     string  `json:"libraryId"`
@@ -43,11 +40,10 @@ type InboxItem struct {
 	PartialSeries bool    `json:"partialSeries,omitempty"`
 }
 
-// InboxPage is the matcher-inbox list envelope: the same {data, pagination}
-// shape the library endpoint uses, plus countsByOutcome — the per-band
-// totals (group headers + the dashboard badge). It's a concrete struct
-// rather than Page[InboxItem] so the extra field fits and the OpenAPI
-// schema name stays stable (generics mangle to Page-model_InboxItem).
+// InboxPage is the inbox list envelope: the {data, pagination} shape the
+// library endpoint uses, plus per-band countsByOutcome. Concrete rather
+// than Page[InboxItem] so the extra field fits and the OpenAPI schema name
+// stays stable (generics mangle to Page-model_InboxItem).
 type InboxPage struct {
 	Data            []InboxItem      `json:"data"`
 	Pagination      Pagination       `json:"pagination"`

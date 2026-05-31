@@ -197,18 +197,16 @@ func rankedCandidatesJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 
 	out := make([]model.SuggestedMatch, 0, len(rec.RankedCandidates))
 	for _, c := range rec.RankedCandidates {
-		// The validated Item is the authoritative display source when the
-		// aggregator ran Tier-1 validation; Tier-3 candidates have no Item,
-		// so fall back to the title/year/type the resolver denormalized onto
-		// the candidate from its search response.
+		// The validated Item is the display source when present; Tier-3
+		// candidates have none, so fall back to the resolver's denormalized
+		// fields.
 		title, year, typ := c.Title, c.Year, c.Type
 		poster := c.PosterPath
 		if c.Item != nil {
 			title = c.Item.Title
 			year = c.Item.Year
 			typ = string(c.Item.Type)
-			// Prefer the validated Item's poster, but don't let an
-			// Item without one blank out a poster the search carried.
+			// Don't let an Item without a poster blank out the search's.
 			if c.Item.PosterPath != "" {
 				poster = c.Item.PosterPath
 			}
@@ -236,10 +234,8 @@ func rankedCandidatesJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 	return b, nil
 }
 
-// parsedSnapshotJSON marshals the outcome's parser snapshot into the
-// match_decision.parsed_snapshot JSONB shape — what the parser saw at
-// decision time, read back by the inbox decide pane. Nil snapshot (the
-// file had no parse) yields nil bytes (NULL column).
+// parsedSnapshotJSON marshals the parser snapshot for the parsed_snapshot
+// JSONB column. A nil snapshot yields nil bytes (NULL column).
 func parsedSnapshotJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 	if rec.ParsedSnapshot == nil {
 		return nil, nil
@@ -253,14 +249,10 @@ func parsedSnapshotJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 	return b, nil
 }
 
-// decidedWithJSON marshals the band this decision ran under into the
-// match_decision.decided_with JSONB shape: {preset, thresholds:{auto,
-// reviewLow, lowMin}}. The preset name comes from Thresholds.PresetName so
-// the audit records "recommended" rather than re-deriving it from values.
-//
-// A zero Thresholds means the decision wasn't banded — a user-driven
-// match / un-match / detach — and yields nil bytes (NULL column) rather
-// than a misleading {preset:"custom", thresholds:{0,0,0}} row.
+// decidedWithJSON marshals the decision's threshold band for the
+// decided_with JSONB column: {preset, thresholds:{auto, reviewLow, lowMin}}.
+// A zero Thresholds (user-driven, unbanded decision) yields nil bytes
+// (NULL column) rather than a misleading all-zero "custom" band.
 func decidedWithJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 	t := rec.DecidedWith
 	if t == (matcher.Thresholds{}) {

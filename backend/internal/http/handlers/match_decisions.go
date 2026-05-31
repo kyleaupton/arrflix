@@ -141,9 +141,9 @@ func decisionToResponse(d model.MatchDecision, item *metadata.Item) MatchDecisio
 			Redirected: item.Redirected,
 		}
 	}
-	// The JSONB blobs below are our own DB writes; a malformed blob is a
-	// persist-time bug, not user input, so unmarshal best-effort and leave
-	// the field absent rather than threading an error to four callers.
+	// These JSONB blobs are our own writes — a malformed one is a persist
+	// bug, not user input — so unmarshal best-effort and leave the field
+	// absent on error.
 	if len(d.RankedCandidates) > 0 {
 		var ranked []model.SuggestedMatch
 		if err := json.Unmarshal(d.RankedCandidates, &ranked); err == nil {

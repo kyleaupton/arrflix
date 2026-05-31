@@ -120,7 +120,7 @@ const listError = computed(() => problemMessage(listQuery.error.value, 'Failed t
       <div
         class="h-[calc(100vh-16rem)] min-h-[24rem] overflow-y-auto rounded-lg border bg-card p-4"
       >
-        <DecidePane :file-id="selectedFileId" @decided="onDecided" />
+        <DecidePane :key="selectedFileId" :file-id="selectedFileId" @decided="onDecided" />
       </div>
     </div>
   </div>

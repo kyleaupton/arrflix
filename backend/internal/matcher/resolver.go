@@ -70,22 +70,12 @@ type ResolverResult struct {
 // the final number that drives the outcome band.
 type Candidate struct {
 	Ref ExternalRef
-	// Title and Year are the resolver's best-known display identity for
-	// this candidate — what the inbox renders on the suggestion card. They
-	// may be empty/zero when the resolver couldn't determine them (e.g. a
-	// cross-provider ID the resolver never expanded). The aggregator carries
-	// them through to the ranked suggestions so Tier-3 (search-derived)
-	// candidates render without a second provider call.
-	Title string
-	Year  int
-	// Type is the candidate's display kind — metadata.EntityType as a
-	// string ("movie" / "series"). The inbox reads it to pick the
-	// suggestion icon and to decide whether a match-by-ID needs episode
-	// inputs. Empty when the resolver couldn't determine it.
-	Type string
-	// PosterPath is the candidate's poster image path, denormalized from
-	// the resolver's search result so the inbox renders a suggestion
-	// thumbnail without a second provider call. Empty when unknown.
+	// Display identity, carried through to the ranked suggestions so a
+	// search-derived candidate renders without a second provider call.
+	// Empty/zero when the resolver couldn't determine a field.
+	Title      string
+	Year       int
+	Type       string // metadata.EntityType as a string: "movie" / "series"
 	PosterPath string
 	// Episode is set only for series-shaped identities. Nil means the
 	// resolver didn't have enough signal to pin the episode; the

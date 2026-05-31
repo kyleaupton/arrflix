@@ -9,12 +9,10 @@ import "encoding/json"
 // voted for it, and the raw evidence payload (the same per-resolver JSON
 // the match_decision row carries, capped at ~2KB per entry on write).
 //
-// Display fields (Title, Year, Type) are denormalized at write-time so the
-// matcher inbox can render a card without a second TMDB call. A Tier-1
-// candidate sources them from the metadata.Item the aggregator validated
-// against; a Tier-3 candidate from the provider's search response (no Type,
-// since the search entry's kind isn't carried through). They are nullable
-// because a resolver may not have determined the title/year at all.
+// Display fields (Title, Year, Type, PosterPath) are denormalized at
+// write-time so the inbox renders a card without a second TMDB call: from
+// the validated metadata.Item for a Tier-1 candidate, or the search
+// response for Tier-3. Nullable when the resolver determined no title/year.
 //
 // Shape follows specs/modules/matching/README.md § "What evolves":
 //
@@ -39,20 +37,11 @@ type SuggestedMatch struct {
 	// match_decision level; per-suggestion entries are capped softer
 	// (~2KB) at scan persist time so 5 suggestions still fit in a
 	// reasonably-sized JSONB column.
-	Evidence json.RawMessage `json:"evidence,omitempty"`
-	// Title/Year/Type are denormalized for display. Empty/zero when
-	// the aggregator didn't validate the candidate (e.g. a Tier-3
-	// search result the matcher decided wasn't strong enough to
-	// validate up-front).
-	Title string `json:"title,omitempty"`
-	Year  int    `json:"year,omitempty"`
-	Type  string `json:"type,omitempty"` // "movie" or "series"
-	// PosterPath is the provider's poster image path (e.g. TMDB
-	// "/abc.jpg"), denormalized at write time so the inbox suggestion card
-	// renders a thumbnail without a second provider call. A Tier-1
-	// candidate prefers the validated Item's poster; empty when neither
-	// the resolver nor the provider supplied one.
-	PosterPath string `json:"posterPath,omitempty"`
+	Evidence   json.RawMessage `json:"evidence,omitempty"`
+	Title      string          `json:"title,omitempty"`
+	Year       int             `json:"year,omitempty"`
+	Type       string          `json:"type,omitempty"`       // "movie" or "series"
+	PosterPath string          `json:"posterPath,omitempty"` // provider poster path, e.g. TMDB "/abc.jpg"
 }
 
 // SuggestedExternalRef mirrors matcher.ExternalRef on the wire without

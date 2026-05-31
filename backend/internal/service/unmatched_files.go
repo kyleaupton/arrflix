@@ -12,11 +12,9 @@ import (
 
 // UnmatchedFilesService is the read surface over the matcher inbox — every
 // file whose current (non-superseded) match_decision banded to something
-// other than confident (auto-matched) or detached (user already said "this
-// doesn't belong"). That predicate keeps confident_review / partial_series
-// (identity set but flagged) in the inbox. The ranked suggestions and
-// decision flows live on the match_decision endpoints (/files/{id}/match,
-// /unmatch, /detach, /match-decision).
+// other than confident or detached. That keeps confident_review /
+// partial_series (identity set but flagged) in the inbox. Decision flows
+// live on the /files/{id}/* match_decision endpoints.
 type UnmatchedFilesService struct {
 	repo   *repo.Repository
 	logger *logger.Logger
@@ -36,10 +34,9 @@ type ListParams struct {
 	PageSize  int
 }
 
-// List returns a paginated page of inbox files plus the per-band counts.
-// Pagination Total comes from the counts (sum of all bands, or the
-// selected band when an outcome filter is set) — a single count query, not
-// a second COUNT(*).
+// List returns a page of inbox files plus the per-band counts. The page
+// Total is derived from those counts (sum of all bands, or the selected
+// band) — no separate COUNT(*).
 func (s *UnmatchedFilesService) List(ctx context.Context, params ListParams) (model.InboxPage, error) {
 	if params.PageSize <= 0 {
 		params.PageSize = 20
@@ -91,10 +88,9 @@ func (s *UnmatchedFilesService) List(ctx context.Context, params ListParams) (mo
 	}, nil
 }
 
-// Get returns a single inbox file by ID. The inbox query already excludes
-// soft-deleted files and files whose current decision is confident /
-// detached, so a file that isn't awaiting review reads as not-found —
-// repo's FromPg turns the no-rows result into a 404.
+// Get returns a single inbox file by ID. The inbox query excludes
+// soft-deleted and confident/detached files, so a file not awaiting review
+// reads as not-found (repo's FromPg maps no-rows to 404).
 func (s *UnmatchedFilesService) Get(ctx context.Context, id uuid.UUID) (model.InboxItem, error) {
 	item, err := s.repo.GetInboxItem(ctx, id)
 	if apperrors.IsNotFound(err) {
