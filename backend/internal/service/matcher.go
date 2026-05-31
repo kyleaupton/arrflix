@@ -257,8 +257,15 @@ func parsedSnapshotJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 // match_decision.decided_with JSONB shape: {preset, thresholds:{auto,
 // reviewLow, lowMin}}. The preset name comes from Thresholds.PresetName so
 // the audit records "recommended" rather than re-deriving it from values.
+//
+// A zero Thresholds means the decision wasn't banded — a user-driven
+// match / un-match / detach — and yields nil bytes (NULL column) rather
+// than a misleading {preset:"custom", thresholds:{0,0,0}} row.
 func decidedWithJSON(rec matcher.MatchOutcomeRecord) ([]byte, error) {
 	t := rec.DecidedWith
+	if t == (matcher.Thresholds{}) {
+		return nil, nil
+	}
 	payload := struct {
 		Preset     string `json:"preset"`
 		Thresholds struct {
