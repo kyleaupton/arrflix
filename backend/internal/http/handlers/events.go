@@ -159,13 +159,11 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 
 // ----- Subscriptions: shared -----
 
-// subscriptionsHeader is the session handle carried on every control-plane
-// request. It travels in a header (not a cookie — cookies leak across tabs,
-// and each tab is its own session) and identifies which connected stream to
-// mutate.
-type subscriptionsHeader struct {
-	SessionID uuid.UUID `header:"X-Realtime-Session" required:"true" format:"uuid" doc:"Session id from the stream's ready event."`
-}
+// The session handle travels in the X-Realtime-Session header on every
+// control-plane request (not a cookie — cookies leak across tabs, and each tab
+// is its own session). It is declared as a direct field on each Input below:
+// huma extracts header parameters from direct fields, not from an embedded
+// shared struct.
 
 // canSubscribe is the subscribe-time eligibility seam. Today any authenticated
 // user may subscribe to any topic. Per-resource scoping (e.g. subscribing to
@@ -205,7 +203,7 @@ func (h *Events) applySnapshot(ctx context.Context, topic string, out *subscript
 // ----- Subscriptions: list -----
 
 type EventsSubscriptionsListInput struct {
-	subscriptionsHeader
+	SessionID uuid.UUID `header:"X-Realtime-Session" required:"true" format:"uuid" doc:"Session id from the stream's ready event."`
 }
 
 type EventsSubscriptionsListOutput struct {
@@ -233,8 +231,8 @@ func (h *Events) SubscriptionsList(ctx context.Context, input *EventsSubscriptio
 // ----- Subscriptions: add -----
 
 type EventsSubscriptionsAddInput struct {
-	subscriptionsHeader
-	Body struct {
+	SessionID uuid.UUID `header:"X-Realtime-Session" required:"true" format:"uuid" doc:"Session id from the stream's ready event."`
+	Body      struct {
 		Topics []string `json:"topics" required:"true" minItems:"1" doc:"Topics to add to the session's filter."`
 	}
 }
@@ -278,8 +276,8 @@ func (h *Events) SubscriptionsAdd(ctx context.Context, input *EventsSubscription
 // ----- Subscriptions: remove -----
 
 type EventsSubscriptionsRemoveInput struct {
-	subscriptionsHeader
-	Topic string `path:"topic" doc:"Topic to drop from the session's filter."`
+	SessionID uuid.UUID `header:"X-Realtime-Session" required:"true" format:"uuid" doc:"Session id from the stream's ready event."`
+	Topic     string    `path:"topic" doc:"Topic to drop from the session's filter."`
 }
 
 type EventsSubscriptionsRemoveOutput struct{}

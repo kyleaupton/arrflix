@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref, onScopeDispose } from 'vue'
 import { client } from '@/client/client.gen'
+import { eventsSubscriptionsAdd, eventsSubscriptionsRemove } from '@/client/sdk.gen'
+import type { ReadyPayload, SubscriptionSnapshots } from '@/client/types.gen'
 
 type EventCallback = (data: unknown) => void
 
@@ -15,6 +17,15 @@ export const useEventsStore = defineStore('events', () => {
   const status = ref<EventsConnectionStatus>('disconnected')
   const lastError = ref<string | null>(null)
   const wantedTypes = ref<string[]>([])
+
+  // Session id from the latest `ready` event. Sent as ?session= on the next
+  // connect so the broker reattaches to our prior session and replays missed
+  // events instead of allocating a fresh one. Sticky across reconnects.
+  const sessionId = ref<string | null>(null)
+  // Resume cursor: the id of the last event we received. The generated SSE
+  // client keeps its own cursor in a per-connection closure that resets on each
+  // connect(), so we carry it across as the initial Last-Event-ID header.
+  let lastEventId: string | undefined
 
   let abort: AbortController | null = null
   // Monotonic counter identifying the current connection. Bumped on every
@@ -58,10 +69,15 @@ export const useEventsStore = defineStore('events', () => {
   function buildUrl(types?: string[]) {
     const base = '/v1/events'
     const list = types ?? wantedTypes.value
-    if (!list.length) return base
     const params = new URLSearchParams()
     for (const t of list) params.append('type', t)
-    return `${base}?${params.toString()}`
+    // Reattach to our prior session when we have one. The broker preserves that
+    // session's subscriptions and replay ring, so resume + skip-resubscribe both
+    // work. The generated client fixes this URL for the life of the connection,
+    // so the very first connect (before any `ready`) is necessarily sessionless.
+    if (sessionId.value) params.set('session', sessionId.value)
+    const qs = params.toString()
+    return qs ? `${base}?${qs}` : base
   }
 
   async function connect(types?: string[]) {
@@ -101,22 +117,36 @@ export const useEventsStore = defineStore('events', () => {
         signal: abort.signal,
         sseDefaultRetryDelay: 500,
         sseMaxRetryDelay: 5000,
+        // Seed the resume cursor for this connection. The client overrides it
+        // with its own closure value once events with ids arrive; this only
+        // matters for the first request of a reconnect, where resume happens.
+        headers: lastEventId ? { 'Last-Event-ID': lastEventId } : undefined,
         onSseEvent: (ev) => {
+          // Track the resume cursor (ping/ready carry no id, so they don't move it).
+          if (ev.id) lastEventId = ev.id
           if (!ev.event) return
 
           // The server sends a "ready" event on every new connection.
           // Use it as a reliable signal that we're (re)connected.
           if (ev.event === 'ready') {
+            const payload = ev.data as ReadyPayload | undefined
+            sessionId.value = payload?.sessionId ?? sessionId.value
+
             const wasDisconnected = status.value !== 'connected'
             setStatus('connected')
             lastError.value = null
 
             if (hasConnectedBefore && wasDisconnected) {
-              // Reconnected after a drop — emit an internal event so consumers
-              // can refresh their data if needed.
+              // Reconnected after a drop. A clean reattach already replayed the
+              // missed events; but a lost session (eviction/restart) can't, so
+              // consumers refetch off _reconnected to stay correct either way.
               emit('_reconnected', null)
             }
             hasConnectedBefore = true
+          } else if (ev.event === 'resume_gap') {
+            // The broker's replay buffer was exhausted — missed deltas are gone.
+            // Consumers refetch rather than trust incremental state.
+            emit('_resume_gap', null)
           }
 
           emit(ev.event, ev.data)
@@ -182,6 +212,32 @@ export const useEventsStore = defineStore('events', () => {
     connect(types)
   }
 
+  // --- Dynamic subscription control plane (REST side channel) ---
+  // The stream is one-way, so topic changes go over REST keyed by the session
+  // header. Connect-time `?type=` filters cover static subscriptions; these are
+  // for page-bound topics added/dropped without tearing down the stream. The
+  // 200 body of a subscribe carries the initial snapshot for any topic that has
+  // one (download-jobs today) so callers can seed their cache.
+
+  async function subscribe(topics: string[]): Promise<SubscriptionSnapshots | null> {
+    if (!sessionId.value || !topics.length) return null
+    const res = await eventsSubscriptionsAdd<true>({
+      throwOnError: true,
+      headers: { 'X-Realtime-Session': sessionId.value },
+      body: { topics },
+    })
+    return res.data ?? null
+  }
+
+  async function unsubscribe(topic: string): Promise<void> {
+    if (!sessionId.value) return
+    await eventsSubscriptionsRemove<true>({
+      throwOnError: true,
+      headers: { 'X-Realtime-Session': sessionId.value },
+      path: { topic },
+    })
+  }
+
   // --- Visibility change handling ---
   // When a tab is backgrounded for a long time, the browser/OS may kill the
   // connection. When the tab regains focus, force a reconnect + data refresh.
@@ -210,9 +266,12 @@ export const useEventsStore = defineStore('events', () => {
     status,
     lastError,
     isConnected,
+    sessionId,
     on,
     connect,
     disconnect,
     reconnect,
+    subscribe,
+    unsubscribe,
   }
 })

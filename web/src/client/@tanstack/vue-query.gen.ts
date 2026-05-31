@@ -492,13 +492,13 @@ export const downloadersTestMutation = (options?: Partial<Options<DownloadersTes
     return mutationOptions;
 };
 
-export const eventsSubscriptionsListQueryKey = (options?: Options<EventsSubscriptionsListData>) => createQueryKey('eventsSubscriptionsList', options);
+export const eventsSubscriptionsListQueryKey = (options: Options<EventsSubscriptionsListData>) => createQueryKey('eventsSubscriptionsList', options);
 
 /**
  * List the session's subscribed topics
  * Returns the current topic filter for the session identified by the X-Realtime-Session header, so a reconnecting client can resync.
  */
-export const eventsSubscriptionsListOptions = (options?: Options<EventsSubscriptionsListData>) => {
+export const eventsSubscriptionsListOptions = (options: Options<EventsSubscriptionsListData>) => {
     return queryOptions({
         queryFn: async ({ queryKey, signal }) => {
             const { data } = await eventsSubscriptionsList({

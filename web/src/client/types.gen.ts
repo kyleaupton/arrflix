@@ -3839,6 +3839,12 @@ export type EventsStreamResponse = EventsStreamResponses[keyof EventsStreamRespo
 
 export type EventsSubscriptionsListData = {
     body?: never;
+    headers: {
+        /**
+         * Session id from the stream's ready event.
+         */
+        'X-Realtime-Session': string;
+    };
     path?: never;
     query?: never;
     url: '/api/v1/events/subscriptions';
@@ -3849,6 +3855,10 @@ export type EventsSubscriptionsListErrors = {
      * Not Found
      */
     404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
     /**
      * Internal Server Error
      */
@@ -3868,6 +3878,12 @@ export type EventsSubscriptionsListResponse = EventsSubscriptionsListResponses[k
 
 export type EventsSubscriptionsAddData = {
     body: EventsSubscriptionsAddInputBodyWritable;
+    headers: {
+        /**
+         * Session id from the stream's ready event.
+         */
+        'X-Realtime-Session': string;
+    };
     path?: never;
     query?: never;
     url: '/api/v1/events/subscriptions';
@@ -3901,6 +3917,12 @@ export type EventsSubscriptionsAddResponse = EventsSubscriptionsAddResponses[key
 
 export type EventsSubscriptionsRemoveData = {
     body?: never;
+    headers: {
+        /**
+         * Session id from the stream's ready event.
+         */
+        'X-Realtime-Session': string;
+    };
     path: {
         /**
          * Topic to drop from the session's filter.

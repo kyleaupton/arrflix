@@ -315,8 +315,8 @@ export const eventsStream = <ThrowOnError extends boolean = false>(options?: Opt
  * List the session's subscribed topics
  * Returns the current topic filter for the session identified by the X-Realtime-Session header, so a reconnecting client can resync.
  */
-export const eventsSubscriptionsList = <ThrowOnError extends boolean = false>(options?: Options<EventsSubscriptionsListData, ThrowOnError>) => {
-    return (options?.client ?? client).get<EventsSubscriptionsListResponses, EventsSubscriptionsListErrors, ThrowOnError>({
+export const eventsSubscriptionsList = <ThrowOnError extends boolean = false>(options: Options<EventsSubscriptionsListData, ThrowOnError>) => {
+    return (options.client ?? client).get<EventsSubscriptionsListResponses, EventsSubscriptionsListErrors, ThrowOnError>({
         url: '/api/v1/events/subscriptions',
         ...options
     });
