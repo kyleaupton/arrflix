@@ -15,13 +15,14 @@ interface OutcomeMeta {
   variant: NonNullable<BadgeVariants['variant']>
 }
 
-// Triage order: bands that already carry an identity (a one-click confirm) come
-// first, descending to the ones that need the most work to identify.
+// Ordered by descending confidence, so tabs read most-certain → least-certain:
+// confident_review and partial_series carry a real identity (quick confirm),
+// then low_confidence, ambiguous, and finally no_match (nothing to suggest).
 export const INBOX_OUTCOMES: InboxOutcome[] = [
   'confident_review',
   'partial_series',
-  'ambiguous',
   'low_confidence',
+  'ambiguous',
   'no_match',
 ]
 

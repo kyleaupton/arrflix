@@ -55,6 +55,16 @@ function selectFile(id: string) {
   patchQuery({ file: id })
 }
 
+// After a decision the file leaves the inbox; advance to the next item (or the
+// previous one if it was last) so triage flows without a manual re-select. Read
+// from the current page synchronously — invalidation refetches right after.
+function onDecided() {
+  const list = items.value
+  const idx = list.findIndex((i) => i.id === selectedFileId.value)
+  const next = idx >= 0 ? (list[idx + 1] ?? list[idx - 1]) : undefined
+  patchQuery({ file: next?.id })
+}
+
 // Unfiltered band breakdown for the filter tabs + header total; shared with the
 // nav badge via the same query key.
 const { count, counts } = useInboxCount()
@@ -110,7 +120,7 @@ const listError = computed(() => problemMessage(listQuery.error.value, 'Failed t
       <div
         class="h-[calc(100vh-16rem)] min-h-[24rem] overflow-y-auto rounded-lg border bg-card p-4"
       >
-        <DecidePane :file-id="selectedFileId" />
+        <DecidePane :file-id="selectedFileId" @decided="onDecided" />
       </div>
     </div>
   </div>
