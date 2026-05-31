@@ -11,6 +11,7 @@ RUN apt-get update && \
     apt-get install -y \
         xz-utils \
         curl \
+        gcc \
         postgresql \
         postgresql-client \
         nginx \
