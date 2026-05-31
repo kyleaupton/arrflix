@@ -1920,6 +1920,14 @@ components:
         - updatedAt
         - errorKind
       type: object
+    ImportTaskUpdatedPayload:
+      additionalProperties: false
+      properties:
+        taskId:
+          type: string
+      required:
+        - taskId
+      type: object
     ImportTaskWithDetails:
       additionalProperties: false
       properties:
@@ -3085,6 +3093,15 @@ components:
         - knownForDepartment
         - popularity
       type: object
+    PingPayload:
+      additionalProperties: false
+      properties:
+        ts:
+          format: int64
+          type: integer
+      required:
+        - ts
+      type: object
     Plan:
       additionalProperties: false
       properties:
@@ -3293,6 +3310,14 @@ components:
         - title
         - status
       type: object
+    ReadyPayload:
+      additionalProperties: false
+      properties:
+        ok:
+          type: boolean
+      required:
+        - ok
+      type: object
     ReimportResult:
       additionalProperties: false
       properties:
@@ -3415,6 +3440,90 @@ components:
         - operator
         - rightOperand
       type: object
+    ScanCompletedPayload:
+      additionalProperties: false
+      properties:
+        ambiguous:
+          format: int64
+          type: integer
+        confident:
+          format: int64
+          type: integer
+        confidentReview:
+          format: int64
+          type: integer
+        duration:
+          format: int64
+          type: integer
+        episodeLookupFailed:
+          format: int64
+          type: integer
+        filesSeen:
+          format: int64
+          type: integer
+        libraryId:
+          type: string
+        lowConfidence:
+          format: int64
+          type: integer
+        mediaItemsCreated:
+          format: int64
+          type: integer
+        noMatch:
+          format: int64
+          type: integer
+        partialSeries:
+          format: int64
+          type: integer
+        scanId:
+          type: string
+      required:
+        - scanId
+        - libraryId
+        - filesSeen
+        - confident
+        - confidentReview
+        - lowConfidence
+        - ambiguous
+        - noMatch
+        - partialSeries
+        - mediaItemsCreated
+        - episodeLookupFailed
+        - duration
+      type: object
+    ScanFailedPayload:
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        libraryId:
+          type: string
+        scanId:
+          type: string
+      required:
+        - scanId
+        - libraryId
+        - error
+      type: object
+    ScanProgressPayload:
+      additionalProperties: false
+      properties:
+        filesSeen:
+          format: int64
+          type: integer
+        libraryId:
+          type: string
+        mediaItemsCreated:
+          format: int64
+          type: integer
+        scanId:
+          type: string
+      required:
+        - scanId
+        - libraryId
+        - filesSeen
+        - mediaItemsCreated
+      type: object
     ScanResponse:
       additionalProperties: false
       properties:
@@ -3430,6 +3539,17 @@ components:
           type: string
       required:
         - scanId
+      type: object
+    ScanStartedPayload:
+      additionalProperties: false
+      properties:
+        libraryId:
+          type: string
+        scanId:
+          type: string
+      required:
+        - scanId
+        - libraryId
       type: object
     SearchResponse:
       additionalProperties: false
@@ -5042,7 +5162,7 @@ paths:
         - downloaders
   /api/v1/events:
     get:
-      description: Long-lived SSE stream of download / import / scan progress and other real-time events. Each event has an `event` name (one of the discriminated set below), an optional `id`, and a JSON `data` payload.
+      description: Long-lived SSE stream of download / import / scan progress and other real-time events. Each event has an `event` name (one of the discriminated set below), an `id`, and a JSON `data` payload.
       operationId: events-stream
       parameters:
         - description: Filter to specific event names; repeatable. Empty = all events.
@@ -5065,14 +5185,15 @@ paths:
                 items:
                   oneOf:
                     - properties:
-                        data: {}
+                        data:
+                          $ref: "#/components/schemas/DownloadJobWithSummary"
                         event:
                           const: download_job_updated
                           description: The event name.
                           type: string
                         id:
-                          description: The event ID.
-                          type: integer
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
                         retry:
                           description: The retry time in milliseconds.
                           type: integer
@@ -5082,14 +5203,19 @@ paths:
                       title: Event download_job_updated
                       type: object
                     - properties:
-                        data: {}
+                        data:
+                          items:
+                            $ref: "#/components/schemas/DownloadJobWithSummary"
+                          type:
+                            - array
+                            - "null"
                         event:
                           const: download_jobs_snapshot
                           description: The event name.
                           type: string
                         id:
-                          description: The event ID.
-                          type: integer
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
                         retry:
                           description: The retry time in milliseconds.
                           type: integer
@@ -5099,14 +5225,15 @@ paths:
                       title: Event download_jobs_snapshot
                       type: object
                     - properties:
-                        data: {}
+                        data:
+                          $ref: "#/components/schemas/ImportTaskUpdatedPayload"
                         event:
                           const: import_task_updated
                           description: The event name.
                           type: string
                         id:
-                          description: The event ID.
-                          type: integer
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
                         retry:
                           description: The retry time in milliseconds.
                           type: integer
@@ -5116,14 +5243,15 @@ paths:
                       title: Event import_task_updated
                       type: object
                     - properties:
-                        data: {}
+                        data:
+                          $ref: "#/components/schemas/PingPayload"
                         event:
                           const: ping
                           description: The event name.
                           type: string
                         id:
-                          description: The event ID.
-                          type: integer
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
                         retry:
                           description: The retry time in milliseconds.
                           type: integer
@@ -5133,14 +5261,15 @@ paths:
                       title: Event ping
                       type: object
                     - properties:
-                        data: {}
+                        data:
+                          $ref: "#/components/schemas/ReadyPayload"
                         event:
                           const: ready
                           description: The event name.
                           type: string
                         id:
-                          description: The event ID.
-                          type: integer
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
                         retry:
                           description: The retry time in milliseconds.
                           type: integer
@@ -5150,14 +5279,15 @@ paths:
                       title: Event ready
                       type: object
                     - properties:
-                        data: {}
+                        data:
+                          $ref: "#/components/schemas/ScanCompletedPayload"
                         event:
                           const: scan_completed
                           description: The event name.
                           type: string
                         id:
-                          description: The event ID.
-                          type: integer
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
                         retry:
                           description: The retry time in milliseconds.
                           type: integer
@@ -5167,14 +5297,15 @@ paths:
                       title: Event scan_completed
                       type: object
                     - properties:
-                        data: {}
+                        data:
+                          $ref: "#/components/schemas/ScanFailedPayload"
                         event:
                           const: scan_failed
                           description: The event name.
                           type: string
                         id:
-                          description: The event ID.
-                          type: integer
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
                         retry:
                           description: The retry time in milliseconds.
                           type: integer
@@ -5184,14 +5315,15 @@ paths:
                       title: Event scan_failed
                       type: object
                     - properties:
-                        data: {}
+                        data:
+                          $ref: "#/components/schemas/ScanProgressPayload"
                         event:
                           const: scan_progress
                           description: The event name.
                           type: string
                         id:
-                          description: The event ID.
-                          type: integer
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
                         retry:
                           description: The retry time in milliseconds.
                           type: integer
@@ -5201,14 +5333,15 @@ paths:
                       title: Event scan_progress
                       type: object
                     - properties:
-                        data: {}
+                        data:
+                          $ref: "#/components/schemas/ScanStartedPayload"
                         event:
                           const: scan_started
                           description: The event name.
                           type: string
                         id:
-                          description: The event ID.
-                          type: integer
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
                         retry:
                           description: The retry time in milliseconds.
                           type: integer

@@ -302,7 +302,7 @@ export const downloadersTest = <ThrowOnError extends boolean = false>(options: O
 
 /**
  * Subscribe to server-sent events
- * Long-lived SSE stream of download / import / scan progress and other real-time events. Each event has an `event` name (one of the discriminated set below), an optional `id`, and a JSON `data` payload.
+ * Long-lived SSE stream of download / import / scan progress and other real-time events. Each event has an `event` name (one of the discriminated set below), an `id`, and a JSON `data` payload.
  */
 export const eventsStream = <ThrowOnError extends boolean = false>(options?: Options<EventsStreamData, ThrowOnError>) => {
     return (options?.client ?? client).sse.get<EventsStreamResponses, EventsStreamErrors, ThrowOnError>({

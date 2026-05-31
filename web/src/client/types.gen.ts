@@ -770,6 +770,10 @@ export type ImportTaskHistoryEntry = {
     updatedAt: string;
 };
 
+export type ImportTaskUpdatedPayload = {
+    taskId: string;
+};
+
 export type ImportTaskWithDetails = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1294,6 +1298,10 @@ export type PersonDetail = {
     tmdbId: number;
 };
 
+export type PingPayload = {
+    ts: number;
+};
+
 export type Plan = {
     downloaderId: string;
     libraryId: string;
@@ -1398,6 +1406,10 @@ export type ProblemDetails = {
     type: string;
 };
 
+export type ReadyPayload = {
+    ok: boolean;
+};
+
 export type ReimportResult = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1456,6 +1468,34 @@ export type RuleWriteBody = {
     rightOperand: string;
 };
 
+export type ScanCompletedPayload = {
+    ambiguous: number;
+    confident: number;
+    confidentReview: number;
+    duration: number;
+    episodeLookupFailed: number;
+    filesSeen: number;
+    libraryId: string;
+    lowConfidence: number;
+    mediaItemsCreated: number;
+    noMatch: number;
+    partialSeries: number;
+    scanId: string;
+};
+
+export type ScanFailedPayload = {
+    error: string;
+    libraryId: string;
+    scanId: string;
+};
+
+export type ScanProgressPayload = {
+    filesSeen: number;
+    libraryId: string;
+    mediaItemsCreated: number;
+    scanId: string;
+};
+
 export type ScanResponse = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1464,6 +1504,11 @@ export type ScanResponse = {
     /**
      * Identifier for the kicked-off scan
      */
+    scanId: string;
+};
+
+export type ScanStartedPayload = {
+    libraryId: string;
     scanId: string;
 };
 
@@ -3579,127 +3624,127 @@ export type EventsStreamResponses = {
      * Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.
      */
     200: Array<{
-        data: unknown;
+        data: DownloadJobWithSummary;
         /**
          * The event name.
          */
         event: 'download_job_updated';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: Array<DownloadJobWithSummary> | null;
         /**
          * The event name.
          */
         event: 'download_jobs_snapshot';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: ImportTaskUpdatedPayload;
         /**
          * The event name.
          */
         event: 'import_task_updated';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: PingPayload;
         /**
          * The event name.
          */
         event: 'ping';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: ReadyPayload;
         /**
          * The event name.
          */
         event: 'ready';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: ScanCompletedPayload;
         /**
          * The event name.
          */
         event: 'scan_completed';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: ScanFailedPayload;
         /**
          * The event name.
          */
         event: 'scan_failed';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: ScanProgressPayload;
         /**
          * The event name.
          */
         event: 'scan_progress';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: ScanStartedPayload;
         /**
          * The event name.
          */
         event: 'scan_started';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */

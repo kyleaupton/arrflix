@@ -22,6 +22,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/osdb"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/pathmapping"
+	"github.com/kyleaupton/arrflix/internal/realtime"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 	"github.com/kyleaupton/arrflix/internal/template"
@@ -467,15 +468,7 @@ func (w *Worker) logEvent(ctx context.Context, taskID uuid.UUID, eventType, mess
 }
 
 func (w *Worker) publishTaskUpdated(ctx context.Context, task model.ImportTask) {
-	if w.broker == nil {
-		return
-	}
-	// Notify about import task update
-	w.broker.Publish(sse.Event{
-		Type: "import_task_updated",
-		ID:   task.ID.String(),
-		Data: nil,
-	})
+	realtime.Emit(ctx, w.broker, realtime.ImportTaskUpdated(task.ID))
 	// Also notify about parent download job since import_status may have changed
 	if task.DownloadJobID != uuid.Nil {
 		w.publishDownloadJobUpdated(ctx, task.DownloadJobID)
@@ -492,15 +485,7 @@ func (w *Worker) publishDownloadJobUpdated(ctx context.Context, jobID uuid.UUID)
 		w.log.Warn().Err(err).Str("job_id", jobID.String()).Msg("failed to fetch enriched job for SSE")
 		return
 	}
-	b, err := json.Marshal(enriched)
-	if err != nil {
-		return
-	}
-	w.broker.Publish(sse.Event{
-		Type: "download_job_updated",
-		ID:   jobID.String(),
-		Data: b,
-	})
+	realtime.Emit(ctx, w.broker, realtime.DownloadJobUpdated(enriched))
 }
 
 // deriveSourcePath attempts to re-derive the source path from the download job.
