@@ -17,6 +17,11 @@ export const useEventsStore = defineStore('events', () => {
   const wantedTypes = ref<string[]>([])
 
   let abort: AbortController | null = null
+  // Monotonic counter identifying the current connection. Bumped on every
+  // connect() and disconnect(). Late callbacks from a torn-down connection
+  // compare against it and bail, so they can't clobber a fresh connection's
+  // status (see SSE_TRANSPORT_FINDINGS.md finding #2).
+  let generation = 0
   const listeners = new Map<string, Set<EventCallback>>()
 
   const isConnected = computed(() => status.value === 'connected')
@@ -79,6 +84,14 @@ export const useEventsStore = defineStore('events', () => {
     lastError.value = null
     abort = new AbortController()
 
+    // Only this connection's callbacks may write status. A late callback from a
+    // previously torn-down connection has a stale myGen and is ignored.
+    const myGen = ++generation
+    const setStatus = (s: EventsConnectionStatus) => {
+      if (myGen !== generation) return
+      status.value = s
+    }
+
     let hasConnectedBefore = false
 
     try {
@@ -86,6 +99,8 @@ export const useEventsStore = defineStore('events', () => {
       const { stream } = await client.sse.get({
         url,
         signal: abort.signal,
+        sseDefaultRetryDelay: 500,
+        sseMaxRetryDelay: 5000,
         onSseEvent: (ev) => {
           if (!ev.event) return
 
@@ -93,7 +108,7 @@ export const useEventsStore = defineStore('events', () => {
           // Use it as a reliable signal that we're (re)connected.
           if (ev.event === 'ready') {
             const wasDisconnected = status.value !== 'connected'
-            status.value = 'connected'
+            setStatus('connected')
             lastError.value = null
 
             if (hasConnectedBefore && wasDisconnected) {
@@ -113,14 +128,14 @@ export const useEventsStore = defineStore('events', () => {
           // If we've connected before, this is a reconnection attempt.
           // If we haven't, we're still in the initial connection phase.
           if (hasConnectedBefore) {
-            status.value = 'reconnecting'
+            setStatus('reconnecting')
           } else {
-            status.value = 'error'
+            setStatus('error')
           }
         },
       })
 
-      status.value = 'connected'
+      setStatus('connected')
 
       // Keep the generator alive until aborted or the stream ends.
       ;(async () => {
@@ -130,24 +145,27 @@ export const useEventsStore = defineStore('events', () => {
           }
         } catch (e) {
           if (abort?.signal.aborted) return
-          status.value = 'error'
+          setStatus('error')
           lastError.value = e instanceof Error ? e.message : String(e)
         } finally {
           abort = null
           if (status.value !== 'error') {
-            status.value = 'disconnected'
+            setStatus('disconnected')
           }
         }
       })()
     } catch (e) {
       abort = null
-      status.value = 'error'
+      setStatus('error')
       lastError.value = e instanceof Error ? e.message : String(e)
     }
   }
 
   function disconnect() {
     if (!abort) return
+    // Bump generation so in-flight callbacks from this connection go stale and
+    // can't overwrite the status of whatever connects next.
+    generation++
     abort.abort()
     abort = null
     status.value = 'disconnected'
