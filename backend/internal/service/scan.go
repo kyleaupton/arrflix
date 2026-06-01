@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"io/fs"
 	"path/filepath"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/osdb"
 	"github.com/kyleaupton/arrflix/internal/parsing"
+	"github.com/kyleaupton/arrflix/internal/realtime"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
@@ -92,56 +92,46 @@ func (s *ScannerService) StartScan(ctx context.Context, libraryID uuid.UUID) (st
 	go func() {
 		defer s.running.Delete(libKey)
 
-		s.publishEvent("scan_started", scanID, libKey, nil)
+		realtime.Emit(s.ctx, s.broker, realtime.ScanStarted(realtime.ScanStartedPayload{
+			ScanID:    scanID,
+			LibraryID: libKey,
+		}))
 
 		stats, err := s.executeScan(s.ctx, library, scanID)
 		if err != nil {
-			s.publishEvent("scan_failed", scanID, libKey, map[string]any{
-				"error": err.Error(),
-			})
+			realtime.Emit(s.ctx, s.broker, realtime.ScanFailed(realtime.ScanFailedPayload{
+				ScanID:    scanID,
+				LibraryID: libKey,
+				Error:     err.Error(),
+			}))
 			return
 		}
 
 		// Final progress event so clients see the exact totals before completion.
-		s.publishEvent("scan_progress", scanID, libKey, map[string]any{
-			"filesSeen":         stats.FilesSeen,
-			"mediaItemsCreated": stats.MediaItemsCreated,
-		})
+		realtime.Emit(s.ctx, s.broker, realtime.ScanProgress(realtime.ScanProgressPayload{
+			ScanID:            scanID,
+			LibraryID:         libKey,
+			FilesSeen:         stats.FilesSeen,
+			MediaItemsCreated: stats.MediaItemsCreated,
+		}))
 
-		s.publishEvent("scan_completed", scanID, libKey, map[string]any{
-			"filesSeen":           stats.FilesSeen,
-			"confident":           stats.Confident,
-			"confidentReview":     stats.ConfidentReview,
-			"lowConfidence":       stats.LowConfidence,
-			"ambiguous":           stats.Ambiguous,
-			"noMatch":             stats.NoMatch,
-			"partialSeries":       stats.PartialSeries,
-			"mediaItemsCreated":   stats.MediaItemsCreated,
-			"episodeLookupFailed": stats.EpisodeLookupFailed,
-			"duration":            stats.Duration,
-		})
+		realtime.Emit(s.ctx, s.broker, realtime.ScanCompleted(realtime.ScanCompletedPayload{
+			ScanID:              scanID,
+			LibraryID:           libKey,
+			FilesSeen:           stats.FilesSeen,
+			Confident:           stats.Confident,
+			ConfidentReview:     stats.ConfidentReview,
+			LowConfidence:       stats.LowConfidence,
+			Ambiguous:           stats.Ambiguous,
+			NoMatch:             stats.NoMatch,
+			PartialSeries:       stats.PartialSeries,
+			MediaItemsCreated:   stats.MediaItemsCreated,
+			EpisodeLookupFailed: stats.EpisodeLookupFailed,
+			Duration:            stats.Duration,
+		}))
 	}()
 
 	return scanID, nil
-}
-
-func (s *ScannerService) publishEvent(eventType, scanID, libraryID string, extra map[string]any) {
-	if s.broker == nil {
-		return
-	}
-	payload := map[string]any{
-		"scanId":    scanID,
-		"libraryId": libraryID,
-	}
-	for k, v := range extra {
-		payload[k] = v
-	}
-	data, _ := json.Marshal(payload)
-	s.broker.Publish(sse.Event{
-		Type: eventType,
-		Data: data,
-		ID:   scanID,
-	})
 }
 
 // ---------------------------------------------------------------------------
@@ -189,10 +179,12 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 		stats.FilesSeen++
 
 		if stats.FilesSeen%50 == 0 {
-			s.publishEvent("scan_progress", scanID, libKey, map[string]any{
-				"filesSeen":         stats.FilesSeen,
-				"mediaItemsCreated": stats.MediaItemsCreated,
-			})
+			realtime.Emit(ctx, s.broker, realtime.ScanProgress(realtime.ScanProgressPayload{
+				ScanID:            scanID,
+				LibraryID:         libKey,
+				FilesSeen:         stats.FilesSeen,
+				MediaItemsCreated: stats.MediaItemsCreated,
+			}))
 		}
 
 		relPath, err := filepath.Rel(library.RootPath, path)
@@ -336,10 +328,12 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 		}
 
 		if (i+1)%50 == 0 {
-			s.publishEvent("scan_progress", scanID, libKey, map[string]any{
-				"filesSeen":         stats.FilesSeen,
-				"mediaItemsCreated": stats.MediaItemsCreated,
-			})
+			realtime.Emit(ctx, s.broker, realtime.ScanProgress(realtime.ScanProgressPayload{
+				ScanID:            scanID,
+				LibraryID:         libKey,
+				FilesSeen:         stats.FilesSeen,
+				MediaItemsCreated: stats.MediaItemsCreated,
+			}))
 		}
 	}
 

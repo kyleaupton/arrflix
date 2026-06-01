@@ -210,7 +210,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { Download, Check } from 'lucide-vue-next'
@@ -233,13 +233,13 @@ import WatchProviders from '@/components/media/WatchProviders.vue'
 import NextEpisodeBanner from '@/components/media/NextEpisodeBanner.vue'
 import { useModal } from '@/composables/useModal'
 import { buildMetadataSubtitle } from '@/lib/utils'
-import { useDownloadJobsStore, type DownloadJob } from '@/stores/downloadJobs'
+import { useDownloadJobs, type DownloadJob } from '@/composables/useDownloadJobs'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
 
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
 const modal = useModal()
-const downloadJobs = useDownloadJobsStore()
+const { jobsById } = useDownloadJobs()
 
 const selectedSeason = ref<string>('')
 
@@ -329,7 +329,7 @@ const currentSeason = computed(() =>
 // Get all active download jobs for this series
 const activeJobsForSeries = computed(() => {
   if (!data.value?.tmdbId) return []
-  return Object.values(downloadJobs.jobsById).filter(
+  return Object.values(jobsById.value).filter(
     (job) => job.mediaType === 'series' && job.tmdbId === data.value?.tmdbId && isJobActive(job),
   )
 })
@@ -436,10 +436,6 @@ const isDownloading = computed(() => {
     data.value?.seasons?.some((s) => s.episodes?.some((e) => e.file?.status === 'downloading')) ??
     false
   )
-})
-
-onMounted(() => {
-  downloadJobs.connectLive()
 })
 
 const searchForSeasonCandidates = (seasonNumber: number) => {

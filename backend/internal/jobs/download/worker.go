@@ -17,6 +17,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/jobs/state"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/realtime"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
@@ -501,15 +502,7 @@ func (w *Worker) publishJobUpdated(ctx context.Context, jobID uuid.UUID) {
 		w.log.Warn().Err(err).Str("job_id", jobID.String()).Msg("failed to fetch enriched job for SSE")
 		return
 	}
-	b, err := json.Marshal(enriched)
-	if err != nil {
-		return
-	}
-	w.broker.Publish(sse.Event{
-		Type: "download_job_updated",
-		ID:   jobID.String(),
-		Data: b,
-	})
+	realtime.Emit(ctx, w.broker, realtime.DownloadJobUpdated(enriched))
 }
 
 func mapItemStatus(st downloader.JobStatus) string {

@@ -2,185 +2,93 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	humasse "github.com/danielgtaylor/huma/v2/sse"
-	"github.com/kyleaupton/arrflix/internal/service"
+	"github.com/google/uuid"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/realtime"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
 
 // ----- Handler -----
 
 type Events struct {
-	svc    *service.Services
 	broker *sse.Broker
 }
 
-func NewEvents(s *service.Services, broker *sse.Broker) *Events {
-	return &Events{svc: s, broker: broker}
-}
-
-// ----- Event payload DTOs -----
-//
-// The huma SSE adapter dispatches the event name from `reflect.TypeOf(msg.Data)`,
-// so each named event needs a distinct Go type. Each one is a named alias of
-// rawEventBytes (a []byte) with a custom MarshalJSON that emits the bytes
-// verbatim — the SSE `data:` line is the payload itself, not an envelope.
-
-type rawEventBytes []byte
-
-func (r rawEventBytes) MarshalJSON() ([]byte, error) {
-	if len(r) == 0 {
-		return []byte("null"), nil
-	}
-	return []byte(r), nil
-}
-
-func (rawEventBytes) Schema(_ huma.Registry) *huma.Schema {
-	// Unconstrained — payload shape varies per emitter.
-	return &huma.Schema{}
-}
-
-// EventReadyData is emitted on connect. Wire: `{"ok":true}`.
-type EventReadyData rawEventBytes
-
-func (e EventReadyData) MarshalJSON() ([]byte, error) { return rawEventBytes(e).MarshalJSON() }
-func (e EventReadyData) Schema(r huma.Registry) *huma.Schema {
-	return rawEventBytes(e).Schema(r)
-}
-
-// EventPingData is the 15-second heartbeat. Wire: `{"ts": <unix-seconds>}`.
-type EventPingData rawEventBytes
-
-func (e EventPingData) MarshalJSON() ([]byte, error) { return rawEventBytes(e).MarshalJSON() }
-func (e EventPingData) Schema(r huma.Registry) *huma.Schema {
-	return rawEventBytes(e).Schema(r)
-}
-
-// EventDownloadJobsSnapshotData carries the initial download-jobs list on
-// connect. Wire: `[]model.DownloadJobWithSummary`.
-type EventDownloadJobsSnapshotData rawEventBytes
-
-func (e EventDownloadJobsSnapshotData) MarshalJSON() ([]byte, error) {
-	return rawEventBytes(e).MarshalJSON()
-}
-func (e EventDownloadJobsSnapshotData) Schema(r huma.Registry) *huma.Schema {
-	return rawEventBytes(e).Schema(r)
-}
-
-// EventDownloadJobUpdatedData is emitted whenever a download job's state
-// changes. Wire: `model.DownloadJobWithSummary`.
-type EventDownloadJobUpdatedData rawEventBytes
-
-func (e EventDownloadJobUpdatedData) MarshalJSON() ([]byte, error) {
-	return rawEventBytes(e).MarshalJSON()
-}
-func (e EventDownloadJobUpdatedData) Schema(r huma.Registry) *huma.Schema {
-	return rawEventBytes(e).Schema(r)
-}
-
-// EventImportTaskUpdatedData is emitted when an import task changes. The
-// broker publishes a null payload; consumers re-fetch the task by id (the id
-// is on the SSE `id:` line, not in `data:`).
-type EventImportTaskUpdatedData rawEventBytes
-
-func (e EventImportTaskUpdatedData) MarshalJSON() ([]byte, error) {
-	return rawEventBytes(e).MarshalJSON()
-}
-func (e EventImportTaskUpdatedData) Schema(r huma.Registry) *huma.Schema {
-	return rawEventBytes(e).Schema(r)
-}
-
-// EventScanStartedData is emitted when a library scan kicks off. Wire:
-// `{ scanId, libraryId }`.
-type EventScanStartedData rawEventBytes
-
-func (e EventScanStartedData) MarshalJSON() ([]byte, error) {
-	return rawEventBytes(e).MarshalJSON()
-}
-func (e EventScanStartedData) Schema(r huma.Registry) *huma.Schema {
-	return rawEventBytes(e).Schema(r)
-}
-
-// EventScanProgressData is emitted periodically while a scan runs. Wire:
-// `{ scanId, libraryId, filesSeen, mediaItemsCreated }`.
-type EventScanProgressData rawEventBytes
-
-func (e EventScanProgressData) MarshalJSON() ([]byte, error) {
-	return rawEventBytes(e).MarshalJSON()
-}
-func (e EventScanProgressData) Schema(r huma.Registry) *huma.Schema {
-	return rawEventBytes(e).Schema(r)
-}
-
-// EventScanCompletedData is emitted when a scan finishes. Wire includes
-// totals + duration; see `internal/service/scan.go` for the full shape.
-type EventScanCompletedData rawEventBytes
-
-func (e EventScanCompletedData) MarshalJSON() ([]byte, error) {
-	return rawEventBytes(e).MarshalJSON()
-}
-func (e EventScanCompletedData) Schema(r huma.Registry) *huma.Schema {
-	return rawEventBytes(e).Schema(r)
-}
-
-// EventScanFailedData is emitted when a scan errors. Wire:
-// `{ scanId, libraryId, error }`.
-type EventScanFailedData rawEventBytes
-
-func (e EventScanFailedData) MarshalJSON() ([]byte, error) {
-	return rawEventBytes(e).MarshalJSON()
-}
-func (e EventScanFailedData) Schema(r huma.Registry) *huma.Schema {
-	return rawEventBytes(e).Schema(r)
+func NewEvents(broker *sse.Broker) *Events {
+	return &Events{broker: broker}
 }
 
 // ----- Stream -----
 
 type EventsStreamInput struct {
-	Types []string `query:"type,explode" doc:"Filter to specific event names; repeatable. Empty = all events."`
+	Session     uuid.UUID `query:"session" format:"uuid" doc:"Reattach to a prior session (from the ready event) to resume via Last-Event-ID. Omit for a fresh session."`
+	LastEventID string    `header:"Last-Event-ID" doc:"The id of the last event the client received; resumes the stream from just after it within the reattached session."`
 }
 
-func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send humasse.Sender) {
-	allowed := map[string]bool{}
-	for _, t := range input.Types {
-		if t != "" {
-			allowed[t] = true
-		}
-	}
-	typeAllowed := func(t string) bool {
-		if len(allowed) == 0 {
-			return true
-		}
-		return allowed[t]
+func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send streamSender) {
+	// Resolve the authenticated user from the JWT subject. The chi JWT
+	// middleware should already have rejected an unauthenticated request, so a
+	// missing/unparseable subject here is anomalous — close the stream defensively
+	// rather than subscribing an unscoped session.
+	userID, err := userIDFromContext(ctx, "EventsHandler.Stream")
+	if err != nil {
+		return
 	}
 
-	if typeAllowed("ready") {
-		_ = send.Data(EventReadyData(`{"ok":true}`))
-	}
-
-	if typeAllowed("download_jobs_snapshot") && h.svc != nil {
-		jobs, err := h.svc.DownloadJobs.ListWithImportSummary(ctx)
-		if err == nil {
-			if b, err := json.Marshal(jobs); err == nil {
-				_ = send.Data(EventDownloadJobsSnapshotData(b))
-			}
-		}
+	emit := func(e realtime.Event) bool {
+		return send(streamFrame{ID: e.ID, Event: e.Name, Data: e.Data}) == nil
 	}
 
 	if h.broker == nil {
-		// Hold the connection open until the client disconnects rather than
-		// closing it eagerly when there's nothing to subscribe to.
+		// No broker to scope against: still emit ready (with a freshly allocated
+		// session id) so the client captures a session, then hold the connection
+		// open until it disconnects.
+		if !emit(realtime.Ready(uuid.New().String())) {
+			return
+		}
 		<-ctx.Done()
 		return
 	}
 
-	sub, cancel := h.broker.Subscribe()
-	defer cancel()
+	// Fresh sessions start with an empty topic set, which the broker treats as
+	// "deliver all events this user is eligible for". Page-scoped narrowing
+	// happens later via the subscription control plane, not a connect-time
+	// filter.
+	att := h.broker.Attach(sse.AttachParams{
+		SessionID:   input.Session,
+		UserID:      userID,
+		LastEventID: input.LastEventID,
+	})
+	defer att.Cancel()
+
+	if !emit(realtime.Ready(att.Session.ID.String())) {
+		return
+	}
+
+	switch {
+	case att.Gapped:
+		// The resume point aged out of the replay ring. Tell the client to
+		// refetch (its queries reseed from REST) rather than replay.
+		if !emit(realtime.ResumeGap()) {
+			return
+		}
+	case len(att.Replay) > 0:
+		// Reattach within the window: replay the missed events in order. The
+		// client kept its query cache across the reconnect and the replayed
+		// deltas bring it current.
+		for _, ev := range att.Replay {
+			if send(streamFrame{ID: ev.ID, Event: ev.Type, Data: ev.Data}) != nil {
+				return
+			}
+		}
+	}
+	// A fresh session (or a reattach with nothing missed) just goes live; the
+	// client's queries own their REST baseline, so there's no connect-time
+	// snapshot to send.
 
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
@@ -189,77 +97,178 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send huma
 		select {
 		case <-ctx.Done():
 			return
+		case <-att.Kick:
+			// Overflow teardown: the outbound channel filled. The dropped
+			// events are in the replay ring, so returning here (deferred Cancel
+			// detaches, keeping the ring) lets the client reconnect and replay.
+			return
 		case <-heartbeat.C:
-			if typeAllowed("ping") {
-				_ = send.Data(makePingPayload())
+			if !emit(realtime.Ping()) {
+				return
 			}
-		case ev, ok := <-sub:
+		case ev, ok := <-att.Out:
 			if !ok {
 				return
 			}
-			if !typeAllowed(ev.Type) {
-				continue
-			}
-			if err := sendBrokerEvent(send, ev); err != nil {
+			// The broker already filtered this event by recipient and the
+			// session's topic set; name, id, and pre-marshaled data map straight
+			// through to the wire frame.
+			if send(streamFrame{ID: ev.ID, Event: ev.Type, Data: ev.Data}) != nil {
 				return
 			}
 		}
 	}
 }
 
-// sendBrokerEvent wraps the broker payload in the right typed struct so the
-// huma SSE adapter picks the correct event name from `reflect.TypeOf`.
-// Unknown event names are silently dropped — the broker is the source of
-// truth, and an unfamiliar event there is a config bug, not a wire concern.
-// The broker's id (often a UUID string) isn't carried through: huma's
-// Message.ID is an int and we'd rather drop than coerce.
-func sendBrokerEvent(send humasse.Sender, ev sse.Event) error {
-	switch ev.Type {
-	case "download_jobs_snapshot":
-		return send(humasse.Message{Data: EventDownloadJobsSnapshotData(ev.Data)})
-	case "download_job_updated":
-		return send(humasse.Message{Data: EventDownloadJobUpdatedData(ev.Data)})
-	case "import_task_updated":
-		return send(humasse.Message{Data: EventImportTaskUpdatedData(ev.Data)})
-	case "scan_started":
-		return send(humasse.Message{Data: EventScanStartedData(ev.Data)})
-	case "scan_progress":
-		return send(humasse.Message{Data: EventScanProgressData(ev.Data)})
-	case "scan_completed":
-		return send(humasse.Message{Data: EventScanCompletedData(ev.Data)})
-	case "scan_failed":
-		return send(humasse.Message{Data: EventScanFailedData(ev.Data)})
-	case "ready":
-		return send(humasse.Message{Data: EventReadyData(`{"ok":true}`)})
-	case "ping":
-		return send(humasse.Message{Data: makePingPayload()})
-	}
-	return nil
+// ----- Subscriptions: shared -----
+
+// The session handle travels in the X-Realtime-Session header on every
+// control-plane request (not a cookie — cookies leak across tabs, and each tab
+// is its own session). It is declared as a direct field on each Input below:
+// huma extracts header parameters from direct fields, not from an embedded
+// shared struct.
+
+// canSubscribe is the subscribe-time eligibility seam. Today any authenticated
+// user may subscribe to any topic. Per-resource scoping (e.g. subscribing to
+// "scan_progress:library_42" requires library.read on library 42) lands with
+// the dotted-topic + scope work; that check goes here. When it becomes
+// reachable, enumerate errsForbidden on the add operation.
+func canSubscribe(_ uuid.UUID, _ string) bool { return true }
+
+// ----- Subscriptions: list -----
+
+type EventsSubscriptionsListInput struct {
+	SessionID uuid.UUID `header:"X-Realtime-Session" required:"true" format:"uuid" doc:"Session id from the stream's ready event."`
 }
 
-func makePingPayload() EventPingData {
-	return EventPingData([]byte(`{"ts":` + strconv.FormatInt(time.Now().Unix(), 10) + `}`))
+type EventsSubscriptionsListOutput struct {
+	Body struct {
+		Topics []string `json:"topics" doc:"The session's current topic filter. Empty means all events."`
+	}
+}
+
+// SubscriptionsList returns the session's current topic set so a reconnecting
+// client can resync rather than blindly re-POST its subscriptions.
+func (h *Events) SubscriptionsList(ctx context.Context, input *EventsSubscriptionsListInput) (*EventsSubscriptionsListOutput, error) {
+	userID, err := userIDFromContext(ctx, "EventsHandler.SubscriptionsList")
+	if err != nil {
+		return nil, err
+	}
+	topics, ok := h.topicsForUser(input.SessionID, userID)
+	if !ok {
+		return nil, apperrors.NotFoundf("session not found").Op("EventsHandler.SubscriptionsList")
+	}
+	out := &EventsSubscriptionsListOutput{}
+	out.Body.Topics = topics
+	return out, nil
+}
+
+// ----- Subscriptions: add -----
+
+type EventsSubscriptionsAddInput struct {
+	SessionID uuid.UUID `header:"X-Realtime-Session" required:"true" format:"uuid" doc:"Session id from the stream's ready event."`
+	Body      struct {
+		Topics []string `json:"topics" required:"true" minItems:"1" doc:"Topics to add to the session's filter."`
+	}
+}
+
+type EventsSubscriptionsAddOutput struct{}
+
+// SubscriptionsAdd admits topics to the session's filter (after the
+// subscribe-time eligibility check). Returns 204: the client seeds its state
+// from the relevant query's REST baseline, not from a snapshot on this
+// response.
+func (h *Events) SubscriptionsAdd(ctx context.Context, input *EventsSubscriptionsAddInput) (*EventsSubscriptionsAddOutput, error) {
+	userID, err := userIDFromContext(ctx, "EventsHandler.SubscriptionsAdd")
+	if err != nil {
+		return nil, err
+	}
+
+	for _, topic := range input.Body.Topics {
+		if !canSubscribe(userID, topic) {
+			return nil, apperrors.Forbiddenf("not eligible to subscribe to %q", topic).Op("EventsHandler.SubscriptionsAdd")
+		}
+	}
+
+	if h.broker == nil || !h.broker.AddTopics(input.SessionID, userID, input.Body.Topics) {
+		return nil, apperrors.NotFoundf("session not found").Op("EventsHandler.SubscriptionsAdd")
+	}
+
+	return &EventsSubscriptionsAddOutput{}, nil
+}
+
+// ----- Subscriptions: remove -----
+
+type EventsSubscriptionsRemoveInput struct {
+	SessionID uuid.UUID `header:"X-Realtime-Session" required:"true" format:"uuid" doc:"Session id from the stream's ready event."`
+	Topic     string    `path:"topic" doc:"Topic to drop from the session's filter."`
+}
+
+type EventsSubscriptionsRemoveOutput struct{}
+
+// SubscriptionsRemove drops a topic from the session's filter. Removing a topic
+// the session never held is a no-op (still 204) — only a missing/foreign
+// session is a 404.
+func (h *Events) SubscriptionsRemove(ctx context.Context, input *EventsSubscriptionsRemoveInput) (*EventsSubscriptionsRemoveOutput, error) {
+	userID, err := userIDFromContext(ctx, "EventsHandler.SubscriptionsRemove")
+	if err != nil {
+		return nil, err
+	}
+	if h.broker == nil || !h.broker.RemoveTopic(input.SessionID, userID, input.Topic) {
+		return nil, apperrors.NotFoundf("session not found").Op("EventsHandler.SubscriptionsRemove")
+	}
+	return &EventsSubscriptionsRemoveOutput{}, nil
+}
+
+// topicsForUser fetches a session's topics, treating a nil broker as
+// "not found" so the control plane degrades the same way the stream does.
+func (h *Events) topicsForUser(sessionID, userID uuid.UUID) ([]string, bool) {
+	if h.broker == nil {
+		return nil, false
+	}
+	return h.broker.Topics(sessionID, userID)
 }
 
 // ----- Register -----
 
 func (h *Events) RegisterHumachi(api huma.API) {
-	humasse.Register(api, huma.Operation{
+	registerEventStream(api, huma.Operation{
 		OperationID: "events-stream",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/events",
 		Summary:     "Subscribe to server-sent events",
-		Description: "Long-lived SSE stream of download / import / scan progress and other real-time events. Each event has an `event` name (one of the discriminated set below), an optional `id`, and a JSON `data` payload.",
+		Description: "Long-lived SSE stream of download / import / scan progress and other real-time events. Each event has an `event` name (one of the discriminated set below), an `id`, and a JSON `data` payload.",
 		Tags:        []string{"events"},
-	}, map[string]any{
-		"ready":                  EventReadyData{},
-		"ping":                   EventPingData{},
-		"download_jobs_snapshot": EventDownloadJobsSnapshotData{},
-		"download_job_updated":   EventDownloadJobUpdatedData{},
-		"import_task_updated":    EventImportTaskUpdatedData{},
-		"scan_started":           EventScanStartedData{},
-		"scan_progress":          EventScanProgressData{},
-		"scan_completed":         EventScanCompletedData{},
-		"scan_failed":            EventScanFailedData{},
 	}, h.Stream)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "events-subscriptions-list",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/events/subscriptions",
+		Summary:     "List the session's subscribed topics",
+		Description: "Returns the current topic filter for the session identified by the X-Realtime-Session header, so a reconnecting client can resync.",
+		Tags:        []string{"events"},
+		Errors:      errsRead,
+	}, h.SubscriptionsList)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "events-subscriptions-add",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/events/subscriptions",
+		Summary:       "Subscribe the session to topics",
+		Description:   "Adds topics to the session's filter. The client seeds state from the relevant query's REST baseline, so this returns 204.",
+		Tags:          []string{"events"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errs(errsRead, []int{http.StatusUnprocessableEntity}),
+	}, h.SubscriptionsAdd)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "events-subscriptions-remove",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/events/subscriptions/{topic}",
+		Summary:       "Unsubscribe the session from a topic",
+		Tags:          []string{"events"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errsRead,
+	}, h.SubscriptionsRemove)
 }

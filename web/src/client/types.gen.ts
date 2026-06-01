@@ -539,6 +539,28 @@ export type EvaluationTrace = {
     policies: Array<PolicyEvaluation> | null;
 };
 
+export type EventsSubscriptionsAddInputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Topics to add to the session's filter.
+     */
+    topics: Array<string> | null;
+};
+
+export type EventsSubscriptionsListOutputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * The session's current topic filter. Empty means all events.
+     */
+    topics: Array<string> | null;
+};
+
 export type ExternalRefDto = {
     externalId: string;
     source: 'tmdb' | 'imdb' | 'tvdb';
@@ -768,6 +790,10 @@ export type ImportTaskHistoryEntry = {
     sourcePath: string;
     status: string;
     updatedAt: string;
+};
+
+export type ImportTaskUpdatedPayload = {
+    taskId: string;
 };
 
 export type ImportTaskWithDetails = {
@@ -1294,6 +1320,10 @@ export type PersonDetail = {
     tmdbId: number;
 };
 
+export type PingPayload = {
+    ts: number;
+};
+
 export type Plan = {
     downloaderId: string;
     libraryId: string;
@@ -1398,6 +1428,11 @@ export type ProblemDetails = {
     type: string;
 };
 
+export type ReadyPayload = {
+    ok: boolean;
+    sessionId: string;
+};
+
 export type ReimportResult = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1405,6 +1440,10 @@ export type ReimportResult = {
     readonly $schema?: string;
     created_tasks: Array<ImportTask> | null;
     skipped_count: number;
+};
+
+export type ResumeGapPayload = {
+    reason: string;
 };
 
 export type Role = {
@@ -1456,6 +1495,34 @@ export type RuleWriteBody = {
     rightOperand: string;
 };
 
+export type ScanCompletedPayload = {
+    ambiguous: number;
+    confident: number;
+    confidentReview: number;
+    duration: number;
+    episodeLookupFailed: number;
+    filesSeen: number;
+    libraryId: string;
+    lowConfidence: number;
+    mediaItemsCreated: number;
+    noMatch: number;
+    partialSeries: number;
+    scanId: string;
+};
+
+export type ScanFailedPayload = {
+    error: string;
+    libraryId: string;
+    scanId: string;
+};
+
+export type ScanProgressPayload = {
+    filesSeen: number;
+    libraryId: string;
+    mediaItemsCreated: number;
+    scanId: string;
+};
+
 export type ScanResponse = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1464,6 +1531,11 @@ export type ScanResponse = {
     /**
      * Identifier for the kicked-off scan
      */
+    scanId: string;
+};
+
+export type ScanStartedPayload = {
+    libraryId: string;
     scanId: string;
 };
 
@@ -1977,6 +2049,20 @@ export type EvaluationTraceWritable = {
     context?: ContextSnapshot;
     finalPlan: Plan;
     policies: Array<PolicyEvaluation> | null;
+};
+
+export type EventsSubscriptionsAddInputBodyWritable = {
+    /**
+     * Topics to add to the session's filter.
+     */
+    topics: Array<string> | null;
+};
+
+export type EventsSubscriptionsListOutputBodyWritable = {
+    /**
+     * The session's current topic filter. Empty means all events.
+     */
+    topics: Array<string> | null;
 };
 
 export type FeedWritable = {
@@ -3554,12 +3640,18 @@ export type DownloadersTestResponse = DownloadersTestResponses[keyof Downloaders
 
 export type EventsStreamData = {
     body?: never;
+    headers?: {
+        /**
+         * The id of the last event the client received; resumes the stream from just after it within the reattached session.
+         */
+        'Last-Event-ID'?: string;
+    };
     path?: never;
     query?: {
         /**
-         * Filter to specific event names; repeatable. Empty = all events.
+         * Reattach to a prior session (from the ready event) to resume via Last-Event-ID. Omit for a fresh session.
          */
-        type?: Array<string> | null;
+        session?: string;
     };
     url: '/api/v1/events';
 };
@@ -3579,127 +3671,127 @@ export type EventsStreamResponses = {
      * Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.
      */
     200: Array<{
-        data: unknown;
+        data: DownloadJobWithSummary;
         /**
          * The event name.
          */
         event: 'download_job_updated';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
-        /**
-         * The event name.
-         */
-        event: 'download_jobs_snapshot';
-        /**
-         * The event ID.
-         */
-        id?: number;
-        /**
-         * The retry time in milliseconds.
-         */
-        retry?: number;
-    } | {
-        data: unknown;
+        data: ImportTaskUpdatedPayload;
         /**
          * The event name.
          */
         event: 'import_task_updated';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: PingPayload;
         /**
          * The event name.
          */
         event: 'ping';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: ReadyPayload;
         /**
          * The event name.
          */
         event: 'ready';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: ResumeGapPayload;
+        /**
+         * The event name.
+         */
+        event: 'resume_gap';
+        /**
+         * The event ID (sortable; used for Last-Event-ID resume).
+         */
+        id?: string;
+        /**
+         * The retry time in milliseconds.
+         */
+        retry?: number;
+    } | {
+        data: ScanCompletedPayload;
         /**
          * The event name.
          */
         event: 'scan_completed';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: ScanFailedPayload;
         /**
          * The event name.
          */
         event: 'scan_failed';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: ScanProgressPayload;
         /**
          * The event name.
          */
         event: 'scan_progress';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
         retry?: number;
     } | {
-        data: unknown;
+        data: ScanStartedPayload;
         /**
          * The event name.
          */
         event: 'scan_started';
         /**
-         * The event ID.
+         * The event ID (sortable; used for Last-Event-ID resume).
          */
-        id?: number;
+        id?: string;
         /**
          * The retry time in milliseconds.
          */
@@ -3708,6 +3800,128 @@ export type EventsStreamResponses = {
 };
 
 export type EventsStreamResponse = EventsStreamResponses[keyof EventsStreamResponses];
+
+export type EventsSubscriptionsListData = {
+    body?: never;
+    headers: {
+        /**
+         * Session id from the stream's ready event.
+         */
+        'X-Realtime-Session': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/events/subscriptions';
+};
+
+export type EventsSubscriptionsListErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type EventsSubscriptionsListError = EventsSubscriptionsListErrors[keyof EventsSubscriptionsListErrors];
+
+export type EventsSubscriptionsListResponses = {
+    /**
+     * OK
+     */
+    200: EventsSubscriptionsListOutputBody;
+};
+
+export type EventsSubscriptionsListResponse = EventsSubscriptionsListResponses[keyof EventsSubscriptionsListResponses];
+
+export type EventsSubscriptionsAddData = {
+    body: EventsSubscriptionsAddInputBodyWritable;
+    headers: {
+        /**
+         * Session id from the stream's ready event.
+         */
+        'X-Realtime-Session': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/events/subscriptions';
+};
+
+export type EventsSubscriptionsAddErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type EventsSubscriptionsAddError = EventsSubscriptionsAddErrors[keyof EventsSubscriptionsAddErrors];
+
+export type EventsSubscriptionsAddResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type EventsSubscriptionsAddResponse = EventsSubscriptionsAddResponses[keyof EventsSubscriptionsAddResponses];
+
+export type EventsSubscriptionsRemoveData = {
+    body?: never;
+    headers: {
+        /**
+         * Session id from the stream's ready event.
+         */
+        'X-Realtime-Session': string;
+    };
+    path: {
+        /**
+         * Topic to drop from the session's filter.
+         */
+        topic: string;
+    };
+    query?: never;
+    url: '/api/v1/events/subscriptions/{topic}';
+};
+
+export type EventsSubscriptionsRemoveErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type EventsSubscriptionsRemoveError = EventsSubscriptionsRemoveErrors[keyof EventsSubscriptionsRemoveErrors];
+
+export type EventsSubscriptionsRemoveResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type EventsSubscriptionsRemoveResponse = EventsSubscriptionsRemoveResponses[keyof EventsSubscriptionsRemoveResponses];
 
 export type FilesDetachData = {
     body: MatchDecisionsDetachInputBodyWritable;

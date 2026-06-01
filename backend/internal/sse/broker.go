@@ -1,57 +1,242 @@
 package sse
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"sort"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+)
+
+const (
+	// outboundDepth is the per-attachment outbound channel buffer. The realtime
+	// spec guesses 256 as a starting point for the worst case (a large
+	// download-job storm or a scan emitting per-file progress); this absorbs
+	// bursts before the overflow path trips and forces a lossless reconnect.
+	outboundDepth = 256
+
+	// replayMaxLen / replayMaxAge bound each session's replay ring. A
+	// reconnecting client resumes from its Last-Event-ID within this window;
+	// beyond it the broker signals a gap and the client refetches.
+	replayMaxLen = 200
+	replayMaxAge = 5 * time.Minute
+
+	// detachTTL is how long a detached session is kept (with its ring) so a
+	// reconnecting client can reattach and replay. sweepInterval is how often
+	// the sweeper looks for sessions past the TTL.
+	detachTTL     = 5 * time.Minute
+	sweepInterval = 1 * time.Minute
 )
 
 // Event is a single message published onto the in-process event bus.
 // It maps 1:1 to an SSE event on the wire.
 type Event struct {
-	Type string          // SSE event name
-	Data json.RawMessage // JSON payload
-	ID   string          // optional SSE event id
-	At   time.Time       // server timestamp
+	Type      string          // SSE event name
+	Data      json.RawMessage // JSON payload
+	ID        string          // sortable SSE event id (UUIDv7); drives Last-Event-ID resume
+	At        time.Time       // server timestamp; used for ring age eviction
+	Recipient Recipient       // delivery tag; the broker filters by it per session
+}
+
+// Session is one logical SSE subscription. It outlives a single TCP connection:
+// when a connection drops the session is detached (its outbound channel closed)
+// but retained — with its replay ring — so a reconnecting client can reattach
+// via ?session=<id> and replay the events it missed. The sweeper evicts
+// sessions that stay detached past detachTTL.
+type Session struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+
+	// mu guards every mutable field below. Lock order is broker.mu before
+	// session.mu, never the reverse.
+	mu sync.Mutex
+	// topics is the connect-time `?type=` filter set. Empty means "all events"
+	// — preserving the prior broker semantics where an unfiltered subscriber
+	// saw everything.
+	topics map[string]bool
+	replay *ring
+	// out is the current attachment's outbound channel; nil while detached.
+	out chan Event
+	// kick signals the attached handler to tear down (overflow → lossless
+	// reconnect). Buffered size 1; a non-blocking send coalesces repeats.
+	kick chan struct{}
+	// detachedAt is nil while attached, else the time the connection dropped.
+	detachedAt *time.Time
+	// epoch increments on every (re)attach. The cancel func captures its
+	// epoch; Detach is a no-op if the session has since been reattached, so a
+	// stale handler's teardown can't kill a fresh connection.
+	epoch       uint64
+	connectedAt time.Time
+}
+
+// AttachParams carries what the handler resolves before attaching: an optional
+// prior session to reattach to, the authenticated user, the client's resume
+// point, and the connect-time topic filter.
+type AttachParams struct {
+	// SessionID, when non-zero, requests reattach to an existing session.
+	SessionID uuid.UUID
+	UserID    uuid.UUID
+	// LastEventID is the client's resume point within the reattached session's
+	// ring. Ignored on a fresh attach.
+	LastEventID string
+	Topics      []string
+}
+
+// Attachment is what Attach hands back to the handler. Out and Kick are the
+// channels for this specific attachment, captured here so the handler never
+// re-reads them off the Session (which a concurrent reattach could swap).
+type Attachment struct {
+	Session *Session
+	Out     <-chan Event
+	Kick    <-chan struct{}
+	// Replay is the ordered set of buffered events with id > LastEventID, to be
+	// sent before going live. Nil on a fresh attach or when Gapped.
+	Replay []Event
+	// Gapped is true when LastEventID predates the ring's oldest entry: the
+	// resume point aged out, so the client must refetch rather than replay.
+	Gapped bool
+	// Cancel detaches the session (keeping it for reattach); the handler defers
+	// it.
+	Cancel func()
 }
 
 type Broker struct {
-	mu     sync.RWMutex
-	nextID int
-	subs   map[int]chan Event
+	mu       sync.RWMutex
+	sessions map[uuid.UUID]*Session
+	now      func() time.Time
 }
 
-func NewBroker() *Broker {
-	return &Broker{subs: make(map[int]chan Event)}
+// NewBroker builds a broker and starts its sweeper goroutine, which evicts
+// detached sessions past their TTL until ctx is cancelled.
+func NewBroker(ctx context.Context) *Broker {
+	b := newBroker(time.Now)
+	go b.runSweeper(ctx)
+	return b
 }
 
-// Subscribe returns a receive-only channel plus a cancel function.
-// The channel is buffered; if a subscriber can't keep up, events are dropped
-// for that subscriber (publish is non-blocking).
-func (b *Broker) Subscribe() (<-chan Event, func()) {
+// newBroker builds a broker without starting the sweeper. Tests use it to drive
+// the clock and call sweep() deterministically.
+func newBroker(now func() time.Time) *Broker {
+	if now == nil {
+		now = time.Now
+	}
+	return &Broker{
+		sessions: make(map[uuid.UUID]*Session),
+		now:      now,
+	}
+}
+
+// Attach either reattaches to an existing session (replaying missed events) or
+// allocates a fresh one. The returned Cancel func detaches the session; the
+// handler defers it.
+func (b *Broker) Attach(params AttachParams) Attachment {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	id := b.nextID
-	b.nextID++
-
-	ch := make(chan Event, 64)
-	b.subs[id] = ch
-
-	cancel := func() {
-		b.mu.Lock()
-		defer b.mu.Unlock()
-		if c, ok := b.subs[id]; ok {
-			delete(b.subs, id)
-			close(c)
+	// Reattach: a known session id, owned by the same user. A user mismatch is
+	// treated as "not found" — never reattach across users.
+	if params.SessionID != uuid.Nil {
+		if s, ok := b.sessions[params.SessionID]; ok && s.UserID == params.UserID {
+			return b.reattach(s, params)
 		}
 	}
 
-	return ch, cancel
+	return b.fresh(params)
 }
 
-// Publish broadcasts an event to all subscribers.
-// This call never blocks; slow subscribers simply miss events.
+// reattach revives a retained session for a new connection: a fresh outbound
+// channel + kick, detachedAt cleared, replay computed from the ring. The caller
+// holds broker.mu.
+func (b *Broker) reattach(s *Session, params AttachParams) Attachment {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// If somehow still attached (a second concurrent connection for the same
+	// session id), close the prior outbound channel so its handler exits. That
+	// handler's deferred Detach is a no-op once we bump the epoch below.
+	if s.out != nil {
+		close(s.out)
+	}
+
+	s.epoch++
+	s.out = make(chan Event, outboundDepth)
+	s.kick = make(chan struct{}, 1)
+	s.detachedAt = nil
+
+	replay, gapped := s.replay.since(params.LastEventID)
+
+	return Attachment{
+		Session: s,
+		Out:     s.out,
+		Kick:    s.kick,
+		Replay:  replay,
+		Gapped:  gapped,
+		Cancel:  b.cancelFunc(s, s.epoch),
+	}
+}
+
+// fresh allocates a new session. The caller holds broker.mu.
+func (b *Broker) fresh(params AttachParams) Attachment {
+	topics := make(map[string]bool, len(params.Topics))
+	for _, t := range params.Topics {
+		if t != "" {
+			topics[t] = true
+		}
+	}
+
+	s := &Session{
+		ID:          uuid.New(),
+		UserID:      params.UserID,
+		topics:      topics,
+		replay:      newRing(replayMaxLen, replayMaxAge, b.now),
+		out:         make(chan Event, outboundDepth),
+		kick:        make(chan struct{}, 1),
+		epoch:       1,
+		connectedAt: b.now(),
+	}
+	b.sessions[s.ID] = s
+
+	return Attachment{
+		Session: s,
+		Out:     s.out,
+		Kick:    s.kick,
+		Cancel:  b.cancelFunc(s, s.epoch),
+	}
+}
+
+// cancelFunc returns the teardown closure for one attachment. It detaches only
+// if the session is still on the epoch it was attached at — a stale handler
+// (whose connection was already replaced by a reattach) tears down nothing.
+func (b *Broker) cancelFunc(s *Session, epoch uint64) func() {
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.epoch != epoch {
+			return
+		}
+		if s.out != nil {
+			close(s.out)
+			s.out = nil
+		}
+		t := b.now()
+		s.detachedAt = &t
+	}
+}
+
+// Publish delivers an event to every eligible session. Eligibility is recipient
+// match (Broadcast→all, User(id)→that user, Admins→all this phase) AND topic
+// match (the event Type passes the session's `?type=` filter; empty matches
+// all).
+//
+// For each eligible session the event is appended to the replay ring
+// unconditionally — even while detached, so a briefly-gone client accumulates
+// events to replay on reconnect. If the session is attached, a non-blocking
+// send follows; on a full channel the broker kicks the handler to tear down
+// (the events are safe in the ring) rather than dropping or blocking.
 func (b *Broker) Publish(ev Event) {
 	if ev.At.IsZero() {
 		ev.At = time.Now()
@@ -59,11 +244,165 @@ func (b *Broker) Publish(ev Event) {
 
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	for _, ch := range b.subs {
-		select {
-		case ch <- ev:
-		default:
-			// drop for this subscriber
+	for _, s := range b.sessions {
+		if !recipientMatches(ev.Recipient, s) {
+			continue
+		}
+
+		s.mu.Lock()
+		if !s.topicAllowed(ev.Type) {
+			s.mu.Unlock()
+			continue
+		}
+
+		s.replay.append(ev)
+
+		if s.out != nil {
+			select {
+			case s.out <- ev:
+			default:
+				// Backpressure: the consumer can't keep up. The event is already
+				// in the ring, so signal the handler to disconnect — the client
+				// reconnects and replays. Never drop, never block, never close
+				// the channel here (a concurrent Publish could send on it).
+				select {
+				case s.kick <- struct{}{}:
+				default:
+				}
+				fmt.Fprintf(os.Stderr,
+					"sse: outbound channel full, kicking session=%s type=%s\n",
+					s.ID, ev.Type)
+			}
+		}
+		s.mu.Unlock()
+	}
+}
+
+// sweep evicts sessions that have stayed detached past detachTTL. Called on a
+// ticker by runSweeper and directly by tests.
+func (b *Broker) sweep() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	cutoff := b.now().Add(-detachTTL)
+	for id, s := range b.sessions {
+		s.mu.Lock()
+		stale := s.detachedAt != nil && s.detachedAt.Before(cutoff)
+		s.mu.Unlock()
+		if stale {
+			delete(b.sessions, id)
 		}
 	}
+}
+
+func (b *Broker) runSweeper(ctx context.Context) {
+	t := time.NewTicker(sweepInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			b.sweep()
+		}
+	}
+}
+
+// ownedSession returns the session by id only if it exists AND belongs to
+// userID. A missing or foreign session yields (nil, false) — callers map both
+// to a 404 so session existence never leaks across users.
+func (b *Broker) ownedSession(sessionID, userID uuid.UUID) (*Session, bool) {
+	b.mu.RLock()
+	s, ok := b.sessions[sessionID]
+	b.mu.RUnlock()
+	if !ok || s.UserID != userID {
+		return nil, false
+	}
+	return s, true
+}
+
+// Topics returns the session's current topic filter (sorted) if the session
+// exists and is owned by userID. The bool is false for a missing/foreign
+// session. An empty slice means "all events" per topicAllowed.
+func (b *Broker) Topics(sessionID, userID uuid.UUID) ([]string, bool) {
+	s, ok := b.ownedSession(sessionID, userID)
+	if !ok {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.topics))
+	for t := range s.topics {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out, true
+}
+
+// AddTopics adds topics to the session's filter. Returns false for a
+// missing/foreign session.
+//
+// LANDMINE: the topic set is additive-to-restrictive. A fresh session has an
+// empty set, which topicAllowed treats as "all events". The first AddTopics
+// call flips it restrictive — the session then receives ONLY the named topics.
+// Today the app opens one stream and never calls this, so it's inert. The first
+// page that subscribes to a scoped topic (e.g. "scan_progress") would silently
+// stop receiving everything else (download_job_updated, etc.). Resolve the
+// additive-vs-restrictive semantics (a separate "narrow to" set, or per-topic
+// opt-in that doesn't collapse the implicit-all) before wiring a real caller.
+func (b *Broker) AddTopics(sessionID, userID uuid.UUID, topics []string) bool {
+	s, ok := b.ownedSession(sessionID, userID)
+	if !ok {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range topics {
+		if t != "" {
+			s.topics[t] = true
+		}
+	}
+	return true
+}
+
+// RemoveTopic drops a topic from the session's filter. Removing a topic the
+// session never held is a no-op. Returns false for a missing/foreign session.
+func (b *Broker) RemoveTopic(sessionID, userID uuid.UUID, topic string) bool {
+	s, ok := b.ownedSession(sessionID, userID)
+	if !ok {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.topics, topic)
+	return true
+}
+
+// recipientMatches reports whether an event's recipient tag targets the given
+// session, using each session's connect-time eligibility. Caller may hold
+// session.mu, but this reads only immutable fields (UserID), so it doesn't
+// require it.
+func recipientMatches(r Recipient, s *Session) bool {
+	switch r.Kind {
+	case RecipientBroadcast:
+		return true
+	case RecipientAdmins:
+		// Single eligibility tier this phase: every authenticated session is
+		// treated as admin-eligible. Real admin resolution (resolved once per
+		// session at connect, then filtered by set-membership) lands in a
+		// later phase; this is where that check goes.
+		return true
+	case RecipientUser:
+		return s.UserID == r.UserID
+	default:
+		return false
+	}
+}
+
+// topicAllowed reports whether the event type passes the session's connect-time
+// `?type=` filter. An empty filter matches all types. Caller holds session.mu.
+func (s *Session) topicAllowed(t string) bool {
+	if len(s.topics) == 0 {
+		return true
+	}
+	return s.topics[t]
 }

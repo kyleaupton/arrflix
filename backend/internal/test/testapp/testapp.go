@@ -86,7 +86,7 @@ func New(t *testing.T, pool *pgxpool.Pool, opts ...Option) *App {
 	}
 
 	logg := logger.New(false)
-	broker := sse.NewBroker()
+	broker := sse.NewBroker(ctx)
 	r := repo.New(pool)
 
 	registry := downloader.NewRegistry()

@@ -40,7 +40,7 @@ func RegisterHumachiHandlers(api huma.API, deps Deps) {
 	NewAuth(deps.Cfg, deps.Logger, deps.Pool, deps.Services).RegisterHumachi(api)
 	NewSetup(deps.Services).RegisterHumachi(api)
 	NewMedia(deps.Services).RegisterHumachi(api)
-	NewEvents(deps.Services, deps.Broker).RegisterHumachi(api)
+	NewEvents(deps.Broker).RegisterHumachi(api)
 	NewDownloadJobs(deps.Services).RegisterHumachi(api)
 	NewImportTasks(deps.Services).RegisterHumachi(api)
 	NewBootstrap(deps.Cfg, deps.Services).RegisterHumachi(api)

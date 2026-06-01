@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, onMounted, onUnmounted, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Loader2, Plus, FolderOpen } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
@@ -16,7 +16,7 @@ import {
   createLibraryActions,
 } from '@/components/tables/configs/libraryTableConfig'
 import { useModal } from '@/composables/useModal'
-import { useEventsStore } from '@/stores/events'
+import { useRealtimeListener } from '@/realtime/useRealtimeListener'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,7 +28,6 @@ import { problemMessage } from '@/lib/api'
 const { data: libraries, isLoading } = useQuery(librariesListOptions())
 const queryClient = useQueryClient()
 const modal = useModal()
-const events = useEventsStore()
 
 function invalidateLibraries() {
   queryClient.invalidateQueries({ queryKey: librariesListQueryKey() })
@@ -76,54 +75,44 @@ interface ScanEventData {
 
 const activeScans = reactive(new Map<string, ScanProgress>())
 
-// SSE scan event listeners
-const unsubscribers: (() => void)[] = []
-
-onMounted(() => {
-  events.connect(['scan_started', 'scan_progress', 'scan_completed', 'scan_failed'])
-
-  unsubscribers.push(
-    events.on('scan_started', (data) => {
-      const d = data as ScanEventData
-      const lib = libraries.value?.find((l) => l.id === d.libraryId)
-      activeScans.set(d.libraryId, {
-        scanId: d.scanId ?? '',
-        libraryId: d.libraryId,
-        libraryName: lib?.name ?? 'Unknown',
-        filesSeen: 0,
-        mediaItemsCreated: 0,
-      })
-    }),
-    events.on('scan_progress', (data) => {
-      const d = data as ScanEventData
-      const scan = activeScans.get(d.libraryId)
-      if (scan) {
-        scan.filesSeen = d.filesSeen ?? scan.filesSeen
-        scan.mediaItemsCreated = d.mediaItemsCreated ?? scan.mediaItemsCreated
-      }
-    }),
-    events.on('scan_completed', (data) => {
-      const d = data as ScanEventData
-      activeScans.delete(d.libraryId)
-      const lib = libraries.value?.find((l) => l.id === d.libraryId)
-      toast.success(`Scan complete: ${lib?.name ?? 'Library'}`, {
-        description: `${d.filesSeen ?? 0} files seen, ${d.mediaItemsCreated ?? 0} new items`,
-      })
-      invalidateLibraries()
-    }),
-    events.on('scan_failed', (data) => {
-      const d = data as ScanEventData
-      activeScans.delete(d.libraryId)
-      const lib = libraries.value?.find((l) => l.id === d.libraryId)
-      toast.error(`Scan failed: ${lib?.name ?? 'Library'}`, {
-        description: d.error,
-      })
-    }),
-  )
+// Live scan progress is ephemeral UI (not server cache), so it uses scoped
+// realtime listeners — the app-wide stream already carries the events, and each
+// listener auto-unsubscribes when this view unmounts.
+useRealtimeListener('scan_started', (data) => {
+  const d = data as ScanEventData
+  const lib = libraries.value?.find((l) => l.id === d.libraryId)
+  activeScans.set(d.libraryId, {
+    scanId: d.scanId ?? '',
+    libraryId: d.libraryId,
+    libraryName: lib?.name ?? 'Unknown',
+    filesSeen: 0,
+    mediaItemsCreated: 0,
+  })
 })
-
-onUnmounted(() => {
-  unsubscribers.forEach((fn) => fn())
+useRealtimeListener('scan_progress', (data) => {
+  const d = data as ScanEventData
+  const scan = activeScans.get(d.libraryId)
+  if (scan) {
+    scan.filesSeen = d.filesSeen ?? scan.filesSeen
+    scan.mediaItemsCreated = d.mediaItemsCreated ?? scan.mediaItemsCreated
+  }
+})
+useRealtimeListener('scan_completed', (data) => {
+  const d = data as ScanEventData
+  activeScans.delete(d.libraryId)
+  const lib = libraries.value?.find((l) => l.id === d.libraryId)
+  toast.success(`Scan complete: ${lib?.name ?? 'Library'}`, {
+    description: `${d.filesSeen ?? 0} files seen, ${d.mediaItemsCreated ?? 0} new items`,
+  })
+  invalidateLibraries()
+})
+useRealtimeListener('scan_failed', (data) => {
+  const d = data as ScanEventData
+  activeScans.delete(d.libraryId)
+  const lib = libraries.value?.find((l) => l.id === d.libraryId)
+  toast.error(`Scan failed: ${lib?.name ?? 'Library'}`, {
+    description: d.error,
+  })
 })
 
 // Handlers

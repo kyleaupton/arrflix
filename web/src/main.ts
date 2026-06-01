@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { VueQueryPlugin } from '@tanstack/vue-query'
+import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 
 import App from '@/App.vue'
 import router from '@/router'
@@ -8,15 +8,25 @@ import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { client } from '@/client/client.gen'
 import { bootstrapGet } from '@/client/sdk.gen'
+import { installRealtime } from '@/realtime/bindings'
 import '@/main.css'
 
 const app = createApp(App)
 
+// One QueryClient shared by the Vue Query plugin and the realtime bindings, so
+// SSE frames write the same cache the components read.
+const queryClient = new QueryClient()
+
 app.use(createPinia())
 app.use(router)
 app.use(VueQueryPlugin, {
+  queryClient,
   enableDevtoolsV6Plugin: import.meta.env.DEV,
 })
+
+// Wire SSE events → query cache once, globally. The stream itself is opened on
+// auth in App.vue; this just registers the cache-update contract.
+installRealtime(queryClient)
 
 // Redirect to login on any 401 response
 client.interceptors.response.use(async (response) => {

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
+import { connect as connectRealtime, reset as resetRealtime } from '@/realtime/connection'
 import ImmersiveLayout from '@/layouts/ImmersiveLayout.vue'
 import DialogContainer from '@/components/DialogContainer.vue'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -19,6 +20,19 @@ const route = useRoute()
 if (appStore.needsSetup && route.path !== '/setup') {
   router.push('/setup')
 }
+
+// One app-wide SSE stream for the whole session: open it once the user is
+// authenticated, tear it down on logout. The stream carries all of the user's
+// events; the cache bindings (installed in main.ts) keep the query cache live,
+// and ephemeral consumers use useRealtimeListener — nothing else opens a stream.
+watch(
+  () => authStore.isAuthenticated,
+  (authed) => {
+    if (authed) connectRealtime()
+    else resetRealtime()
+  },
+  { immediate: true },
+)
 
 // Track navbar opaque state separately so it updates after the leave transition,
 // preventing the navbar from snapping before the old page has faded out.
