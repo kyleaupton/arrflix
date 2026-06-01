@@ -3667,10 +3667,6 @@ export type EventsStreamData = {
     path?: never;
     query?: {
         /**
-         * Filter to specific event names; repeatable. Empty = all events.
-         */
-        type?: Array<string> | null;
-        /**
          * Reattach to a prior session (from the ready event) to resume via Last-Event-ID. Omit for a fresh session.
          */
         session?: string;

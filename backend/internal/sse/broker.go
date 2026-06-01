@@ -339,9 +339,16 @@ func (b *Broker) Topics(sessionID, userID uuid.UUID) ([]string, bool) {
 }
 
 // AddTopics adds topics to the session's filter. Returns false for a
-// missing/foreign session. Note the semantic flip the spec defines: a session
-// that connected with no `?type=` filter sees all events (empty set), but once
-// any explicit topic is added the filter becomes restrictive.
+// missing/foreign session.
+//
+// LANDMINE: the topic set is additive-to-restrictive. A fresh session has an
+// empty set, which topicAllowed treats as "all events". The first AddTopics
+// call flips it restrictive — the session then receives ONLY the named topics.
+// Today the app opens one stream and never calls this, so it's inert. The first
+// page that subscribes to a scoped topic (e.g. "scan_progress") would silently
+// stop receiving everything else (download_job_updated, etc.). Resolve the
+// additive-vs-restrictive semantics (a separate "narrow to" set, or per-topic
+// opt-in that doesn't collapse the implicit-all) before wiring a real caller.
 func (b *Broker) AddTopics(sessionID, userID uuid.UUID, topics []string) bool {
 	s, ok := b.ownedSession(sessionID, userID)
 	if !ok {

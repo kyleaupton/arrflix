@@ -5235,17 +5235,6 @@ paths:
       description: Long-lived SSE stream of download / import / scan progress and other real-time events. Each event has an `event` name (one of the discriminated set below), an `id`, and a JSON `data` payload.
       operationId: events-stream
       parameters:
-        - description: Filter to specific event names; repeatable. Empty = all events.
-          explode: true
-          in: query
-          name: type
-          schema:
-            description: Filter to specific event names; repeatable. Empty = all events.
-            items:
-              type: string
-            type:
-              - array
-              - "null"
         - description: Reattach to a prior session (from the ready event) to resume via Last-Event-ID. Omit for a fresh session.
           explode: false
           in: query

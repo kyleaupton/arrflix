@@ -3,6 +3,8 @@ import { computed, ref, onScopeDispose } from 'vue'
 import { client } from '@/client/client.gen'
 import { eventsSubscriptionsAdd, eventsSubscriptionsRemove } from '@/client/sdk.gen'
 import type { ReadyPayload, SubscriptionSnapshots } from '@/client/types.gen'
+import { openSseStream, type SseStream } from '@/lib/sseClient'
+import { useAuthStore } from '@/stores/auth'
 
 type EventCallback = (data: unknown) => void
 
@@ -16,23 +18,19 @@ export type EventsConnectionStatus =
 export const useEventsStore = defineStore('events', () => {
   const status = ref<EventsConnectionStatus>('disconnected')
   const lastError = ref<string | null>(null)
-  const wantedTypes = ref<string[]>([])
 
-  // Session id from the latest `ready` event. Sent as ?session= on the next
-  // connect so the broker reattaches to our prior session and replays missed
-  // events instead of allocating a fresh one. Sticky across reconnects.
+  // Session id from the latest `ready` event. The transport sends it as
+  // ?session= on the next (re)connect so the broker reattaches to our prior
+  // session and replays missed events instead of allocating a fresh one. Sticky
+  // across reconnects; cleared only by reset() (logout).
   const sessionId = ref<string | null>(null)
-  // Resume cursor: the id of the last event we received. The generated SSE
-  // client keeps its own cursor in a per-connection closure that resets on each
-  // connect(), so we carry it across as the initial Last-Event-ID header.
-  let lastEventId: string | undefined
 
-  let abort: AbortController | null = null
-  // Monotonic counter identifying the current connection. Bumped on every
-  // connect() and disconnect(). Late callbacks from a torn-down connection
-  // compare against it and bail, so they can't clobber a fresh connection's
-  // status (see SSE_TRANSPORT_FINDINGS.md finding #2).
-  let generation = 0
+  // The single live transport, or null when disconnected. The transport owns the
+  // reconnect loop, the resume cursor (Last-Event-ID), and backoff, and stops
+  // emitting once close() is called — so there's no stale-callback race for the
+  // store to guard against (the old generation-counter is gone).
+  let stream: SseStream | null = null
+
   const listeners = new Map<string, Set<EventCallback>>()
 
   const isConnected = computed(() => status.value === 'connected')
@@ -66,168 +64,87 @@ export const useEventsStore = defineStore('events', () => {
 
   // --- Connection management ---
 
-  function buildUrl(types?: string[]) {
-    const base = '/v1/events'
-    const list = types ?? wantedTypes.value
-    const params = new URLSearchParams()
-    for (const t of list) params.append('type', t)
-    // Reattach to our prior session when we have one. The broker preserves that
-    // session's subscriptions and replay ring, so resume + skip-resubscribe both
-    // work. The generated client fixes this URL for the life of the connection,
-    // so the very first connect (before any `ready`) is necessarily sessionless.
-    if (sessionId.value) params.set('session', sessionId.value)
-    const qs = params.toString()
-    return qs ? `${base}?${qs}` : base
-  }
-
-  async function connect(types?: string[]) {
-    // Merge new types into desired set
-    if (types?.length) {
-      const merged = Array.from(new Set([...wantedTypes.value, ...types]))
-      const changed = merged.length !== wantedTypes.value.length
-      wantedTypes.value = merged
-
-      // If already connected but the filter set grew, reconnect with the full set.
-      if (abort && changed) {
-        disconnect()
-      }
-    }
-
-    // Already connected/connecting with correct filters — nothing to do.
-    if (abort) return
+  // The app opens one unfiltered stream that carries every event the user is
+  // eligible for; page-scoped narrowing happens via subscribe()/unsubscribe(),
+  // not a connect-time filter. The URL is rebuilt by the transport on every
+  // attempt so a sessionId captured from `ready` is injected on reconnect.
+  function connect() {
+    if (stream) return
 
     status.value = 'connecting'
     lastError.value = null
-    abort = new AbortController()
 
-    // Only this connection's callbacks may write status. A late callback from a
-    // previously torn-down connection has a stale myGen and is ignored.
-    const myGen = ++generation
-    const setStatus = (s: EventsConnectionStatus) => {
-      if (myGen !== generation) return
-      status.value = s
-    }
+    // Tracks whether the transport has dropped and is re-establishing, so the
+    // store can fire `_reconnected` exactly once per recovered drop (consumers
+    // refetch on it as a correctness backstop, since a clean replay covers the
+    // happy path but a lost/evicted session can't). Local to this connection.
+    let reconnecting = false
 
-    let hasConnectedBefore = false
-
-    try {
-      const url = buildUrl()
-      const { stream } = await client.sse.get({
-        url,
-        signal: abort.signal,
-        sseDefaultRetryDelay: 500,
-        sseMaxRetryDelay: 5000,
-        // Seed the resume cursor for this connection. The client overrides it
-        // with its own closure value once events with ids arrive; this only
-        // matters for the first request of a reconnect, where resume happens.
-        headers: lastEventId ? { 'Last-Event-ID': lastEventId } : undefined,
-        onSseEvent: (ev) => {
-          // Track the resume cursor (ping/ready carry no id, so they don't move it).
-          if (ev.id) lastEventId = ev.id
-          if (!ev.event) return
-
-          // The server sends a "ready" event on every new connection.
-          // Use it as a reliable signal that we're (re)connected.
-          if (ev.event === 'ready') {
-            const payload = ev.data as ReadyPayload | undefined
-            sessionId.value = payload?.sessionId ?? sessionId.value
-
-            const wasDisconnected = status.value !== 'connected'
-            setStatus('connected')
-            lastError.value = null
-
-            if (hasConnectedBefore && wasDisconnected) {
-              // Reconnected after a drop. A clean reattach already replayed the
-              // missed events; but a lost session (eviction/restart) can't, so
-              // consumers refetch off _reconnected to stay correct either way.
-              emit('_reconnected', null)
-            }
-            hasConnectedBefore = true
-          } else if (ev.event === 'resume_gap') {
-            // The broker's replay buffer was exhausted — missed deltas are gone.
-            // Consumers refetch rather than trust incremental state.
-            emit('_resume_gap', null)
-          }
-
-          emit(ev.event, ev.data)
-        },
-        onSseError: (err) => {
-          const msg = err instanceof Error ? err.message : String(err)
-          lastError.value = msg
-
-          // If we've connected before, this is a reconnection attempt.
-          // If we haven't, we're still in the initial connection phase.
-          if (hasConnectedBefore) {
-            setStatus('reconnecting')
-          } else {
-            setStatus('error')
-          }
-        },
-      })
-
-      setStatus('connected')
-
-      // Keep the generator alive until aborted or the stream ends.
-      ;(async () => {
-        try {
-          for await (const _ of stream) {
-            // no-op: we use onSseEvent for dispatch
-          }
-        } catch (e) {
-          if (abort?.signal.aborted) return
-          setStatus('error')
-          lastError.value = e instanceof Error ? e.message : String(e)
-        } finally {
-          abort = null
-          if (status.value !== 'error') {
-            setStatus('disconnected')
+    stream = openSseStream({
+      buildUrl: () =>
+        client.buildUrl({
+          url: '/api/v1/events',
+          query: sessionId.value ? { session: sessionId.value } : undefined,
+        }),
+      getAuthToken: () => useAuthStore().token,
+      onStatus: (s) => {
+        if (s === 'reconnecting') reconnecting = true
+        if (s === 'connected') {
+          lastError.value = null
+          if (reconnecting) {
+            reconnecting = false
+            emit('_reconnected', null)
           }
         }
-      })()
-    } catch (e) {
-      abort = null
-      setStatus('error')
-      lastError.value = e instanceof Error ? e.message : String(e)
-    }
+        if (s === 'error') lastError.value = 'SSE connection error'
+        status.value = s
+      },
+      onEvent: (frame) => {
+        if (frame.event === 'ready') {
+          const payload = frame.data as ReadyPayload | undefined
+          if (payload?.sessionId) sessionId.value = payload.sessionId
+        } else if (frame.event === 'resume_gap') {
+          // The broker's replay buffer was exhausted — missed deltas are gone.
+          // Consumers refetch rather than trust incremental state.
+          emit('_resume_gap', null)
+        }
+        if (frame.event) emit(frame.event, frame.data)
+      },
+    })
   }
 
   function disconnect() {
-    if (!abort) return
-    // Bump generation so in-flight callbacks from this connection go stale and
-    // can't overwrite the status of whatever connects next.
-    generation++
-    abort.abort()
-    abort = null
+    if (!stream) return
+    stream.close()
+    stream = null
     status.value = 'disconnected'
   }
 
   /**
    * Tear the connection down and forget the session identity. Used on logout:
-   * unlike disconnect() (which keeps sessionId/lastEventId so a reconnect can
-   * resume), reset() clears them so the next login starts a clean session and
-   * never presents the previous user's session id.
+   * unlike disconnect() (which keeps sessionId so a reconnect can resume),
+   * reset() clears it so the next login starts a clean session and never
+   * presents the previous user's session id. The resume cursor lives in the
+   * transport and is discarded with it on close.
    */
   function reset() {
     disconnect()
     sessionId.value = null
-    lastEventId = undefined
   }
 
   /**
-   * Force-drop the current connection and re-establish it.
-   * Useful as an escape hatch if the connection is in a bad state.
+   * Force-drop the current connection and re-establish it, keeping the session
+   * identity so the reconnect resumes. An escape hatch for a wedged connection.
    */
   function reconnect() {
-    const types = [...wantedTypes.value]
     disconnect()
-    wantedTypes.value = []
-    connect(types)
+    connect()
   }
 
   // --- Dynamic subscription control plane (REST side channel) ---
   // The stream is one-way, so topic changes go over REST keyed by the session
-  // header. Connect-time `?type=` filters cover static subscriptions; these are
-  // for page-bound topics added/dropped without tearing down the stream. The
+  // header. Currently unused by the app (the stream is unfiltered); this is for
+  // future page-bound topics added/dropped without tearing down the stream. The
   // 200 body of a subscribe carries the initial snapshot for any topic that has
   // one (download-jobs today) so callers can seed their cache.
 
@@ -252,7 +169,7 @@ export const useEventsStore = defineStore('events', () => {
 
   // --- Visibility change handling ---
   // When a tab is backgrounded for a long time, the browser/OS may kill the
-  // connection. When the tab regains focus, force a reconnect + data refresh.
+  // connection. When the tab regains focus, force a reconnect or a data refresh.
 
   function handleVisibilityChange() {
     if (document.visibilityState !== 'visible') return

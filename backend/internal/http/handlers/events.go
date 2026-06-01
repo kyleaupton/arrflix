@@ -28,7 +28,6 @@ func NewEvents(s *service.Services, broker *sse.Broker) *Events {
 // ----- Stream -----
 
 type EventsStreamInput struct {
-	Types       []string  `query:"type,explode" doc:"Filter to specific event names; repeatable. Empty = all events."`
 	Session     uuid.UUID `query:"session" format:"uuid" doc:"Reattach to a prior session (from the ready event) to resume via Last-Event-ID. Omit for a fresh session."`
 	LastEventID string    `header:"Last-Event-ID" doc:"The id of the last event the client received; resumes the stream from just after it within the reattached session."`
 }
@@ -43,18 +42,6 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 		return
 	}
 
-	typeAllowed := func(t string) bool {
-		if len(input.Types) == 0 {
-			return true
-		}
-		for _, allowed := range input.Types {
-			if allowed == t {
-				return true
-			}
-		}
-		return false
-	}
-
 	emit := func(e realtime.Event) bool {
 		return send(streamFrame{ID: e.ID, Event: e.Name, Data: e.Data}) == nil
 	}
@@ -63,12 +50,10 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 		// No broker to scope against: still emit ready (with a freshly allocated
 		// session id) and the snapshot for parity, then hold the connection open
 		// until the client disconnects.
-		if typeAllowed(realtime.NameReady) {
-			if !emit(realtime.Ready(uuid.New().String())) {
-				return
-			}
+		if !emit(realtime.Ready(uuid.New().String())) {
+			return
 		}
-		if typeAllowed(realtime.NameDownloadJobsSnapshot) && h.svc != nil {
+		if h.svc != nil {
 			if jobs, err := h.svc.DownloadJobs.ListWithImportSummary(ctx); err == nil {
 				if !emit(realtime.DownloadJobsSnapshot(jobs)) {
 					return
@@ -79,18 +64,19 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 		return
 	}
 
+	// Fresh sessions start with an empty topic set, which the broker treats as
+	// "deliver all events this user is eligible for". Page-scoped narrowing
+	// happens later via the subscription control plane, not a connect-time
+	// filter.
 	att := h.broker.Attach(sse.AttachParams{
 		SessionID:   input.Session,
 		UserID:      userID,
 		LastEventID: input.LastEventID,
-		Topics:      input.Types,
 	})
 	defer att.Cancel()
 
-	if typeAllowed(realtime.NameReady) {
-		if !emit(realtime.Ready(att.Session.ID.String())) {
-			return
-		}
+	if !emit(realtime.Ready(att.Session.ID.String())) {
+		return
 	}
 
 	switch {
@@ -98,10 +84,8 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 		// The resume point aged out of the replay ring. Tell the client to
 		// refetch rather than replay; skip the connect-time snapshot for the
 		// same reason (the refetch covers it).
-		if typeAllowed(realtime.NameResumeGap) {
-			if !emit(realtime.ResumeGap()) {
-				return
-			}
+		if !emit(realtime.ResumeGap()) {
+			return
 		}
 	case len(att.Replay) > 0:
 		// Reattach within the window: replay the missed events in order. No
@@ -116,7 +100,7 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 		// Fresh session (or a reattach with nothing missed): emit the
 		// connect-time download-jobs snapshot for parity. A later phase moves
 		// snapshots onto the subscribe REST response.
-		if typeAllowed(realtime.NameDownloadJobsSnapshot) && h.svc != nil {
+		if h.svc != nil {
 			if jobs, err := h.svc.DownloadJobs.ListWithImportSummary(ctx); err == nil {
 				if !emit(realtime.DownloadJobsSnapshot(jobs)) {
 					return
@@ -138,10 +122,8 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 			// detaches, keeping the ring) lets the client reconnect and replay.
 			return
 		case <-heartbeat.C:
-			if typeAllowed(realtime.NamePing) {
-				if !emit(realtime.Ping()) {
-					return
-				}
+			if !emit(realtime.Ping()) {
+				return
 			}
 		case ev, ok := <-att.Out:
 			if !ok {
