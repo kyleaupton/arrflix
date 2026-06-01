@@ -515,7 +515,7 @@ export const eventsSubscriptionsListOptions = (options: Options<EventsSubscripti
 
 /**
  * Subscribe the session to topics
- * Adds topics to the session's filter and returns the initial snapshot for any subscribed topic that carries one (download-jobs today).
+ * Adds topics to the session's filter. The client seeds state from the relevant query's REST baseline, so this returns 204.
  */
 export const eventsSubscriptionsAddMutation = (options?: Partial<Options<EventsSubscriptionsAddData>>): UseMutationOptions<EventsSubscriptionsAddResponse, EventsSubscriptionsAddError, Options<EventsSubscriptionsAddData>> => {
     const mutationOptions: UseMutationOptions<EventsSubscriptionsAddResponse, EventsSubscriptionsAddError, Options<EventsSubscriptionsAddData>> = {

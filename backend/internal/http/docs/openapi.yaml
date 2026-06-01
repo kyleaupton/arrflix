@@ -3948,24 +3948,6 @@ components:
       required:
         - success
       type: object
-    SubscriptionSnapshots:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/SubscriptionSnapshots.json
-          format: uri
-          readOnly: true
-          type: string
-        downloadJobs:
-          description: Present when 'download_job_updated' was subscribed; seeds the download-jobs cache.
-          items:
-            $ref: "#/components/schemas/DownloadJobWithSummary"
-          type:
-            - array
-            - "null"
-      type: object
     SuggestedExternalRef:
       additionalProperties: false
       properties:
@@ -5277,28 +5259,6 @@ paths:
                       type: object
                     - properties:
                         data:
-                          items:
-                            $ref: "#/components/schemas/DownloadJobWithSummary"
-                          type:
-                            - array
-                            - "null"
-                        event:
-                          const: download_jobs_snapshot
-                          description: The event name.
-                          type: string
-                        id:
-                          description: The event ID (sortable; used for Last-Event-ID resume).
-                          type: string
-                        retry:
-                          description: The retry time in milliseconds.
-                          type: integer
-                      required:
-                        - data
-                        - event
-                      title: Event download_jobs_snapshot
-                      type: object
-                    - properties:
-                        data:
                           $ref: "#/components/schemas/ImportTaskUpdatedPayload"
                         event:
                           const: import_task_updated
@@ -5495,7 +5455,7 @@ paths:
       tags:
         - events
     post:
-      description: Adds topics to the session's filter and returns the initial snapshot for any subscribed topic that carries one (download-jobs today).
+      description: Adds topics to the session's filter. The client seeds state from the relevant query's REST baseline, so this returns 204.
       operationId: events-subscriptions-add
       parameters:
         - description: Session id from the stream's ready event.
@@ -5513,12 +5473,8 @@ paths:
               $ref: "#/components/schemas/EventsSubscriptionsAddInputBody"
         required: true
       responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SubscriptionSnapshots"
-          description: OK
+        "204":
+          description: No Content
         "404":
           content:
             application/json:

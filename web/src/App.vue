@@ -3,7 +3,7 @@ import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
-import { useEventsStore } from '@/stores/events'
+import { connect as connectRealtime, reset as resetRealtime } from '@/realtime/connection'
 import ImmersiveLayout from '@/layouts/ImmersiveLayout.vue'
 import DialogContainer from '@/components/DialogContainer.vue'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -13,7 +13,6 @@ import { Toaster } from '@/components/ui/sonner'
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
-const eventsStore = useEventsStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -24,13 +23,13 @@ if (appStore.needsSetup && route.path !== '/setup') {
 
 // One app-wide SSE stream for the whole session: open it once the user is
 // authenticated, tear it down on logout. The stream carries all of the user's
-// events (no connect-time topic filter); feature code just registers listeners
-// via the events store / useSSE composables — it never opens its own stream.
+// events; the cache bindings (installed in main.ts) keep the query cache live,
+// and ephemeral consumers use useRealtimeListener — nothing else opens a stream.
 watch(
   () => authStore.isAuthenticated,
   (authed) => {
-    if (authed) eventsStore.connect()
-    else eventsStore.reset()
+    if (authed) connectRealtime()
+    else resetRealtime()
   },
   { immediate: true },
 )

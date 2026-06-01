@@ -1721,17 +1721,6 @@ export type SignupResponse = {
     success: boolean;
 };
 
-export type SubscriptionSnapshots = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    /**
-     * Present when 'download_job_updated' was subscribed; seeds the download-jobs cache.
-     */
-    downloadJobs?: Array<DownloadJobWithSummary> | null;
-};
-
 export type SuggestedExternalRef = {
     externalId: string;
     source: string;
@@ -2690,13 +2679,6 @@ export type SignupResponseWritable = {
      * Always true on success
      */
     success: boolean;
-};
-
-export type SubscriptionSnapshotsWritable = {
-    /**
-     * Present when 'download_job_updated' was subscribed; seeds the download-jobs cache.
-     */
-    downloadJobs?: Array<DownloadJobWithSummaryWritable> | null;
 };
 
 export type TestResultWritable = {
@@ -3703,20 +3685,6 @@ export type EventsStreamResponses = {
          */
         retry?: number;
     } | {
-        data: Array<DownloadJobWithSummary> | null;
-        /**
-         * The event name.
-         */
-        event: 'download_jobs_snapshot';
-        /**
-         * The event ID (sortable; used for Last-Event-ID resume).
-         */
-        id?: string;
-        /**
-         * The retry time in milliseconds.
-         */
-        retry?: number;
-    } | {
         data: ImportTaskUpdatedPayload;
         /**
          * The event name.
@@ -3904,9 +3872,9 @@ export type EventsSubscriptionsAddError = EventsSubscriptionsAddErrors[keyof Eve
 
 export type EventsSubscriptionsAddResponses = {
     /**
-     * OK
+     * No Content
      */
-    200: SubscriptionSnapshots;
+    204: void;
 };
 
 export type EventsSubscriptionsAddResponse = EventsSubscriptionsAddResponses[keyof EventsSubscriptionsAddResponses];

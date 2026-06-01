@@ -8,7 +8,6 @@ import {
   downloadJobsRetryMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import type { DownloadJobWithSummary } from '@/client/types.gen'
-import { useSSEMutation } from '@/composables/useSSE'
 
 export type DownloadJob = DownloadJobWithSummary
 
@@ -19,36 +18,19 @@ const COMPLETED_STATUSES = ['fully_imported', 'download_cancelled']
 
 const listKey = downloadJobsListQueryKey()
 
-function upsert(prev: DownloadJob[] | undefined, job: DownloadJob): DownloadJob[] {
-  const list = prev ?? []
-  const idx = list.findIndex((j) => j.id === job.id)
-  if (idx === -1) return [...list, job]
-  const next = list.slice()
-  next[idx] = job
-  return next
-}
-
 // isJobActive reports whether a job is still in flight, for the "is this media
 // downloading" badges on the Movie page. Kept as the prior store semantics.
 export function isJobActive(job: DownloadJob): boolean {
   return job.importStatus === 'download_pending'
 }
 
-// useDownloadJobsLive owns the download-jobs list as a TanStack query and keeps
-// it live off the app-wide SSE stream: the connect-time snapshot replaces the
-// cache, per-job `download_job_updated` events upsert into it. The stream
-// itself is opened once in App.vue — this composable only listens. Calling it
-// more than once (e.g. the Downloads view plus its detail drawer) is safe: the
-// query dedupes by key and the SSE bridges are idempotent setQueryData writes.
-export function useDownloadJobsLive() {
+// useDownloadJobs reads the download-jobs list from TanStack Query. The list is
+// kept live globally by the realtime cache bindings (realtime/bindings.ts) —
+// per-job `download_job_updated` events upsert into this query key regardless of
+// what's mounted — so this composable carries no SSE wiring and is safe to call
+// from multiple components (the query dedupes by key).
+export function useDownloadJobs() {
   const query = useQuery(downloadJobsListOptions())
-
-  useSSEMutation<DownloadJob[], DownloadJob[] | null>(
-    listKey,
-    'download_jobs_snapshot',
-    (_prev, snapshot) => snapshot ?? [],
-  )
-  useSSEMutation<DownloadJob[], DownloadJob>(listKey, 'download_job_updated', upsert)
 
   // Stable sort by createdAt (newest first) so rows never reorder mid-progress.
   const jobs = computed(() =>

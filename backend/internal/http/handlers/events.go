@@ -8,21 +8,18 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
-	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/realtime"
-	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
 
 // ----- Handler -----
 
 type Events struct {
-	svc    *service.Services
 	broker *sse.Broker
 }
 
-func NewEvents(s *service.Services, broker *sse.Broker) *Events {
-	return &Events{svc: s, broker: broker}
+func NewEvents(broker *sse.Broker) *Events {
+	return &Events{broker: broker}
 }
 
 // ----- Stream -----
@@ -48,17 +45,10 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 
 	if h.broker == nil {
 		// No broker to scope against: still emit ready (with a freshly allocated
-		// session id) and the snapshot for parity, then hold the connection open
-		// until the client disconnects.
+		// session id) so the client captures a session, then hold the connection
+		// open until it disconnects.
 		if !emit(realtime.Ready(uuid.New().String())) {
 			return
-		}
-		if h.svc != nil {
-			if jobs, err := h.svc.DownloadJobs.ListWithImportSummary(ctx); err == nil {
-				if !emit(realtime.DownloadJobsSnapshot(jobs)) {
-					return
-				}
-			}
 		}
 		<-ctx.Done()
 		return
@@ -82,32 +72,23 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 	switch {
 	case att.Gapped:
 		// The resume point aged out of the replay ring. Tell the client to
-		// refetch rather than replay; skip the connect-time snapshot for the
-		// same reason (the refetch covers it).
+		// refetch (its queries reseed from REST) rather than replay.
 		if !emit(realtime.ResumeGap()) {
 			return
 		}
 	case len(att.Replay) > 0:
-		// Reattach within the window: replay the missed events in order. No
-		// connect-time snapshot — the client kept its cache across the
-		// reconnect and the replayed deltas bring it current.
+		// Reattach within the window: replay the missed events in order. The
+		// client kept its query cache across the reconnect and the replayed
+		// deltas bring it current.
 		for _, ev := range att.Replay {
 			if send(streamFrame{ID: ev.ID, Event: ev.Type, Data: ev.Data}) != nil {
 				return
 			}
 		}
-	default:
-		// Fresh session (or a reattach with nothing missed): emit the
-		// connect-time download-jobs snapshot for parity. A later phase moves
-		// snapshots onto the subscribe REST response.
-		if h.svc != nil {
-			if jobs, err := h.svc.DownloadJobs.ListWithImportSummary(ctx); err == nil {
-				if !emit(realtime.DownloadJobsSnapshot(jobs)) {
-					return
-				}
-			}
-		}
 	}
+	// A fresh session (or a reattach with nothing missed) just goes live; the
+	// client's queries own their REST baseline, so there's no connect-time
+	// snapshot to send.
 
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
@@ -154,34 +135,6 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 // reachable, enumerate errsForbidden on the add operation.
 func canSubscribe(_ uuid.UUID, _ string) bool { return true }
 
-// subscriptionSnapshots is the body the add endpoint returns: the initial state
-// for any subscribed topic that carries a snapshot, so the client seeds its
-// cache from the REST response instead of racing a snapshot pushed onto the
-// stream. Only download-jobs has a snapshot today; add a field (and an
-// applySnapshot case) per snapshot-bearing topic. When no subscribed topic has
-// one, every field is empty and the body serializes to `{}`.
-type subscriptionSnapshots struct {
-	DownloadJobs []model.DownloadJobWithSummary `json:"downloadJobs,omitempty" doc:"Present when 'download_job_updated' was subscribed; seeds the download-jobs cache."`
-}
-
-// applySnapshot fills out with the snapshot for topic, if any. Kept a small
-// switch rather than a registry — there is exactly one entry — with the
-// extension point obvious for the next feature that adopts the control plane.
-func (h *Events) applySnapshot(ctx context.Context, topic string, out *subscriptionSnapshots) error {
-	switch topic {
-	case realtime.NameDownloadJobUpdated:
-		if h.svc == nil {
-			return nil
-		}
-		jobs, err := h.svc.DownloadJobs.ListWithImportSummary(ctx)
-		if err != nil {
-			return err
-		}
-		out.DownloadJobs = jobs
-	}
-	return nil
-}
-
 // ----- Subscriptions: list -----
 
 type EventsSubscriptionsListInput struct {
@@ -219,17 +172,12 @@ type EventsSubscriptionsAddInput struct {
 	}
 }
 
-type EventsSubscriptionsAddOutput struct {
-	Body subscriptionSnapshots
-}
+type EventsSubscriptionsAddOutput struct{}
 
 // SubscriptionsAdd admits topics to the session's filter (after the
-// subscribe-time eligibility check) and returns the initial snapshot for any
-// subscribed topic that carries one. Returns 200 with a possibly-empty
-// snapshot body — a deliberate simplification over the spec's "204 when no
-// snapshot" so the operation keeps a single static status (the handlers guide
-// discourages a dynamic Status field); the client checks for snapshot presence
-// regardless.
+// subscribe-time eligibility check). Returns 204: the client seeds its state
+// from the relevant query's REST baseline, not from a snapshot on this
+// response.
 func (h *Events) SubscriptionsAdd(ctx context.Context, input *EventsSubscriptionsAddInput) (*EventsSubscriptionsAddOutput, error) {
 	userID, err := userIDFromContext(ctx, "EventsHandler.SubscriptionsAdd")
 	if err != nil {
@@ -246,13 +194,7 @@ func (h *Events) SubscriptionsAdd(ctx context.Context, input *EventsSubscription
 		return nil, apperrors.NotFoundf("session not found").Op("EventsHandler.SubscriptionsAdd")
 	}
 
-	out := &EventsSubscriptionsAddOutput{}
-	for _, topic := range input.Body.Topics {
-		if err := h.applySnapshot(ctx, topic, &out.Body); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return &EventsSubscriptionsAddOutput{}, nil
 }
 
 // ----- Subscriptions: remove -----
@@ -310,13 +252,14 @@ func (h *Events) RegisterHumachi(api huma.API) {
 	}, h.SubscriptionsList)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "events-subscriptions-add",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/events/subscriptions",
-		Summary:     "Subscribe the session to topics",
-		Description: "Adds topics to the session's filter and returns the initial snapshot for any subscribed topic that carries one (download-jobs today).",
-		Tags:        []string{"events"},
-		Errors:      errs(errsRead, []int{http.StatusUnprocessableEntity}),
+		OperationID:   "events-subscriptions-add",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/events/subscriptions",
+		Summary:       "Subscribe the session to topics",
+		Description:   "Adds topics to the session's filter. The client seeds state from the relevant query's REST baseline, so this returns 204.",
+		Tags:          []string{"events"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        errs(errsRead, []int{http.StatusUnprocessableEntity}),
 	}, h.SubscriptionsAdd)
 
 	huma.Register(api, huma.Operation{

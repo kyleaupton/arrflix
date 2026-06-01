@@ -233,13 +233,13 @@ import WatchProviders from '@/components/media/WatchProviders.vue'
 import NextEpisodeBanner from '@/components/media/NextEpisodeBanner.vue'
 import { useModal } from '@/composables/useModal'
 import { buildMetadataSubtitle } from '@/lib/utils'
-import { useDownloadJobsLive, type DownloadJob } from '@/composables/useDownloadJobs'
+import { useDownloadJobs, type DownloadJob } from '@/composables/useDownloadJobs'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
 
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
 const modal = useModal()
-const { jobsById } = useDownloadJobsLive()
+const { jobsById } = useDownloadJobs()
 
 const selectedSeason = ref<string>('')
 

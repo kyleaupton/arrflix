@@ -2,10 +2,10 @@
 import { computed } from 'vue'
 import { Download, AlertTriangle } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
-import { useEventsStore } from '@/stores/events'
+import { useRealtimeStatus } from '@/realtime/useRealtimeStatus'
 import { useDownloadJobsStore, type DownloadFilter } from '@/stores/downloadJobs'
 import {
-  useDownloadJobsLive,
+  useDownloadJobs,
   useDownloadJobMutations,
   type DownloadJob,
 } from '@/composables/useDownloadJobs'
@@ -14,9 +14,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import DownloadCard from '@/components/downloads/DownloadCard.vue'
 import DownloadDetailDrawer from '@/components/downloads/DownloadDetailDrawer.vue'
 
-const events = useEventsStore()
+const { status, isConnected } = useRealtimeStatus()
 const ui = useDownloadJobsStore()
-const { isLoading, jobs, activeJobs, needsAttentionJobs, completedJobs } = useDownloadJobsLive()
+const { isLoading, jobs, activeJobs, needsAttentionJobs, completedJobs } = useDownloadJobs()
 const { cancelJob, reimportFailed, retryDownload } = useDownloadJobMutations()
 
 // filtered/visible combine the live groups (server state) with the UI filter +
@@ -131,17 +131,8 @@ const handleRetry = async (jobId: string) => {
           </button>
         </div>
         <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span
-            class="size-2 rounded-full"
-            :class="events.isConnected ? 'bg-green-500' : 'bg-red-500'"
-          />
-          {{
-            events.isConnected
-              ? 'Live'
-              : events.status === 'reconnecting'
-                ? 'Reconnecting'
-                : 'Disconnected'
-          }}
+          <span class="size-2 rounded-full" :class="isConnected ? 'bg-green-500' : 'bg-red-500'" />
+          {{ isConnected ? 'Live' : status === 'reconnecting' ? 'Reconnecting' : 'Disconnected' }}
         </div>
       </div>
 

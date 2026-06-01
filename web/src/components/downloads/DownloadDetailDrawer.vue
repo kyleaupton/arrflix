@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { downloadJobsListImportTasksOptions } from '@/client/@tanstack/vue-query.gen'
 import { useDownloadJobsStore } from '@/stores/downloadJobs'
-import { useDownloadJobsLive } from '@/composables/useDownloadJobs'
+import { useDownloadJobs } from '@/composables/useDownloadJobs'
 import {
   Sheet,
   SheetContent,
@@ -23,7 +23,7 @@ import { statusConfig } from './statusConfig'
 import { formatBytes, formatSpeed, formatEta } from '@/lib/format'
 
 const ui = useDownloadJobsStore()
-const { getJobById } = useDownloadJobsLive()
+const { getJobById } = useDownloadJobs()
 
 const emit = defineEmits<{
   (e: 'reimport', jobId: string, all: boolean): void
