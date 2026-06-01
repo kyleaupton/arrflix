@@ -7,12 +7,9 @@ const (
 	NameImportTaskUpdated = "import_task_updated"
 )
 
-// ImportTaskUpdatedPayload identifies which import task changed. The prior
-// wire payload was null and the task id rode the SSE `id:` line — but that
-// line was dropped by the old huma adapter (its Message.ID is an int), so the
-// id never reached any consumer. The `id:` line is now a UUIDv7 for resume,
-// not a domain id, so the task id moves into the payload where a consumer
-// that re-fetches by id can actually read it.
+// ImportTaskUpdatedPayload identifies which import task changed. The task id
+// travels in the payload, not the SSE `id:` line — that line carries a UUIDv7
+// for Last-Event-ID resume, not a domain id — so a consumer can refetch by id.
 type ImportTaskUpdatedPayload struct {
 	TaskID uuid.UUID `json:"taskId"`
 }

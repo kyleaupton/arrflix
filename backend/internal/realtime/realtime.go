@@ -48,8 +48,8 @@ type Event struct {
 // so it satisfies the resume contract's "sortable, unique string" without a
 // new dependency.
 //
-// ctx is unused this phase; it is retained for the recipient-resolution path
-// a later phase wires in.
+// ctx is accepted for the recipient-resolution path (resolving Admins/User
+// targeting against live permissions) and is not read today.
 func Emit(_ context.Context, broker *sse.Broker, e Event) {
 	if broker == nil {
 		return

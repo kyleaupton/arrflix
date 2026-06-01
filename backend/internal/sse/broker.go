@@ -13,10 +13,9 @@ import (
 )
 
 const (
-	// outboundDepth is the per-attachment outbound channel buffer. The realtime
-	// spec guesses 256 as a starting point for the worst case (a large
-	// download-job storm or a scan emitting per-file progress); this absorbs
-	// bursts before the overflow path trips and forces a lossless reconnect.
+	// outboundDepth is the per-attachment outbound channel buffer. 256 absorbs
+	// bursts (a download-job storm, per-file scan progress) before the overflow
+	// path trips a lossless reconnect.
 	outboundDepth = 256
 
 	// replayMaxLen / replayMaxAge bound each session's replay ring. A
@@ -54,9 +53,7 @@ type Session struct {
 	// mu guards every mutable field below. Lock order is broker.mu before
 	// session.mu, never the reverse.
 	mu sync.Mutex
-	// topics is the connect-time `?type=` filter set. Empty means "all events"
-	// — preserving the prior broker semantics where an unfiltered subscriber
-	// saw everything.
+	// topics is the session's topic filter. An empty set means "all events".
 	topics map[string]bool
 	replay *ring
 	// out is the current attachment's outbound channel; nil while detached.
@@ -227,16 +224,12 @@ func (b *Broker) cancelFunc(s *Session, epoch uint64) func() {
 	}
 }
 
-// Publish delivers an event to every eligible session. Eligibility is recipient
-// match (Broadcast→all, User(id)→that user, Admins→all this phase) AND topic
-// match (the event Type passes the session's `?type=` filter; empty matches
-// all).
-//
-// For each eligible session the event is appended to the replay ring
-// unconditionally — even while detached, so a briefly-gone client accumulates
-// events to replay on reconnect. If the session is attached, a non-blocking
-// send follows; on a full channel the broker kicks the handler to tear down
-// (the events are safe in the ring) rather than dropping or blocking.
+// Publish delivers an event to every session matching its recipient and topic
+// filter. For each, the event is appended to the replay ring unconditionally —
+// even while detached, so a briefly-gone client accumulates events to replay on
+// reconnect — then, if attached, sent non-blocking. A full channel kicks the
+// handler to tear down (events are safe in the ring) rather than dropping or
+// blocking.
 func (b *Broker) Publish(ev Event) {
 	if ev.At.IsZero() {
 		ev.At = time.Now()
@@ -386,10 +379,9 @@ func recipientMatches(r Recipient, s *Session) bool {
 	case RecipientBroadcast:
 		return true
 	case RecipientAdmins:
-		// Single eligibility tier this phase: every authenticated session is
-		// treated as admin-eligible. Real admin resolution (resolved once per
-		// session at connect, then filtered by set-membership) lands in a
-		// later phase; this is where that check goes.
+		// Single eligibility tier: every authenticated session is treated as
+		// admin-eligible. Real admin resolution (resolved once per session at
+		// connect, then filtered by set-membership) goes here.
 		return true
 	case RecipientUser:
 		return s.UserID == r.UserID

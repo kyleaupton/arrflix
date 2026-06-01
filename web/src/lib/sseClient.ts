@@ -10,7 +10,8 @@
 // the backoff after a successful connect.
 //
 // This is transport only — it knows nothing about the event bus, Pinia, or the
-// broker's session model. The events store wires the callbacks.
+// broker's session model. The connection singleton (realtime/connection.ts)
+// wires the callbacks.
 
 export type SseStatus = 'connecting' | 'connected' | 'reconnecting' | 'error'
 

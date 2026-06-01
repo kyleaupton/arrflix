@@ -62,9 +62,8 @@ interface ScanProgress {
   mediaItemsCreated: number
 }
 
-// SSE event payload shape — the events store types `data` as unknown
-// (the OpenAPI spec doesn't carry per-event payload schemas), so we narrow
-// here. Fields are optional because each event type carries a subset.
+// SSE event payload shape — useRealtimeListener delivers `data` as unknown, so
+// we narrow here. Fields are optional because each scan event carries a subset.
 interface ScanEventData {
   scanId?: string
   libraryId: string

@@ -19,7 +19,7 @@ const COMPLETED_STATUSES = ['fully_imported', 'download_cancelled']
 const listKey = downloadJobsListQueryKey()
 
 // isJobActive reports whether a job is still in flight, for the "is this media
-// downloading" badges on the Movie page. Kept as the prior store semantics.
+// downloading" badges on the Movie page.
 export function isJobActive(job: DownloadJob): boolean {
   return job.importStatus === 'download_pending'
 }

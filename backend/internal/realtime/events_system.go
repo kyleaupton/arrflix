@@ -9,8 +9,8 @@ const (
 )
 
 // ReadyPayload is sent once on connect. Wire: {"ok":true,"sessionId":"<uuid>"}.
-// SessionId is the broker session allocated for this stream; later phases use
-// it for reconnect (?session=) and the subscription control plane.
+// SessionId is the broker session for this stream; the client sends it as
+// ?session= on reconnect and on subscription control-plane calls.
 type ReadyPayload struct {
 	OK        bool   `json:"ok"`
 	SessionID string `json:"sessionId"`
