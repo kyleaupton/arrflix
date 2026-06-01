@@ -195,9 +195,9 @@ func TestRecipientAndTopicFilterGovernSendAndRing(t *testing.T) {
 	att := b.Attach(AttachParams{UserID: user, Topics: []string{"scan_progress"}})
 	defer att.Cancel()
 
-	b.Publish(mkEvent("id-001", "scan_progress", Broadcast, clock.now()))   // delivered
+	b.Publish(mkEvent("id-001", "scan_progress", Broadcast, clock.now()))        // delivered
 	b.Publish(mkEvent("id-002", "download_job_updated", Broadcast, clock.now())) // filtered by topic
-	b.Publish(mkEvent("id-003", "scan_progress", User(other), clock.now()))  // filtered by recipient
+	b.Publish(mkEvent("id-003", "scan_progress", User(other), clock.now()))      // filtered by recipient
 
 	got := ids(drain(att.Out))
 	if !equalIDs(got, "id-001") {
