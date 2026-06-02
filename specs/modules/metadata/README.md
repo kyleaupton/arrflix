@@ -12,17 +12,20 @@ This doc defines how Arrflix knows *what* a movie or series is. It covers:
 - **Local overrides** — user-edited metadata that survives refresh
 - **Image handling** — paths + remote serving for v1
 
+**Provider strategy** — which upstream sources we use, what each costs the user to enable, and how we stay independent of any one — lives in its own doc, [sources](../sources/README.md). This doc is the provider-agnostic *data model*; sources is the *provider seam* that feeds it. Where this doc once carried a `MetadataProvider` interface and a TMDB-named sync worker, that material has moved to [sources](../sources/README.md); what remains here is what we persist.
+
 It does **not** pin down exact column types, indexes, or API shapes. As with the other specs, those come after the model survives more user stories.
 
 ## TL;DR
 
 - **Identity** lives in a separate **`external_id`** registry, not as columns on `media_item`. One row per `(entity, source)` pair across `tmdb`, `imdb`, `tvdb`, future `anidb`, etc.
 - **Item-level metadata** is mostly already there (migration 0012). This doc back-fills the model and adds **movie collections** as a lightweight extension.
-- **Series structure sync** is new and load-bearing: a worker pulls the full season/episode tree from TMDB, including **unaired episodes**, so tracking and smart scheduling have something to operate on.
+- **`series_type`** (`standard | daily | anime`) is the per-series numbering-regime anchor — the canonical side of [parsing](../parsing/README.md)'s release-side namespace tag. There is deliberately **no `movie_type`**: a movie has no parts to number, so no processing fork to anchor. See [Series type](#series-type-the-numbering-regime-anchor).
+- **Series structure sync** is new and load-bearing: the [refresh engine](../sources/README.md#the-refresh-engine) (provider-agnostic scheduler + dispatched provider operations) pulls the full season/episode tree, including **unaired episodes**, so tracking and smart scheduling have something to operate on.
 - **Local overrides** are designed in now (model + read-time precedence), UI later.
 - **Refresh policy** is cadence-by-state: in-production weekly, recently-aired daily, ended monthly, manual immediate. Background worker drives the queue.
 - **Images** continue to load direct from TMDB CDN in v1; local cache is deferred.
-- **Provider portability** is designed for, not built: a `MetadataProvider` seam isolates TMDB-specific code so a future provider becomes a drop-in, not a rewrite.
+- **Provider strategy lives in [sources](../sources/README.md).** This doc stays provider-agnostic: one canonical writer (TMDB) owns the columns, consumers see an internal domain type, and **raw-payload retention is the portability mechanism** — replacing a provider is a one-adapter job, not a rewrite. Roles are segregated seams, not one fat interface.
 - People (cast/crew) and per-user language preference are explicitly **out of scope**.
 
 ## Identity
@@ -41,7 +44,9 @@ Today, `media_item` has `tmdb_id` and `imdb_id` as columns, and `media_episode` 
 
 The canonical-source designation is a **configuration choice, not a code assumption** — see [Provider abstraction](#provider-abstraction).
 
-**Cross-source resolution:** the [acquisition](../acquisition/README.md) pipeline may need a TVDB ID at indexer-search time (some indexers index series by TVDB). This is a single SELECT against `media_item_external_id` for `(media_item_id, source: tvdb)`. The TMDBSeriesSyncWorker is responsible for populating TVDB and IMDB IDs from TMDB's `external_ids` endpoint as part of series sync.
+**Cross-source resolution:** the [acquisition](../acquisition/README.md) pipeline may need a TVDB ID at indexer-search time (some indexers index series by TVDB). This is a single SELECT against `media_item_external_id` for `(media_item_id, source: tvdb)`. The [series-structure sync operation](../sources/README.md#the-refresh-engine) populates TVDB and IMDB IDs from TMDB's `external_ids` endpoint as part of series sync.
+
+**ID namespaces are not providers.** IMDB and TVDB appear here as `source` values — *id namespaces* used for cross-referencing — even though neither is a [provider](../sources/README.md#identity-id-namespaces-vs-providers) we fetch metadata from. IMDB has no usable public API; its only presence in the system is an `imdb_id` in this registry, arriving via TMDB. Being an id namespace is not the same as being a provider.
 
 **Migration path:** add the `external_id` tables, backfill from the existing `tmdb_id` / `imdb_id` columns, then drop those columns in a later migration once all reads have been moved.
 
@@ -71,14 +76,64 @@ The shape exists today (migration 0005 + 0012). This doc captures it for complet
 | `metadata_updated_at`  | (set by enrichment)    | Drives staleness queries                                    |
 | `collection_id`        | TMDB (movie only)      | **New, lightweight**: when a movie is part of a TMDB collection, store the ID + name |
 | `collection_name`      | TMDB                   | Denormalized for fast display                                |
+| `series_type`          | derived (anime map) / user override | **New**: `standard` / `daily` / `anime`; series only. The numbering-regime anchor — see [Series type](#series-type-the-numbering-regime-anchor) |
 
 **Movie collections:** TMDB groups movies into collections (MCU, Star Wars Saga, etc.). Per the discussion, we store **collection_id + collection_name** denormalized on `media_item` for v1 — enough to render "part of: MCU" on a focus page and to query "all MCU movies." We do **not** create a first-class `collection` table; if richer collection features emerge (collection overview, collection poster), we promote later.
 
 **External IDs are not columns anymore** — see [Identity](#identity).
 
+### Series type (the numbering-regime anchor)
+
+`series_type` (`standard` / `daily` / `anime`) is a per-series classification on `media_item`. It is **not a media type** — `type` stays `movie | series`. It is a second, orthogonal axis: anime and standard shows are both series, and there are anime *movies* too, so "anime" can never be a value alongside movie/series. What it captures is the **numbering regime** an episode tree uses, because that is the one thing that genuinely forks processing:
+
+| `series_type` | Episode numbering | Example |
+| ------------- | ----------------- | ------- |
+| `standard`    | season/episode (`S02E05`) | Breaking Bad |
+| `daily`       | date-based (`2024-01-15`)  | The Daily Show, late-night, news |
+| `anime`       | absolute (`1071`)          | One Piece |
+
+This is the canonical (series-side) declaration of which namespace a release lives in; [parsing](../parsing/README.md) tags the release-side namespace it observed, and [matching](../matching/README.md#the-resolver-catalog)'s `episode-numbering` resolver reconciles the two using the anime [`NumberingMap`](../sources/README.md#anime-embedded-data-vs-api). It pairs with the [`absolute_number`](#open-questions) column: `absolute_number` is the data, `series_type = anime` is the flag that says interpret via it.
+
+**It lives at the series, not the library.** Mixed roots — a standard show, an anime, and a daily show side by side under `/mnt/series/` — are the norm and need no per-library config: [scan](../scan/README.md) is identity-unaware and uniform, and `series_type` is applied only *after* identity resolves. A series is classified `anime` automatically when its TMDB/TVDB id is present in the `NumberingMap`; `daily` defaults off with a possible light heuristic; the only UI is a per-series override for the rare miss (the proven Sonarr model). [Sources](../sources/README.md#anime-embedded-data-vs-api) owns the mapping mechanics.
+
+**Why no `movie_type`.** A classification column earns its place only by driving a code path. `series_type` drives episode numbering — real and three-valued. A movie is a leaf with no parts to address, so there is no analogous fork; a `movie_type` would be a label with no behavior, which is descriptive metadata (genres/keywords), not structure. The cases that *look* like they want it are something else: "is *South Park: Post COVID* a movie or a season-0 special?" is an **identity** question (which entity does this resolve to — provider-decided, and the model already houses both a movie and a special episode), not a classification one. An anime *film* is just a movie; its only divergence — optional AniList enrichment — is detection-driven provider routing, not a stored type. The movie variation axis that *does* exist — theatrical/extended/director's cut — already lives as [`edition` on the file](../files/README.md). The asymmetry between `series_type` and no-`movie_type` is intentional, not a gap.
+
 ## Series structure sync (the foundation gap)
 
 **The gap, summarized:** today `media_season` and `media_episode` rows are created only when scan/match finds files. That means our model of "what episodes exist" is "what episodes we have files for." For monitoring, tracking, smart scheduling, and "coming soon" UI, we need upstream truth: which episodes exist, when do they air, what are they called.
+
+This section owns the **data shape** — *what* gets synced into the tree. *How* the sync runs (the provider-agnostic scheduler that decides what's due, dispatching provider-specific fetch operations) is the [refresh engine](../sources/README.md#the-refresh-engine) in [sources](../sources/README.md). There is no "TMDB series worker" — series and movies are two instances of one refresh policy, and the structural fetch is one dispatched operation behind the `StructureSource` seam.
+
+### Two episode lists: the synced tree vs the focus-page view
+
+A persistent confusion worth settling up front: *"the list of episodes"* names **two different things**, and only one of them is what this section maintains.
+
+| Layer | What it is | Lives where | Stable internal id? |
+| ----- | ---------- | ----------- | ------------------- |
+| **Upstream truth** | What episodes *exist* (incl. unaired) | the provider (TMDB) — ephemeral, external | no |
+| **The synced tree** | Arrflix's *durable, joinable copy* of that truth — what `file`, [want](../tracking/README.md), and [decision](../matching/README.md) rows reference | `media_season` / `media_episode` | **yes** |
+| **Your files** | What you actually *have* on disk | `file.episode_id` | — |
+
+**The synced tree is the middle layer, and it is what structure sync produces.** The series **focus page is a separate thing**: today it is a *live view* that merges **upstream truth + your files** — it fetches the season/episode list straight from the provider on each render (keyed by the provider id, so it works even for a series you don't own) and overlays an `available` flag from local files. It does **not** read the synced tree. So the focus page already shows unaired episodes — *from the provider, not from the DB*. That is why the synced tree can *look* redundant with the focus page. It isn't.
+
+**Its consumer is not the focus page — it's [tracking](../tracking/README.md) and every other background / cross-series reasoner**, the things that cannot issue a live provider call per render:
+
+- *"Across all tracked series, which wanted episodes aired this week but aren't acquired?"* is one DB query over the synced tree, not N live provider fetches.
+- A want for an *unaired* episode must point at a durable row with a stable id; a line in a discarded provider response can't anchor it.
+- Renumber-stable identity ([below](#handling-renumbering)) exists only for rows, never for render-time `(season, episode)` matching.
+
+**Scope follows adoption.** The synced tree exists only for a series that is a `media_item` — i.e. one you've adopted by having a file or by requesting/tracking it. Browsing a *non-adopted* series is pure upstream-truth display; nothing is synced. Arrflix mirrors the slice it manages, not all of TMDB.
+
+#### Open fork — DB-as-source-of-truth vs live-provider display
+
+Once the synced tree is reliably populated, the focus page *could* read **it** instead of calling the provider per render (the existing `ListEpisodeAvailabilityForSeries` query is shaped for exactly this). Whether to make that flip is **undecided — either is viable**, and the structure sync is the prerequisite for *both* (and required by tracking regardless):
+
+| Approach | Pros | Cons |
+| -------- | ---- | ---- |
+| **Focus page reads the synced tree** (DB as source of truth) | Page loads don't hit the provider — fast, works during a provider outage, no per-view rate-limit. Focus page sees exactly what tracking sees (one path, no drift). | Page shows the *last-synced* tree → staleness bounded by refresh cadence. A non-adopted (un-synced) series still needs a live path for browse, so you keep both anyway. |
+| **Focus page stays live-provider** (synced tree serves background only) | Always perfectly fresh on the page. Browse works uniformly for adopted and non-adopted series, no special-casing. | Per-render provider dependency stays — latency, rate-limit, outage-coupling. Two episode lists maintained by different paths that can drift. |
+
+Pinned in [open questions](#open-questions); not decided here.
 
 ### What gets synced
 
@@ -162,60 +217,15 @@ The existing `media_metadata_source` table stores raw JSONB payloads from each s
 
 ## Provider abstraction
 
-Metadata sources sit behind a `MetadataProvider` seam — even though TMDB is the only implementation in v1. The seam is **architectural notation**: it locks the boundary so a future provider is a drop-in, not a rewrite. Most of the data model already permits this; what's missing is the explicit interface and the discipline of routing all TMDB-specific code through it.
+The full provider strategy — role-segregated seams, the cost-to-enable taxonomy, the bundled-key approach, TVDB's deferral, and the anime mechanics — lives in [sources](../sources/README.md). Two pieces are data-model concerns and stay here.
 
-### Provider responsibilities
+**Normalization happens at the provider boundary.** Raw payloads are stored as-is in `media_metadata_source`; the provider operation **normalizes** them into our canonical model before any column is written: TMDB's `status` strings → our [canonical status enum](#item-level-metadata), ISO date strings → typed `release_date` / `last_air_date`, genre arrays → canonical genres, relative `poster_path` → our stored path (URL composition happens at render time via the [`ImageComposer`](../sources/README.md#roles-not-one-provider) seam). Consumer code — UI, acquisition, tracking — never sees a provider's native shape; it sees the internal domain type. This boundary is what makes TMDB-shaped *storage* an implementation detail rather than a leak: the test is not "is the table TMDB-shaped" but "does TMDB shape escape this module's domain type" — and it must not.
 
-A provider implements a small set of capabilities:
-
-- **Lookup by external ID** — given a provider-internal ID, return raw payload + normalized fields.
-- **Search** — given a title (and optionally type, year), return candidate matches.
-- **Discover** — browse trending, similar/related lookups (powers discovery UI).
-- **External-ID resolution** — for its records, expose mappings to other source IDs (TMDB's `external_ids` endpoint; equivalent on others).
-- **Series-structure fetch** — for series, return the full season/episode tree including unaired episodes.
-- **Image URL composition** — given a provider-relative image path + size, return a fetchable URL.
-- **Capabilities declaration** — which entity types it supports (movie, series, anime), what config it requires (API keys, base URLs), its rate-limit shape.
-
-The current `TmdbService` + `enrichmentService` together cover most of this — just not behind a single interface. Extracting the interface is implementation work, deferred; the data model already permits it.
-
-### Normalization happens at the provider boundary
-
-Provider raw payloads are stored as-is in `media_metadata_source`. The provider implementation is responsible for **normalizing** payload fields into our canonical model:
-
-- TMDB's `status` strings (`Released`, `Returning Series`, `Ended`, `Canceled`) → our canonical status enum.
-- TMDB's `release_date` / `first_air_date` ISO strings → our `release_date` / `last_air_date` typed fields.
-- TMDB's `genres` array → our genre objects with provider-tagged IDs.
-- TMDB's relative `poster_path` → our `poster_path` value (composition to a fetchable URL happens at render time via the provider's image URL function).
-
-If a future provider uses a different vocabulary or shape, the translation lives inside its implementation — consumer code (UI, acquisition pipeline, tracking) never sees the provider's native shape.
-
-### Canonical-source designation
-
-In v1, exactly one provider is **canonical**: it owns the writes to `media_item` columns. Non-canonical providers, if added later, are **read-only at the column layer** — their raw payloads sit in `media_metadata_source`, and their external IDs sit in the registry, but they don't overwrite canonical fields.
-
-This isolates "which provider has priority" to a configuration choice, not a code assumption. A future multi-provider mode (which provider wins per field, with per-field overrides) is deferred — it'd require a precedence config and a richer extraction layer, neither of which is needed today.
-
-### Setup is provider-driven
-
-The setup wizard asks for configuration declared by the *active provider*. Today: provider is TMDB, declared config = `[tmdb_api_key]`. Tomorrow: provider is X, declared config = whatever X needs. The setup UI is generic; the requirement list comes from the provider.
-
-This is a small refactor of the current setup flow (which hardcodes "ask for TMDB key"), but locks in the right shape from the start.
-
-### What this buys us
-
-- A future provider replacement / addition becomes implementation work, not re-architecture.
-- TMDB-specific assumptions become **localized** to the TMDB provider package. Grep-friendly.
-- Multi-provider features (better images from Fanart, better ratings from IMDB) become extensions of an existing pattern, not new patterns.
-
-### What this does NOT buy us
-
-- A running second provider. Only TMDB ships in v1.
-- Multi-provider conflict resolution (per-field precedence across canonical sources). Deferred.
-- A UI affordance to "switch providers" mid-flight. Deferred.
+**One canonical writer owns the columns.** In v1 exactly one provider (TMDB) writes `media_item` columns. This is the mechanism that *prevents* a per-field reconciliation fork — there is nothing to reconcile with a single writer. Any later provider is either a *replacement* (insurance, never concurrent) or a *scoped augmenter* (one operation, blended at one call site), never a second canonical writer. The full rationale — portability insurance is cheap and already built (clean domain type + raw-payload retention); concurrency is the deferred, expensive part — is in [sources](../sources/README.md#portability-insurance-vs-concurrency).
 
 ## Refresh & staleness policy
 
-The cadence tables above describe *what* the policy is; this section describes *how it runs*.
+The cadence tables above describe *what* the policy is; this section describes the staleness model and the triggers that feed it. The engine that *drains* that work — the provider-agnostic scheduler and the dispatched provider operations — is the [refresh engine](../sources/README.md#the-refresh-engine) in [sources](../sources/README.md), which conforms to [work-dispatch](../../patterns/work-dispatch/README.md) (the due-queue) and [connectivity-health](../../patterns/connectivity-health/README.md) (rate-limit / reachability state).
 
 ### Trigger sources
 
@@ -227,13 +237,7 @@ The cadence tables above describe *what* the policy is; this section describes *
 
 ### Rate limiting
 
-TMDB's public API is generous but not unlimited. The sync worker:
-
-- Limits concurrent in-flight requests
-- Honors rate-limit headers
-- Backs off exponentially on 429
-
-For the v1 single-user case this is rarely hit. Documented for sanity.
+TMDB's public API is generous but not unlimited. Concurrency limits, rate-limit-header honoring, and exponential back-off on 429 are the [refresh engine](../sources/README.md#the-refresh-engine)'s concern and conform to [connectivity-health](../../patterns/connectivity-health/README.md) (provider reachability carries a `rate_limited` status). For the v1 single-user case this is rarely hit; noted so consumers know the back-off lives at the engine, not per-field here.
 
 ### Failure handling
 
@@ -286,6 +290,7 @@ This means the schema stays provider-agnostic (just `poster_path` + `backdrop_pa
 
 Adjacent concerns that live elsewhere:
 
+- **Provider strategy** — which sources we use, what each costs to enable, the bundled-key approach, the role seams, the refresh engine, and the anime `NumberingMap` all live in [sources](../sources/README.md). Metadata is the provider-agnostic data model only.
 - **Indexer release parsing** — turning a release name into quality + season/episode is the parser's job, not metadata. Metadata provides the *truth* the parser is matching against.
 - **Watch state** — covered by the future Plex/Jellyfin integration.
 - **People (cast, crew, directors, writers)** — explicitly deferred. When demand emerges, a separate `people` spec covers schema, search, and UI.
@@ -297,11 +302,12 @@ Adjacent concerns that live elsewhere:
 
 | Neighbor                  | How metadata interacts                                                                 |
 | ------------------------- | --------------------------------------------------------------------------------------- |
-| **Scan / match**          | Reads metadata to match files to media items. Also writes new media_items on first-match. Must coordinate with TMDBSeriesSyncWorker so seasons/episodes exist for matching. |
+| **Scan / match**          | Reads metadata to match files to media items. Also writes new media_items on first-match. Must coordinate with the [refresh engine](../sources/README.md#the-refresh-engine) so seasons/episodes exist for matching. |
 | **Tracking**              | Consumes the full episode tree (including unaired) to evaluate scope and schedule searches. Cannot function without series sync. |
 | **Auto-select**           | Reads `external_id` for TVDB lookups during indexer search. Reads episode air_dates for smart scheduling. |
 | **Unmatched files**       | Manual-match flow writes media_items; resolution triggers a metadata sync for newly-created items. |
-| **Enrichment service (existing)** | Becomes part of the larger metadata sync system. The current `enrichMovie` / `enrichSeries` functions stay; the **series-structure sync worker** (TMDB-only impl in v1; lives behind the [provider abstraction](#provider-abstraction)) adds the structural-tree fetch on top. |
+| **Enrichment service (existing)** | Becomes a TMDB `MetadataSource` operation dispatched by the [refresh engine](../sources/README.md#the-refresh-engine). The current `enrichMovie` / `enrichSeries` logic stays; the structural-tree fetch (`StructureSource`) is added on top. |
+| **[Sources](../sources/README.md)** | Owns the provider seam this data model is written through: which provider plays which role, cost-to-enable, the refresh engine, the anime `NumberingMap`. Metadata owns *what* is persisted; sources owns *how it is fetched and by whom*. |
 | **Decision log**          | References media_items / episodes by ID for "why didn't this download?" debugging. |
 | **Plex / Jellyfin (future)** | Reads metadata to render. May consume external IDs for cross-correlation. |
 
@@ -316,28 +322,29 @@ Adjacent concerns that live elsewhere:
 7. **Anime numbering (absolute vs season) — seam reserved.** Full anime support (numbering-mapping, AniDB as a provider) stays out of v1, but the cheap seam is taken now rather than deferred: `media_episode` carries a **nullable `absolute_number` column from v1**, populated opportunistically whenever TMDB/TVDB returns it. It's free, and it avoids a later migration the moment anime lands. What stays deferred is the **numbering-mapping** that reconciles a release's scene/absolute number against this canonical numbering — that's a future [matching](../matching/README.md#the-resolver-catalog) `episode-numbering` resolver consuming [parsing](../parsing/README.md)'s numbering-namespace tag, not a metadata concern. Identity-side, AniDB is already reserved in the [external_id registry](#identity) and the [provider abstraction](#provider-abstraction), so adding it is an implementation, not a re-architecture.
 8. **Image cache promotion.** What's the trigger to graduate to a local image cache? Likely: when we add custom artwork uploads (so we're already serving local images anyway), the case for proxying TMDB images via the same path gets stronger.
 9. **Collection-as-entity promotion.** When a `collection_id` column is no longer enough — e.g., we want a collection focus page with overview text and a poster — we promote to a `collection` table. Document this as the explicit upgrade path.
-10. **Per-source priority.** If we ever pull from multiple sources (TMDB + Trakt for ratings, say), which wins on conflict? Probably configurable per-field; not v1.
-11. **Canonical status enum vocabulary.** Our status enum currently mirrors TMDB's (`Released`, `Returning Series`, `Ended`, `Canceled`). A future provider may use different vocabulary — do we expand the canonical enum or map down to a smaller stable set? Probably the latter; lock the canonical set's contents before the enum gets baked into UI strings.
+10. **Per-source priority.** Moved to [sources](../sources/README.md#portability-insurance-vs-concurrency) — per-field precedence across canonical sources is the deferred multi-canonical mode; not v1.
+11. **Canonical status enum vocabulary — decided.** The status enum mirrors TMDB's strings today (`Released`, `Returning Series`, `Ended`, `Canceled`), which are written raw onto the column. **Decision:** map TMDB's vocabulary *down to a small canonical set at the provider boundary* (not expand the enum per provider), and lock that set's contents now, before it bakes into UI strings and i18n. The mapping lives in the provider operation; the canonical set is the contract consumers see. Coordinated with [sources OQ#7](../sources/README.md#open-questions). (Cheap adjacent renames flagged in the same pass: `vote_*` → `rating_*`, and drop the embedded `tmdb_id` from the genre blob — both gratuitous TMDB-isms in the canonical model.)
 12. **Image source on local overrides.** Custom artwork uploaded by a user has different URL composition rules than provider paths. Does the override row need an explicit `image_source` flag (`provider` vs `local`), or is it implicit (any override path is treated as local)? Pin when custom-artwork upload UI is designed.
-13. **Provider capability negotiation.** When a provider doesn't support an entity type (e.g., a movie-only provider), how does the system route around it for tracking? Pin in the iteration where multi-provider becomes real.
-14. **TMDB-specific endpoints we lean on.** TMDB's `external_ids` endpoint is convenient for cross-source mapping; not every provider will have an equivalent shape. Document the contract the provider needs to fulfill so we don't accidentally bake in TMDB-only assumptions.
+13. **Provider capability negotiation.** Moved to [sources](../sources/README.md) — handled by role-segregated seams (a provider implements the subset it supports) rather than a runtime capability negotiation.
+14. **TMDB-specific endpoints we lean on.** Moved to [sources](../sources/README.md) — documenting the contract a provider must fulfil (e.g. an `external_ids` equivalent) is a provider-seam concern, not a data-model one.
+15. **Focus-page episode source — DB-as-source-of-truth vs live-provider.** Once the synced tree is reliably populated, does the series focus page read it (decoupled from the provider, consistent with tracking, but bounded by refresh staleness) or keep rendering live from the provider (always fresh, but per-render provider dependency and two lists that can drift)? Open fork with pros/cons in [Two episode lists](#two-episode-lists-the-synced-tree-vs-the-focus-page-view); the structure sync is the prerequisite for either. Pin when the focus page is revisited or tracking lands.
 
 ## What we're explicitly not deciding here
 
 - Exact table schemas, columns, indexes
 - API endpoint shapes for metadata fetch / refresh / override
-- The series-structure sync worker's exact queue / scheduler implementation
+- The [refresh engine](../sources/README.md#the-refresh-engine)'s exact queue / scheduler implementation — owned by [sources](../sources/README.md), conforming to [work-dispatch](../../patterns/work-dispatch/README.md)
 - Per-user language preference (locale is a system-level setting in v1)
 - Cast/crew schema
 - Fanart.tv / TVDB-as-primary fallback strategies
 - Custom artwork upload UI
 - Watch-state schema (future Plex/Jellyfin spec)
-- **Running a second metadata provider** — only TMDB ships in v1; the seam is in, additional implementations are not
-- Per-field precedence rules across multiple canonical sources
-- Provider-switching UI / migration flow
+- Provider strategy generally (role seams, cost-to-enable, bundled key, TVDB deferral, anime mechanics) — now owned by [sources](../sources/README.md)
+- **Running a second metadata provider**, per-field precedence across canonical sources, and provider-switching UI — all deferred and owned by [sources](../sources/README.md); only TMDB ships in v1
 
 ## Doc neighbors
 
+- [Sources](../sources/README.md) — the provider seam this data model is fetched through; owns the refresh engine, the provider catalog, and the anime `NumberingMap`
 - [Tracking](../tracking/README.md) — the primary consumer of series-structure data
 - [Acquisition](../acquisition/README.md) — consumes external_ids for indexer search
 - [Quality profiles](../quality-profiles/README.md) — orthogonal; quality decisions don't read metadata directly
