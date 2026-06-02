@@ -439,19 +439,26 @@ type MatchDecision struct {
 }
 
 type MediaEpisode struct {
-	ID            pgtype.UUID `json:"id"`
-	SeasonID      pgtype.UUID `json:"season_id"`
-	EpisodeNumber int32       `json:"episode_number"`
-	Title         *string     `json:"title"`
-	AirDate       pgtype.Date `json:"air_date"`
-	TmdbID        *int64      `json:"tmdb_id"`
-	TvdbID        *int64      `json:"tvdb_id"`
-	CreatedAt     time.Time   `json:"created_at"`
+	ID             pgtype.UUID `json:"id"`
+	SeasonID       pgtype.UUID `json:"season_id"`
+	EpisodeNumber  int32       `json:"episode_number"`
+	Title          *string     `json:"title"`
+	AirDate        pgtype.Date `json:"air_date"`
+	Overview       *string     `json:"overview"`
+	StillPath      *string     `json:"still_path"`
+	VoteAverage    *float64    `json:"vote_average"`
+	Runtime        *int32      `json:"runtime"`
+	AbsoluteNumber *int32      `json:"absolute_number"`
+	Deprecated     bool        `json:"deprecated"`
+	TmdbID         *int64      `json:"tmdb_id"`
+	TvdbID         *int64      `json:"tvdb_id"`
+	CreatedAt      time.Time   `json:"created_at"`
 }
 
 type MediaItem struct {
 	ID                pgtype.UUID        `json:"id"`
 	Type              string             `json:"type"`
+	SeriesType        string             `json:"series_type"`
 	Title             string             `json:"title"`
 	Year              *int32             `json:"year"`
 	TmdbID            *int64             `json:"tmdb_id"`
@@ -484,6 +491,9 @@ type MediaSeason struct {
 	ID           pgtype.UUID `json:"id"`
 	MediaItemID  pgtype.UUID `json:"media_item_id"`
 	SeasonNumber int32       `json:"season_number"`
+	Name         *string     `json:"name"`
+	Overview     *string     `json:"overview"`
+	PosterPath   *string     `json:"poster_path"`
 	AirDate      pgtype.Date `json:"air_date"`
 	CreatedAt    time.Time   `json:"created_at"`
 }

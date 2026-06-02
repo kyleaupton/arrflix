@@ -13,6 +13,7 @@ import (
 type MediaItem struct {
 	ID                uuid.UUID  `json:"id"`
 	Type              string     `json:"type"`
+	SeriesType        string     `json:"seriesType"`
 	Title             string     `json:"title"`
 	Year              *int32     `json:"year,omitempty"`
 	TmdbID            *int64     `json:"tmdbId,omitempty"`

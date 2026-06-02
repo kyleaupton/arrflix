@@ -58,10 +58,15 @@ select * from media_season
 where media_item_id = $1 and season_number = $2;
 
 -- name: UpsertSeason :one
-insert into media_season (media_item_id, season_number, air_date)
-values (sqlc.arg(media_item_id), sqlc.arg(season_number), sqlc.arg(air_date))
+-- COALESCE on the metadata columns so a sparse writer (match-commit, which
+-- only knows the season number) never nulls out values a full sync wrote.
+insert into media_season (media_item_id, season_number, name, overview, poster_path, air_date)
+values (sqlc.arg(media_item_id), sqlc.arg(season_number), sqlc.arg(name), sqlc.arg(overview), sqlc.arg(poster_path), sqlc.arg(air_date))
 on conflict (media_item_id, season_number)
-do update set air_date = excluded.air_date
+do update set name = coalesce(excluded.name, media_season.name),
+              overview = coalesce(excluded.overview, media_season.overview),
+              poster_path = coalesce(excluded.poster_path, media_season.poster_path),
+              air_date = coalesce(excluded.air_date, media_season.air_date)
 returning *;
 
 -- Episodes
@@ -80,14 +85,37 @@ select * from media_episode
 where season_id = $1 and episode_number = $2;
 
 -- name: UpsertEpisode :one
-insert into media_episode (season_id, episode_number, title, air_date, tmdb_id, tvdb_id)
-values (sqlc.arg(season_id), sqlc.arg(episode_number), sqlc.arg(title), sqlc.arg(air_date), sqlc.arg(tmdb_id), sqlc.arg(tvdb_id))
-on conflict (season_id, episode_number)
-do update set title = excluded.title,
-              air_date = excluded.air_date,
-              tmdb_id = excluded.tmdb_id,
-              tvdb_id = excluded.tvdb_id
+-- Keyed on the stable TMDB episode id (partial unique index). season_id and
+-- episode_number use plain excluded so a TMDB renumber moves the row in place
+-- (the row's UUID — and any file.episode_id — survives). Metadata columns
+-- COALESCE so a sparse writer (match-commit) doesn't null out sync's values.
+-- deprecated resets to false: if TMDB reports the episode again, it's live.
+insert into media_episode (season_id, episode_number, title, air_date, overview, still_path, vote_average, runtime, tmdb_id, tvdb_id)
+values (sqlc.arg(season_id), sqlc.arg(episode_number), sqlc.arg(title), sqlc.arg(air_date), sqlc.arg(overview), sqlc.arg(still_path), sqlc.arg(vote_average), sqlc.arg(runtime), sqlc.arg(tmdb_id), sqlc.arg(tvdb_id))
+on conflict (tmdb_id) where tmdb_id is not null
+do update set season_id = excluded.season_id,
+              episode_number = excluded.episode_number,
+              title = coalesce(excluded.title, media_episode.title),
+              air_date = coalesce(excluded.air_date, media_episode.air_date),
+              overview = coalesce(excluded.overview, media_episode.overview),
+              still_path = coalesce(excluded.still_path, media_episode.still_path),
+              vote_average = coalesce(excluded.vote_average, media_episode.vote_average),
+              runtime = coalesce(excluded.runtime, media_episode.runtime),
+              tvdb_id = coalesce(excluded.tvdb_id, media_episode.tvdb_id),
+              deprecated = false
 returning *;
+
+-- name: DeprecateRemovedEpisodes :exec
+-- Marks a series' episodes deprecated when TMDB no longer reports their id
+-- (the synced set). Rows are preserved (never deleted) so any imported file's
+-- episode_id stays valid. Callers MUST skip this when the synced set is empty
+-- (a total sync failure) — an empty array would deprecate everything.
+update media_episode
+set deprecated = true
+where season_id in (select id from media_season where media_item_id = sqlc.arg(media_item_id))
+  and tmdb_id is not null
+  and tmdb_id <> all(sqlc.arg(synced_tmdb_ids)::bigint[])
+  and deprecated = false;
 
 -- Files. Identity (media_item_id, episode_id) is nullable; "unmatched" is
 -- media_item_id IS NULL. Files soft-delete (deleted_at); every live read

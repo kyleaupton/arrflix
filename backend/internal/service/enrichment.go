@@ -153,6 +153,8 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 		ImdbID:        strPtrIfNotEmpty(imdbID),
 	}
 
+	// Advance metadata_updated_at first, so a later partial structure-sync
+	// failure doesn't leave the item pinned stale and re-fetched every tick.
 	if _, err := s.repo.UpdateMediaItemMetadata(ctx, params); err != nil {
 		return err
 	}
@@ -167,7 +169,79 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 		})
 	}
 
+	// Sync the full season/episode tree (incl. unaired episodes) from the
+	// seasons TMDB already returned on `details`. Best-effort: never fails the
+	// enrich (item metadata is already committed above).
+	s.syncSeriesStructure(ctx, item, details)
+
 	return nil
+}
+
+// syncSeriesStructure upserts the full season/episode tree from TMDB,
+// including unaired episodes (air_date in the future or NULL). It is the
+// structural half of series sync — the data tracking and "coming soon" UI
+// operate on. Episodes are keyed on the stable TMDB episode id, so a renumber
+// updates rows in place rather than orphaning them. Best-effort: a season
+// fetch or upsert failing logs and continues so one bad season doesn't block
+// the rest of the tree.
+func (s *EnrichmentService) syncSeriesStructure(ctx context.Context, item model.MediaItem, details tmdb.TVDetails) {
+	syncedIDs := make([]int64, 0, details.NumberOfEpisodes)
+
+	for _, season := range details.Seasons {
+		seasonDetails, err := s.tmdb.GetTVSeasonDetails(ctx, *item.TmdbID, season.SeasonNumber)
+		if err != nil {
+			s.logger.Warn().Err(err).
+				Str("title", item.Title).Int("season", season.SeasonNumber).
+				Msg("series structure sync: season fetch failed, skipping season")
+			continue
+		}
+
+		seasonRow, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
+			MediaItemID:  item.ID,
+			SeasonNumber: int32(season.SeasonNumber),
+			Name:         strPtrIfNotEmpty(season.Name),
+			Overview:     strPtrIfNotEmpty(season.Overview),
+			PosterPath:   strPtrIfNotEmpty(season.PosterPath),
+			AirDate:      parseDateToTimePtr(season.AirDate),
+		})
+		if err != nil {
+			s.logger.Warn().Err(err).
+				Str("title", item.Title).Int("season", season.SeasonNumber).
+				Msg("series structure sync: season upsert failed, skipping season")
+			continue
+		}
+
+		for _, ep := range seasonDetails.Episodes {
+			epID := ep.ID
+			voteAvg := float64(ep.VoteAverage)
+			if _, err := s.repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
+				SeasonID:      seasonRow.ID,
+				EpisodeNumber: int32(ep.EpisodeNumber),
+				Title:         strPtrIfNotEmpty(ep.Name),
+				AirDate:       parseDateToTimePtr(ep.AirDate),
+				Overview:      strPtrIfNotEmpty(ep.Overview),
+				StillPath:     strPtrIfNotEmpty(ep.StillPath),
+				VoteAverage:   &voteAvg,
+				Runtime:       int32PtrIfPositive(ep.Runtime),
+				TmdbID:        &epID,
+			}); err != nil {
+				s.logger.Warn().Err(err).
+					Str("title", item.Title).Int("season", season.SeasonNumber).Int("episode", ep.EpisodeNumber).
+					Msg("series structure sync: episode upsert failed, skipping episode")
+				continue
+			}
+			syncedIDs = append(syncedIDs, epID)
+		}
+	}
+
+	// Mark episodes TMDB no longer reports as deprecated — but only when we
+	// synced something. An empty set means every season fetch failed; skipping
+	// avoids deprecating the whole tree on a transient TMDB outage.
+	if len(syncedIDs) > 0 {
+		if err := s.repo.DeprecateRemovedEpisodes(ctx, item.ID, syncedIDs); err != nil {
+			s.logger.Warn().Err(err).Str("title", item.Title).Msg("series structure sync: deprecate-removed failed")
+		}
+	}
 }
 
 // EnrichBatch queries stale items and enriches each. Returns the count of items processed.
@@ -201,6 +275,16 @@ func strPtrIfNotEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// int32PtrIfPositive returns a *int32 for a positive value, nil otherwise —
+// so a missing/zero runtime (common on unaired episodes) stores as NULL.
+func int32PtrIfPositive(n int) *int32 {
+	if n <= 0 {
+		return nil
+	}
+	v := int32(n)
+	return &v
 }
 
 // parseDateToTimePtr parses a YYYY-MM-DD date string into a *time.Time.

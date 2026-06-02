@@ -60,6 +60,7 @@ type MediaRepo interface {
 	GetEpisode(ctx context.Context, id uuid.UUID) (model.MediaEpisode, error)
 	GetEpisodeByNumber(ctx context.Context, seasonID uuid.UUID, episodeNumber int32) (model.MediaEpisode, error)
 	UpsertEpisode(ctx context.Context, params UpsertEpisodeParams) (model.MediaEpisode, error)
+	DeprecateRemovedEpisodes(ctx context.Context, mediaItemID uuid.UUID, syncedTmdbIDs []int64) error
 
 	// File path loading for scanner
 	ListFilePathsForLibrary(ctx context.Context, libraryID uuid.UUID) ([]string, error)
@@ -159,6 +160,7 @@ func toModelMediaItem(row dbgen.MediaItem) model.MediaItem {
 	m := model.MediaItem{
 		ID:            uuidFromPgtype(row.ID),
 		Type:          row.Type,
+		SeriesType:    row.SeriesType,
 		Title:         row.Title,
 		Year:          row.Year,
 		TmdbID:        row.TmdbID,
@@ -376,6 +378,9 @@ func toModelMediaSeason(row dbgen.MediaSeason) model.MediaSeason {
 		ID:           uuidFromPgtype(row.ID),
 		MediaItemID:  uuidFromPgtype(row.MediaItemID),
 		SeasonNumber: row.SeasonNumber,
+		Name:         row.Name,
+		Overview:     row.Overview,
+		PosterPath:   row.PosterPath,
 		CreatedAt:    row.CreatedAt,
 	}
 	if row.AirDate.Valid {
@@ -389,13 +394,19 @@ func toModelMediaSeason(row dbgen.MediaSeason) model.MediaSeason {
 // into the domain-shaped model.MediaEpisode.
 func toModelMediaEpisode(row dbgen.MediaEpisode) model.MediaEpisode {
 	e := model.MediaEpisode{
-		ID:            uuidFromPgtype(row.ID),
-		SeasonID:      uuidFromPgtype(row.SeasonID),
-		EpisodeNumber: row.EpisodeNumber,
-		Title:         row.Title,
-		TmdbID:        row.TmdbID,
-		TvdbID:        row.TvdbID,
-		CreatedAt:     row.CreatedAt,
+		ID:             uuidFromPgtype(row.ID),
+		SeasonID:       uuidFromPgtype(row.SeasonID),
+		EpisodeNumber:  row.EpisodeNumber,
+		Title:          row.Title,
+		Overview:       row.Overview,
+		StillPath:      row.StillPath,
+		VoteAverage:    row.VoteAverage,
+		Runtime:        row.Runtime,
+		AbsoluteNumber: row.AbsoluteNumber,
+		Deprecated:     row.Deprecated,
+		TmdbID:         row.TmdbID,
+		TvdbID:         row.TvdbID,
+		CreatedAt:      row.CreatedAt,
 	}
 	if row.AirDate.Valid {
 		t := row.AirDate.Time
@@ -409,6 +420,9 @@ func toModelMediaEpisode(row dbgen.MediaEpisode) model.MediaEpisode {
 type UpsertSeasonParams struct {
 	MediaItemID  uuid.UUID
 	SeasonNumber int32
+	Name         *string
+	Overview     *string
+	PosterPath   *string
 	AirDate      *time.Time
 }
 
@@ -419,6 +433,10 @@ type UpsertEpisodeParams struct {
 	EpisodeNumber int32
 	Title         *string
 	AirDate       *time.Time
+	Overview      *string
+	StillPath     *string
+	VoteAverage   *float64
+	Runtime       *int32
 	TmdbID        *int64
 	TvdbID        *int64
 }
@@ -462,6 +480,9 @@ func (r *Repository) UpsertSeason(ctx context.Context, params UpsertSeasonParams
 	row, err := r.Q.UpsertSeason(ctx, dbgen.UpsertSeasonParams{
 		MediaItemID:  pgtypeFromUUID(params.MediaItemID),
 		SeasonNumber: params.SeasonNumber,
+		Name:         params.Name,
+		Overview:     params.Overview,
+		PosterPath:   params.PosterPath,
 		AirDate:      airDate,
 	})
 	if err != nil {
@@ -511,6 +532,10 @@ func (r *Repository) UpsertEpisode(ctx context.Context, params UpsertEpisodePara
 		EpisodeNumber: params.EpisodeNumber,
 		Title:         params.Title,
 		AirDate:       airDate,
+		Overview:      params.Overview,
+		StillPath:     params.StillPath,
+		VoteAverage:   params.VoteAverage,
+		Runtime:       params.Runtime,
 		TmdbID:        params.TmdbID,
 		TvdbID:        params.TvdbID,
 	})
@@ -518,6 +543,16 @@ func (r *Repository) UpsertEpisode(ctx context.Context, params UpsertEpisodePara
 		return model.MediaEpisode{}, apperrors.FromPg(err, "upsert episode %d for season %s", params.EpisodeNumber, params.SeasonID)
 	}
 	return toModelMediaEpisode(row), nil
+}
+
+// DeprecateRemovedEpisodes marks a series' episodes deprecated when TMDB no
+// longer reports their id. Callers must skip this when syncedTmdbIDs is empty
+// (a total sync failure) — an empty set would deprecate every episode.
+func (r *Repository) DeprecateRemovedEpisodes(ctx context.Context, mediaItemID uuid.UUID, syncedTmdbIDs []int64) error {
+	return apperrors.FromPg(r.Q.DeprecateRemovedEpisodes(ctx, dbgen.DeprecateRemovedEpisodesParams{
+		MediaItemID:   pgtypeFromUUID(mediaItemID),
+		SyncedTmdbIds: syncedTmdbIDs,
+	}), "deprecate removed episodes for media %s", mediaItemID)
 }
 
 // CreateFileParams is the domain-shaped input for CreateFile. The id is

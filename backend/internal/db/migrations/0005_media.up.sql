@@ -8,6 +8,10 @@
 CREATE TABLE IF NOT EXISTS media_item (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   type TEXT NOT NULL CHECK (type IN ('movie','series')),
+  -- series_type is the per-series numbering-regime anchor (series only).
+  -- Seam taken now; detection/population lands with the anime/series-type
+  -- phase. See specs/modules/metadata/README.md "Series type".
+  series_type TEXT NOT NULL DEFAULT 'standard' CHECK (series_type IN ('standard','daily','anime')),
   title TEXT NOT NULL,
   year INT,
   tmdb_id BIGINT,
@@ -24,6 +28,9 @@ CREATE TABLE IF NOT EXISTS media_season (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   media_item_id UUID NOT NULL REFERENCES media_item(id) ON DELETE CASCADE,
   season_number INT NOT NULL,
+  name TEXT,
+  overview TEXT,
+  poster_path TEXT,
   air_date DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (media_item_id, season_number)
@@ -31,21 +38,34 @@ CREATE TABLE IF NOT EXISTS media_season (
 
 CREATE INDEX IF NOT EXISTS idx_media_season_media ON media_season (media_item_id);
 
--- Episodes (only for series)
+-- Episodes (only for series). Identity is keyed on the stable TMDB episode
+-- id (idx_media_episode_tmdb below), NOT on (season_id, episode_number), so a
+-- TMDB renumber updates the row in place and any file.episode_id stays
+-- attached. `deprecated` marks episodes TMDB stopped reporting (preserved,
+-- never deleted). `absolute_number` is a seam (anime), populated later.
 CREATE TABLE IF NOT EXISTS media_episode (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   season_id UUID NOT NULL REFERENCES media_season(id) ON DELETE CASCADE,
   episode_number INT NOT NULL,
   title TEXT,
   air_date DATE,
+  overview TEXT,
+  still_path TEXT,
+  vote_average DOUBLE PRECISION,
+  runtime INT,
+  absolute_number INT,
+  deprecated BOOLEAN NOT NULL DEFAULT false,
   tmdb_id BIGINT,
   tvdb_id BIGINT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (season_id, episode_number)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_media_episode_season ON media_episode (season_id);
-CREATE INDEX IF NOT EXISTS idx_media_episode_tmdb ON media_episode (tmdb_id);
+-- Non-unique: serves (season, number) lookups; uniqueness now lives on tmdb_id.
+CREATE INDEX IF NOT EXISTS idx_media_episode_season_number ON media_episode (season_id, episode_number);
+-- The episode identity key — one row per TMDB episode id. Partial so manual
+-- (no-tmdb) rows aren't constrained.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_media_episode_tmdb ON media_episode (tmdb_id) WHERE tmdb_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_media_episode_tvdb ON media_episode (tvdb_id);
 
 -- A file is one physical media file under a library root. Identity is

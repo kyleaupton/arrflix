@@ -148,6 +148,11 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 	// episode. The lookup is best-effort: a TMDB outage here surfaces
 	// EpisodeFailed=true so the caller decides whether to fail or skip.
 	var episodeTitle string
+	// episodeTmdbID is the stable TMDB episode id — the key media_episode is
+	// upserted on, so this match converges on the same row series-structure
+	// sync creates (rather than minting a NULL-tmdb_id duplicate). Set only
+	// when this is an episode match.
+	var episodeTmdbID int64
 	if in.Season != nil && in.Episode != nil {
 		ep, eerr := d.tmdb.GetEpisodeDetails(ctx, in.TmdbID, int64(*in.Season), int64(*in.Episode))
 		if eerr != nil {
@@ -157,6 +162,7 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 			return commitMatchResult{EpisodeFailed: true}, nil
 		}
 		episodeTitle = ep.Name
+		episodeTmdbID = ep.ID
 	}
 
 	var result commitMatchResult
@@ -187,6 +193,7 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 					SeasonID:      seasonRow.ID,
 					EpisodeNumber: *in.Episode,
 					Title:         &episodeTitle,
+					TmdbID:        &episodeTmdbID,
 				})
 				if eerr != nil {
 					return eerr
