@@ -18,7 +18,7 @@ It does **not** pin down exact column types, indexes, or API shapes. As with the
 
 ## TL;DR
 
-- **Identity** lives in a separate **`external_id`** registry, not as columns on `media_item`. One row per `(entity, source)` pair across `tmdb`, `imdb`, `tvdb`, future `anidb`, etc.
+- **Identity** is split: the canonical writer's id (`tmdb`) is a typed column on `media_item` — it owns it, and it's the matching/dedup key. Secondary cross-reference namespaces (`imdb`, `tvdb`, `anidb` reserved) live in a separate **`external_id`** registry, one row per `(entity, source)` pair. `tmdb` is a reserved-valid `source` value but column-canonical in v1 — not stored in the registry.
 - **Item-level metadata** is mostly already there (migration 0012). This doc back-fills the model and adds **movie collections** as a lightweight extension.
 - **`series_type`** (`standard | daily | anime`) is the per-series numbering-regime anchor — the canonical side of [parsing](../parsing/README.md)'s release-side namespace tag. There is deliberately **no `movie_type`**: a movie has no parts to number, so no processing fork to anchor. See [Series type](#series-type-the-numbering-regime-anchor).
 - **Series structure sync** is new and load-bearing: the [refresh engine](../sources/README.md#the-refresh-engine) (provider-agnostic scheduler + dispatched provider operations) pulls the full season/episode tree, including **unaired episodes**, so tracking and smart scheduling have something to operate on.
@@ -30,17 +30,19 @@ It does **not** pin down exact column types, indexes, or API shapes. As with the
 
 ## Identity
 
-Today, `media_item` has `tmdb_id` and `imdb_id` as columns, and `media_episode` has `tmdb_id` and `tvdb_id`. That works for now but doesn't scale to more sources (TVDB for series, anidb later for anime, possibly Trakt, possibly local custom IDs).
+Identity splits along the canonical-writer line. The primary `tmdb_id` is categorically different from the secondary namespaces: it is both the canonical writer's handle (TMDB owns `media_item` columns) and the matching/dedup key the rest of the system keys on. The secondaries (`imdb`, `tvdb`, future `anidb`) are cross-reference mappings nothing dedupes on. The model reflects that split rather than flattening both into one registry.
 
-**New model:** a dedicated **`external_id` registry**:
+**`tmdb_id` stays a typed column.** `media_item.tmdb_id` (with `UNIQUE(type, tmdb_id)`) and `media_episode.tmdb_id` (partial-unique `idx_media_episode_tmdb`) remain exactly as they are — the canonical writer owns them, and they are the matching key. `tmdb` is a **reserved-valid `source` value** in the registry vocabulary, but it is **column-canonical in v1**: it is not dual-written into the registry. No v1 consumer needs it there; adding it later is a one-time backfill against a real consumer.
 
-- One conceptual table per indexed entity (likely two tables in practice — `media_item_external_id` and `media_episode_external_id` — to avoid polymorphic FKs, but the shape is the same).
-- Each row carries `(entity_id, source, external_id)`.
-- `source` is drawn from an **open registry**: today `tmdb`, `imdb`, `tvdb`, with `anidb` reserved. Adding a source is a config + code change in the provider layer, not a schema change.
+**Secondary namespaces live in the `external_id` registry:**
+
+- One conceptual table per indexed entity (likely two tables in practice — `media_item_external_id` and `media_episode_external_id` — to avoid polymorphic FKs, but the shape is the same). **In v1 only `media_item_external_id` ships** — episode-level external ids have no writer or consumer yet, so that table is deferred until an episode-cross-ref consumer appears (it adds the second table, same shape).
+- Each row carries `(entity_id, source, external_id)`. `external_id` is TEXT — it generalizes imdb (`tt…` strings) and tvdb (ints rendered as strings).
+- `source` is drawn from an **open registry**: today `imdb`, `tvdb`, with `anidb` reserved (and `tmdb` reserved-valid but column-canonical, above). Adding a source is a config + code change in the provider layer, not a schema change.
 - Unique on `(entity_id, source)` — one ID per source per entity.
-- Indexed on `(source, external_id)` for the common reverse lookup ("find me the media_item with TMDB id 12345").
+- Indexed on `(source, external_id)` for the common reverse lookup ("find me the media_item with TVDB id 12345"). The lookup *query* lands with its only consumer (acquisition); the index is ready now.
 
-**Canonical identity:** in v1, **TMDB is the canonical primary source** — it owns the writes to `media_item` columns. Most `media_item`s have a TMDB external_id; absence is allowed (manually-created stubs, items whose upstream record was deleted) but unusual. Other sources (IMDB, TVDB) are read-only mappings — useful for cross-referencing at search time, but they don't write to columns.
+**Canonical identity:** in v1, **TMDB is the canonical primary source** — it owns the writes to `media_item` columns, including `tmdb_id`. Most `media_item`s have a TMDB id; absence is allowed (manually-created stubs, items whose upstream record was deleted) but unusual. The secondary sources (IMDB, TVDB) are read-only cross-reference mappings — useful at search time, but they don't write columns.
 
 The canonical-source designation is a **configuration choice, not a code assumption** — see [Provider abstraction](#provider-abstraction).
 
@@ -48,7 +50,7 @@ The canonical-source designation is a **configuration choice, not a code assumpt
 
 **ID namespaces are not providers.** IMDB and TVDB appear here as `source` values — *id namespaces* used for cross-referencing — even though neither is a [provider](../sources/README.md#identity-id-namespaces-vs-providers) we fetch metadata from. IMDB has no usable public API; its only presence in the system is an `imdb_id` in this registry, arriving via TMDB. Being an id namespace is not the same as being a provider.
 
-**Migration path:** add the `external_id` tables, backfill from the existing `tmdb_id` / `imdb_id` columns, then drop those columns in a later migration once all reads have been moved.
+**Migration path:** only the secondary `imdb` / `tvdb` columns moved into the registry — `media_item.imdb_id` and the dead `media_episode.tvdb_id` were dropped, their values now sourced into `media_item_external_id` by enrichment. `tmdb_id` stays a column on both tables; there is no "backfill then drop the tmdb columns" step. The `media_item_external_id` table ships now; the episode table ships when a consumer for episode-level cross-refs appears.
 
 **Optional `confidence` field:** for low-confidence auto-matches (the unidentified-file flow assigning a likely match), we may want to record confidence per mapping. Pin in iteration 2 — flagged in open questions.
 
@@ -80,7 +82,7 @@ The shape exists today (migration 0005 + 0012). This doc captures it for complet
 
 **Movie collections:** TMDB groups movies into collections (MCU, Star Wars Saga, etc.). Per the discussion, we store **collection_id + collection_name** denormalized on `media_item` for v1 — enough to render "part of: MCU" on a focus page and to query "all MCU movies." We do **not** create a first-class `collection` table; if richer collection features emerge (collection overview, collection poster), we promote later.
 
-**External IDs are not columns anymore** — see [Identity](#identity).
+**The canonical `tmdb_id` is a column; secondary external IDs are not** — see [Identity](#identity).
 
 ### Series type (the numbering-regime anchor)
 
@@ -142,7 +144,7 @@ For each series, on a sync cycle:
 1. **Series-level refresh** — re-fetch `media_item` fields (already exists via `enrichmentService.enrichSeries`).
 2. **Season list** — for each season TMDB reports, upsert a `media_season` row (number, air_date, name, overview, poster).
 3. **Episode tree** — for each episode TMDB reports, upsert a `media_episode` row with full metadata: number, **absolute number** (nullable — populated whenever the provider supplies it; the anime seam, see [open question #7](#open-questions)), title, air_date, runtime, overview, still_path, vote_average, special flag.
-4. **External IDs** — fetch TMDB's `external_ids` endpoint for the series; upsert TVDB and IMDB IDs into `media_item_external_id`. Same for each episode (TMDB → TVDB episode ID).
+4. **External IDs** — fetch TMDB's `external_ids` endpoint for the series; upsert TVDB and IMDB IDs into `media_item_external_id`. The per-episode equivalent (TMDB → TVDB episode ID) is **deferred** — `media_episode_external_id` ships with its first consumer; the source data (`seasonDetails.Episodes[].TVDBID`) is already in the payload we fetch, so capture is cheap whenever it's wanted.
 5. **Raw payload** — store the full TMDB response in `media_metadata_source` keyed by `(media_item_id, source: tmdb)`.
 
 ### Pre-air episodes
@@ -159,7 +161,7 @@ A pre-air episode has **no `file`** and exists as a record only. When it airs, t
 
 TMDB occasionally renumbers — moves an episode from `S01E13` to `S02E01`, etc. Sonarr famously struggles with this. The way out is **keying on stable TMDB episode IDs**, not `(season, episode)`:
 
-- The unique constraint on `media_episode` is on the TMDB episode external ID (via `media_episode_external_id`), not on `(season_id, episode_number)`.
+- The unique constraint on `media_episode` is the partial-unique on the `media_episode.tmdb_id` **column** (`idx_media_episode_tmdb`), not on `(season_id, episode_number)`.
 - When sync sees a known TMDB episode ID with new `(season, episode)` numbers, **update the row** rather than insert a duplicate.
 - Surfaced to the user via a [notification](../notifications/README.md): "*Show X* renumbered episodes; review your overrides." (Tracking's per-episode overrides keyed on the same TMDB ID survive the renumber automatically — see [tracking open question #4](../tracking/README.md#open-questions).)
 

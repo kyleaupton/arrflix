@@ -451,7 +451,6 @@ type MediaEpisode struct {
 	AbsoluteNumber *int32      `json:"absolute_number"`
 	Deprecated     bool        `json:"deprecated"`
 	TmdbID         *int64      `json:"tmdb_id"`
-	TvdbID         *int64      `json:"tvdb_id"`
 	CreatedAt      time.Time   `json:"created_at"`
 }
 
@@ -476,8 +475,16 @@ type MediaItem struct {
 	ReleaseDate       pgtype.Date        `json:"release_date"`
 	LastAirDate       pgtype.Date        `json:"last_air_date"`
 	InProduction      *bool              `json:"in_production"`
-	ImdbID            *string            `json:"imdb_id"`
 	MetadataUpdatedAt pgtype.Timestamptz `json:"metadata_updated_at"`
+}
+
+type MediaItemExternalID struct {
+	ID          pgtype.UUID `json:"id"`
+	MediaItemID pgtype.UUID `json:"media_item_id"`
+	Source      string      `json:"source"`
+	ExternalID  string      `json:"external_id"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
 }
 
 type MediaMetadataSource struct {

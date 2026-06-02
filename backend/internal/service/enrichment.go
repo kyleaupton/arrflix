@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -84,11 +86,19 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item model.MediaIte
 		ReleaseDate:   releaseDate,
 		LastAirDate:   nil,
 		InProduction:  &inProd,
-		ImdbID:        strPtrIfNotEmpty(details.IMDbID),
 	}
 
 	if _, err := s.repo.UpdateMediaItemMetadata(ctx, params); err != nil {
 		return err
+	}
+
+	// Record the imdb cross-reference in the external_id registry. Non-fatal:
+	// item metadata is already committed, so a registry write failure logs and
+	// continues rather than failing the enrich.
+	if details.IMDbID != "" {
+		if err := s.repo.UpsertMediaItemExternalID(ctx, item.ID, string(metadata.SourceIMDB), details.IMDbID); err != nil {
+			s.logger.Warn().Err(err).Str("title", item.Title).Msg("enrich movie: imdb external-id upsert failed")
+		}
 	}
 
 	// Store raw source data
@@ -115,12 +125,6 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 	var certification string
 	if details.TVContentRatingsAppend != nil && details.ContentRatings != nil {
 		certification = extractTVCertification(details.ContentRatings)
-	}
-
-	// Extract IMDB ID from appended external IDs
-	var imdbID string
-	if details.TVExternalIDsAppend != nil && details.TVExternalIDs != nil {
-		imdbID = details.IMDbID
 	}
 
 	firstAirDate := parseDateToTimePtr(details.FirstAirDate)
@@ -150,13 +154,30 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 		ReleaseDate:   firstAirDate,
 		LastAirDate:   lastAirDate,
 		InProduction:  &details.InProduction,
-		ImdbID:        strPtrIfNotEmpty(imdbID),
 	}
 
 	// Advance metadata_updated_at first, so a later partial structure-sync
 	// failure doesn't leave the item pinned stale and re-fetched every tick.
 	if _, err := s.repo.UpdateMediaItemMetadata(ctx, params); err != nil {
 		return err
+	}
+
+	// Record cross-reference namespaces in the external_id registry. The tvdb
+	// id (TVExternalIDs.TVDBID) is the series cross-ref acquisition reads at
+	// indexer-search time — fetched via the external_ids append, persisted here.
+	// Non-fatal: item metadata is already committed, so a registry write
+	// failure logs and continues.
+	if details.TVExternalIDsAppend != nil && details.TVExternalIDs != nil {
+		if details.IMDbID != "" {
+			if err := s.repo.UpsertMediaItemExternalID(ctx, item.ID, string(metadata.SourceIMDB), details.IMDbID); err != nil {
+				s.logger.Warn().Err(err).Str("title", item.Title).Msg("enrich series: imdb external-id upsert failed")
+			}
+		}
+		if details.TVDBID != 0 {
+			if err := s.repo.UpsertMediaItemExternalID(ctx, item.ID, string(metadata.SourceTVDB), strconv.FormatInt(details.TVDBID, 10)); err != nil {
+				s.logger.Warn().Err(err).Str("title", item.Title).Msg("enrich series: tvdb external-id upsert failed")
+			}
+		}
 	}
 
 	// Store raw source data

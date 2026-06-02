@@ -90,8 +90,8 @@ where season_id = $1 and episode_number = $2;
 -- (the row's UUID — and any file.episode_id — survives). Metadata columns
 -- COALESCE so a sparse writer (match-commit) doesn't null out sync's values.
 -- deprecated resets to false: if TMDB reports the episode again, it's live.
-insert into media_episode (season_id, episode_number, title, air_date, overview, still_path, vote_average, runtime, tmdb_id, tvdb_id)
-values (sqlc.arg(season_id), sqlc.arg(episode_number), sqlc.arg(title), sqlc.arg(air_date), sqlc.arg(overview), sqlc.arg(still_path), sqlc.arg(vote_average), sqlc.arg(runtime), sqlc.arg(tmdb_id), sqlc.arg(tvdb_id))
+insert into media_episode (season_id, episode_number, title, air_date, overview, still_path, vote_average, runtime, tmdb_id)
+values (sqlc.arg(season_id), sqlc.arg(episode_number), sqlc.arg(title), sqlc.arg(air_date), sqlc.arg(overview), sqlc.arg(still_path), sqlc.arg(vote_average), sqlc.arg(runtime), sqlc.arg(tmdb_id))
 on conflict (tmdb_id) where tmdb_id is not null
 do update set season_id = excluded.season_id,
               episode_number = excluded.episode_number,
@@ -101,7 +101,6 @@ do update set season_id = excluded.season_id,
               still_path = coalesce(excluded.still_path, media_episode.still_path),
               vote_average = coalesce(excluded.vote_average, media_episode.vote_average),
               runtime = coalesce(excluded.runtime, media_episode.runtime),
-              tvdb_id = coalesce(excluded.tvdb_id, media_episode.tvdb_id),
               deprecated = false
 returning *;
 
@@ -398,7 +397,6 @@ SET poster_path        = sqlc.arg(poster_path),
     release_date       = sqlc.arg(release_date),
     last_air_date      = sqlc.arg(last_air_date),
     in_production      = sqlc.arg(in_production),
-    imdb_id            = sqlc.arg(imdb_id),
     metadata_updated_at = now(),
     updated_at         = now()
 WHERE id = sqlc.arg(id)
@@ -420,3 +418,11 @@ DO UPDATE SET data = excluded.data, fetched_at = now();
 -- name: GetMediaMetadataSource :one
 SELECT * FROM media_metadata_source
 WHERE media_item_id = sqlc.arg(media_item_id) AND source = sqlc.arg(source);
+
+-- name: UpsertMediaItemExternalID :exec
+-- Secondary-namespace cross-reference for a media_item (imdb/tvdb/…). One row
+-- per (item, source); re-running enrichment refreshes the external_id in place.
+insert into media_item_external_id (media_item_id, source, external_id)
+values (sqlc.arg(media_item_id), sqlc.arg(source), sqlc.arg(external_id))
+on conflict (media_item_id, source)
+do update set external_id = excluded.external_id, updated_at = now();

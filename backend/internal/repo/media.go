@@ -48,6 +48,7 @@ type MediaRepo interface {
 	UpdateMediaItemMetadata(ctx context.Context, params UpdateMediaItemMetadataParams) (model.MediaItem, error)
 	ListStaleMediaItems(ctx context.Context, staleBefore time.Time, batchSize int32) ([]model.MediaItem, error)
 	UpsertMediaMetadataSource(ctx context.Context, params UpsertMediaMetadataSourceParams) error
+	UpsertMediaItemExternalID(ctx context.Context, mediaItemID uuid.UUID, source, externalID string) error
 
 	// Seasons
 	ListSeasonsForMedia(ctx context.Context, mediaItemID uuid.UUID) ([]model.MediaSeason, error)
@@ -142,7 +143,6 @@ type UpdateMediaItemMetadataParams struct {
 	ReleaseDate   *time.Time
 	LastAirDate   *time.Time
 	InProduction  *bool
-	ImdbID        *string
 }
 
 // UpsertMediaMetadataSourceParams is the domain-shaped input for
@@ -173,7 +173,6 @@ func toModelMediaItem(row dbgen.MediaItem) model.MediaItem {
 		Status:        row.Status,
 		Certification: row.Certification,
 		InProduction:  row.InProduction,
-		ImdbID:        row.ImdbID,
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
 	}
@@ -340,7 +339,6 @@ func (r *Repository) UpdateMediaItemMetadata(ctx context.Context, params UpdateM
 		ReleaseDate:   pgDateFromTimePtr(params.ReleaseDate),
 		LastAirDate:   pgDateFromTimePtr(params.LastAirDate),
 		InProduction:  params.InProduction,
-		ImdbID:        params.ImdbID,
 	})
 	if err != nil {
 		return model.MediaItem{}, apperrors.FromPg(err, "update metadata for media item %s", params.ID)
@@ -369,6 +367,17 @@ func (r *Repository) UpsertMediaMetadataSource(ctx context.Context, params Upser
 		Source:      params.Source,
 		Data:        []byte(params.Data),
 	}), "upsert metadata source %q for media item %s", params.Source, params.MediaItemID)
+}
+
+// UpsertMediaItemExternalID writes a secondary-namespace cross-reference
+// (imdb/tvdb/…) for a media item. One row per (item, source); re-running
+// refreshes the external_id in place.
+func (r *Repository) UpsertMediaItemExternalID(ctx context.Context, mediaItemID uuid.UUID, source, externalID string) error {
+	return apperrors.FromPg(r.Q.UpsertMediaItemExternalID(ctx, dbgen.UpsertMediaItemExternalIDParams{
+		MediaItemID: pgtypeFromUUID(mediaItemID),
+		Source:      source,
+		ExternalID:  externalID,
+	}), "upsert external id %q for media item %s", source, mediaItemID)
 }
 
 // toModelMediaSeason translates the persistence-shaped dbgen.MediaSeason into
@@ -405,7 +414,6 @@ func toModelMediaEpisode(row dbgen.MediaEpisode) model.MediaEpisode {
 		AbsoluteNumber: row.AbsoluteNumber,
 		Deprecated:     row.Deprecated,
 		TmdbID:         row.TmdbID,
-		TvdbID:         row.TvdbID,
 		CreatedAt:      row.CreatedAt,
 	}
 	if row.AirDate.Valid {
@@ -438,7 +446,6 @@ type UpsertEpisodeParams struct {
 	VoteAverage   *float64
 	Runtime       *int32
 	TmdbID        *int64
-	TvdbID        *int64
 }
 
 func (r *Repository) ListSeasonsForMedia(ctx context.Context, mediaID uuid.UUID) ([]model.MediaSeason, error) {
@@ -537,7 +544,6 @@ func (r *Repository) UpsertEpisode(ctx context.Context, params UpsertEpisodePara
 		VoteAverage:   params.VoteAverage,
 		Runtime:       params.Runtime,
 		TmdbID:        params.TmdbID,
-		TvdbID:        params.TvdbID,
 	})
 	if err != nil {
 		return model.MediaEpisode{}, apperrors.FromPg(err, "upsert episode %d for season %s", params.EpisodeNumber, params.SeasonID)

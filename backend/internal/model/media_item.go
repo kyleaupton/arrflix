@@ -29,7 +29,6 @@ type MediaItem struct {
 	ReleaseDate       *time.Time `json:"releaseDate,omitempty"`
 	LastAirDate       *time.Time `json:"lastAirDate,omitempty"`
 	InProduction      *bool      `json:"inProduction,omitempty"`
-	ImdbID            *string    `json:"imdbId,omitempty"`
 	MetadataUpdatedAt *time.Time `json:"metadataUpdatedAt,omitempty"`
 	CreatedAt         time.Time  `json:"createdAt"`
 	UpdatedAt         time.Time  `json:"updatedAt"`

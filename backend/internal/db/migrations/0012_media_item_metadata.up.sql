@@ -12,7 +12,6 @@ ALTER TABLE media_item
     ADD COLUMN release_date    DATE,
     ADD COLUMN last_air_date   DATE,
     ADD COLUMN in_production   BOOLEAN,
-    ADD COLUMN imdb_id         TEXT,
     ADD COLUMN metadata_updated_at TIMESTAMPTZ;
 
 -- Index for staleness queries (enrichment worker)

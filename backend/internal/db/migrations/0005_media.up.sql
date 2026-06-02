@@ -23,6 +23,24 @@ CREATE TABLE IF NOT EXISTS media_item (
 CREATE INDEX IF NOT EXISTS idx_media_item_type ON media_item (type);
 CREATE INDEX IF NOT EXISTS idx_media_item_tmdb ON media_item (tmdb_id);
 
+-- External ID registry: secondary cross-reference namespaces for an item
+-- (imdb, tvdb; anidb reserved). The canonical tmdb id stays a typed column
+-- on media_item (canonical writer owns it; it's the matching key) — `tmdb`
+-- is a reserved-valid source but column-canonical in v1, not stored here.
+-- `source` is an open vocabulary (provider-layer config, not schema).
+-- See specs/modules/metadata/README.md "Identity".
+CREATE TABLE IF NOT EXISTS media_item_external_id (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  media_item_id UUID NOT NULL REFERENCES media_item(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (media_item_id, source)
+);
+CREATE INDEX IF NOT EXISTS idx_media_item_external_id_lookup
+  ON media_item_external_id (source, external_id);
+
 -- Seasons (only for series)
 CREATE TABLE IF NOT EXISTS media_season (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -56,7 +74,6 @@ CREATE TABLE IF NOT EXISTS media_episode (
   absolute_number INT,
   deprecated BOOLEAN NOT NULL DEFAULT false,
   tmdb_id BIGINT,
-  tvdb_id BIGINT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -66,7 +83,6 @@ CREATE INDEX IF NOT EXISTS idx_media_episode_season_number ON media_episode (sea
 -- The episode identity key — one row per TMDB episode id. Partial so manual
 -- (no-tmdb) rows aren't constrained.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_media_episode_tmdb ON media_episode (tmdb_id) WHERE tmdb_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_media_episode_tvdb ON media_episode (tvdb_id);
 
 -- A file is one physical media file under a library root. Identity is
 -- nullable state on the row: media_item_id is the TITLE (movie or

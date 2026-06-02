@@ -19,6 +19,5 @@ type MediaEpisode struct {
 	AbsoluteNumber *int32     `json:"absoluteNumber,omitempty"`
 	Deprecated     bool       `json:"deprecated"`
 	TmdbID         *int64     `json:"tmdbId,omitempty"`
-	TvdbID         *int64     `json:"tvdbId,omitempty"`
 	CreatedAt      time.Time  `json:"createdAt"`
 }
