@@ -126,7 +126,7 @@ The thing that keeps the metadata model fresh is **not** a "series syncer" — i
 
 The engine **conforms to existing patterns rather than re-specifying them**: the due-queue is a [work-dispatch](../../patterns/work-dispatch/README.md) table (claim with `FOR UPDATE SKIP LOCKED`, `LISTEN/NOTIFY` wake-up hint + fallback ticker), and provider reachability (rate-limited, unreachable) is a [connectivity-health](../../patterns/connectivity-health/README.md) resource — `rate_limited` is in that pattern's example status set, and back-off on 429 is the connectivity-health contract, not a bespoke mechanism here.
 
-Normalization happens **at the provider boundary**: TMDB's `status` strings → the canonical [status enum](../metadata/README.md#item-level-metadata), ISO date strings → typed dates, provider genre arrays → canonical genres. A future provider's different vocabulary is translated inside *its* operation; consumer code never sees a native shape.
+Normalization happens **at the provider boundary**: TMDB's `status` strings → the canonical [status enum](../metadata/README.md#canonical-status), ISO date strings → typed dates, provider genre arrays → canonical genres. A future provider's different vocabulary is translated inside *its* operation; consumer code never sees a native shape.
 
 ## Anime (embedded data vs API)
 
@@ -175,7 +175,7 @@ TMDB's API is free for **non-commercial** use with attribution (an "About"/credi
 4. **Per-content-type source preference storage.** When TVDB-for-series-structure arrives, where does "prefer TVDB structure for this series" live — a column, a per-series setting, an install default? Pin when TVDB is real (>v2).
 5. **Bundled-key operational policy.** Rotation, abuse monitoring, and the threshold at which we'd nudge users toward BYOK. Operational, not architectural; pin before public release.
 6. **Discovery as a separate provider.** `DiscoverySource` (trending/similar) is bundled into TMDB today but is the seam most likely to want a *different* best-in-class source (Trakt) later. Keep it a distinct role now so that swap is an extension, not a re-cut. Pin if/when a discovery-specialist is wanted.
-7. **Canonical status enum vocabulary.** Mirrors TMDB today (`Released`, `Returning Series`, `Ended`, `Canceled`). Lock the canonical set's *contents* (mapping TMDB down to a small stable set) before it bakes into UI strings — coordinated with [metadata's promotion of this decision](../metadata/README.md#item-level-metadata).
+7. **Canonical status enum vocabulary — decided.** Locked set: `upcoming` · `released` · `continuing` · `ended` · `canceled` · `unknown`, with TMDB mapped down at the provider boundary (`model.CanonicalizeStatus`). Full mapping table and rationale in [metadata's Canonical status](../metadata/README.md#canonical-status); the refresh engine's `(state) → TTL` cadence keys on these canonical states.
 
 ## What we're explicitly not deciding here
 

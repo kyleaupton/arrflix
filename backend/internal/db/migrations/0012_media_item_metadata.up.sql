@@ -6,7 +6,7 @@ ALTER TABLE media_item
     ADD COLUMN vote_average    DOUBLE PRECISION,
     ADD COLUMN vote_count      INT,
     ADD COLUMN runtime         INT,
-    ADD COLUMN status          TEXT,
+    ADD COLUMN status          TEXT CHECK (status IS NULL OR status IN ('upcoming','released','continuing','ended','canceled','unknown')),
     ADD COLUMN certification   TEXT,
     ADD COLUMN genres          JSONB,
     ADD COLUMN release_date    DATE,

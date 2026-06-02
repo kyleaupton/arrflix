@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
@@ -80,7 +81,7 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item model.MediaIte
 		VoteAverage:   &voteAvg,
 		VoteCount:     &voteCount,
 		Runtime:       &runtime,
-		Status:        strPtrIfNotEmpty(details.Status),
+		Status:        canonicalStatusPtr(details.Status),
 		Certification: strPtrIfNotEmpty(certification),
 		Genres:        genresFromTmdb(details.Genres),
 		ReleaseDate:   releaseDate,
@@ -148,7 +149,7 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 		VoteAverage:   &voteAvg,
 		VoteCount:     &voteCount,
 		Runtime:       runtime,
-		Status:        strPtrIfNotEmpty(details.Status),
+		Status:        canonicalStatusPtr(details.Status),
 		Certification: strPtrIfNotEmpty(certification),
 		Genres:        genresFromTmdb(details.Genres),
 		ReleaseDate:   firstAirDate,
@@ -295,6 +296,18 @@ func strPtrIfNotEmpty(s string) *string {
 	if s == "" {
 		return nil
 	}
+	return &s
+}
+
+// canonicalStatusPtr maps a raw TMDB status to our canonical token, returning
+// nil when the raw is empty so a never-set status persists as NULL — keeping
+// "never enriched" distinguishable from a mapped-but-unknown value. A non-empty
+// raw that doesn't map stores the canonical "unknown" token.
+func canonicalStatusPtr(raw string) *string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	s := string(model.CanonicalizeStatus(raw))
 	return &s
 }
 

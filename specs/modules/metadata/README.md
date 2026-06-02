@@ -69,7 +69,7 @@ The shape exists today (migration 0005 + 0012). This doc captures it for complet
 | `vote_average`         | TMDB                   |                                                             |
 | `vote_count`           | TMDB                   |                                                             |
 | `runtime`              | TMDB (movie); TMDB episode_run_time[0] (series fallback) | Series runtime is fuzzy; per-episode is the source of truth |
-| `status`               | TMDB                   | `Released`, `Returning Series`, `Ended`, `Canceled`, etc.   |
+| `status`               | TMDB → canonical       | **Locked** canonical set: `upcoming` · `released` · `continuing` · `ended` · `canceled` · `unknown`. TMDB's strings are mapped down at the provider boundary (`model.CanonicalizeStatus`); the column stores the canonical token. See [Canonical status](#canonical-status). |
 | `certification`        | TMDB content ratings   | US rating extracted (configurable later)                    |
 | `genres`               | TMDB                   | Stored as JSONB array of `{tmdb_id, name}`                   |
 | `release_date`         | TMDB (movie release / series first_air_date) |                                            |
@@ -83,6 +83,21 @@ The shape exists today (migration 0005 + 0012). This doc captures it for complet
 **Movie collections:** TMDB groups movies into collections (MCU, Star Wars Saga, etc.). Per the discussion, we store **collection_id + collection_name** denormalized on `media_item` for v1 — enough to render "part of: MCU" on a focus page and to query "all MCU movies." We do **not** create a first-class `collection` table; if richer collection features emerge (collection overview, collection poster), we promote later.
 
 **The canonical `tmdb_id` is a column; secondary external IDs are not** — see [Identity](#identity).
+
+### Canonical status
+
+`status` carries a **locked, source-agnostic** lifecycle vocabulary, not TMDB's wording. The provider operation maps TMDB's strings down to this set at the boundary (`model.CanonicalizeStatus`, applied at every TMDB-status read/write site), so UI labels decouple from TMDB's phrasing and the [refresh engine](../sources/README.md#the-refresh-engine)'s `(state) → TTL` cadence policy keys on a stable set.
+
+| TMDB string | canonical |
+| ----------- | --------- |
+| `Released` | `released` |
+| `Returning Series` | `continuing` |
+| `Ended` | `ended` |
+| `Canceled` | `canceled` |
+| `Planned`, `Rumored`, `In Production`, `Post Production`, `Pilot` | `upcoming` |
+| `""` / anything unmapped | `unknown` |
+
+UI labels: Upcoming / Released / Continuing / Ended / Canceled; `unknown` renders no chip. A genuinely-empty raw stores NULL (keeping "never enriched" distinguishable); a non-empty-but-unmapped raw stores `unknown`. A migration-0012 `CHECK` constraint pins the column to this set. `In Production`→`upcoming` is the one judgment call — overwhelmingly a not-yet-released signal.
 
 ### Series type (the numbering-regime anchor)
 
@@ -221,7 +236,7 @@ The existing `media_metadata_source` table stores raw JSONB payloads from each s
 
 The full provider strategy — role-segregated seams, the cost-to-enable taxonomy, the bundled-key approach, TVDB's deferral, and the anime mechanics — lives in [sources](../sources/README.md). Two pieces are data-model concerns and stay here.
 
-**Normalization happens at the provider boundary.** Raw payloads are stored as-is in `media_metadata_source`; the provider operation **normalizes** them into our canonical model before any column is written: TMDB's `status` strings → our [canonical status enum](#item-level-metadata), ISO date strings → typed `release_date` / `last_air_date`, genre arrays → canonical genres, relative `poster_path` → our stored path (URL composition happens at render time via the [`ImageComposer`](../sources/README.md#roles-not-one-provider) seam). Consumer code — UI, acquisition, tracking — never sees a provider's native shape; it sees the internal domain type. This boundary is what makes TMDB-shaped *storage* an implementation detail rather than a leak: the test is not "is the table TMDB-shaped" but "does TMDB shape escape this module's domain type" — and it must not.
+**Normalization happens at the provider boundary.** Raw payloads are stored as-is in `media_metadata_source`; the provider operation **normalizes** them into our canonical model before any column is written: TMDB's `status` strings → our [canonical status enum](#canonical-status), ISO date strings → typed `release_date` / `last_air_date`, genre arrays → canonical genres, relative `poster_path` → our stored path (URL composition happens at render time via the [`ImageComposer`](../sources/README.md#roles-not-one-provider) seam). Consumer code — UI, acquisition, tracking — never sees a provider's native shape; it sees the internal domain type. This boundary is what makes TMDB-shaped *storage* an implementation detail rather than a leak: the test is not "is the table TMDB-shaped" but "does TMDB shape escape this module's domain type" — and it must not.
 
 **One canonical writer owns the columns.** In v1 exactly one provider (TMDB) writes `media_item` columns. This is the mechanism that *prevents* a per-field reconciliation fork — there is nothing to reconcile with a single writer. Any later provider is either a *replacement* (insurance, never concurrent) or a *scoped augmenter* (one operation, blended at one call site), never a second canonical writer. The full rationale — portability insurance is cheap and already built (clean domain type + raw-payload retention); concurrency is the deferred, expensive part — is in [sources](../sources/README.md#portability-insurance-vs-concurrency).
 
@@ -325,7 +340,7 @@ Adjacent concerns that live elsewhere:
 8. **Image cache promotion.** What's the trigger to graduate to a local image cache? Likely: when we add custom artwork uploads (so we're already serving local images anyway), the case for proxying TMDB images via the same path gets stronger.
 9. **Collection-as-entity promotion.** When a `collection_id` column is no longer enough — e.g., we want a collection focus page with overview text and a poster — we promote to a `collection` table. Document this as the explicit upgrade path.
 10. **Per-source priority.** Moved to [sources](../sources/README.md#portability-insurance-vs-concurrency) — per-field precedence across canonical sources is the deferred multi-canonical mode; not v1.
-11. **Canonical status enum vocabulary — decided.** The status enum mirrors TMDB's strings today (`Released`, `Returning Series`, `Ended`, `Canceled`), which are written raw onto the column. **Decision:** map TMDB's vocabulary *down to a small canonical set at the provider boundary* (not expand the enum per provider), and lock that set's contents now, before it bakes into UI strings and i18n. The mapping lives in the provider operation; the canonical set is the contract consumers see. Coordinated with [sources OQ#7](../sources/README.md#open-questions). (Cheap adjacent renames flagged in the same pass: `vote_*` → `rating_*`, and drop the embedded `tmdb_id` from the genre blob — both gratuitous TMDB-isms in the canonical model.)
+11. **Canonical status enum vocabulary — locked & implemented.** The status column previously stored TMDB's strings raw. **Locked set:** `upcoming` · `released` · `continuing` · `ended` · `canceled` · `unknown`, with TMDB mapped down at the provider boundary (`model.CanonicalizeStatus`) — not expanded per provider. The full mapping table and rationale now live in [Canonical status](#canonical-status); a migration-0012 `CHECK` constraint pins the column. The cadence engine keys on these canonical states. Coordinated with [sources OQ#7](../sources/README.md#open-questions). (Cheap adjacent renames flagged in the same pass: `vote_*` → `rating_*`, and drop the embedded `tmdb_id` from the genre blob — both gratuitous TMDB-isms in the canonical model; still open.)
 12. **Image source on local overrides.** Custom artwork uploaded by a user has different URL composition rules than provider paths. Does the override row need an explicit `image_source` flag (`provider` vs `local`), or is it implicit (any override path is treated as local)? Pin when custom-artwork upload UI is designed.
 13. **Provider capability negotiation.** Moved to [sources](../sources/README.md) — handled by role-segregated seams (a provider implements the subset it supports) rather than a runtime capability negotiation.
 14. **TMDB-specific endpoints we lean on.** Moved to [sources](../sources/README.md) — documenting the contract a provider must fulfil (e.g. an `external_ids` equivalent) is a provider-seam concern, not a data-model one.
