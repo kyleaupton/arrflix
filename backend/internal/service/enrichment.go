@@ -209,12 +209,19 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 func (s *EnrichmentService) syncSeriesStructure(ctx context.Context, item model.MediaItem, details tmdb.TVDetails) {
 	syncedIDs := make([]int64, 0, details.NumberOfEpisodes)
 
+	// complete stays true only if every season fetched and every row upserted.
+	// DeprecateRemovedEpisodes keys off the synced set, so a partial sync (one
+	// season's fetch/upsert failed) would see that season's still-live episodes
+	// as "removed" and wrongly deprecate them. We only deprecate on a full pass.
+	complete := true
+
 	for _, season := range details.Seasons {
 		seasonDetails, err := s.tmdb.GetTVSeasonDetails(ctx, *item.TmdbID, season.SeasonNumber)
 		if err != nil {
 			s.logger.Warn().Err(err).
 				Str("title", item.Title).Int("season", season.SeasonNumber).
 				Msg("series structure sync: season fetch failed, skipping season")
+			complete = false
 			continue
 		}
 
@@ -230,6 +237,7 @@ func (s *EnrichmentService) syncSeriesStructure(ctx context.Context, item model.
 			s.logger.Warn().Err(err).
 				Str("title", item.Title).Int("season", season.SeasonNumber).
 				Msg("series structure sync: season upsert failed, skipping season")
+			complete = false
 			continue
 		}
 
@@ -250,16 +258,18 @@ func (s *EnrichmentService) syncSeriesStructure(ctx context.Context, item model.
 				s.logger.Warn().Err(err).
 					Str("title", item.Title).Int("season", season.SeasonNumber).Int("episode", ep.EpisodeNumber).
 					Msg("series structure sync: episode upsert failed, skipping episode")
+				complete = false
 				continue
 			}
 			syncedIDs = append(syncedIDs, epID)
 		}
 	}
 
-	// Mark episodes TMDB no longer reports as deprecated — but only when we
-	// synced something. An empty set means every season fetch failed; skipping
-	// avoids deprecating the whole tree on a transient TMDB outage.
-	if len(syncedIDs) > 0 {
+	// Mark episodes TMDB no longer reports as deprecated — but only after a
+	// complete sync. A partial sync (any season fetch/upsert failed) would
+	// deprecate the missing season's still-live episodes, so we skip it and
+	// let the next clean pass reconcile. An empty set means everything failed.
+	if complete && len(syncedIDs) > 0 {
 		if err := s.repo.DeprecateRemovedEpisodes(ctx, item.ID, syncedIDs); err != nil {
 			s.logger.Warn().Err(err).Str("title", item.Title).Msg("series structure sync: deprecate-removed failed")
 		}

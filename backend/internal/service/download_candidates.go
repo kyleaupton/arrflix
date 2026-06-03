@@ -377,11 +377,18 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 		}
 	}
 
-	// best-effort: empty title on TMDB failure
+	// best-effort: empty title on TMDB failure. episodeTmdbID is the stable
+	// TMDB episode id media_episode is keyed on — passing it converges this
+	// upsert onto the row series-structure sync creates rather than minting a
+	// NULL-tmdb_id duplicate (the (season_id, episode_number) index is no
+	// longer unique). nil on a TMDB lookup failure: best-effort, same as title.
 	episodeTitle := ""
+	var episodeTmdbID *int64
 	if seasonNumber != nil && episodeNumber != nil {
 		if tmdbEpisode, terr := s.media.tmdb.GetEpisodeDetails(ctx, seriesID, int64(*seasonNumber), int64(*episodeNumber)); terr == nil {
 			episodeTitle = tmdbEpisode.Name
+			id := tmdbEpisode.ID
+			episodeTmdbID = &id
 		}
 	}
 
@@ -411,6 +418,7 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 					SeasonID:      season.ID,
 					EpisodeNumber: int32(*episodeNumber),
 					Title:         &episodeTitle,
+					TmdbID:        episodeTmdbID,
 				})
 				if eerr != nil {
 					return eerr
