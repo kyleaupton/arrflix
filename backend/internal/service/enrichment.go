@@ -93,14 +93,8 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item model.MediaIte
 		return err
 	}
 
-	// Record the imdb cross-reference in the external_id registry. Non-fatal:
-	// item metadata is already committed, so a registry write failure logs and
-	// continues rather than failing the enrich.
-	if details.IMDbID != "" {
-		if err := s.repo.UpsertMediaItemExternalID(ctx, item.ID, string(metadata.SourceIMDB), details.IMDbID); err != nil {
-			s.logger.Warn().Err(err).Str("title", item.Title).Msg("enrich movie: imdb external-id upsert failed")
-		}
-	}
+	// Record the imdb cross-reference in the external_id registry.
+	s.upsertExternalID(ctx, item, metadata.SourceIMDB, details.IMDbID)
 
 	// Store raw source data
 	rawJSON, err := json.Marshal(details)
@@ -166,18 +160,11 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 	// Record cross-reference namespaces in the external_id registry. The tvdb
 	// id (TVExternalIDs.TVDBID) is the series cross-ref acquisition reads at
 	// indexer-search time — fetched via the external_ids append, persisted here.
-	// Non-fatal: item metadata is already committed, so a registry write
-	// failure logs and continues.
+	// The guard ensures the append actually came back before we trust its ids.
 	if details.TVExternalIDsAppend != nil && details.TVExternalIDs != nil {
-		if details.IMDbID != "" {
-			if err := s.repo.UpsertMediaItemExternalID(ctx, item.ID, string(metadata.SourceIMDB), details.IMDbID); err != nil {
-				s.logger.Warn().Err(err).Str("title", item.Title).Msg("enrich series: imdb external-id upsert failed")
-			}
-		}
+		s.upsertExternalID(ctx, item, metadata.SourceIMDB, details.IMDbID)
 		if details.TVDBID != 0 {
-			if err := s.repo.UpsertMediaItemExternalID(ctx, item.ID, string(metadata.SourceTVDB), strconv.FormatInt(details.TVDBID, 10)); err != nil {
-				s.logger.Warn().Err(err).Str("title", item.Title).Msg("enrich series: tvdb external-id upsert failed")
-			}
+			s.upsertExternalID(ctx, item, metadata.SourceTVDB, strconv.FormatInt(details.TVDBID, 10))
 		}
 	}
 
@@ -307,6 +294,22 @@ func strPtrIfNotEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// upsertExternalID records a secondary-namespace cross-reference (imdb/tvdb/…)
+// for item in the external_id registry. Best-effort and non-fatal: the item's
+// metadata is already committed by the time this runs, so a registry write
+// failure logs and returns rather than failing the enrich. An empty value is
+// skipped — the namespace simply isn't recorded.
+func (s *EnrichmentService) upsertExternalID(ctx context.Context, item model.MediaItem, source metadata.ExternalSource, value string) {
+	if value == "" {
+		return
+	}
+	if err := s.repo.UpsertMediaItemExternalID(ctx, item.ID, string(source), value); err != nil {
+		s.logger.Warn().Err(err).
+			Str("title", item.Title).Str("source", string(source)).
+			Msg("enrich: external-id upsert failed")
+	}
 }
 
 // canonicalStatusPtr maps a raw TMDB status to our canonical token, returning
