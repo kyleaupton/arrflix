@@ -13,6 +13,7 @@ import (
 type MediaItem struct {
 	ID                uuid.UUID  `json:"id"`
 	Type              string     `json:"type"`
+	SeriesType        string     `json:"seriesType"`
 	Title             string     `json:"title"`
 	Year              *int32     `json:"year,omitempty"`
 	TmdbID            *int64     `json:"tmdbId,omitempty"`
@@ -28,7 +29,6 @@ type MediaItem struct {
 	ReleaseDate       *time.Time `json:"releaseDate,omitempty"`
 	LastAirDate       *time.Time `json:"lastAirDate,omitempty"`
 	InProduction      *bool      `json:"inProduction,omitempty"`
-	ImdbID            *string    `json:"imdbId,omitempty"`
 	MetadataUpdatedAt *time.Time `json:"metadataUpdatedAt,omitempty"`
 	CreatedAt         time.Time  `json:"createdAt"`
 	UpdatedAt         time.Time  `json:"updatedAt"`

@@ -6,13 +6,12 @@ ALTER TABLE media_item
     ADD COLUMN vote_average    DOUBLE PRECISION,
     ADD COLUMN vote_count      INT,
     ADD COLUMN runtime         INT,
-    ADD COLUMN status          TEXT,
+    ADD COLUMN status          TEXT CHECK (status IS NULL OR status IN ('upcoming','released','continuing','ended','canceled','unknown')),
     ADD COLUMN certification   TEXT,
     ADD COLUMN genres          JSONB,
     ADD COLUMN release_date    DATE,
     ADD COLUMN last_air_date   DATE,
     ADD COLUMN in_production   BOOLEAN,
-    ADD COLUMN imdb_id         TEXT,
     ADD COLUMN metadata_updated_at TIMESTAMPTZ;
 
 -- Index for staleness queries (enrichment worker)

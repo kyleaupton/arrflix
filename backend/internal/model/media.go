@@ -21,7 +21,7 @@ type Movie struct {
 	Tagline  string `json:"tagline"`
 
 	// Stats
-	Status              string              `json:"status"`
+	Status              MediaStatus         `json:"status"`
 	ReleaseDate         string              `json:"releaseDate"`
 	Runtime             int                 `json:"runtime"`
 	OriginalLanguage    string              `json:"originalLanguage"`
@@ -49,10 +49,10 @@ type SeriesRail struct {
 type Series struct {
 	TmdbID int64 `json:"tmdbId"`
 
-	Title    string `json:"title"`
-	Overview string `json:"overview"`
-	Tagline  string `json:"tagline"`
-	Status   string `json:"status"`
+	Title    string      `json:"title"`
+	Overview string      `json:"overview"`
+	Tagline  string      `json:"tagline"`
+	Status   MediaStatus `json:"status"`
 
 	Seasons []Season `json:"seasons"`
 

@@ -233,6 +233,7 @@ import WatchProviders from '@/components/media/WatchProviders.vue'
 import NextEpisodeBanner from '@/components/media/NextEpisodeBanner.vue'
 import { useModal } from '@/composables/useModal'
 import { buildMetadataSubtitle } from '@/lib/utils'
+import { statusLabel } from '@/lib/mediaStatus'
 import { useDownloadJobs, type DownloadJob } from '@/composables/useDownloadJobs'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
 
@@ -299,9 +300,8 @@ const seriesChips = computed(() => {
   if (data.value?.genres?.length) {
     chips.push(...data.value.genres.slice(0, 3).map((g) => g.name))
   }
-  if (data.value?.status) {
-    chips.push(data.value.status)
-  }
+  const l = statusLabel(data.value?.status)
+  if (l) chips.push(l)
   return chips
 })
 
