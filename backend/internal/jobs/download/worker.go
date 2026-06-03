@@ -414,13 +414,9 @@ func (w *Worker) resolveEpisodeID(ctx context.Context, mediaItemID uuid.UUID, ta
 		return uuid.Nil, err
 	}
 
-	// Get or create episode. Prefer the existing row series-structure sync
-	// populated (it carries the stable tmdb_id) instead of upserting blind:
-	// the (season_id, episode_number) index is no longer unique, and an upsert
-	// with no tmdb_id can't conflict-resolve onto the synced row, so it would
-	// mint a duplicate NULL-tmdb_id episode every import. The worker has no
-	// tmdb id to pass, so we look the synced row up by number and only create
-	// a fallback row when the tree was never synced.
+	// Get-then-create: the worker has no tmdb_id to upsert on, and the
+	// season+number index isn't unique, so a blind upsert would duplicate the
+	// row structure-sync already created. Look it up; only create as fallback.
 	episode, err := w.repo.GetEpisodeByNumber(ctx, season.ID, int32(epNum))
 	if err == nil {
 		return episode.ID, nil

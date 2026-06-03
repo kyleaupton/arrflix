@@ -93,7 +93,6 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item model.MediaIte
 		return err
 	}
 
-	// Record the imdb cross-reference in the external_id registry.
 	s.upsertExternalID(ctx, item, metadata.SourceIMDB, details.IMDbID)
 
 	// Store raw source data
@@ -196,10 +195,9 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 func (s *EnrichmentService) syncSeriesStructure(ctx context.Context, item model.MediaItem, details tmdb.TVDetails) {
 	syncedIDs := make([]int64, 0, details.NumberOfEpisodes)
 
-	// complete stays true only if every season fetched and every row upserted.
-	// DeprecateRemovedEpisodes keys off the synced set, so a partial sync (one
-	// season's fetch/upsert failed) would see that season's still-live episodes
-	// as "removed" and wrongly deprecate them. We only deprecate on a full pass.
+	// Deprecation keys off the synced set, so a partial sync would read a
+	// failed season's still-live episodes as "removed". Only deprecate on a
+	// full pass; this flips false on any season fetch/upsert failure.
 	complete := true
 
 	for _, season := range details.Seasons {
@@ -252,10 +250,8 @@ func (s *EnrichmentService) syncSeriesStructure(ctx context.Context, item model.
 		}
 	}
 
-	// Mark episodes TMDB no longer reports as deprecated — but only after a
-	// complete sync. A partial sync (any season fetch/upsert failed) would
-	// deprecate the missing season's still-live episodes, so we skip it and
-	// let the next clean pass reconcile. An empty set means everything failed.
+	// Mark episodes TMDB no longer reports as deprecated. Guarded on a complete
+	// sync (see above); empty set means everything failed.
 	if complete && len(syncedIDs) > 0 {
 		if err := s.repo.DeprecateRemovedEpisodes(ctx, item.ID, syncedIDs); err != nil {
 			s.logger.Warn().Err(err).Str("title", item.Title).Msg("series structure sync: deprecate-removed failed")
@@ -297,10 +293,8 @@ func strPtrIfNotEmpty(s string) *string {
 }
 
 // upsertExternalID records a secondary-namespace cross-reference (imdb/tvdb/…)
-// for item in the external_id registry. Best-effort and non-fatal: the item's
-// metadata is already committed by the time this runs, so a registry write
-// failure logs and returns rather than failing the enrich. An empty value is
-// skipped — the namespace simply isn't recorded.
+// in the external_id registry. Best-effort: metadata is already committed, so a
+// write failure logs rather than failing the enrich. Empty values are skipped.
 func (s *EnrichmentService) upsertExternalID(ctx context.Context, item model.MediaItem, source metadata.ExternalSource, value string) {
 	if value == "" {
 		return

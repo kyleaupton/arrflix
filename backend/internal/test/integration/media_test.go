@@ -222,8 +222,9 @@ func TestMedia_GetMovie_Happy(t *testing.T) {
 	if resp.Title != "Inception" {
 		t.Errorf("Title = %q, want %q", resp.Title, "Inception")
 	}
-	if resp.Status != "Released" {
-		t.Errorf("Status = %q, want %q", resp.Status, "Released")
+	// canonical token, mapped from the mock's "Released"
+	if resp.Status != "released" {
+		t.Errorf("Status = %q, want %q", resp.Status, "released")
 	}
 	if resp.Year == nil || *resp.Year != 2010 {
 		t.Errorf("Year = %v, want 2010", resp.Year)
@@ -277,8 +278,9 @@ func TestMedia_GetSeries_Happy(t *testing.T) {
 	if resp.Title != "Game of Thrones" {
 		t.Errorf("Title = %q, want %q", resp.Title, "Game of Thrones")
 	}
-	if resp.Status != "Ended" {
-		t.Errorf("Status = %q, want %q", resp.Status, "Ended")
+	// canonical token, mapped from the mock's "Ended"
+	if resp.Status != "ended" {
+		t.Errorf("Status = %q, want %q", resp.Status, "ended")
 	}
 	if resp.Year == nil || *resp.Year != 2011 {
 		t.Errorf("Year = %v, want 2011", resp.Year)

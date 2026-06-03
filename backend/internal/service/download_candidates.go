@@ -377,11 +377,9 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 		}
 	}
 
-	// best-effort: empty title on TMDB failure. episodeTmdbID is the stable
-	// TMDB episode id media_episode is keyed on — passing it converges this
-	// upsert onto the row series-structure sync creates rather than minting a
-	// NULL-tmdb_id duplicate (the (season_id, episode_number) index is no
-	// longer unique). nil on a TMDB lookup failure: best-effort, same as title.
+	// best-effort: empty title/nil id on TMDB failure. The episode tmdb_id is
+	// the upsert key, so passing it converges onto the row structure-sync owns
+	// instead of inserting a duplicate (the season+number index isn't unique).
 	episodeTitle := ""
 	var episodeTmdbID *int64
 	if seasonNumber != nil && episodeNumber != nil {
