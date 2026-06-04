@@ -103,7 +103,7 @@ Outcomes — the pass/penalize/hard-fail _logic_ is owned by [quality profiles](
 - **Pass / soft-fail** → the file is placed. A soft-fail (over-advertised but acceptable — e.g., a false Atmos claim on a fine 1080p) is kept, its recorded score penalized, and a [`quality/advertised-mismatch`](../hygiene/README.md) finding logged at import. No user notification — soft mismatches are common.
 - **Hard-fail** (the asserted file fails a gate `ffprobe` can verify — e.g., advertised 2160p, the stream is 1080p) → the import is rejected, the release is **blocklisted**, and the want returns to `searching` to re-grab. The AcquisitionWorker treats this like a failed search with the offending release excluded, so it can't re-pick the same bad file. Emits `want.regate_failed`.
 
-The re-gate can only reject on attributes `ffprobe` asserts; source / edition / group stay advertised-trusted (see the [parsing taxonomy](../parsing/README.md#what-ffprobe-can-and-cannot-verify)). The reject-vs-penalize partition is [quality profiles' open question](../quality-profiles/README.md#open-questions).
+The re-gate can only reject on attributes `ffprobe` asserts; source / edition / group stay advertised-trusted (see the [parsing taxonomy](../parsing/README.md#what-ffprobe-can-and-cannot-verify)). This partition is enforced structurally — each gate carries an `ffprobe`-verifiable tag and the re-gate runs only the tagged subset ([quality profiles](../quality-profiles/README.md#open-questions)); only the soft-fail penalty magnitude remains open.
 
 ## Components
 
