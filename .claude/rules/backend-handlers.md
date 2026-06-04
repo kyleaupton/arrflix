@@ -1,3 +1,8 @@
+---
+paths:
+  - "backend/internal/http/handlers/**"
+---
+
 # HTTP handlers — humachi pattern
 
 `libraries.go` is the canonical example. Every handler in this directory follows the same shape — read it alongside this guide.

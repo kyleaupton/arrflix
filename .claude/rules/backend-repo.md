@@ -1,8 +1,13 @@
+---
+paths:
+  - "backend/internal/repo/**"
+---
+
 # Repo layer rules
 
 This package is the boundary between SQLC-generated database code and the rest of the backend. Errors crossing this boundary MUST be typed via `internal/errors`.
 
-**Read [`specs/errors/README.md`](../../../specs/errors/README.md) before adding error-producing methods.** This file is the layer-specific cheat sheet; the spec has the full rationale.
+**Read [`specs/patterns/errors/README.md`](../../specs/patterns/errors/README.md) before adding error-producing methods.** This file is the layer-specific cheat sheet; the spec has the full rationale.
 
 ## Rules
 
@@ -179,4 +184,4 @@ If a postgres error code matters and isn't in this list, extend `internal/errors
 
 The repo only knows the identifier the method received. If callers consistently pass the user-facing identifier (UUID from a URL like `/libraries/:id`), the repo's error message is already correct.
 
-If the user is talking to your method via a different identifier (a slug, a name, a composite key), the **service layer** does the override via `apperrors.Wrap`. Don't try to handle that here — see `internal/service/CLAUDE.md`.
+If the user is talking to your method via a different identifier (a slug, a name, a composite key), the **service layer** does the override via `apperrors.Wrap`. Don't try to handle that here — see the service-layer rule (`.claude/rules/backend-service.md`).

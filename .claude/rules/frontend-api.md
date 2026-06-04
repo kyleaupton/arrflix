@@ -1,3 +1,8 @@
+---
+paths:
+  - "web/src/**"
+---
+
 # Frontend API client conventions
 
 The TypeScript client in `src/client/` is auto-generated from `backend/internal/http/docs/openapi.json` by `@hey-api/openapi-ts`. **Do not edit anything under `src/client/`** — it is overwritten on every `just web-genclient` / `just gen` run. These rules cover everything in `src/` that talks to the API.

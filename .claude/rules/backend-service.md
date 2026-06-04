@@ -1,8 +1,14 @@
+---
+paths:
+  - "backend/internal/service/**"
+  - "backend/internal/jobs/**"
+---
+
 # Service and worker layer rules
 
 These rules apply to both service code (`internal/service/`) and worker code (`internal/jobs/`). Services orchestrate business logic; workers drive long-running jobs. Both consume typed errors from `internal/repo`, may invoke external dependencies, and return typed errors. Where a rule is service-specific or worker-specific the text calls it out; otherwise treat both layers the same.
 
-**Read [`specs/errors/README.md`](../../../specs/errors/README.md) before writing error-producing code.** This file is the layer-specific cheat sheet; the spec has the full rationale.
+**Read [`specs/patterns/errors/README.md`](../../specs/patterns/errors/README.md) before writing error-producing code.** This file is the layer-specific cheat sheet; the spec has the full rationale.
 
 ## Rules
 
@@ -177,7 +183,7 @@ Use sparingly. The kind already encodes the default retry behavior; `.NotRetryab
 
 ### Workers and retry semantics
 
-Worker error sites care about retryability in addition to the kind. The defaults are derived from the kind (see [`specs/errors/README.md`](../../../specs/errors/README.md)): `apperrors.BadGateway` is retryable by default, so workers should use it for upstream API failures (qBittorrent, TMDB, Prowlarr) — the worker loop will back off and try again without any extra annotation. `apperrors.Internalf(...)` is also retryable by default, but invariant violations the worker can't recover from (unknown protocol, missing external id, "this should never happen") should chain `.NotRetryable()` so a single failure trips the job to `failed` instead of burning attempts. Repo errors flow through unchanged — `KindNotFound` and `KindConflict` are non-retryable by default, which is the right behavior for "the row vanished" or "we already enqueued this."
+Worker error sites care about retryability in addition to the kind. The defaults are derived from the kind (see [`specs/patterns/errors/README.md`](../../specs/patterns/errors/README.md)): `apperrors.BadGateway` is retryable by default, so workers should use it for upstream API failures (qBittorrent, TMDB, Prowlarr) — the worker loop will back off and try again without any extra annotation. `apperrors.Internalf(...)` is also retryable by default, but invariant violations the worker can't recover from (unknown protocol, missing external id, "this should never happen") should chain `.NotRetryable()` so a single failure trips the job to `failed` instead of burning attempts. Repo errors flow through unchanged — `KindNotFound` and `KindConflict` are non-retryable by default, which is the right behavior for "the row vanished" or "we already enqueued this."
 
 ## What goes in `errors.New` / `fmt.Errorf` instead
 
@@ -193,7 +199,7 @@ If none of those fit, the answer is probably to read the spec — there might be
 
 ## Tests
 
-Unit tests in this package cover internal logic that doesn't need the full HTTP/DB stack to exercise. Today that means pure helpers, parsers, and transformation code — pick the predicate or transformer next to the production code and test it co-located. The integration suite (`internal/test/integration/`) owns the wire contract; this layer owns correctness of the code behind it. The full split is in [`../test/integration/CLAUDE.md`](../test/integration/CLAUDE.md) — read it before adding a test that would need DB rows or a real external API to set up its precondition.
+Unit tests in this package cover internal logic that doesn't need the full HTTP/DB stack to exercise. Today that means pure helpers, parsers, and transformation code — pick the predicate or transformer next to the production code and test it co-located. The integration suite (`internal/test/integration/`) owns the wire contract; this layer owns correctness of the code behind it. The full split is in [`backend-integration-tests.md`](backend-integration-tests.md) — read it before adding a test that would need DB rows or a real external API to set up its precondition.
 
 Service-method tests against faked dependencies are an intended future addition but **don't currently exist in this package**. They require introducing internal interface seams in the production code (the service's repo and external-client fields typed as interfaces rather than concrete `*repo.Repository` / `*TmdbService` pointers). Adding seams is a per-service design decision, not a default — do it when there's enough untested internal logic in a service to justify the production-side change. The pattern to follow when you do is at the bottom of this section.
 

@@ -1,3 +1,8 @@
+---
+paths:
+  - "backend/internal/test/integration/**"
+---
+
 # Integration test rules
 
 These tests exercise the public HTTP surface of arrflix end-to-end: real chi
