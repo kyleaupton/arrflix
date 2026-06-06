@@ -12,9 +12,6 @@ type Plan struct {
 	NameTemplateID string `json:"nameTemplateId"` // how to name the file
 }
 
-// Note: CandidateContext has been replaced by EvaluationContext in context.go
-// which provides a unified context for both the policy engine and name templates.
-
 // Policy is the domain shape for a policy with its condition rule and ordered
 // action list nested. It mirrors the wire contract previously served by the
 // `handlers.FullPolicy` shim — a flat policy row plus a single optional rule
@@ -100,13 +97,13 @@ type EvaluationTrace struct {
 	Context   *ContextSnapshot   `json:"context,omitempty"` // Full evaluation context for debugging
 }
 
-// ContextSnapshot is a JSON-friendly representation of EvaluationContext
+// ContextSnapshot is a JSON-friendly representation of Release
 // Used to expose all available variables to the UI for debugging/transparency
 type ContextSnapshot struct {
 	Candidate map[string]any `json:"candidate"`
 	Identity  map[string]any `json:"identity"`
 	Quality   map[string]any `json:"quality"`
-	Release   map[string]any `json:"release"`
+	Encode    map[string]any `json:"encode"`
 	Media     map[string]any `json:"media"`
 	MediaInfo map[string]any `json:"mediainfo,omitempty"`
 }

@@ -261,6 +261,9 @@ components:
         candidate:
           additionalProperties: {}
           type: object
+        encode:
+          additionalProperties: {}
+          type: object
         identity:
           additionalProperties: {}
           type: object
@@ -273,14 +276,11 @@ components:
         quality:
           additionalProperties: {}
           type: object
-        release:
-          additionalProperties: {}
-          type: object
       required:
         - candidate
         - identity
         - quality
-        - release
+        - encode
         - media
       type: object
     Credits:

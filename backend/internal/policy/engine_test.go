@@ -33,7 +33,7 @@ func TestEngine_Evaluate(t *testing.T) {
 		AgeHours:  10,
 	}
 	q := parsing.Parse(candidate.Title, parsing.DomainMovie)
-	evalCtx := model.NewEvaluationContext(candidate, q)
+	evalCtx := model.NewRelease(candidate, q)
 
 	trace, err := engine.Evaluate(context.Background(), evalCtx)
 

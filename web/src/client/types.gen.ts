@@ -131,6 +131,9 @@ export type ContextSnapshot = {
     candidate: {
         [key: string]: unknown;
     };
+    encode: {
+        [key: string]: unknown;
+    };
     identity: {
         [key: string]: unknown;
     };
@@ -141,9 +144,6 @@ export type ContextSnapshot = {
         [key: string]: unknown;
     };
     quality: {
-        [key: string]: unknown;
-    };
-    release: {
         [key: string]: unknown;
     };
 };

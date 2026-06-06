@@ -352,7 +352,7 @@ func (h *Policies) Evaluate(ctx context.Context, input *PoliciesEvaluateInput) (
 	}
 
 	q := parsing.Parse(input.Body.Candidate.Title, domain)
-	evalCtx := model.NewEvaluationContext(input.Body.Candidate, q)
+	evalCtx := model.NewRelease(input.Body.Candidate, q)
 
 	trace, err := h.svc.Policies.Evaluate(ctx, evalCtx)
 	if err != nil {

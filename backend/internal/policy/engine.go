@@ -23,7 +23,7 @@ func NewEngine(r *repo.Repository, l *logger.Logger) *Engine {
 }
 
 // Evaluate evaluates all enabled policies in priority order and returns an EvaluationTrace
-func (e *Engine) Evaluate(ctx context.Context, evalCtx model.EvaluationContext) (model.EvaluationTrace, error) {
+func (e *Engine) Evaluate(ctx context.Context, evalCtx model.Release) (model.EvaluationTrace, error) {
 	trace := model.EvaluationTrace{
 		Policies: []model.PolicyEvaluation{},
 		FinalPlan: model.Plan{
@@ -169,7 +169,7 @@ func (e *Engine) Evaluate(ctx context.Context, evalCtx model.EvaluationContext) 
 }
 
 // evaluateRule evaluates a rule against the evaluation context
-func (e *Engine) evaluateRule(ctx context.Context, rule model.Rule, evalCtx model.EvaluationContext) (bool, error) {
+func (e *Engine) evaluateRule(ctx context.Context, rule model.Rule, evalCtx model.Release) (bool, error) {
 	operator := model.Operator(rule.Operator)
 
 	// Handle logical operators (and, or, not) which reference other rules
@@ -199,7 +199,7 @@ func (e *Engine) evaluateRule(ctx context.Context, rule model.Rule, evalCtx mode
 }
 
 // evaluateLogicalAnd evaluates an AND rule (left and right are rule UUIDs)
-func (e *Engine) evaluateLogicalAnd(ctx context.Context, rule model.Rule, evalCtx model.EvaluationContext) (bool, error) {
+func (e *Engine) evaluateLogicalAnd(ctx context.Context, rule model.Rule, evalCtx model.Release) (bool, error) {
 	leftRule, err := e.getRuleByID(ctx, rule.LeftOperand)
 	if err != nil {
 		return false, err
@@ -222,7 +222,7 @@ func (e *Engine) evaluateLogicalAnd(ctx context.Context, rule model.Rule, evalCt
 }
 
 // evaluateLogicalOr evaluates an OR rule (left and right are rule UUIDs)
-func (e *Engine) evaluateLogicalOr(ctx context.Context, rule model.Rule, evalCtx model.EvaluationContext) (bool, error) {
+func (e *Engine) evaluateLogicalOr(ctx context.Context, rule model.Rule, evalCtx model.Release) (bool, error) {
 	leftRule, err := e.getRuleByID(ctx, rule.LeftOperand)
 	if err != nil {
 		return false, err
@@ -245,7 +245,7 @@ func (e *Engine) evaluateLogicalOr(ctx context.Context, rule model.Rule, evalCtx
 }
 
 // evaluateLogicalNot evaluates a NOT rule (right is a rule UUID)
-func (e *Engine) evaluateLogicalNot(ctx context.Context, rule model.Rule, evalCtx model.EvaluationContext) (bool, error) {
+func (e *Engine) evaluateLogicalNot(ctx context.Context, rule model.Rule, evalCtx model.Release) (bool, error) {
 	rightRule, err := e.getRuleByID(ctx, rule.RightOperand)
 	if err != nil {
 		return false, err
@@ -271,7 +271,7 @@ func (e *Engine) getRuleByID(ctx context.Context, ruleIDStr string) (model.Rule,
 }
 
 // getValue gets a value from the evaluation context or returns the literal value
-func (e *Engine) getValue(operand string, evalCtx model.EvaluationContext) (any, error) {
+func (e *Engine) getValue(operand string, evalCtx model.Release) (any, error) {
 	// Check if it's a field reference using the unified context
 	if strings.Contains(operand, ".") {
 		parts := strings.SplitN(operand, ".", 2)
@@ -446,7 +446,7 @@ func (e *Engine) applyAction(plan *model.Plan, action model.Action) error {
 }
 
 // buildContextSnapshot creates a JSON-friendly snapshot of the evaluation context
-func (e *Engine) buildContextSnapshot(evalCtx model.EvaluationContext) *model.ContextSnapshot {
+func (e *Engine) buildContextSnapshot(evalCtx model.Release) *model.ContextSnapshot {
 	snapshot := &model.ContextSnapshot{
 		Candidate: map[string]any{
 			"size":         evalCtx.Candidate.Size,
@@ -465,41 +465,41 @@ func (e *Engine) buildContextSnapshot(evalCtx model.EvaluationContext) *model.Co
 			"guid":         evalCtx.Candidate.GUID,
 		},
 		Identity: map[string]any{
-			"title":                 evalCtx.Identity.Title,
-			"year":                  evalCtx.Identity.Year,
-			"type_hint":             evalCtx.Identity.TypeHint,
-			"edition":               evalCtx.Identity.Edition,
-			"all_titles":            evalCtx.Identity.AllTitles,
-			"season":                evalCtx.Identity.Season,
-			"episode_numbers":       evalCtx.Identity.EpisodeNumbers,
-			"absolute_numbers":      evalCtx.Identity.AbsoluteNumbers,
-			"air_date":              evalCtx.Identity.AirDate,
-			"full_season":           evalCtx.Identity.FullSeason,
-			"season_part":           evalCtx.Identity.SeasonPart,
-			"is_partial_season":     evalCtx.Identity.IsPartialSeason,
-			"is_multi_season":       evalCtx.Identity.IsMultiSeason,
-			"is_mini_series":        evalCtx.Identity.IsMiniSeries,
-			"special":               evalCtx.Identity.Special,
-			"is_split_episode":      evalCtx.Identity.IsSplitEpisode,
-			"is_season_extra":       evalCtx.Identity.IsSeasonExtra,
-			"daily_part":            evalCtx.Identity.DailyPart,
-			"is_daily":              evalCtx.Identity.IsDaily,
-			"is_absolute_numbering": evalCtx.Identity.IsAbsoluteNumbering,
-			"is_possible_special":   evalCtx.Identity.IsPossibleSpecialEpisode,
-			"release_type":          evalCtx.Identity.ReleaseType,
+			"title":                 evalCtx.Identity.Title.Value,
+			"year":                  evalCtx.Identity.Year.Value,
+			"type_hint":             evalCtx.Identity.TypeHint.Value,
+			"edition":               evalCtx.Identity.Edition.Value,
+			"all_titles":            evalCtx.Identity.AllTitles.Value,
+			"season":                evalCtx.Identity.Season.Value,
+			"episode_numbers":       evalCtx.Identity.EpisodeNumbers.Value,
+			"absolute_numbers":      evalCtx.Identity.AbsoluteNumbers.Value,
+			"air_date":              evalCtx.Identity.AirDate.Value,
+			"full_season":           evalCtx.Identity.FullSeason.Value,
+			"season_part":           evalCtx.Identity.SeasonPart.Value,
+			"is_partial_season":     evalCtx.Identity.IsPartialSeason.Value,
+			"is_multi_season":       evalCtx.Identity.IsMultiSeason.Value,
+			"is_mini_series":        evalCtx.Identity.IsMiniSeries.Value,
+			"special":               evalCtx.Identity.Special.Value,
+			"is_split_episode":      evalCtx.Identity.IsSplitEpisode.Value,
+			"is_season_extra":       evalCtx.Identity.IsSeasonExtra.Value,
+			"daily_part":            evalCtx.Identity.DailyPart.Value,
+			"is_daily":              evalCtx.Identity.IsDaily.Value,
+			"is_absolute_numbering": evalCtx.Identity.IsAbsoluteNumbering.Value,
+			"is_possible_special":   evalCtx.Identity.IsPossibleSpecialEpisode.Value,
+			"release_type":          evalCtx.Identity.ReleaseType.Value,
 		},
 		Quality: map[string]any{
-			"full":       evalCtx.Quality.Full,
-			"resolution": evalCtx.Quality.Resolution,
-			"source":     evalCtx.Quality.Source,
-			"modifier":   evalCtx.Quality.Modifier,
-			"is_repack":  evalCtx.Quality.IsRepack,
-			"version":    evalCtx.Quality.Version,
-			"real":       evalCtx.Quality.Real,
+			"full":       evalCtx.Quality.Full.Value,
+			"resolution": evalCtx.Quality.Resolution.Value,
+			"source":     evalCtx.Quality.Source.Value,
+			"modifier":   evalCtx.Quality.Modifier.Value,
+			"is_repack":  evalCtx.Quality.IsRepack.Value,
+			"version":    evalCtx.Quality.Version.Value,
+			"real":       evalCtx.Quality.Real.Value,
 		},
-		Release: map[string]any{
-			"release_group":  evalCtx.Release.ReleaseGroup,
-			"hardcoded_subs": evalCtx.Release.HardcodedSubs,
+		Encode: map[string]any{
+			"release_group":  evalCtx.Encode.ReleaseGroup.Value,
+			"hardcoded_subs": evalCtx.Encode.HardcodedSubs.Value,
 		},
 		Media: map[string]any{
 			"type":    evalCtx.Media.Type,

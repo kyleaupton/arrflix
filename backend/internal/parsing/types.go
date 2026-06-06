@@ -264,10 +264,10 @@ func (n Numbering) ReleaseType() string {
 }
 
 // Values is the flat, plain-value projection of a ParsedRelease — the same
-// fields with confidence and provenance stripped. Its sub-structs mirror the
-// EvaluationContext namespaces 1:1 so consumers (notably NewEvaluationContext)
-// do a near-direct field copy and never touch Field[T]. Confidence/evidence are
-// available separately via Provenance().
+// fields with confidence and provenance stripped. The parity harness compares
+// this projection against the oracle goldens; model.Release consumes the full
+// Field[T] model directly. Confidence/evidence are available separately via
+// Provenance().
 type Values struct {
 	Identity IdentityValues
 	Quality  QualityValues

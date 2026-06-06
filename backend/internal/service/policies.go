@@ -170,12 +170,12 @@ func (s *PoliciesService) DeleteAction(ctx context.Context, id uuid.UUID) error 
 }
 
 // Evaluate evaluates policies against the evaluation context and returns an EvaluationTrace
-func (s *PoliciesService) Evaluate(ctx context.Context, evalCtx model.EvaluationContext) (model.EvaluationTrace, error) {
+func (s *PoliciesService) Evaluate(ctx context.Context, evalCtx model.Release) (model.EvaluationTrace, error) {
 	return s.engine.Evaluate(ctx, evalCtx)
 }
 
 // GetFieldDefinitions returns all available field definitions for policy rules
-// These are auto-generated from the unified EvaluationContext struct tags
+// These are auto-generated from the unified Release struct tags
 func (s *PoliciesService) GetFieldDefinitions(ctx context.Context) ([]model.FieldDefinition, error) {
 	// Get auto-generated fields from the unified context model
 	contextFields := model.ListContextFields()

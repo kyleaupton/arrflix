@@ -98,7 +98,7 @@ function extractNamespace(apiPath: string): string {
     quality: 'Quality',
     media: 'Media',
     mediainfo: 'MediaInfo',
-    release: 'Release',
+    encode: 'Encode',
   }
 
   const ns = apiPath.split('.')[0]

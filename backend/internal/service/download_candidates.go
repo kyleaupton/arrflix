@@ -497,10 +497,10 @@ func (s *DownloadCandidatesService) cleanExpiredCache() {
 	}
 }
 
-// buildMovieEvaluationContext creates an EvaluationContext for a movie candidate
-func (s *DownloadCandidatesService) buildMovieEvaluationContext(ctx context.Context, candidate model.DownloadCandidate, movieID int64) model.EvaluationContext {
+// buildMovieEvaluationContext creates a Release for a movie candidate
+func (s *DownloadCandidatesService) buildMovieEvaluationContext(ctx context.Context, candidate model.DownloadCandidate, movieID int64) model.Release {
 	q := parsing.Parse(candidate.Title, parsing.DomainMovie)
-	evalCtx := model.NewEvaluationContext(candidate, q)
+	evalCtx := model.NewRelease(candidate, q)
 
 	// Try to get movie details from TMDB to populate media fields
 	movie, err := s.media.GetMovie(ctx, movieID)
@@ -517,10 +517,10 @@ func (s *DownloadCandidatesService) buildMovieEvaluationContext(ctx context.Cont
 	return evalCtx
 }
 
-// buildSeriesEvaluationContext creates an EvaluationContext for a series candidate
-func (s *DownloadCandidatesService) buildSeriesEvaluationContext(ctx context.Context, candidate model.DownloadCandidate, seriesID int64, seasonNumber *int, episodeNumber *int) model.EvaluationContext {
+// buildSeriesEvaluationContext creates a Release for a series candidate
+func (s *DownloadCandidatesService) buildSeriesEvaluationContext(ctx context.Context, candidate model.DownloadCandidate, seriesID int64, seasonNumber *int, episodeNumber *int) model.Release {
 	q := parsing.Parse(candidate.Title, parsing.DomainSeries)
-	evalCtx := model.NewEvaluationContext(candidate, q)
+	evalCtx := model.NewRelease(candidate, q)
 
 	// Try to get series details from TMDB to populate media fields
 	series, err := s.media.GetSeries(ctx, seriesID)

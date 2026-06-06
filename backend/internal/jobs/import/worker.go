@@ -307,7 +307,7 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 	candidate := model.DownloadCandidate{
 		Title: candidateTitle,
 	}
-	evalCtx := model.NewEvaluationContext(candidate, q)
+	evalCtx := model.NewRelease(candidate, q)
 
 	// Add media metadata
 	year := 0
