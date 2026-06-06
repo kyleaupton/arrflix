@@ -137,7 +137,7 @@ Defined in [quality profiles](../quality-profiles/README.md). At the pipeline le
 
 Defined in [routing](../routing/README.md). Runs **after** the quality profile picks a release:
 
-- Input: the picked release + media metadata (the `RoutingEvaluationContext` shape)
+- Input: the [Subject](../../patterns/rules/README.md#the-subject) at the `grab` moment (assembled here: picked release + media + want intent + quality decision)
 - Output: a `RoutingEvaluation` with the chosen downloader, library, name template
 
 Routing's audit row sits alongside the quality-profile audit rows in the same decision log.

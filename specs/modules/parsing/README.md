@@ -12,7 +12,7 @@ Parsing is **advertised-only**. It never opens the file. The ground-truth counte
 - It is a **layer below** [matching](../matching/README.md), [quality profiles](../quality-profiles/README.md), [name templates](../name-templates/README.md), [routing](../routing/README.md), and the [importer](../importer/README.md) — all of them consume the parse; none of them own it.
 - **Domain is required at the call site.** Every consumer already knows it: candidate searches are TMDB-id-anchored, the importer reads the job's media type, scan inherits from the library, the policy test endpoint inherits from the UI tab. So parsing takes `Domain` as an argument, not a hint. The auto-detect path is removed.
 - **One parser, finished — not two patched together.** v0 ported the _quality half_ of Sonarr/Radarr's parser (`internal/release/`) for name templates, then bolted on a **guessit** Python sidecar for the identity half. Green-field, we finish the port into a single engine and **retire guessit**.
-- The output is the **canonical advertised attribute model** — identity hints (title, year, season/episode, absolute, edition), quality (source, resolution, modifier, the rendered **bin name**, proper/repack), and release attributes (group, codec, audio, HDR-claim, languages). It populates the advertised namespaces of the shared `EvaluationContext`.
+- The output is the **canonical advertised attribute model** — identity hints (title, year, season/episode, absolute, edition), quality (source, resolution, modifier, the rendered **bin name**, proper/repack), and release attributes (group, codec, audio, HDR-claim, languages). It populates the parsed namespaces of the `Release` half of the shared [Subject](../../patterns/rules/README.md#the-subject).
 - **Every field carries confidence + provenance.** Not "source = BluRay" but "source = BluRay (0.9), token `BluRay` @ idx 6". This feeds the matcher's confidence bands, the advertised-vs-asserted check, and an explainable "why did we parse it this way" UI.
 - **Parity is a CI gate and a published number.** A version-stamped, labeled **corpus** is the source of truth. Tier-1 CI diffs the parser against committed **golden** expected-output every PR (hermetic, fast). Tier-2 regenerates goldens from **pinned live Sonarr/Radarr** containers on a schedule. An **intentional-divergence allowlist** keeps "we differ on purpose" from breaking the build — and per-domain dispatch shrinks that allowlist to one principled class (identity-independent quality, OQ#13).
 - **Sonarr and Radarr are separate codebases** with shared quality heritage and diverged domain parsing. We test both, by domain: series releases → Sonarr, movie releases → Radarr.
@@ -58,13 +58,13 @@ Sonarr/Radarr's parser is **one engine** that extracts everything. We ported a s
 
 ## The canonical attribute model
 
-`Parse` produces a `ParsedRelease`. Its fields map onto the **advertised** namespaces of the shared `EvaluationContext` (`backend/internal/model/context.go`), the same struct [routing](../routing/README.md) and [name templates](../name-templates/README.md) already read:
+`Parse` produces a `ParsedRelease`. Its fields map onto the parsed namespaces of the `Release` half of the shared [Subject](../../patterns/rules/README.md#the-subject), the same shape [routing](../routing/README.md) and [name templates](../name-templates/README.md) read:
 
 | Group        | Fields (directional)                                                                 | Maps to                          |
 | ------------ | ------------------------------------------------------------------------------------ | -------------------------------- |
 | **Identity** | parsed title, year, type hint (movie/series), season, episode(s), absolute #, daily/air-date, multi-ep range, edition | feeds [matching](../matching/README.md) → `Media`; feeds importer assignment |
 | **Quality**  | source, resolution, modifier (`REMUX`/`BR-DISK`/`RAWHD`/…), revision (`version`/`real`/`isRepack`) — the orthogonal **attribute core** — plus **bin name** (`name`, e.g. `"Bluray-1080p"`) and **full** (`name` + revision render, e.g. `"Bluray-1080p Proper"`) rendered from `(core, domain)` at parse time | `Quality` namespace; `quality.name` mirrors *arr's `Quality.Name` API field, `quality.full` mirrors *arr's `{Quality Full}` naming-token semantics |
-| **Release**  | release group, codec, audio format, audio channels, HDR-claim, dual-audio-claim, languages | `Release` namespace (+ extensions) |
+| **Release**  | release group, codec, audio format, audio channels, HDR-claim, dual-audio-claim, languages | `encode.*` namespace (+ extensions) |
 
 Three boundary notes:
 
