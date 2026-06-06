@@ -14,8 +14,8 @@ It does **not** decide which release to grab — that's [quality profiles](../qu
 - Implemented as an ordered list of **rules**. Each rule has **conditions** (a [rule-substrate](../../patterns/rules/README.md) tree over the shared Subject) and **actions** (downloader, library, name template, future tags / categories / post-import hooks). First matching rule wins, unless an explicit `continue` action chains.
 - Rules evaluate the **[Subject](../../patterns/rules/README.md#the-subject) at the `grab` moment**: the picked release + matched media + the want's intent facts (`want.trigger`, `want.requesters`, `want.tier`) + (iteration 2) the quality decision (`decision.*`). `mediainfo.*` is `import`-phase and therefore indeterminate here — routing never sees it.
 - Every evaluation writes an audit row per the [decision-artifact pattern](../../patterns/audit/README.md). One row per `download_job`, capturing the firing rule and its action set.
-- v0's `policy` engine renames to `routing` throughout — package, tables, API, UI. Data is preserved through the rename.
-- Routing's `stop_processing` action (v0) is deprecated: gating belongs to quality profiles, not routing. The action stays for now to avoid breaking existing configs; it'll be removed in a later iteration.
+- v0's `policy` engine renames to `routing` throughout — package, tables, API, UI. v0 config is dropped, not converted (no data-migration constraint).
+- Routing's `stop_processing` action (v0) is removed (iteration 3): gating belongs to quality profiles, not routing. The action set is exactly `{downloader, library, name_template, continue}`.
 
 ## What routing is, and isn't
 
@@ -114,19 +114,15 @@ These rows sit alongside acquisition's quality decisions in the audit table fami
 
 **Retention** is configured centrally in the audit spec.
 
-## stop_processing — deprecated
+## stop_processing — removed
 
-v0's routing engine has a `stop_processing` action: a rule can short-circuit and reject a release outright. In the new world, **gating is the quality profile's job**, not routing's. By the time routing sees a release, the quality engine has already approved it; rejecting at routing is muddled responsibility.
+v0's routing engine had a `stop_processing` action: a rule could short-circuit and reject a release outright. **Gating is the quality profile's job**, not routing's — by the time routing sees a release, the quality engine has already approved it; rejecting at routing is muddled responsibility.
 
-The action stays in the engine for now to avoid breaking existing configs, but:
-
-- The admin UI flags rules that use `stop_processing` with a "deprecated — express this in your quality profile" warning.
-- Documentation steers new users to quality-profile gates.
-- A later iteration removes the action entirely after existing configs are migrated.
+**Removed in iteration 3** (no data carried from v0 — the rebuild dropped v0 config, so there was nothing to deprecate gradually). The action set is exactly `{downloader, library, name_template, continue}`; documentation steers gating to quality-profile gates.
 
 ## Migration from v0 (renames)
 
-v0 calls this whole subsystem `policy`. That collides with the conversational use of "policy" for quality, approval, user, and other rule systems. **We rename everything to `routing`.** Data is preserved through the rename.
+v0 calls this whole subsystem `policy`. That collides with the conversational use of "policy" for quality, approval, user, and other rule systems. **We rename everything to `routing`.** v0 config is dropped, not converted — the parent spec pins no behavior-preservation or data-migration constraint.
 
 | Old                         | New                                | Notes                                        |
 | --------------------------- | ---------------------------------- | -------------------------------------------- |
@@ -155,7 +151,7 @@ Exact table/column shapes (especially around `routing_rule` vs `routing_rule_set
 
 ## Open questions
 
-1. **`stop_processing` deprecation timeline.** Warn now, remove in v2? Or remove sooner since v0 has effectively one user? Lean: warn for one release, then remove.
+1. **`stop_processing` deprecation timeline. (Answered: removed in iteration 3.)** With no data carried from v0 there was nothing to deprecate gradually — the action is gone; gating is quality's.
 2. **`decision.*` field set.** The namespace and its `grab` phase are reserved in the [registry](../../patterns/rules/README.md#decision--reserved); adding it is a strict expansion (a few registry rows). When? Probably whenever the first rule wants to route based on "what custom format hit." Pin the exact fields then.
 3. **Default rule set on first install.** Ship with a single "default" rule (matches everything, routes to the first downloader + first library + a sensible name template)? Or require admins to author rules during setup? Lean: ship a default that's overridable; new installs are usable out of the box.
 4. **Per-user routing. (Answered.)** Yes — via conditions over **`want.requesters`**, the tracking's durable requester *set* (not the frozen request: there is no singular "requesting user," and upgrades have no request at all). RSS/admin grabs have an empty set and cleanly don't match. Quantifier semantics (any vs all requesters) and placement drift when the set changes later are [substrate open questions](../../patterns/rules/README.md#open-questions). Per-user *quality* stays out of conditions entirely — that's tier → profile selection ([requests](../requests/README.md#tier)).

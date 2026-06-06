@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthPlexExchangeData, AuthPlexExchangeErrors, AuthPlexExchangeResponses, AuthSignupData, AuthSignupErrors, AuthSignupResponses, BootstrapGetData, BootstrapGetErrors, BootstrapGetResponses, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieErrors, DownloadCandidatesDownloadMovieResponses, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesErrors, DownloadCandidatesDownloadSeriesResponses, DownloadCandidatesListMovieData, DownloadCandidatesListMovieErrors, DownloadCandidatesListMovieResponses, DownloadCandidatesListSeriesData, DownloadCandidatesListSeriesErrors, DownloadCandidatesListSeriesResponses, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieErrors, DownloadCandidatesPreviewMovieResponses, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesErrors, DownloadCandidatesPreviewSeriesResponses, DownloadersCreateData, DownloadersCreateErrors, DownloadersCreateResponses, DownloadersDeleteData, DownloadersDeleteErrors, DownloadersDeleteResponses, DownloadersGetData, DownloadersGetDefaultData, DownloadersGetDefaultErrors, DownloadersGetDefaultResponses, DownloadersGetErrors, DownloadersGetResponses, DownloadersListData, DownloadersListErrors, DownloadersListResponses, DownloadersTestConfigData, DownloadersTestConfigErrors, DownloadersTestConfigResponses, DownloadersTestData, DownloadersTestErrors, DownloadersTestResponses, DownloadersUpdateData, DownloadersUpdateErrors, DownloadersUpdateResponses, DownloadJobsCancelData, DownloadJobsCancelErrors, DownloadJobsCancelResponses, DownloadJobsGetData, DownloadJobsGetErrors, DownloadJobsGetResponses, DownloadJobsHistoryData, DownloadJobsHistoryErrors, DownloadJobsHistoryResponses, DownloadJobsListData, DownloadJobsListErrors, DownloadJobsListForMovieData, DownloadJobsListForMovieErrors, DownloadJobsListForMovieResponses, DownloadJobsListForSeriesData, DownloadJobsListForSeriesErrors, DownloadJobsListForSeriesResponses, DownloadJobsListImportTasksData, DownloadJobsListImportTasksErrors, DownloadJobsListImportTasksResponses, DownloadJobsListResponses, DownloadJobsReimportData, DownloadJobsReimportErrors, DownloadJobsReimportResponses, DownloadJobsRetryData, DownloadJobsRetryErrors, DownloadJobsRetryResponses, DownloadJobsTimelineData, DownloadJobsTimelineErrors, DownloadJobsTimelineResponses, EventsStreamData, EventsStreamErrors, EventsStreamResponses, EventsSubscriptionsAddData, EventsSubscriptionsAddErrors, EventsSubscriptionsAddResponses, EventsSubscriptionsListData, EventsSubscriptionsListErrors, EventsSubscriptionsListResponses, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveErrors, EventsSubscriptionsRemoveResponses, FeedGetData, FeedGetErrors, FeedGetResponses, FilesDetachData, FilesDetachErrors, FilesDetachResponses, FilesMatchData, FilesMatchDecisionData, FilesMatchDecisionErrors, FilesMatchDecisionResponses, FilesMatchErrors, FilesMatchResponses, FilesUnmatchData, FilesUnmatchErrors, FilesUnmatchResponses, FilesystemBrowseData, FilesystemBrowseErrors, FilesystemBrowseResponses, HealthCheckData, HealthCheckErrors, HealthCheckResponses, ImportTasksCancelData, ImportTasksCancelErrors, ImportTasksCancelResponses, ImportTasksCountsData, ImportTasksCountsErrors, ImportTasksCountsResponses, ImportTasksGetData, ImportTasksGetErrors, ImportTasksGetResponses, ImportTasksHistoryData, ImportTasksHistoryErrors, ImportTasksHistoryResponses, ImportTasksListData, ImportTasksListErrors, ImportTasksListResponses, ImportTasksReimportData, ImportTasksReimportErrors, ImportTasksReimportResponses, ImportTasksTimelineData, ImportTasksTimelineErrors, ImportTasksTimelineResponses, IndexersActionData, IndexersActionErrors, IndexersActionResponses, IndexersDeleteData, IndexersDeleteErrors, IndexersDeleteResponses, IndexersGetData, IndexersGetErrors, IndexersGetResponses, IndexersGetSchemaData, IndexersGetSchemaErrors, IndexersGetSchemaResponses, IndexersListConfiguredData, IndexersListConfiguredErrors, IndexersListConfiguredResponses, IndexersSaveData, IndexersSaveErrors, IndexersSaveResponses, IndexersTestAllData, IndexersTestAllErrors, IndexersTestAllResponses, IndexersTestSavedData, IndexersTestSavedErrors, IndexersTestSavedResponses, IndexersTestUnsavedData, IndexersTestUnsavedErrors, IndexersTestUnsavedResponses, IndexersToggleData, IndexersToggleErrors, IndexersToggleResponses, InvitesCreateData, InvitesCreateErrors, InvitesCreateResponses, InvitesDeleteData, InvitesDeleteErrors, InvitesDeleteResponses, InvitesListData, InvitesListErrors, InvitesListResponses, LibrariesCreateData, LibrariesCreateErrors, LibrariesCreateResponses, LibrariesDeleteData, LibrariesDeleteErrors, LibrariesDeleteResponses, LibrariesGetData, LibrariesGetErrors, LibrariesGetResponses, LibrariesListData, LibrariesListErrors, LibrariesListResponses, LibrariesScanData, LibrariesScanErrors, LibrariesScanResponses, LibrariesUpdateData, LibrariesUpdateErrors, LibrariesUpdateResponses, LibraryListData, LibraryListErrors, LibraryListResponses, MediaGetMovieData, MediaGetMovieErrors, MediaGetMovieResponses, MediaGetPersonData, MediaGetPersonErrors, MediaGetPersonResponses, MediaGetSeriesData, MediaGetSeriesErrors, MediaGetSeriesResponses, MediaSearchData, MediaSearchErrors, MediaSearchResponses, NameTemplatesCreateData, NameTemplatesCreateErrors, NameTemplatesCreateResponses, NameTemplatesDeleteData, NameTemplatesDeleteErrors, NameTemplatesDeleteResponses, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesGetDefaultErrors, NameTemplatesGetDefaultResponses, NameTemplatesGetErrors, NameTemplatesGetResponses, NameTemplatesListData, NameTemplatesListErrors, NameTemplatesListResponses, NameTemplatesUpdateData, NameTemplatesUpdateErrors, NameTemplatesUpdateResponses, PoliciesCreateActionData, PoliciesCreateActionErrors, PoliciesCreateActionResponses, PoliciesCreateData, PoliciesCreateErrors, PoliciesCreateResponses, PoliciesCreateRuleData, PoliciesCreateRuleErrors, PoliciesCreateRuleResponses, PoliciesDeleteActionData, PoliciesDeleteActionErrors, PoliciesDeleteActionResponses, PoliciesDeleteData, PoliciesDeleteErrors, PoliciesDeleteResponses, PoliciesDeleteRuleData, PoliciesDeleteRuleErrors, PoliciesDeleteRuleResponses, PoliciesEvaluateData, PoliciesEvaluateErrors, PoliciesEvaluateResponses, PoliciesGetActionData, PoliciesGetActionErrors, PoliciesGetActionResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetFieldsData, PoliciesGetFieldsErrors, PoliciesGetFieldsResponses, PoliciesGetResponses, PoliciesGetRuleData, PoliciesGetRuleErrors, PoliciesGetRuleResponses, PoliciesListActionsData, PoliciesListActionsErrors, PoliciesListActionsResponses, PoliciesListData, PoliciesListErrors, PoliciesListResponses, PoliciesUpdateActionData, PoliciesUpdateActionErrors, PoliciesUpdateActionResponses, PoliciesUpdateData, PoliciesUpdateErrors, PoliciesUpdateResponses, PoliciesUpdateRuleData, PoliciesUpdateRuleErrors, PoliciesUpdateRuleResponses, RolesListData, RolesListErrors, RolesListResponses, SettingsListData, SettingsListErrors, SettingsListResponses, SettingsPatchData, SettingsPatchErrors, SettingsPatchResponses, SetupInitializeData, SetupInitializeErrors, SetupInitializeResponses, SetupStatusData, SetupStatusErrors, SetupStatusResponses, SetupTmdbData, SetupTmdbErrors, SetupTmdbResponses, UnmatchedFilesGetData, UnmatchedFilesGetErrors, UnmatchedFilesGetResponses, UnmatchedFilesListData, UnmatchedFilesListErrors, UnmatchedFilesListResponses, UsersAssignRoleData, UsersAssignRoleErrors, UsersAssignRoleResponses, UsersDeleteData, UsersDeleteErrors, UsersDeleteResponses, UsersGetData, UsersGetErrors, UsersGetProfileData, UsersGetProfileErrors, UsersGetProfileResponses, UsersGetResponses, UsersListData, UsersListErrors, UsersListResponses, UsersUpdateData, UsersUpdateErrors, UsersUpdatePasswordData, UsersUpdatePasswordErrors, UsersUpdatePasswordResponses, UsersUpdateProfileData, UsersUpdateProfileErrors, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordErrors, UsersUpdateProfilePasswordResponses, UsersUpdateProfileResponses, UsersUpdateResponses, VersionGetData, VersionGetErrors, VersionGetResponses } from './types.gen';
+import type { AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthPlexExchangeData, AuthPlexExchangeErrors, AuthPlexExchangeResponses, AuthSignupData, AuthSignupErrors, AuthSignupResponses, BootstrapGetData, BootstrapGetErrors, BootstrapGetResponses, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieErrors, DownloadCandidatesDownloadMovieResponses, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesErrors, DownloadCandidatesDownloadSeriesResponses, DownloadCandidatesListMovieData, DownloadCandidatesListMovieErrors, DownloadCandidatesListMovieResponses, DownloadCandidatesListSeriesData, DownloadCandidatesListSeriesErrors, DownloadCandidatesListSeriesResponses, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieErrors, DownloadCandidatesPreviewMovieResponses, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesErrors, DownloadCandidatesPreviewSeriesResponses, DownloadersCreateData, DownloadersCreateErrors, DownloadersCreateResponses, DownloadersDeleteData, DownloadersDeleteErrors, DownloadersDeleteResponses, DownloadersGetData, DownloadersGetDefaultData, DownloadersGetDefaultErrors, DownloadersGetDefaultResponses, DownloadersGetErrors, DownloadersGetResponses, DownloadersListData, DownloadersListErrors, DownloadersListResponses, DownloadersTestConfigData, DownloadersTestConfigErrors, DownloadersTestConfigResponses, DownloadersTestData, DownloadersTestErrors, DownloadersTestResponses, DownloadersUpdateData, DownloadersUpdateErrors, DownloadersUpdateResponses, DownloadJobsCancelData, DownloadJobsCancelErrors, DownloadJobsCancelResponses, DownloadJobsGetData, DownloadJobsGetErrors, DownloadJobsGetResponses, DownloadJobsHistoryData, DownloadJobsHistoryErrors, DownloadJobsHistoryResponses, DownloadJobsListData, DownloadJobsListErrors, DownloadJobsListForMovieData, DownloadJobsListForMovieErrors, DownloadJobsListForMovieResponses, DownloadJobsListForSeriesData, DownloadJobsListForSeriesErrors, DownloadJobsListForSeriesResponses, DownloadJobsListImportTasksData, DownloadJobsListImportTasksErrors, DownloadJobsListImportTasksResponses, DownloadJobsListResponses, DownloadJobsReimportData, DownloadJobsReimportErrors, DownloadJobsReimportResponses, DownloadJobsRetryData, DownloadJobsRetryErrors, DownloadJobsRetryResponses, DownloadJobsTimelineData, DownloadJobsTimelineErrors, DownloadJobsTimelineResponses, EventsStreamData, EventsStreamErrors, EventsStreamResponses, EventsSubscriptionsAddData, EventsSubscriptionsAddErrors, EventsSubscriptionsAddResponses, EventsSubscriptionsListData, EventsSubscriptionsListErrors, EventsSubscriptionsListResponses, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveErrors, EventsSubscriptionsRemoveResponses, FeedGetData, FeedGetErrors, FeedGetResponses, FilesDetachData, FilesDetachErrors, FilesDetachResponses, FilesMatchData, FilesMatchDecisionData, FilesMatchDecisionErrors, FilesMatchDecisionResponses, FilesMatchErrors, FilesMatchResponses, FilesUnmatchData, FilesUnmatchErrors, FilesUnmatchResponses, FilesystemBrowseData, FilesystemBrowseErrors, FilesystemBrowseResponses, HealthCheckData, HealthCheckErrors, HealthCheckResponses, ImportTasksCancelData, ImportTasksCancelErrors, ImportTasksCancelResponses, ImportTasksCountsData, ImportTasksCountsErrors, ImportTasksCountsResponses, ImportTasksGetData, ImportTasksGetErrors, ImportTasksGetResponses, ImportTasksHistoryData, ImportTasksHistoryErrors, ImportTasksHistoryResponses, ImportTasksListData, ImportTasksListErrors, ImportTasksListResponses, ImportTasksReimportData, ImportTasksReimportErrors, ImportTasksReimportResponses, ImportTasksTimelineData, ImportTasksTimelineErrors, ImportTasksTimelineResponses, IndexersActionData, IndexersActionErrors, IndexersActionResponses, IndexersDeleteData, IndexersDeleteErrors, IndexersDeleteResponses, IndexersGetData, IndexersGetErrors, IndexersGetResponses, IndexersGetSchemaData, IndexersGetSchemaErrors, IndexersGetSchemaResponses, IndexersListConfiguredData, IndexersListConfiguredErrors, IndexersListConfiguredResponses, IndexersSaveData, IndexersSaveErrors, IndexersSaveResponses, IndexersTestAllData, IndexersTestAllErrors, IndexersTestAllResponses, IndexersTestSavedData, IndexersTestSavedErrors, IndexersTestSavedResponses, IndexersTestUnsavedData, IndexersTestUnsavedErrors, IndexersTestUnsavedResponses, IndexersToggleData, IndexersToggleErrors, IndexersToggleResponses, InvitesCreateData, InvitesCreateErrors, InvitesCreateResponses, InvitesDeleteData, InvitesDeleteErrors, InvitesDeleteResponses, InvitesListData, InvitesListErrors, InvitesListResponses, LibrariesCreateData, LibrariesCreateErrors, LibrariesCreateResponses, LibrariesDeleteData, LibrariesDeleteErrors, LibrariesDeleteResponses, LibrariesGetData, LibrariesGetErrors, LibrariesGetResponses, LibrariesListData, LibrariesListErrors, LibrariesListResponses, LibrariesScanData, LibrariesScanErrors, LibrariesScanResponses, LibrariesUpdateData, LibrariesUpdateErrors, LibrariesUpdateResponses, LibraryListData, LibraryListErrors, LibraryListResponses, MediaGetMovieData, MediaGetMovieErrors, MediaGetMovieResponses, MediaGetPersonData, MediaGetPersonErrors, MediaGetPersonResponses, MediaGetSeriesData, MediaGetSeriesErrors, MediaGetSeriesResponses, MediaSearchData, MediaSearchErrors, MediaSearchResponses, NameTemplatesCreateData, NameTemplatesCreateErrors, NameTemplatesCreateResponses, NameTemplatesDeleteData, NameTemplatesDeleteErrors, NameTemplatesDeleteResponses, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesGetDefaultErrors, NameTemplatesGetDefaultResponses, NameTemplatesGetErrors, NameTemplatesGetResponses, NameTemplatesListData, NameTemplatesListErrors, NameTemplatesListResponses, NameTemplatesUpdateData, NameTemplatesUpdateErrors, NameTemplatesUpdateResponses, RolesListData, RolesListErrors, RolesListResponses, RoutingCreateRuleData, RoutingCreateRuleErrors, RoutingCreateRuleResponses, RoutingDeleteRuleData, RoutingDeleteRuleErrors, RoutingDeleteRuleResponses, RoutingEvaluateData, RoutingEvaluateErrors, RoutingEvaluateResponses, RoutingGetFieldsData, RoutingGetFieldsErrors, RoutingGetFieldsResponses, RoutingGetRuleData, RoutingGetRuleErrors, RoutingGetRuleResponses, RoutingListRulesData, RoutingListRulesErrors, RoutingListRulesResponses, RoutingReorderRulesData, RoutingReorderRulesErrors, RoutingReorderRulesResponses, RoutingUpdateRuleData, RoutingUpdateRuleErrors, RoutingUpdateRuleResponses, SettingsListData, SettingsListErrors, SettingsListResponses, SettingsPatchData, SettingsPatchErrors, SettingsPatchResponses, SetupInitializeData, SetupInitializeErrors, SetupInitializeResponses, SetupStatusData, SetupStatusErrors, SetupStatusResponses, SetupTmdbData, SetupTmdbErrors, SetupTmdbResponses, UnmatchedFilesGetData, UnmatchedFilesGetErrors, UnmatchedFilesGetResponses, UnmatchedFilesListData, UnmatchedFilesListErrors, UnmatchedFilesListResponses, UsersAssignRoleData, UsersAssignRoleErrors, UsersAssignRoleResponses, UsersDeleteData, UsersDeleteErrors, UsersDeleteResponses, UsersGetData, UsersGetErrors, UsersGetProfileData, UsersGetProfileErrors, UsersGetProfileResponses, UsersGetResponses, UsersListData, UsersListErrors, UsersListResponses, UsersUpdateData, UsersUpdateErrors, UsersUpdatePasswordData, UsersUpdatePasswordErrors, UsersUpdatePasswordResponses, UsersUpdateProfileData, UsersUpdateProfileErrors, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordErrors, UsersUpdateProfilePasswordResponses, UsersUpdateProfileResponses, UsersUpdateResponses, VersionGetData, VersionGetErrors, VersionGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -735,7 +735,7 @@ export const mediaGetMovie = <ThrowOnError extends boolean = false>(options: Opt
 
 /**
  * Enqueue a movie download candidate
- * Runs the policy engine, creates a download job, and returns the trace + job.
+ * Dispatches routing rules, creates a download job, and returns the evaluation + job.
  */
 export const downloadCandidatesDownloadMovie = <ThrowOnError extends boolean = false>(options: Options<DownloadCandidatesDownloadMovieData, ThrowOnError>) => {
     return (options.client ?? client).post<DownloadCandidatesDownloadMovieResponses, DownloadCandidatesDownloadMovieErrors, ThrowOnError>({
@@ -749,7 +749,7 @@ export const downloadCandidatesDownloadMovie = <ThrowOnError extends boolean = f
 };
 
 /**
- * Preview policy evaluation for a movie candidate
+ * Preview routing dispatch for a movie candidate
  */
 export const downloadCandidatesPreviewMovie = <ThrowOnError extends boolean = false>(options: Options<DownloadCandidatesPreviewMovieData, ThrowOnError>) => {
     return (options.client ?? client).post<DownloadCandidatesPreviewMovieResponses, DownloadCandidatesPreviewMovieErrors, ThrowOnError>({
@@ -863,200 +863,111 @@ export const mediaGetPerson = <ThrowOnError extends boolean = false>(options: Op
 };
 
 /**
- * List policies
- */
-export const policiesList = <ThrowOnError extends boolean = false>(options?: Options<PoliciesListData, ThrowOnError>) => {
-    return (options?.client ?? client).get<PoliciesListResponses, PoliciesListErrors, ThrowOnError>({
-        url: '/api/v1/policies',
-        ...options
-    });
-};
-
-/**
- * Create policy
- */
-export const policiesCreate = <ThrowOnError extends boolean = false>(options: Options<PoliciesCreateData, ThrowOnError>) => {
-    return (options.client ?? client).post<PoliciesCreateResponses, PoliciesCreateErrors, ThrowOnError>({
-        url: '/api/v1/policies',
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers
-        }
-    });
-};
-
-/**
- * Evaluate policies against a download candidate
- */
-export const policiesEvaluate = <ThrowOnError extends boolean = false>(options: Options<PoliciesEvaluateData, ThrowOnError>) => {
-    return (options.client ?? client).post<PoliciesEvaluateResponses, PoliciesEvaluateErrors, ThrowOnError>({
-        url: '/api/v1/policies/evaluate',
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers
-        }
-    });
-};
-
-/**
- * Get policy field definitions
- */
-export const policiesGetFields = <ThrowOnError extends boolean = false>(options?: Options<PoliciesGetFieldsData, ThrowOnError>) => {
-    return (options?.client ?? client).get<PoliciesGetFieldsResponses, PoliciesGetFieldsErrors, ThrowOnError>({
-        url: '/api/v1/policies/fields',
-        ...options
-    });
-};
-
-/**
- * Delete policy
- */
-export const policiesDelete = <ThrowOnError extends boolean = false>(options: Options<PoliciesDeleteData, ThrowOnError>) => {
-    return (options.client ?? client).delete<PoliciesDeleteResponses, PoliciesDeleteErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}',
-        ...options
-    });
-};
-
-/**
- * Get policy
- */
-export const policiesGet = <ThrowOnError extends boolean = false>(options: Options<PoliciesGetData, ThrowOnError>) => {
-    return (options.client ?? client).get<PoliciesGetResponses, PoliciesGetErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}',
-        ...options
-    });
-};
-
-/**
- * Update policy
- */
-export const policiesUpdate = <ThrowOnError extends boolean = false>(options: Options<PoliciesUpdateData, ThrowOnError>) => {
-    return (options.client ?? client).put<PoliciesUpdateResponses, PoliciesUpdateErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}',
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers
-        }
-    });
-};
-
-/**
- * List actions for policy
- */
-export const policiesListActions = <ThrowOnError extends boolean = false>(options: Options<PoliciesListActionsData, ThrowOnError>) => {
-    return (options.client ?? client).get<PoliciesListActionsResponses, PoliciesListActionsErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}/actions',
-        ...options
-    });
-};
-
-/**
- * Create action for policy
- */
-export const policiesCreateAction = <ThrowOnError extends boolean = false>(options: Options<PoliciesCreateActionData, ThrowOnError>) => {
-    return (options.client ?? client).post<PoliciesCreateActionResponses, PoliciesCreateActionErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}/actions',
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers
-        }
-    });
-};
-
-/**
- * Delete action
- */
-export const policiesDeleteAction = <ThrowOnError extends boolean = false>(options: Options<PoliciesDeleteActionData, ThrowOnError>) => {
-    return (options.client ?? client).delete<PoliciesDeleteActionResponses, PoliciesDeleteActionErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}/actions/{actionId}',
-        ...options
-    });
-};
-
-/**
- * Get action
- */
-export const policiesGetAction = <ThrowOnError extends boolean = false>(options: Options<PoliciesGetActionData, ThrowOnError>) => {
-    return (options.client ?? client).get<PoliciesGetActionResponses, PoliciesGetActionErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}/actions/{actionId}',
-        ...options
-    });
-};
-
-/**
- * Update action
- */
-export const policiesUpdateAction = <ThrowOnError extends boolean = false>(options: Options<PoliciesUpdateActionData, ThrowOnError>) => {
-    return (options.client ?? client).put<PoliciesUpdateActionResponses, PoliciesUpdateActionErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}/actions/{actionId}',
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers
-        }
-    });
-};
-
-/**
- * Delete rule for policy
- */
-export const policiesDeleteRule = <ThrowOnError extends boolean = false>(options: Options<PoliciesDeleteRuleData, ThrowOnError>) => {
-    return (options.client ?? client).delete<PoliciesDeleteRuleResponses, PoliciesDeleteRuleErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}/rule',
-        ...options
-    });
-};
-
-/**
- * Get rule for policy
- */
-export const policiesGetRule = <ThrowOnError extends boolean = false>(options: Options<PoliciesGetRuleData, ThrowOnError>) => {
-    return (options.client ?? client).get<PoliciesGetRuleResponses, PoliciesGetRuleErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}/rule',
-        ...options
-    });
-};
-
-/**
- * Create rule for policy
- */
-export const policiesCreateRule = <ThrowOnError extends boolean = false>(options: Options<PoliciesCreateRuleData, ThrowOnError>) => {
-    return (options.client ?? client).post<PoliciesCreateRuleResponses, PoliciesCreateRuleErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}/rule',
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers
-        }
-    });
-};
-
-/**
- * Update rule for policy
- */
-export const policiesUpdateRule = <ThrowOnError extends boolean = false>(options: Options<PoliciesUpdateRuleData, ThrowOnError>) => {
-    return (options.client ?? client).put<PoliciesUpdateRuleResponses, PoliciesUpdateRuleErrors, ThrowOnError>({
-        url: '/api/v1/policies/{id}/rule',
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers
-        }
-    });
-};
-
-/**
  * List roles
  */
 export const rolesList = <ThrowOnError extends boolean = false>(options?: Options<RolesListData, ThrowOnError>) => {
     return (options?.client ?? client).get<RolesListResponses, RolesListErrors, ThrowOnError>({
         url: '/api/v1/roles',
         ...options
+    });
+};
+
+/**
+ * Dry-run routing rules against a download candidate
+ * Evaluates at the grab moment and returns the per-rule tri-state dispatch record.
+ */
+export const routingEvaluate = <ThrowOnError extends boolean = false>(options: Options<RoutingEvaluateData, ThrowOnError>) => {
+    return (options.client ?? client).post<RoutingEvaluateResponses, RoutingEvaluateErrors, ThrowOnError>({
+        url: '/api/v1/routing/evaluate',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * Get routing field definitions
+ */
+export const routingGetFields = <ThrowOnError extends boolean = false>(options?: Options<RoutingGetFieldsData, ThrowOnError>) => {
+    return (options?.client ?? client).get<RoutingGetFieldsResponses, RoutingGetFieldsErrors, ThrowOnError>({
+        url: '/api/v1/routing/fields',
+        ...options
+    });
+};
+
+/**
+ * List routing rules
+ */
+export const routingListRules = <ThrowOnError extends boolean = false>(options?: Options<RoutingListRulesData, ThrowOnError>) => {
+    return (options?.client ?? client).get<RoutingListRulesResponses, RoutingListRulesErrors, ThrowOnError>({
+        url: '/api/v1/routing/rules',
+        ...options
+    });
+};
+
+/**
+ * Create routing rule
+ * New rules append to the end of the evaluation order; use the positions endpoint to reorder.
+ */
+export const routingCreateRule = <ThrowOnError extends boolean = false>(options: Options<RoutingCreateRuleData, ThrowOnError>) => {
+    return (options.client ?? client).post<RoutingCreateRuleResponses, RoutingCreateRuleErrors, ThrowOnError>({
+        url: '/api/v1/routing/rules',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * Reorder routing rules
+ * Takes the full ordered id list — reordering is a list-level operation.
+ */
+export const routingReorderRules = <ThrowOnError extends boolean = false>(options: Options<RoutingReorderRulesData, ThrowOnError>) => {
+    return (options.client ?? client).put<RoutingReorderRulesResponses, RoutingReorderRulesErrors, ThrowOnError>({
+        url: '/api/v1/routing/rules/positions',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * Delete routing rule
+ */
+export const routingDeleteRule = <ThrowOnError extends boolean = false>(options: Options<RoutingDeleteRuleData, ThrowOnError>) => {
+    return (options.client ?? client).delete<RoutingDeleteRuleResponses, RoutingDeleteRuleErrors, ThrowOnError>({
+        url: '/api/v1/routing/rules/{id}',
+        ...options
+    });
+};
+
+/**
+ * Get routing rule
+ */
+export const routingGetRule = <ThrowOnError extends boolean = false>(options: Options<RoutingGetRuleData, ThrowOnError>) => {
+    return (options.client ?? client).get<RoutingGetRuleResponses, RoutingGetRuleErrors, ThrowOnError>({
+        url: '/api/v1/routing/rules/{id}',
+        ...options
+    });
+};
+
+/**
+ * Update routing rule
+ */
+export const routingUpdateRule = <ThrowOnError extends boolean = false>(options: Options<RoutingUpdateRuleData, ThrowOnError>) => {
+    return (options.client ?? client).put<RoutingUpdateRuleResponses, RoutingUpdateRuleErrors, ThrowOnError>({
+        url: '/api/v1/routing/rules/{id}',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
     });
 };
 
@@ -1084,7 +995,7 @@ export const mediaGetSeries = <ThrowOnError extends boolean = false>(options: Op
 
 /**
  * Enqueue a series download candidate
- * Runs the policy engine, creates a download job (with season/episode if supplied), and returns the trace + job.
+ * Dispatches routing rules, creates a download job (with season/episode if supplied), and returns the evaluation + job.
  */
 export const downloadCandidatesDownloadSeries = <ThrowOnError extends boolean = false>(options: Options<DownloadCandidatesDownloadSeriesData, ThrowOnError>) => {
     return (options.client ?? client).post<DownloadCandidatesDownloadSeriesResponses, DownloadCandidatesDownloadSeriesErrors, ThrowOnError>({
@@ -1098,7 +1009,7 @@ export const downloadCandidatesDownloadSeries = <ThrowOnError extends boolean = 
 };
 
 /**
- * Preview policy evaluation for a series candidate
+ * Preview routing dispatch for a series candidate
  */
 export const downloadCandidatesPreviewSeries = <ThrowOnError extends boolean = false>(options: Options<DownloadCandidatesPreviewSeriesData, ThrowOnError>) => {
     return (options.client ?? client).post<DownloadCandidatesPreviewSeriesResponses, DownloadCandidatesPreviewSeriesErrors, ThrowOnError>({

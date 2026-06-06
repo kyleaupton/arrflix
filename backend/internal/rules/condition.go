@@ -1,8 +1,8 @@
 // Package rules is the shared predicate substrate: a typed condition tree, a
-// pure three-valued evaluator over a model.Release, and registry-driven
-// authoring-time validation. Routing and quality profiles both stand on it —
-// each consumer owns its own reduction of the boolean answer; this package
-// only answers "does this release match?".
+// pure three-valued evaluator over a model.Subject at an explicit evaluation
+// moment, and registry-driven authoring-time validation. Routing and quality
+// profiles both stand on it — each consumer owns its own reduction of the
+// boolean answer; this package only answers "does this subject match?".
 //
 // The package is pure: it imports internal/model and the stdlib only. No
 // repo, no DB, no logger, no HTTP, no consumer types.

@@ -32,7 +32,7 @@ func TestValidateAccepts(t *testing.T) {
 		{"list field eq list literal", leaf(OpEq, fld("candidate.categories"), litList("Movies"))},
 		{"cross-field same class", leaf(OpEq, fld("media.title"), fld("media.clean_title"))},
 		{"cross-field contains", leaf(OpContains, fld("candidate.title"), fld("media.title"))},
-		{"post_download field", leaf(OpEq, fld("mediainfo.video_codec"), litEnum("H.265"))},
+		{"import-phase field", leaf(OpEq, fld("mediainfo.video_codec"), litEnum("H.265"))},
 		{"canonical nested tree", branch(OpAnd,
 			leaf(OpEq, fld("quality.resolution"), litEnum("2160p")),
 			leaf(OpIn, fld("encode.release_group"), litList("FLUX", "FraMeSToR")),

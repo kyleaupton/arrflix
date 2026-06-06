@@ -27,27 +27,29 @@ func branch(op Operator, children ...*Condition) *Condition {
 	return &Condition{Op: op, Children: children}
 }
 
-// preRelease is a hand-rolled pre-download release: indexer candidate +
-// parse + media match, no MediaInfo yet.
-func preRelease() model.Release {
-	return model.Release{
-		Candidate: model.CandidateFields{
-			Size:       4_000_000_000,
-			Title:      "Dune.2021.2160p.BluRay.REMUX-FraMeSToR",
-			Protocol:   "torrent",
-			Seeders:    50,
-			AgeHours:   5.5,
-			Categories: []string{"Movies", "Movies/UHD"},
-		},
-		Quality: model.QualityFields{
-			Resolution: parsing.Field[string]{Value: "2160p", Confidence: 0.9, Evidence: "2160p token"},
-			Source:     parsing.Field[string]{Value: "BluRay"},
-			Modifier:   parsing.Field[string]{Value: "REMUX"},
-			IsRepack:   parsing.Field[bool]{Value: true},
-			Version:    parsing.Field[int]{Value: 2},
-		},
-		Encode: model.EncodeFields{
-			ReleaseGroup: parsing.Field[string]{Value: "FraMeSToR"},
+// searchSubject is a hand-rolled search-moment subject: indexer candidate +
+// parse + media match; no MediaInfo, no Want yet.
+func searchSubject() model.Subject {
+	return model.Subject{
+		Release: model.Release{
+			Candidate: model.CandidateFields{
+				Size:       4_000_000_000,
+				Title:      "Dune.2021.2160p.BluRay.REMUX-FraMeSToR",
+				Protocol:   "torrent",
+				Seeders:    50,
+				AgeHours:   5.5,
+				Categories: []string{"Movies", "Movies/UHD"},
+			},
+			Quality: model.QualityFields{
+				Resolution: parsing.Field[string]{Value: "2160p", Confidence: 0.9, Evidence: "2160p token"},
+				Source:     parsing.Field[string]{Value: "BluRay"},
+				Modifier:   parsing.Field[string]{Value: "REMUX"},
+				IsRepack:   parsing.Field[bool]{Value: true},
+				Version:    parsing.Field[int]{Value: 2},
+			},
+			Encode: model.EncodeFields{
+				ReleaseGroup: parsing.Field[string]{Value: "FraMeSToR"},
+			},
 		},
 		Media: model.MediaFields{
 			Type:       "movie",
@@ -59,15 +61,16 @@ func preRelease() model.Release {
 	}
 }
 
-// postRelease is preRelease after download: MediaInfo populated by ffprobe.
-func postRelease() model.Release {
-	r := preRelease()
-	r.MediaInfo = &model.MediaInfoFields{
+// importSubject is searchSubject after download: MediaInfo populated by
+// ffprobe.
+func importSubject() model.Subject {
+	s := searchSubject()
+	s.Release.MediaInfo = &model.MediaInfoFields{
 		VideoCodec:     "H.265",
 		VideoBitDepth:  10,
 		HDR:            "HDR10",
 		AudioLanguages: []string{"eng", "jpn"},
 		Container:      "MKV",
 	}
-	return r
+	return s
 }

@@ -265,7 +265,7 @@ func (n Numbering) ReleaseType() string {
 
 // Values is the flat, plain-value projection of a ParsedRelease — the same
 // fields with confidence and provenance stripped. The parity harness compares
-// this projection against the oracle goldens; model.Release consumes the full
+// this projection against the oracle goldens; model.Subject consumes the full
 // Field[T] model directly. Confidence/evidence are available separately via
 // Provenance().
 type Values struct {

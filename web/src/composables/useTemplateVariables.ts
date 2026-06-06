@@ -1,6 +1,6 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
-import { policiesGetFieldsOptions } from '@/client/@tanstack/vue-query.gen'
+import { routingGetFieldsOptions } from '@/client/@tanstack/vue-query.gen'
 import type { FieldDefinition } from '@/client/types.gen'
 
 export interface TemplateVariable {
@@ -110,7 +110,7 @@ function extractNamespace(apiPath: string): string {
  * Composable for accessing template variables from the API
  */
 export function useTemplateVariables(options?: { mediaType?: 'movie' | 'series' }) {
-  const { data: fields, isLoading, error } = useQuery(policiesGetFieldsOptions())
+  const { data: fields, isLoading, error } = useQuery(routingGetFieldsOptions())
 
   /** All variables transformed for template use */
   const allVariables = computed<TemplateVariable[]>(() => {

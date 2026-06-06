@@ -38,10 +38,11 @@ func parsedFixture() parsing.ParsedRelease {
 	}
 }
 
-func TestNewReleaseCarriesFields(t *testing.T) {
+func TestNewSubjectCarriesFields(t *testing.T) {
 	t.Parallel()
 
-	r := NewRelease(DownloadCandidate{Title: "The.Office.S03E05.1080p.BluRay.x264-GROUP", Size: 1234}, parsedFixture())
+	s := NewSubject(DownloadCandidate{Title: "The.Office.S03E05.1080p.BluRay.x264-GROUP", Size: 1234}, parsedFixture())
+	r := s.Release
 
 	// Parsed namespaces preserve value + confidence + evidence.
 	if r.Identity.Title.Value != "The Office" || r.Identity.Title.Confidence != 0.9 || r.Identity.Title.Evidence != "title" {
@@ -77,32 +78,37 @@ func TestNewReleaseCarriesFields(t *testing.T) {
 	if r.Candidate.Size != 1234 {
 		t.Errorf("Candidate.Size = %d, want 1234", r.Candidate.Size)
 	}
+
+	// Want is nil until acquisition assembles it.
+	if s.Want != nil {
+		t.Errorf("Want = %+v, want nil (unassembled)", s.Want)
+	}
 }
 
 func TestGetFieldUnwraps(t *testing.T) {
 	t.Parallel()
 
-	r := NewRelease(DownloadCandidate{Size: 4096}, parsedFixture())
+	s := NewSubject(DownloadCandidate{Size: 4096}, parsedFixture())
 
 	// Parsed-namespace lookups return the bare value, not a Field wrapper.
-	got, err := r.GetField("quality.resolution")
+	got, err := s.GetField("quality.resolution")
 	if err != nil {
 		t.Fatalf("GetField(quality.resolution): %v", err)
 	}
-	if s, ok := got.(string); !ok || s != "1080p" {
+	if v, ok := got.(string); !ok || v != "1080p" {
 		t.Errorf("GetField(quality.resolution) = %#v, want bare string %q", got, "1080p")
 	}
 
-	got, err = r.GetField("encode.release_group")
+	got, err = s.GetField("encode.release_group")
 	if err != nil {
 		t.Fatalf("GetField(encode.release_group): %v", err)
 	}
-	if s, ok := got.(string); !ok || s != "GROUP" {
+	if v, ok := got.(string); !ok || v != "GROUP" {
 		t.Errorf("GetField(encode.release_group) = %#v, want bare string %q", got, "GROUP")
 	}
 
 	// Bare namespaces are returned directly.
-	got, err = r.GetField("candidate.size")
+	got, err = s.GetField("candidate.size")
 	if err != nil {
 		t.Fatalf("GetField(candidate.size): %v", err)
 	}
@@ -110,17 +116,32 @@ func TestGetFieldUnwraps(t *testing.T) {
 		t.Errorf("GetField(candidate.size) = %#v, want int64 4096", got)
 	}
 
-	// MediaInfo is unavailable pre-download.
-	if _, err := r.GetField("mediainfo.video_codec"); err == nil || !strings.Contains(err.Error(), "not available") {
-		t.Errorf("GetField(mediainfo.video_codec) pre-download err = %v, want 'not available'", err)
+	// MediaInfo is unavailable before import.
+	if _, err := s.GetField("mediainfo.video_codec"); err == nil || !strings.Contains(err.Error(), "not available") {
+		t.Errorf("GetField(mediainfo.video_codec) pre-import err = %v, want 'not available'", err)
+	}
+
+	// Want is unavailable while unassembled.
+	if _, err := s.GetField("want.trigger"); err == nil || !strings.Contains(err.Error(), "not available") {
+		t.Errorf("GetField(want.trigger) unassembled err = %v, want 'not available'", err)
+	}
+
+	// A populated Want resolves to bare values.
+	s.Want = &WantFields{Trigger: "rss"}
+	got, err = s.GetField("want.trigger")
+	if err != nil {
+		t.Fatalf("GetField(want.trigger): %v", err)
+	}
+	if v, ok := got.(string); !ok || v != "rss" {
+		t.Errorf("GetField(want.trigger) = %#v, want bare string %q", got, "rss")
 	}
 }
 
-func TestListContextFieldsContract(t *testing.T) {
+func TestListSubjectFieldsContract(t *testing.T) {
 	t.Parallel()
 
-	byPath := map[string]ContextFieldInfo{}
-	for _, f := range ListContextFields() {
+	byPath := map[string]SubjectFieldInfo{}
+	for _, f := range ListSubjectFields() {
 		byPath[f.Path] = f
 	}
 
@@ -131,17 +152,20 @@ func TestListContextFieldsContract(t *testing.T) {
 		phase     Phase
 		enum      []string
 	}{
-		{"candidate.size", "number", "int64", PhasePreDownload, nil},
-		{"identity.year", "number", "int", PhasePreDownload, nil},
-		{"identity.all_titles", "text", "[]string", PhasePreDownload, nil},
-		{"identity.episode_numbers", "number", "[]any", PhasePreDownload, nil},
-		{"quality.resolution", "enum", "string", PhasePreDownload, []string{"Unknown", "SD", "480p", "576p", "720p", "1080p", "2160p"}},
-		{"quality.is_repack", "boolean", "bool", PhasePreDownload, nil},
-		{"quality.version", "number", "int", PhasePreDownload, nil},
-		{"encode.release_group", "text", "string", PhasePreDownload, nil},
-		{"encode.hardcoded_subs", "text", "string", PhasePreDownload, nil},
-		{"media.tmdb_id", "number", "int64", PhasePreDownload, nil},
-		{"mediainfo.video_codec", "enum", "string", PhasePostDownload, []string{"Unknown", "H.264", "H.265", "AV1", "VP9", "MPEG-2"}},
+		{"candidate.size", "number", "int64", PhaseSearch, nil},
+		{"identity.year", "number", "int", PhaseSearch, nil},
+		{"identity.all_titles", "text", "[]string", PhaseSearch, nil},
+		{"identity.episode_numbers", "number", "[]any", PhaseSearch, nil},
+		{"quality.resolution", "enum", "string", PhaseSearch, []string{"Unknown", "SD", "480p", "576p", "720p", "1080p", "2160p"}},
+		{"quality.is_repack", "boolean", "bool", PhaseSearch, nil},
+		{"quality.version", "number", "int", PhaseSearch, nil},
+		{"encode.release_group", "text", "string", PhaseSearch, nil},
+		{"encode.hardcoded_subs", "text", "string", PhaseSearch, nil},
+		{"media.tmdb_id", "number", "int64", PhaseSearch, nil},
+		{"want.trigger", "enum", "string", PhaseSearch, []string{"request", "rss", "upgrade", "manual"}},
+		{"want.requesters", "dynamic", "[]string", PhaseSearch, nil},
+		{"want.tier", "dynamic", "string", PhaseSearch, nil},
+		{"mediainfo.video_codec", "enum", "string", PhaseImport, []string{"Unknown", "H.264", "H.265", "AV1", "VP9", "MPEG-2"}},
 	}
 	for _, tc := range cases {
 		f, ok := byPath[tc.path]
@@ -163,11 +187,27 @@ func TestListContextFieldsContract(t *testing.T) {
 		}
 	}
 
-	// The old encode-namespace paths are gone.
-	for path := range byPath {
+	// Every catalog entry carries a timeline phase; stale namespaces are gone.
+	for path, f := range byPath {
+		if f.Phase != PhaseSearch && f.Phase != PhaseGrab && f.Phase != PhaseImport {
+			t.Errorf("%s has unknown phase %q", path, f.Phase)
+		}
 		if strings.HasPrefix(path, "release.") {
 			t.Errorf("stale release.* path in catalog: %s", path)
 		}
+	}
+}
+
+func TestPhaseRank(t *testing.T) {
+	t.Parallel()
+
+	if PhaseSearch.Rank() >= PhaseGrab.Rank() || PhaseGrab.Rank() >= PhaseImport.Rank() {
+		t.Errorf("timeline order broken: search=%d grab=%d import=%d",
+			PhaseSearch.Rank(), PhaseGrab.Rank(), PhaseImport.Rank())
+	}
+	// Absent/unknown phase ranks as search, the always-knowable default.
+	if Phase("").Rank() != PhaseSearch.Rank() {
+		t.Errorf(`Phase("").Rank() = %d, want %d`, Phase("").Rank(), PhaseSearch.Rank())
 	}
 }
 
@@ -176,11 +216,11 @@ func TestToTemplateDataRendering(t *testing.T) {
 
 	season, episode := 3, 5
 	epTitle := "Initiation"
-	r := NewRelease(DownloadCandidate{Title: "raw title"}, parsedFixture()).
+	s := NewSubject(DownloadCandidate{Title: "raw title"}, parsedFixture()).
 		WithMedia(MediaTypeSeries, "The Office", 2005, 2316).
 		WithSeriesInfo(&season, &episode, &epTitle)
 
-	data := r.ToTemplateData()
+	data := s.ToTemplateData()
 
 	cases := []struct {
 		name string
@@ -191,7 +231,7 @@ func TestToTemplateDataRendering(t *testing.T) {
 		{"zero-padded media numbering", "S{{.Media.Season}}E{{.Media.Episode}}", "S03E05"},
 		{"encode namespace", "{{.Encode.ReleaseGroup}}", "GROUP"},
 		{"identity namespace", "{{.Identity.Title}} ({{.Identity.Year}})", "The Office (2005)"},
-		{"mediainfo empty pre-download", "[{{.MediaInfo.VideoCodec}}]", "[]"},
+		{"mediainfo empty pre-import", "[{{.MediaInfo.VideoCodec}}]", "[]"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

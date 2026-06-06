@@ -3,36 +3,30 @@ package rules
 import "fmt"
 
 // Tri is a three-valued boolean: True, False, or Unknown. Unknown arises when
-// a condition references a field that is not available yet — a post_download
-// field evaluated while Release.MediaInfo is nil — so a pre-download pass
-// never produces a spurious reject; the same tree re-run post-download is
-// definite. Each consumer maps Unknown to its own safe default.
-type Tri uint8
+// a condition references a field that is not knowable yet — an import-phase
+// field evaluated at search, or a namespace whose Subject half is unassembled
+// — so an early-moment pass never produces a spurious reject; the same tree
+// re-run at a later moment is definite. Each consumer maps Unknown to its own
+// safe default.
+//
+// Tri is string-valued ("false"/"true"/"unknown") so it serializes naturally
+// — the same strings ride the wire in dry-run evaluations, and schema
+// generation sees a string, not an opaque integer.
+type Tri string
 
 const (
-	False Tri = iota
-	True
-	Unknown
+	False   Tri = "false"
+	True    Tri = "true"
+	Unknown Tri = "unknown"
 )
 
 // String renders the tri-state as "false", "true", or "unknown".
 func (t Tri) String() string {
-	switch t {
-	case False:
-		return "false"
-	case True:
-		return "true"
-	default:
-		return "unknown"
-	}
+	return string(t)
 }
 
-// MarshalJSON encodes the tri-state as the JSON string "false"/"true"/"unknown".
-func (t Tri) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + t.String() + `"`), nil
-}
-
-// UnmarshalJSON decodes the string form produced by MarshalJSON.
+// UnmarshalJSON decodes the string form, rejecting anything outside the three
+// states so a malformed stored trace can't smuggle in a fourth value.
 func (t *Tri) UnmarshalJSON(b []byte) error {
 	switch string(b) {
 	case `"false"`:

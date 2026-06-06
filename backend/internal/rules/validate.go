@@ -64,7 +64,7 @@ const (
 // underlying field metadata or literal (exactly one is set).
 type opType struct {
 	class string
-	field *model.ContextFieldInfo // non-nil for field operands
+	field *model.SubjectFieldInfo // non-nil for field operands
 	lit   *Literal                // non-nil for literal operands
 }
 
@@ -77,7 +77,7 @@ func (t *opType) describe() string {
 }
 
 // fieldClass maps a catalog field to its comparison class.
-func fieldClass(info model.ContextFieldInfo) string {
+func fieldClass(info model.SubjectFieldInfo) string {
 	switch info.ValueType {
 	case "string":
 		return classString

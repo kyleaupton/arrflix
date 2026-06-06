@@ -2,12 +2,14 @@ package rules
 
 import (
 	"testing"
+
+	"github.com/kyleaupton/arrflix/internal/model"
 )
 
 func TestEvalComparisons(t *testing.T) {
 	t.Parallel()
 	reg := NewRegistry()
-	rel := postRelease()
+	s := importSubject()
 
 	tests := []struct {
 		name string
@@ -69,7 +71,7 @@ func TestEvalComparisons(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := reg.Eval(tt.cond, rel)
+			got := reg.Eval(tt.cond, s, model.PhaseImport)
 			if got.Result != tt.want {
 				t.Errorf("Eval(%s) = %v, want %v", tt.name, got.Result, tt.want)
 			}
@@ -80,7 +82,7 @@ func TestEvalComparisons(t *testing.T) {
 func TestEvalLogicalComposition(t *testing.T) {
 	t.Parallel()
 	reg := NewRegistry()
-	rel := preRelease()
+	s := searchSubject()
 
 	// Definite leaves against the fixture.
 	yes := leaf(OpEq, fld("media.type"), litEnum("movie")) // True
@@ -111,7 +113,7 @@ func TestEvalLogicalComposition(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := reg.Eval(tt.cond, rel)
+			got := reg.Eval(tt.cond, s, model.PhaseSearch)
 			if got.Result != tt.want {
 				t.Errorf("Eval(%s) = %v, want %v", tt.name, got.Result, tt.want)
 			}
@@ -122,45 +124,72 @@ func TestEvalLogicalComposition(t *testing.T) {
 func TestEvalThreeValued(t *testing.T) {
 	t.Parallel()
 	reg := NewRegistry()
-	pre := preRelease()
-	post := postRelease()
+	early := searchSubject()
+	late := importSubject()
 
-	// A post_download leaf: Unknown pre-download, definite post-download.
+	// An import-phase leaf: Unknown at search, definite at import.
 	hevc := leaf(OpEq, fld("mediainfo.video_codec"), litEnum("H.265"))
 	yes := leaf(OpEq, fld("media.type"), litEnum("movie")) // True
 	no := leaf(OpEq, fld("media.type"), litEnum("series")) // False
 
-	t.Run("post_download leaf pre-download is Unknown", func(t *testing.T) {
+	t.Run("import leaf at search is Unknown", func(t *testing.T) {
 		t.Parallel()
-		if got := reg.Eval(hevc, pre).Result; got != Unknown {
+		if got := reg.Eval(hevc, early, model.PhaseSearch).Result; got != Unknown {
 			t.Errorf("Result = %v, want Unknown", got)
 		}
 	})
-	t.Run("same leaf post-download is definite", func(t *testing.T) {
+	t.Run("same leaf at import is definite", func(t *testing.T) {
 		t.Parallel()
-		if got := reg.Eval(hevc, post).Result; got != True {
+		if got := reg.Eval(hevc, late, model.PhaseImport).Result; got != True {
 			t.Errorf("Result = %v, want True", got)
+		}
+	})
+	t.Run("phase gates before population", func(t *testing.T) {
+		t.Parallel()
+		// MediaInfo is populated, but the moment is search: a later-phase
+		// field is not yet knowable regardless of incidental population.
+		if got := reg.Eval(hevc, late, model.PhaseSearch).Result; got != Unknown {
+			t.Errorf("Result = %v, want Unknown (phase gates before population)", got)
+		}
+	})
+	t.Run("import leaf at import without data is Unknown", func(t *testing.T) {
+		t.Parallel()
+		// The population backstop: an asserted moment with an unassembled
+		// half yields indeterminate, never a panic.
+		if got := reg.Eval(hevc, early, model.PhaseImport).Result; got != Unknown {
+			t.Errorf("Result = %v, want Unknown (population backstop)", got)
+		}
+	})
+	t.Run("grab sees all search fields", func(t *testing.T) {
+		t.Parallel()
+		cond := branch(OpAnd,
+			leaf(OpEq, fld("quality.resolution"), litEnum("2160p")),
+			leaf(OpEq, fld("media.type"), litEnum("movie")),
+			leaf(OpGt, fld("candidate.seeders"), litInt(10)),
+		)
+		if got := reg.Eval(cond, early, model.PhaseGrab).Result; got != True {
+			t.Errorf("Result = %v, want True (search fields knowable at grab)", got)
 		}
 	})
 	t.Run("ordering on unavailable field is Unknown", func(t *testing.T) {
 		t.Parallel()
 		cond := leaf(OpGte, fld("mediainfo.video_bit_depth"), litInt(10))
-		if got := reg.Eval(cond, pre).Result; got != Unknown {
+		if got := reg.Eval(cond, early, model.PhaseSearch).Result; got != Unknown {
 			t.Errorf("Result = %v, want Unknown", got)
 		}
 	})
 	t.Run("unknown path is Unknown", func(t *testing.T) {
 		t.Parallel()
 		cond := leaf(OpEq, fld("bogus.path"), litStr("x"))
-		if got := reg.Eval(cond, pre).Result; got != Unknown {
+		if got := reg.Eval(cond, early, model.PhaseSearch).Result; got != Unknown {
 			t.Errorf("Result = %v, want Unknown", got)
 		}
 	})
 	t.Run("nil optional field is Unknown", func(t *testing.T) {
 		t.Parallel()
-		// media.season is an unset *int on a movie release.
+		// media.season is an unset *int on a movie subject.
 		cond := leaf(OpEq, fld("media.season"), litInt(1))
-		if got := reg.Eval(cond, pre).Result; got != Unknown {
+		if got := reg.Eval(cond, early, model.PhaseSearch).Result; got != Unknown {
 			t.Errorf("Result = %v, want Unknown", got)
 		}
 	})
@@ -180,11 +209,54 @@ func TestEvalThreeValued(t *testing.T) {
 	for _, tt := range propagation {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := reg.Eval(tt.cond, pre).Result; got != tt.want {
+			if got := reg.Eval(tt.cond, early, model.PhaseSearch).Result; got != tt.want {
 				t.Errorf("Result = %v, want %v", got, tt.want)
 			}
 		})
 	}
+}
+
+func TestEvalWantNamespace(t *testing.T) {
+	t.Parallel()
+	reg := NewRegistry()
+
+	trigger := leaf(OpEq, fld("want.trigger"), litEnum("rss"))
+	kid := leaf(OpContains, fld("want.requesters"), litStr("kid-user-id"))
+
+	t.Run("nil Want is Unknown at every moment", func(t *testing.T) {
+		t.Parallel()
+		s := searchSubject() // Want nil — registered but unassembled
+		for _, at := range []model.Phase{model.PhaseSearch, model.PhaseGrab, model.PhaseImport} {
+			if got := reg.Eval(trigger, s, at).Result; got != Unknown {
+				t.Errorf("want.trigger at %s = %v, want Unknown (unassembled)", at, got)
+			}
+			if got := reg.Eval(kid, s, at).Result; got != Unknown {
+				t.Errorf("want.requesters at %s = %v, want Unknown (unassembled)", at, got)
+			}
+		}
+	})
+	t.Run("populated Want evaluates definitively", func(t *testing.T) {
+		t.Parallel()
+		s := searchSubject()
+		s.Want = &model.WantFields{Trigger: "rss", Requesters: []string{"kid-user-id"}}
+		if got := reg.Eval(trigger, s, model.PhaseGrab).Result; got != True {
+			t.Errorf("want.trigger = %v, want True", got)
+		}
+		if got := reg.Eval(kid, s, model.PhaseGrab).Result; got != True {
+			t.Errorf("want.requesters contains = %v, want True", got)
+		}
+	})
+	t.Run("empty requester set is definitively False", func(t *testing.T) {
+		t.Parallel()
+		// Knowably empty, not unknowable: an RSS grab has a populated Want
+		// with no requesters — contains over the empty set is false, now and
+		// forever, never indeterminate.
+		s := searchSubject()
+		s.Want = &model.WantFields{Trigger: "rss", Requesters: []string{}}
+		if got := reg.Eval(kid, s, model.PhaseGrab).Result; got != False {
+			t.Errorf("contains over empty requesters = %v, want False", got)
+		}
+	})
 }
 
 func TestEvalTrace(t *testing.T) {
@@ -195,7 +267,7 @@ func TestEvalTrace(t *testing.T) {
 		leaf(OpEq, fld("quality.resolution"), litEnum("2160p")),
 		leaf(OpEq, fld("mediainfo.hdr"), litEnum("HDR10")),
 	)
-	out := reg.Eval(cond, preRelease())
+	out := reg.Eval(cond, searchSubject(), model.PhaseSearch)
 
 	if out.Result != Unknown {
 		t.Fatalf("Result = %v, want Unknown", out.Result)
@@ -208,7 +280,7 @@ func TestEvalTrace(t *testing.T) {
 		t.Fatalf("trace root = %s with %d children, want and with 2", tr.Op, len(tr.Children))
 	}
 
-	// First leaf: available pre-download field, definite result.
+	// First leaf: search-phase field, definite result.
 	first := tr.Children[0]
 	if first.Op != OpEq || first.Result != True {
 		t.Errorf("children[0] = %s/%v, want ==/True", first.Op, first.Result)
@@ -220,7 +292,7 @@ func TestEvalTrace(t *testing.T) {
 		t.Errorf("children[0].Right = %+v, want available literal 2160p with no path", first.Right)
 	}
 
-	// Second leaf: post_download field pre-download — unavailable, Unknown.
+	// Second leaf: import-phase field at search — unavailable, Unknown.
 	second := tr.Children[1]
 	if second.Result != Unknown {
 		t.Errorf("children[1].Result = %v, want Unknown", second.Result)
@@ -232,14 +304,14 @@ func TestEvalTrace(t *testing.T) {
 		t.Errorf("children[1].Right = %+v, want available literal", second.Right)
 	}
 
-	// Post-download, the same tree is definite and the trace records it.
-	out = reg.Eval(cond, postRelease())
+	// At import, the same tree is definite and the trace records it.
+	out = reg.Eval(cond, importSubject(), model.PhaseImport)
 	if out.Result != True {
-		t.Fatalf("post-download Result = %v, want True", out.Result)
+		t.Fatalf("import Result = %v, want True", out.Result)
 	}
 	second = out.Trace.Children[1]
 	if !second.Left.Available || second.Left.Value != "HDR10" || second.Result != True {
-		t.Errorf("post-download children[1].Left = %+v (Result %v), want available HDR10/True", second.Left, second.Result)
+		t.Errorf("import children[1].Left = %+v (Result %v), want available HDR10/True", second.Left, second.Result)
 	}
 }
 
@@ -247,7 +319,7 @@ func TestTriString(t *testing.T) {
 	t.Parallel()
 	for tri, want := range map[Tri]string{True: "true", False: "false", Unknown: "unknown"} {
 		if got := tri.String(); got != want {
-			t.Errorf("Tri(%d).String() = %q, want %q", tri, got, want)
+			t.Errorf("Tri(%q).String() = %q, want %q", string(tri), got, want)
 		}
 	}
 }

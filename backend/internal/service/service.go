@@ -12,7 +12,6 @@ import (
 	"github.com/kyleaupton/arrflix/internal/matcher"
 	"github.com/kyleaupton/arrflix/internal/matcher/resolvers"
 	"github.com/kyleaupton/arrflix/internal/metadata"
-	"github.com/kyleaupton/arrflix/internal/policy"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
@@ -33,7 +32,7 @@ type Services struct {
 	MatchDecisions     *MatchDecisionsService
 	Media              *MediaService
 	NameTemplates      *NameTemplatesService
-	Policies           *PoliciesService
+	Routing            *RoutingService
 	Scanner            *ScannerService
 	Settings           *SettingsService
 	Setup              *SetupService
@@ -79,8 +78,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	indexer := NewIndexerService(r, l, prowlarrURL, c.ProwlarrAPIKey)
 	indexerSource := prowlarradapter.New(indexer.Client(), l)
 	media := NewMediaService(r, l, tmdb, settings)
-	policies := NewPoliciesService(r, l)
-	policyEngine := policy.NewEngine(r, l)
+	routingSvc := NewRoutingService(r)
 	users := NewUsersService(r)
 	invites := NewInvitesService(r)
 	enrichment := NewEnrichmentService(r, l, tmdb)
@@ -106,7 +104,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	return &Services{
 		Auth:               NewAuthService(r, cfg, settings, invites),
 		Downloaders:        NewDownloadersService(r),
-		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, policyEngine),
+		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, routingSvc),
 		DownloadJobs:       NewDownloadJobsService(r),
 		Enrichment:         enrichment,
 		Invites:            invites,
@@ -120,7 +118,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		MatchDecisions:     matchDecisionsSvc,
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
-		Policies:           policies,
+		Routing:            routingSvc,
 		Scanner:            NewScannerService(r, l, tmdb, broker, matcherSvc, enrichment),
 		Settings:           settings,
 		Setup:              NewSetupService(r, users, settings, tmdb),

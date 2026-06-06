@@ -159,9 +159,11 @@ Name templates render at `import` — the last moment — so every field is know
 The timeline forces a distinction the substrate must keep crisp, because conflating them produces wrong answers in both directions:
 
 - **Not yet knowable** — a field whose phase is later than the current moment (`mediainfo.video_codec` at `search`). The condition is **indeterminate**: unanswerable now, answerable later. It must never contribute a reject or a match at the earlier moment.
-- **Knowably empty** — a field that is present and simply has no value: an empty `want.requesters` on an RSS grab, a missing `encode.release_group`. This is an ordinary value; the condition evaluates **definitively** (`contains` over an empty set is `false` — now and forever).
+- **Knowably empty** — a field that is present and simply has no value: an empty `want.requesters` on an RSS grab, a missing `encode.release_group` (a zero string). This is an ordinary value; the condition evaluates **definitively** (`contains` over an empty set is `false` — now and forever).
 
 Get this wrong and "route kids' requests to the kids library" becomes mysteriously indeterminate for RSS grabs instead of cleanly non-matching. The registry distinguishes the cases by construction: phase handles the first; optional/empty-valued fields are just values.
+
+One marginal case sits between the two and resolves toward indeterminate: an **absent optional scalar** — `media.season` on a movie, an episode title that doesn't exist — has *no value to compare at all* (nil, not zero). A comparison against nothing is ill-posed ("is a movie's season ≠ 5?"), so it evaluates **indeterminate**, not definitively false. The line: an empty *collection* or zero *string* is a value and compares definitively; a nil scalar is the absence of one and doesn't.
 
 ## Conditions: the typed operand model
 

@@ -35,33 +35,40 @@ type Resolved struct {
 	Available bool   `json:"available"`
 }
 
-// Eval walks the tree against the release and returns a tri-state Outcome.
-// It is total: it never errors and never panics. Validation guarantees
-// well-typed trees; a malformed node that somehow reaches eval resolves
-// defensively (Unknown, or False for equality) rather than failing.
+// Eval walks the tree against the subject at the given evaluation moment and
+// returns a tri-state Outcome. It is total: it never errors and never panics.
+// Validation guarantees well-typed trees; a malformed node that somehow
+// reaches eval resolves defensively (Unknown, or False for equality) rather
+// than failing.
 //
-// A comparison over an unavailable field is Unknown. A field is unavailable
-// when its phase is post_download and the release has no MediaInfo yet, when
-// its path is unknown to the registry, or when its resolved value is nil (an
-// unset optional field such as media.season on a movie). Logical branches
-// combine children with Kleene three-valued logic.
+// The moment is an explicit parameter, not derived from which Subject halves
+// happen to be populated — callers know their moment intrinsically (quality =
+// search, routing = grab, importer = import), and (tree, subject, at) fully
+// determines the verdict. A comparison over an unavailable field is Unknown.
+// A field is available iff its phase rank ≤ the moment's rank AND its half of
+// the Subject is actually populated (population is a defensive backstop: an
+// unassembled half — nil Want, nil MediaInfo — is "not knowable", distinct
+// from a populated half holding empty values, which evaluates definitively).
+// A field is also unavailable when its path is unknown to the registry or its
+// resolved value is nil (an unset optional field such as media.season on a
+// movie). Logical branches combine children with Kleene three-valued logic.
 //
-// Eval reads bare values (model.Release.GetField unwraps Field[T] to .Value)
+// Eval reads bare values (model.Subject.GetField unwraps Field[T] to .Value)
 // and ignores confidence — the seam exists; v1 doesn't consume it.
-func (r *Registry) Eval(cond *Condition, rel model.Release) Outcome {
-	trace := r.evalNode(cond, &rel)
+func (r *Registry) Eval(cond *Condition, s model.Subject, at model.Phase) Outcome {
+	trace := r.evalNode(cond, &s, at)
 	return Outcome{Result: trace.Result, Trace: trace}
 }
 
 // evalNode evaluates one node, returning its trace (which carries the result).
-func (r *Registry) evalNode(cond *Condition, rel *model.Release) Trace {
+func (r *Registry) evalNode(cond *Condition, s *model.Subject, at model.Phase) Trace {
 	switch {
 	case cond == nil:
 		return Trace{Result: Unknown}
 	case cond.Op.IsLogical():
-		return r.evalLogical(cond, rel)
+		return r.evalLogical(cond, s, at)
 	case cond.Op.IsComparison():
-		return r.evalComparison(cond, rel)
+		return r.evalComparison(cond, s, at)
 	default:
 		return Trace{Op: cond.Op, Result: Unknown}
 	}
@@ -72,10 +79,10 @@ func (r *Registry) evalNode(cond *Condition, rel *model.Release) Trace {
 // dominates, then Unknown; for `or`, True dominates, then Unknown. A branch
 // with no children — or a `not` with the wrong arity — is Unknown (defensive;
 // validation enforces arity).
-func (r *Registry) evalLogical(cond *Condition, rel *model.Release) Trace {
+func (r *Registry) evalLogical(cond *Condition, s *model.Subject, at model.Phase) Trace {
 	children := make([]Trace, 0, len(cond.Children))
 	for _, child := range cond.Children {
-		children = append(children, r.evalNode(child, rel))
+		children = append(children, r.evalNode(child, s, at))
 	}
 	trace := Trace{Op: cond.Op, Children: children, Result: Unknown}
 	if len(children) == 0 {
@@ -115,9 +122,9 @@ func (r *Registry) evalLogical(cond *Condition, rel *model.Release) Trace {
 
 // evalComparison resolves both operands and compares. If either operand is
 // missing or unavailable, the leaf is Unknown.
-func (r *Registry) evalComparison(cond *Condition, rel *model.Release) Trace {
-	left := r.resolve(cond.Left, rel)
-	right := r.resolve(cond.Right, rel)
+func (r *Registry) evalComparison(cond *Condition, s *model.Subject, at model.Phase) Trace {
+	left := r.resolve(cond.Left, s, at)
+	right := r.resolve(cond.Right, s, at)
 	trace := Trace{Op: cond.Op, Left: left, Right: right, Result: Unknown}
 	if left == nil || right == nil || !left.Available || !right.Available {
 		return trace
@@ -128,11 +135,12 @@ func (r *Registry) evalComparison(cond *Condition, rel *model.Release) Trace {
 
 // resolve resolves an operand to its bare value and availability. Literals
 // are always available. A field is unavailable (Available false, Value nil)
-// when its phase is post_download and the release has no MediaInfo, when its
-// path is unknown, or when the resolved value is nil. Availability is derived
-// from the registry's phase metadata, never from string-matching GetField
-// errors. A nil or malformed operand resolves to nil.
-func (r *Registry) resolve(op *Operand, rel *model.Release) *Resolved {
+// when its phase is later than the evaluation moment, when its half of the
+// Subject is unassembled (the population backstop), when its path is unknown,
+// or when the resolved value is nil. Availability is derived from the
+// registry's phase metadata and the Subject's population, never from
+// string-matching GetField errors. A nil or malformed operand resolves to nil.
+func (r *Registry) resolve(op *Operand, s *model.Subject, at model.Phase) *Resolved {
 	if op == nil {
 		return nil
 	}
@@ -147,16 +155,37 @@ func (r *Registry) resolve(op *Operand, rel *model.Release) *Resolved {
 		if !ok {
 			return &Resolved{Path: op.Path}
 		}
-		if info.Phase == model.PhasePostDownload && rel.MediaInfo == nil {
+		// Phase gates first: a later-phase field is not yet knowable at this
+		// moment, regardless of what happens to be populated.
+		if info.Phase.Rank() > at.Rank() {
 			return &Resolved{Path: op.Path}
 		}
-		value, err := rel.GetField(op.Path)
+		if !populated(op.Path, s) {
+			return &Resolved{Path: op.Path}
+		}
+		value, err := s.GetField(op.Path)
 		if err != nil || value == nil {
 			return &Resolved{Path: op.Path}
 		}
 		return &Resolved{Path: op.Path, Value: value, Available: true}
 	default:
 		return nil
+	}
+}
+
+// populated reports whether the Subject half holding the field's namespace is
+// assembled. mediainfo.* lives behind Release.MediaInfo; want.* behind Want;
+// every other namespace is a value struct, always present. An unassembled
+// half is "not yet knowable" — distinct from a populated half holding empty
+// values, which resolves and evaluates definitively.
+func populated(path string, s *model.Subject) bool {
+	switch {
+	case strings.HasPrefix(path, "mediainfo."):
+		return s.Release.MediaInfo != nil
+	case strings.HasPrefix(path, "want."):
+		return s.Want != nil
+	default:
+		return true
 	}
 }
 

@@ -4,43 +4,10 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
-export type Action = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    createdAt: string;
-    id: string;
-    order: number;
-    policyId: string;
-    type: string;
-    updatedAt: string;
-    value: string;
-};
-
-export type ActionInfo = {
-    order: number;
-    type: string;
-    value: string;
-};
-
-export type ActionWriteBody = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    /**
-     * Order within the policy's action list
-     */
-    order: number;
-    /**
-     * Action type
-     */
-    type: string;
-    /**
-     * Action value
-     */
-    value: string;
+export type ActionSet = {
+    downloaderId?: string;
+    libraryId?: string;
+    nameTemplateId?: string;
 };
 
 export type Availability = {
@@ -127,27 +94,6 @@ export type Categories = {
     subCategories: Array<Categories> | null;
 };
 
-export type ContextSnapshot = {
-    candidate: {
-        [key: string]: unknown;
-    };
-    encode: {
-        [key: string]: unknown;
-    };
-    identity: {
-        [key: string]: unknown;
-    };
-    media: {
-        [key: string]: unknown;
-    };
-    mediainfo?: {
-        [key: string]: unknown;
-    };
-    quality: {
-        [key: string]: unknown;
-    };
-};
-
 export type Credits = {
     cast: Array<CastMember> | null;
     crew: Array<CrewMember> | null;
@@ -211,8 +157,8 @@ export type DownloadCandidateResponse = {
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    evaluation: Evaluation;
     job: DownloadJob;
-    trace: EvaluationTrace;
 };
 
 export type DownloadJob = {
@@ -529,14 +475,15 @@ export type EpisodeRefDto = {
     season: number;
 };
 
-export type EvaluationTrace = {
+export type Evaluation = {
     /**
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
-    context?: ContextSnapshot;
-    finalPlan: Plan;
-    policies: Array<PolicyEvaluation> | null;
+    fellBack: Fallbacks;
+    final: ActionSet;
+    fired: Array<string> | null;
+    rules: Array<RuleEvaluation> | null;
 };
 
 export type EventsSubscriptionsAddInputBody = {
@@ -566,6 +513,12 @@ export type ExternalRefDto = {
     source: 'tmdb' | 'imdb' | 'tvdb';
 };
 
+export type Fallbacks = {
+    downloader: boolean;
+    library: boolean;
+    nameTemplate: boolean;
+};
+
 export type Feed = {
     /**
      * A URL to the JSON Schema for this object.
@@ -588,6 +541,7 @@ export type FieldDefinition = {
     label: string;
     operators: Array<string> | null;
     path: string;
+    phase: string;
     type: string;
     valueType: string;
 };
@@ -1324,12 +1278,6 @@ export type PingPayload = {
     ts: number;
 };
 
-export type Plan = {
-    downloaderId: string;
-    libraryId: string;
-    nameTemplateId: string;
-};
-
 export type PlexExchangeInputBody = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1350,70 +1298,6 @@ export type PlexExchangeResponse = {
      * JWT bearer token
      */
     token: string;
-};
-
-export type PoliciesEvaluateBody = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    /**
-     * The download candidate to evaluate
-     */
-    candidate: DownloadCandidate;
-    /**
-     * Media type to evaluate against (movie or series). Required — parsing is now domain-dispatched.
-     */
-    mediaType: 'movie' | 'series';
-};
-
-export type Policy = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    actions: Array<Action> | null;
-    createdAt: string;
-    description: string | null;
-    enabled: boolean;
-    id: string;
-    name: string;
-    priority: number;
-    rule: Rule;
-    updatedAt: string;
-};
-
-export type PolicyEvaluation = {
-    actionsApplied: Array<ActionInfo> | null;
-    matched: boolean;
-    policyId: string;
-    policyName: string;
-    priority: number;
-    ruleEvaluated?: RuleInfo;
-    stoppedProcessing: boolean;
-};
-
-export type PolicyWriteBody = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    /**
-     * Optional description
-     */
-    description?: string;
-    /**
-     * Whether the policy is active
-     */
-    enabled: boolean;
-    /**
-     * Display name
-     */
-    name: string;
-    /**
-     * Evaluation priority (higher runs first)
-     */
-    priority: number;
 };
 
 export type ProblemDetails = {
@@ -1442,6 +1326,12 @@ export type ReimportResult = {
     skipped_count: number;
 };
 
+export type Resolved = {
+    available: boolean;
+    path?: string;
+    value: unknown;
+};
+
 export type ResumeGapPayload = {
     reason: string;
 };
@@ -1454,45 +1344,93 @@ export type Role = {
     name: string;
 };
 
-export type Rule = {
+export type RoutingEvaluateBody = {
     /**
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    /**
+     * The download candidate to evaluate
+     */
+    candidate: DownloadCandidate;
+    /**
+     * Media type to evaluate against (movie or series). Required — parsing is domain-dispatched.
+     */
+    mediaType: 'movie' | 'series';
+};
+
+export type RoutingReorderBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Every rule id in the desired evaluation order
+     */
+    ids: Array<string> | null;
+};
+
+export type RoutingRule = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    conditions: unknown;
+    continue: boolean;
     createdAt: string;
+    downloaderId?: string;
+    enabled: boolean;
     id: string;
-    leftOperand: string;
-    operator: string;
-    policyId: string;
-    rightOperand: string;
+    libraryId?: string;
+    name: string;
+    nameTemplateId?: string;
+    position: number;
     updatedAt: string;
 };
 
-export type RuleInfo = {
-    leftOperand: string;
-    leftResolvedValue?: unknown;
-    operator: string;
-    rightOperand: string;
-    rightResolvedValue?: unknown;
-};
-
-export type RuleWriteBody = {
+export type RoutingRuleWriteBody = {
     /**
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
     /**
-     * Left operand of the rule
+     * Condition tree (canonical rules JSON: {op, left, right} leaves composed by and/or/not)
      */
-    leftOperand: string;
+    conditions: unknown;
     /**
-     * Operator
+     * Keep evaluating later rules after this one matches (they fill only unset slots)
      */
-    operator: string;
+    continue: boolean;
     /**
-     * Right operand
+     * Downloader applied on match
      */
-    rightOperand: string;
+    downloaderId?: string;
+    /**
+     * Whether the rule participates in dispatch
+     */
+    enabled: boolean;
+    /**
+     * Library applied on match
+     */
+    libraryId?: string;
+    /**
+     * Display name
+     */
+    name: string;
+    /**
+     * Name template applied on match
+     */
+    nameTemplateId?: string;
+};
+
+export type RuleEvaluation = {
+    fired: boolean;
+    id: string;
+    incomplete?: boolean;
+    name: string;
+    result?: string;
+    skipped?: boolean;
+    trace?: Trace;
 };
 
 export type ScanCompletedPayload = {
@@ -1749,6 +1687,14 @@ export type TestResult = {
     webApiVersion?: string;
 };
 
+export type Trace = {
+    children?: Array<Trace> | null;
+    left?: Resolved;
+    op: string;
+    result: string;
+    right?: Resolved;
+};
+
 export type UpdateDetails = {
     latest?: LatestVersionInfo;
     reason?: string;
@@ -1850,31 +1796,6 @@ export type WatchProviders = {
     rent?: Array<WatchProvider> | null;
 };
 
-export type ActionWritable = {
-    createdAt: string;
-    id: string;
-    order: number;
-    policyId: string;
-    type: string;
-    updatedAt: string;
-    value: string;
-};
-
-export type ActionWriteBodyWritable = {
-    /**
-     * Order within the policy's action list
-     */
-    order: number;
-    /**
-     * Action type
-     */
-    type: string;
-    /**
-     * Action value
-     */
-    value: string;
-};
-
 export type BootstrapResponseWritable = {
     /**
      * Public app config
@@ -1895,8 +1816,8 @@ export type BootstrapResponseWritable = {
 };
 
 export type DownloadCandidateResponseWritable = {
+    evaluation: EvaluationWritable;
     job: DownloadJob;
-    trace: EvaluationTraceWritable;
 };
 
 export type DownloadJobWithSummaryWritable = {
@@ -2045,10 +1966,11 @@ export type EnqueueCandidateBodyWritable = {
     season?: number;
 };
 
-export type EvaluationTraceWritable = {
-    context?: ContextSnapshot;
-    finalPlan: Plan;
-    policies: Array<PolicyEvaluation> | null;
+export type EvaluationWritable = {
+    fellBack: Fallbacks;
+    final: ActionSet;
+    fired: Array<string> | null;
+    rules: Array<RuleEvaluation> | null;
 };
 
 export type EventsSubscriptionsAddInputBodyWritable = {
@@ -2483,48 +2405,6 @@ export type PlexExchangeResponseWritable = {
     token: string;
 };
 
-export type PoliciesEvaluateBodyWritable = {
-    /**
-     * The download candidate to evaluate
-     */
-    candidate: DownloadCandidate;
-    /**
-     * Media type to evaluate against (movie or series). Required — parsing is now domain-dispatched.
-     */
-    mediaType: 'movie' | 'series';
-};
-
-export type PolicyWritable = {
-    actions: Array<ActionWritable> | null;
-    createdAt: string;
-    description: string | null;
-    enabled: boolean;
-    id: string;
-    name: string;
-    priority: number;
-    rule: RuleWritable;
-    updatedAt: string;
-};
-
-export type PolicyWriteBodyWritable = {
-    /**
-     * Optional description
-     */
-    description?: string;
-    /**
-     * Whether the policy is active
-     */
-    enabled: boolean;
-    /**
-     * Display name
-     */
-    name: string;
-    /**
-     * Evaluation priority (higher runs first)
-     */
-    priority: number;
-};
-
 export type ProblemDetailsWritable = {
     detail?: string;
     errors?: Array<FieldError> | null;
@@ -2538,29 +2418,67 @@ export type ReimportResultWritable = {
     skipped_count: number;
 };
 
-export type RuleWritable = {
+export type RoutingEvaluateBodyWritable = {
+    /**
+     * The download candidate to evaluate
+     */
+    candidate: DownloadCandidate;
+    /**
+     * Media type to evaluate against (movie or series). Required — parsing is domain-dispatched.
+     */
+    mediaType: 'movie' | 'series';
+};
+
+export type RoutingReorderBodyWritable = {
+    /**
+     * Every rule id in the desired evaluation order
+     */
+    ids: Array<string> | null;
+};
+
+export type RoutingRuleWritable = {
+    conditions: unknown;
+    continue: boolean;
     createdAt: string;
+    downloaderId?: string;
+    enabled: boolean;
     id: string;
-    leftOperand: string;
-    operator: string;
-    policyId: string;
-    rightOperand: string;
+    libraryId?: string;
+    name: string;
+    nameTemplateId?: string;
+    position: number;
     updatedAt: string;
 };
 
-export type RuleWriteBodyWritable = {
+export type RoutingRuleWriteBodyWritable = {
     /**
-     * Left operand of the rule
+     * Condition tree (canonical rules JSON: {op, left, right} leaves composed by and/or/not)
      */
-    leftOperand: string;
+    conditions: unknown;
     /**
-     * Operator
+     * Keep evaluating later rules after this one matches (they fill only unset slots)
      */
-    operator: string;
+    continue: boolean;
     /**
-     * Right operand
+     * Downloader applied on match
      */
-    rightOperand: string;
+    downloaderId?: string;
+    /**
+     * Whether the rule participates in dispatch
+     */
+    enabled: boolean;
+    /**
+     * Library applied on match
+     */
+    libraryId?: string;
+    /**
+     * Display name
+     */
+    name: string;
+    /**
+     * Name template applied on match
+     */
+    nameTemplateId?: string;
 };
 
 export type ScanResponseWritable = {
@@ -5274,7 +5192,7 @@ export type DownloadCandidatesPreviewMovieResponses = {
     /**
      * OK
      */
-    200: EvaluationTrace;
+    200: Evaluation;
 };
 
 export type DownloadCandidatesPreviewMovieResponse = DownloadCandidatesPreviewMovieResponses[keyof DownloadCandidatesPreviewMovieResponses];
@@ -5619,638 +5537,6 @@ export type MediaGetPersonResponses = {
 
 export type MediaGetPersonResponse = MediaGetPersonResponses[keyof MediaGetPersonResponses];
 
-export type PoliciesListData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/v1/policies';
-};
-
-export type PoliciesListErrors = {
-    /**
-     * Error
-     */
-    default: ProblemDetails;
-};
-
-export type PoliciesListError = PoliciesListErrors[keyof PoliciesListErrors];
-
-export type PoliciesListResponses = {
-    /**
-     * OK
-     */
-    200: Array<Policy> | null;
-};
-
-export type PoliciesListResponse = PoliciesListResponses[keyof PoliciesListResponses];
-
-export type PoliciesCreateData = {
-    body: PolicyWriteBodyWritable;
-    path?: never;
-    query?: never;
-    url: '/api/v1/policies';
-};
-
-export type PoliciesCreateErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesCreateError = PoliciesCreateErrors[keyof PoliciesCreateErrors];
-
-export type PoliciesCreateResponses = {
-    /**
-     * Created
-     */
-    201: Policy;
-};
-
-export type PoliciesCreateResponse = PoliciesCreateResponses[keyof PoliciesCreateResponses];
-
-export type PoliciesEvaluateData = {
-    body: PoliciesEvaluateBodyWritable;
-    path?: never;
-    query?: never;
-    url: '/api/v1/policies/evaluate';
-};
-
-export type PoliciesEvaluateErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesEvaluateError = PoliciesEvaluateErrors[keyof PoliciesEvaluateErrors];
-
-export type PoliciesEvaluateResponses = {
-    /**
-     * OK
-     */
-    200: EvaluationTrace;
-};
-
-export type PoliciesEvaluateResponse = PoliciesEvaluateResponses[keyof PoliciesEvaluateResponses];
-
-export type PoliciesGetFieldsData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/v1/policies/fields';
-};
-
-export type PoliciesGetFieldsErrors = {
-    /**
-     * Error
-     */
-    default: ProblemDetails;
-};
-
-export type PoliciesGetFieldsError = PoliciesGetFieldsErrors[keyof PoliciesGetFieldsErrors];
-
-export type PoliciesGetFieldsResponses = {
-    /**
-     * OK
-     */
-    200: Array<FieldDefinition> | null;
-};
-
-export type PoliciesGetFieldsResponse = PoliciesGetFieldsResponses[keyof PoliciesGetFieldsResponses];
-
-export type PoliciesDeleteData = {
-    body?: never;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}';
-};
-
-export type PoliciesDeleteErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesDeleteError = PoliciesDeleteErrors[keyof PoliciesDeleteErrors];
-
-export type PoliciesDeleteResponses = {
-    /**
-     * No Content
-     */
-    204: void;
-};
-
-export type PoliciesDeleteResponse = PoliciesDeleteResponses[keyof PoliciesDeleteResponses];
-
-export type PoliciesGetData = {
-    body?: never;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}';
-};
-
-export type PoliciesGetErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesGetError = PoliciesGetErrors[keyof PoliciesGetErrors];
-
-export type PoliciesGetResponses = {
-    /**
-     * OK
-     */
-    200: Policy;
-};
-
-export type PoliciesGetResponse = PoliciesGetResponses[keyof PoliciesGetResponses];
-
-export type PoliciesUpdateData = {
-    body: PolicyWriteBodyWritable;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}';
-};
-
-export type PoliciesUpdateErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesUpdateError = PoliciesUpdateErrors[keyof PoliciesUpdateErrors];
-
-export type PoliciesUpdateResponses = {
-    /**
-     * OK
-     */
-    200: Policy;
-};
-
-export type PoliciesUpdateResponse = PoliciesUpdateResponses[keyof PoliciesUpdateResponses];
-
-export type PoliciesListActionsData = {
-    body?: never;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/actions';
-};
-
-export type PoliciesListActionsErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesListActionsError = PoliciesListActionsErrors[keyof PoliciesListActionsErrors];
-
-export type PoliciesListActionsResponses = {
-    /**
-     * OK
-     */
-    200: Array<Action> | null;
-};
-
-export type PoliciesListActionsResponse = PoliciesListActionsResponses[keyof PoliciesListActionsResponses];
-
-export type PoliciesCreateActionData = {
-    body: ActionWriteBodyWritable;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/actions';
-};
-
-export type PoliciesCreateActionErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesCreateActionError = PoliciesCreateActionErrors[keyof PoliciesCreateActionErrors];
-
-export type PoliciesCreateActionResponses = {
-    /**
-     * Created
-     */
-    201: Action;
-};
-
-export type PoliciesCreateActionResponse = PoliciesCreateActionResponses[keyof PoliciesCreateActionResponses];
-
-export type PoliciesDeleteActionData = {
-    body?: never;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-        /**
-         * Action ID
-         */
-        actionId: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/actions/{actionId}';
-};
-
-export type PoliciesDeleteActionErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesDeleteActionError = PoliciesDeleteActionErrors[keyof PoliciesDeleteActionErrors];
-
-export type PoliciesDeleteActionResponses = {
-    /**
-     * No Content
-     */
-    204: void;
-};
-
-export type PoliciesDeleteActionResponse = PoliciesDeleteActionResponses[keyof PoliciesDeleteActionResponses];
-
-export type PoliciesGetActionData = {
-    body?: never;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-        /**
-         * Action ID
-         */
-        actionId: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/actions/{actionId}';
-};
-
-export type PoliciesGetActionErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesGetActionError = PoliciesGetActionErrors[keyof PoliciesGetActionErrors];
-
-export type PoliciesGetActionResponses = {
-    /**
-     * OK
-     */
-    200: Action;
-};
-
-export type PoliciesGetActionResponse = PoliciesGetActionResponses[keyof PoliciesGetActionResponses];
-
-export type PoliciesUpdateActionData = {
-    body: ActionWriteBodyWritable;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-        /**
-         * Action ID
-         */
-        actionId: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/actions/{actionId}';
-};
-
-export type PoliciesUpdateActionErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesUpdateActionError = PoliciesUpdateActionErrors[keyof PoliciesUpdateActionErrors];
-
-export type PoliciesUpdateActionResponses = {
-    /**
-     * OK
-     */
-    200: Action;
-};
-
-export type PoliciesUpdateActionResponse = PoliciesUpdateActionResponses[keyof PoliciesUpdateActionResponses];
-
-export type PoliciesDeleteRuleData = {
-    body?: never;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/rule';
-};
-
-export type PoliciesDeleteRuleErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesDeleteRuleError = PoliciesDeleteRuleErrors[keyof PoliciesDeleteRuleErrors];
-
-export type PoliciesDeleteRuleResponses = {
-    /**
-     * No Content
-     */
-    204: void;
-};
-
-export type PoliciesDeleteRuleResponse = PoliciesDeleteRuleResponses[keyof PoliciesDeleteRuleResponses];
-
-export type PoliciesGetRuleData = {
-    body?: never;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/rule';
-};
-
-export type PoliciesGetRuleErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesGetRuleError = PoliciesGetRuleErrors[keyof PoliciesGetRuleErrors];
-
-export type PoliciesGetRuleResponses = {
-    /**
-     * OK
-     */
-    200: Rule;
-};
-
-export type PoliciesGetRuleResponse = PoliciesGetRuleResponses[keyof PoliciesGetRuleResponses];
-
-export type PoliciesCreateRuleData = {
-    body: RuleWriteBodyWritable;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/rule';
-};
-
-export type PoliciesCreateRuleErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesCreateRuleError = PoliciesCreateRuleErrors[keyof PoliciesCreateRuleErrors];
-
-export type PoliciesCreateRuleResponses = {
-    /**
-     * Created
-     */
-    201: Rule;
-};
-
-export type PoliciesCreateRuleResponse = PoliciesCreateRuleResponses[keyof PoliciesCreateRuleResponses];
-
-export type PoliciesUpdateRuleData = {
-    body: RuleWriteBodyWritable;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/rule';
-};
-
-export type PoliciesUpdateRuleErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesUpdateRuleError = PoliciesUpdateRuleErrors[keyof PoliciesUpdateRuleErrors];
-
-export type PoliciesUpdateRuleResponses = {
-    /**
-     * OK
-     */
-    200: Rule;
-};
-
-export type PoliciesUpdateRuleResponse = PoliciesUpdateRuleResponses[keyof PoliciesUpdateRuleResponses];
-
 export type RolesListData = {
     body?: never;
     path?: never;
@@ -6275,6 +5561,289 @@ export type RolesListResponses = {
 };
 
 export type RolesListResponse = RolesListResponses[keyof RolesListResponses];
+
+export type RoutingEvaluateData = {
+    body: RoutingEvaluateBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/evaluate';
+};
+
+export type RoutingEvaluateErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingEvaluateError = RoutingEvaluateErrors[keyof RoutingEvaluateErrors];
+
+export type RoutingEvaluateResponses = {
+    /**
+     * OK
+     */
+    200: Evaluation;
+};
+
+export type RoutingEvaluateResponse = RoutingEvaluateResponses[keyof RoutingEvaluateResponses];
+
+export type RoutingGetFieldsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/fields';
+};
+
+export type RoutingGetFieldsErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type RoutingGetFieldsError = RoutingGetFieldsErrors[keyof RoutingGetFieldsErrors];
+
+export type RoutingGetFieldsResponses = {
+    /**
+     * OK
+     */
+    200: Array<FieldDefinition> | null;
+};
+
+export type RoutingGetFieldsResponse = RoutingGetFieldsResponses[keyof RoutingGetFieldsResponses];
+
+export type RoutingListRulesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/rules';
+};
+
+export type RoutingListRulesErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type RoutingListRulesError = RoutingListRulesErrors[keyof RoutingListRulesErrors];
+
+export type RoutingListRulesResponses = {
+    /**
+     * OK
+     */
+    200: Array<RoutingRule> | null;
+};
+
+export type RoutingListRulesResponse = RoutingListRulesResponses[keyof RoutingListRulesResponses];
+
+export type RoutingCreateRuleData = {
+    body: RoutingRuleWriteBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/rules';
+};
+
+export type RoutingCreateRuleErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingCreateRuleError = RoutingCreateRuleErrors[keyof RoutingCreateRuleErrors];
+
+export type RoutingCreateRuleResponses = {
+    /**
+     * Created
+     */
+    201: RoutingRule;
+};
+
+export type RoutingCreateRuleResponse = RoutingCreateRuleResponses[keyof RoutingCreateRuleResponses];
+
+export type RoutingReorderRulesData = {
+    body: RoutingReorderBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/rules/positions';
+};
+
+export type RoutingReorderRulesErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingReorderRulesError = RoutingReorderRulesErrors[keyof RoutingReorderRulesErrors];
+
+export type RoutingReorderRulesResponses = {
+    /**
+     * OK
+     */
+    200: Array<RoutingRule> | null;
+};
+
+export type RoutingReorderRulesResponse = RoutingReorderRulesResponses[keyof RoutingReorderRulesResponses];
+
+export type RoutingDeleteRuleData = {
+    body?: never;
+    path: {
+        /**
+         * Routing rule ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/routing/rules/{id}';
+};
+
+export type RoutingDeleteRuleErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingDeleteRuleError = RoutingDeleteRuleErrors[keyof RoutingDeleteRuleErrors];
+
+export type RoutingDeleteRuleResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type RoutingDeleteRuleResponse = RoutingDeleteRuleResponses[keyof RoutingDeleteRuleResponses];
+
+export type RoutingGetRuleData = {
+    body?: never;
+    path: {
+        /**
+         * Routing rule ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/routing/rules/{id}';
+};
+
+export type RoutingGetRuleErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingGetRuleError = RoutingGetRuleErrors[keyof RoutingGetRuleErrors];
+
+export type RoutingGetRuleResponses = {
+    /**
+     * OK
+     */
+    200: RoutingRule;
+};
+
+export type RoutingGetRuleResponse = RoutingGetRuleResponses[keyof RoutingGetRuleResponses];
+
+export type RoutingUpdateRuleData = {
+    body: RoutingRuleWriteBodyWritable;
+    path: {
+        /**
+         * Routing rule ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/routing/rules/{id}';
+};
+
+export type RoutingUpdateRuleErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingUpdateRuleError = RoutingUpdateRuleErrors[keyof RoutingUpdateRuleErrors];
+
+export type RoutingUpdateRuleResponses = {
+    /**
+     * OK
+     */
+    200: RoutingRule;
+};
+
+export type RoutingUpdateRuleResponse = RoutingUpdateRuleResponses[keyof RoutingUpdateRuleResponses];
 
 export type MediaSearchData = {
     body?: never;
@@ -6459,7 +6028,7 @@ export type DownloadCandidatesPreviewSeriesResponses = {
     /**
      * OK
      */
-    200: EvaluationTrace;
+    200: Evaluation;
 };
 
 export type DownloadCandidatesPreviewSeriesResponse = DownloadCandidatesPreviewSeriesResponses[keyof DownloadCandidatesPreviewSeriesResponses];

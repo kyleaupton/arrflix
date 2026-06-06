@@ -13,12 +13,12 @@ const currentTab = computed(() => {
   if (path.endsWith('/indexers')) return 'indexers'
   if (path.endsWith('/name-templates')) return 'name-templates'
   if (path.endsWith('/downloaders')) return 'downloaders'
-  if (path.endsWith('/policies')) return 'policies'
+  if (path.endsWith('/routing')) return 'routing'
   return 'general'
 })
 
 const navigateToTab = (
-  tab: 'general' | 'libraries' | 'indexers' | 'name-templates' | 'downloaders' | 'policies',
+  tab: 'general' | 'libraries' | 'indexers' | 'name-templates' | 'downloaders' | 'routing',
 ) => {
   router.push(`/settings/${tab}`)
 }
@@ -31,10 +31,10 @@ const settingsItems = [
     to: '/settings/general',
   },
   {
-    key: 'policies',
-    label: 'Policies',
+    key: 'routing',
+    label: 'Routing',
     icon: PrimeIcons.SLIDERS_H,
-    to: '/settings/policies',
+    to: '/settings/routing',
   },
   {
     key: 'libraries',
@@ -82,7 +82,7 @@ const settingsItems = [
               | 'indexers'
               | 'name-templates'
               | 'downloaders'
-              | 'policies',
+              | 'routing',
           )
         "
       />

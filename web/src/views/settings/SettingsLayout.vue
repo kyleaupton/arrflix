@@ -3,7 +3,7 @@
     <Tabs v-model="activeTab">
       <TabsList>
         <TabsTrigger value="general">General</TabsTrigger>
-        <TabsTrigger value="policies">Policies</TabsTrigger>
+        <TabsTrigger value="routing">Routing</TabsTrigger>
         <TabsTrigger value="libraries">Libraries</TabsTrigger>
         <TabsTrigger value="indexers">Indexers</TabsTrigger>
         <TabsTrigger value="downloaders">Downloaders</TabsTrigger>

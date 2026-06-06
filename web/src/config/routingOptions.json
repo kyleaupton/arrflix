@@ -1,0 +1,13 @@
+{
+  "operators": [
+    { "value": "==", "label": "Equals" },
+    { "value": "!=", "label": "Not Equals" },
+    { "value": ">", "label": "Greater Than" },
+    { "value": ">=", "label": "Greater Than or Equal" },
+    { "value": "<", "label": "Less Than" },
+    { "value": "<=", "label": "Less Than or Equal" },
+    { "value": "contains", "label": "Contains" },
+    { "value": "in", "label": "In" },
+    { "value": "not in", "label": "Not In" }
+  ]
+}

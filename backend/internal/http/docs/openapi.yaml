@@ -1,81 +1,14 @@
 components:
   schemas:
-    Action:
+    ActionSet:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/Action.json
-          format: uri
-          readOnly: true
+        downloaderId:
           type: string
-        createdAt:
-          format: date-time
+        libraryId:
           type: string
-        id:
+        nameTemplateId:
           type: string
-        order:
-          format: int32
-          type: integer
-        policyId:
-          type: string
-        type:
-          type: string
-        updatedAt:
-          format: date-time
-          type: string
-        value:
-          type: string
-      required:
-        - id
-        - policyId
-        - type
-        - value
-        - order
-        - createdAt
-        - updatedAt
-      type: object
-    ActionInfo:
-      additionalProperties: false
-      properties:
-        order:
-          format: int32
-          type: integer
-        type:
-          type: string
-        value:
-          type: string
-      required:
-        - type
-        - value
-        - order
-      type: object
-    ActionWriteBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/ActionWriteBody.json
-          format: uri
-          readOnly: true
-          type: string
-        order:
-          description: Order within the policy's action list
-          format: int32
-          type: integer
-        type:
-          description: Action type
-          minLength: 1
-          type: string
-        value:
-          description: Action value
-          type: string
-      required:
-        - type
-        - value
-        - order
       type: object
     Availability:
       additionalProperties: false
@@ -255,34 +188,6 @@ components:
         - name
         - subCategories
       type: object
-    ContextSnapshot:
-      additionalProperties: false
-      properties:
-        candidate:
-          additionalProperties: {}
-          type: object
-        encode:
-          additionalProperties: {}
-          type: object
-        identity:
-          additionalProperties: {}
-          type: object
-        media:
-          additionalProperties: {}
-          type: object
-        mediainfo:
-          additionalProperties: {}
-          type: object
-        quality:
-          additionalProperties: {}
-          type: object
-      required:
-        - candidate
-        - identity
-        - quality
-        - encode
-        - media
-      type: object
     Credits:
       additionalProperties: false
       properties:
@@ -434,12 +339,12 @@ components:
           format: uri
           readOnly: true
           type: string
+        evaluation:
+          $ref: "#/components/schemas/Evaluation"
         job:
           $ref: "#/components/schemas/DownloadJob"
-        trace:
-          $ref: "#/components/schemas/EvaluationTrace"
       required:
-        - trace
+        - evaluation
         - job
       type: object
     DownloadJob:
@@ -1322,29 +1227,37 @@ components:
         - season
         - episode
       type: object
-    EvaluationTrace:
+    Evaluation:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - https://example.com/schemas/EvaluationTrace.json
+            - https://example.com/schemas/Evaluation.json
           format: uri
           readOnly: true
           type: string
-        context:
-          $ref: "#/components/schemas/ContextSnapshot"
-        finalPlan:
-          $ref: "#/components/schemas/Plan"
-        policies:
+        fellBack:
+          $ref: "#/components/schemas/Fallbacks"
+        final:
+          $ref: "#/components/schemas/ActionSet"
+        fired:
           items:
-            $ref: "#/components/schemas/PolicyEvaluation"
+            type: string
+          type:
+            - array
+            - "null"
+        rules:
+          items:
+            $ref: "#/components/schemas/RuleEvaluation"
           type:
             - array
             - "null"
       required:
-        - policies
-        - finalPlan
+        - rules
+        - fired
+        - final
+        - fellBack
       type: object
     EventsSubscriptionsAddInputBody:
       additionalProperties: false
@@ -1401,6 +1314,20 @@ components:
       required:
         - source
         - externalId
+      type: object
+    Fallbacks:
+      additionalProperties: false
+      properties:
+        downloader:
+          type: boolean
+        library:
+          type: boolean
+        nameTemplate:
+          type: boolean
+      required:
+        - downloader
+        - library
+        - nameTemplate
       type: object
     Feed:
       additionalProperties: false
@@ -1464,6 +1391,8 @@ components:
             - "null"
         path:
           type: string
+        phase:
+          type: string
         type:
           type: string
         valueType:
@@ -1473,6 +1402,7 @@ components:
         - label
         - type
         - valueType
+        - phase
         - operators
       type: object
     FieldError:
@@ -3143,20 +3073,6 @@ components:
       required:
         - ts
       type: object
-    Plan:
-      additionalProperties: false
-      properties:
-        downloaderId:
-          type: string
-        libraryId:
-          type: string
-        nameTemplateId:
-          type: string
-      required:
-        - downloaderId
-        - libraryId
-        - nameTemplateId
-      type: object
     PlexExchangeInputBody:
       additionalProperties: false
       properties:
@@ -3190,136 +3106,6 @@ components:
           type: string
       required:
         - token
-      type: object
-    PoliciesEvaluateBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/PoliciesEvaluateBody.json
-          format: uri
-          readOnly: true
-          type: string
-        candidate:
-          $ref: "#/components/schemas/DownloadCandidate"
-          description: The download candidate to evaluate
-        mediaType:
-          description: Media type to evaluate against (movie or series). Required — parsing is now domain-dispatched.
-          enum:
-            - movie
-            - series
-          type: string
-      required:
-        - mediaType
-        - candidate
-      type: object
-    Policy:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/Policy.json
-          format: uri
-          readOnly: true
-          type: string
-        actions:
-          items:
-            $ref: "#/components/schemas/Action"
-          type:
-            - array
-            - "null"
-        createdAt:
-          format: date-time
-          type: string
-        description:
-          type:
-            - string
-            - "null"
-        enabled:
-          type: boolean
-        id:
-          type: string
-        name:
-          type: string
-        priority:
-          format: int32
-          type: integer
-        rule:
-          $ref: "#/components/schemas/Rule"
-        updatedAt:
-          format: date-time
-          type: string
-      required:
-        - id
-        - name
-        - description
-        - enabled
-        - priority
-        - createdAt
-        - updatedAt
-        - rule
-        - actions
-      type: object
-    PolicyEvaluation:
-      additionalProperties: false
-      properties:
-        actionsApplied:
-          items:
-            $ref: "#/components/schemas/ActionInfo"
-          type:
-            - array
-            - "null"
-        matched:
-          type: boolean
-        policyId:
-          type: string
-        policyName:
-          type: string
-        priority:
-          format: int64
-          type: integer
-        ruleEvaluated:
-          $ref: "#/components/schemas/RuleInfo"
-        stoppedProcessing:
-          type: boolean
-      required:
-        - policyId
-        - policyName
-        - priority
-        - matched
-        - actionsApplied
-        - stoppedProcessing
-      type: object
-    PolicyWriteBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/PolicyWriteBody.json
-          format: uri
-          readOnly: true
-          type: string
-        description:
-          description: Optional description
-          type: string
-        enabled:
-          description: Whether the policy is active
-          type: boolean
-        name:
-          description: Display name
-          minLength: 1
-          type: string
-        priority:
-          description: Evaluation priority (higher runs first)
-          format: int32
-          type: integer
-      required:
-        - name
-        - enabled
-        - priority
       type: object
     ProblemDetails:
       additionalProperties: false
@@ -3385,6 +3171,18 @@ components:
         - created_tasks
         - skipped_count
       type: object
+    Resolved:
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+        path:
+          type: string
+        value: {}
+      required:
+        - value
+        - available
+      type: object
     ResumeGapPayload:
       additionalProperties: false
       properties:
@@ -3416,81 +3214,154 @@ components:
         - builtIn
         - createdAt
       type: object
-    Rule:
+    RoutingEvaluateBody:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - https://example.com/schemas/Rule.json
+            - https://example.com/schemas/RoutingEvaluateBody.json
           format: uri
           readOnly: true
           type: string
+        candidate:
+          $ref: "#/components/schemas/DownloadCandidate"
+          description: The download candidate to evaluate
+        mediaType:
+          description: Media type to evaluate against (movie or series). Required — parsing is domain-dispatched.
+          enum:
+            - movie
+            - series
+          type: string
+      required:
+        - mediaType
+        - candidate
+      type: object
+    RoutingReorderBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/RoutingReorderBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ids:
+          description: Every rule id in the desired evaluation order
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - ids
+      type: object
+    RoutingRule:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/RoutingRule.json
+          format: uri
+          readOnly: true
+          type: string
+        conditions: {}
+        continue:
+          type: boolean
         createdAt:
           format: date-time
           type: string
+        downloaderId:
+          type: string
+        enabled:
+          type: boolean
         id:
           type: string
-        leftOperand:
+        libraryId:
           type: string
-        operator:
+        name:
           type: string
-        policyId:
+        nameTemplateId:
           type: string
-        rightOperand:
-          type: string
+        position:
+          format: int32
+          type: integer
         updatedAt:
           format: date-time
           type: string
       required:
         - id
-        - policyId
-        - leftOperand
-        - operator
-        - rightOperand
+        - name
+        - enabled
+        - position
+        - conditions
+        - continue
         - createdAt
         - updatedAt
       type: object
-    RuleInfo:
-      additionalProperties: false
-      properties:
-        leftOperand:
-          type: string
-        leftResolvedValue: {}
-        operator:
-          type: string
-        rightOperand:
-          type: string
-        rightResolvedValue: {}
-      required:
-        - leftOperand
-        - operator
-        - rightOperand
-      type: object
-    RuleWriteBody:
+    RoutingRuleWriteBody:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - https://example.com/schemas/RuleWriteBody.json
+            - https://example.com/schemas/RoutingRuleWriteBody.json
           format: uri
           readOnly: true
           type: string
-        leftOperand:
-          description: Left operand of the rule
+        conditions:
+          description: "Condition tree (canonical rules JSON: {op, left, right} leaves composed by and/or/not)"
+        continue:
+          description: Keep evaluating later rules after this one matches (they fill only unset slots)
+          type: boolean
+        downloaderId:
+          description: Downloader applied on match
+          format: uuid
           type: string
-        operator:
-          description: Operator
+        enabled:
+          description: Whether the rule participates in dispatch
+          type: boolean
+        libraryId:
+          description: Library applied on match
+          format: uuid
+          type: string
+        name:
+          description: Display name
           minLength: 1
           type: string
-        rightOperand:
-          description: Right operand
+        nameTemplateId:
+          description: Name template applied on match
+          format: uuid
           type: string
       required:
-        - leftOperand
-        - operator
-        - rightOperand
+        - name
+        - enabled
+        - conditions
+        - continue
+      type: object
+    RuleEvaluation:
+      additionalProperties: false
+      properties:
+        fired:
+          type: boolean
+        id:
+          type: string
+        incomplete:
+          type: boolean
+        name:
+          type: string
+        result:
+          type: string
+        skipped:
+          type: boolean
+        trace:
+          $ref: "#/components/schemas/Trace"
+      required:
+        - id
+        - name
+        - fired
       type: object
     ScanCompletedPayload:
       additionalProperties: false
@@ -4010,6 +3881,27 @@ components:
       required:
         - success
         - message
+      type: object
+    Trace:
+      additionalProperties: false
+      properties:
+        children:
+          items:
+            $ref: "#/components/schemas/Trace"
+          type:
+            - array
+            - "null"
+        left:
+          $ref: "#/components/schemas/Resolved"
+        op:
+          type: string
+        result:
+          type: string
+        right:
+          $ref: "#/components/schemas/Resolved"
+      required:
+        - op
+        - result
       type: object
     UpdateDetails:
       additionalProperties: false
@@ -6935,7 +6827,7 @@ paths:
         - media
   /api/v1/movie/{id}/candidate/download:
     post:
-      description: Runs the policy engine, creates a download job, and returns the trace + job.
+      description: Dispatches routing rules, creates a download job, and returns the evaluation + job.
       operationId: download-candidates-download-movie
       parameters:
         - description: TMDB movie ID
@@ -7021,7 +6913,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EvaluationTrace"
+                $ref: "#/components/schemas/Evaluation"
           description: OK
         "400":
           content:
@@ -7059,7 +6951,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Bad Gateway
-      summary: Preview policy evaluation for a movie candidate
+      summary: Preview routing dispatch for a movie candidate
       tags:
         - download-candidates
   /api/v1/movie/{id}/candidates:
@@ -7439,715 +7331,6 @@ paths:
       summary: Get person
       tags:
         - media
-  /api/v1/policies:
-    get:
-      operationId: policies-list
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/Policy"
-                type:
-                  - array
-                  - "null"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Error
-      summary: List policies
-      tags:
-        - policies
-    post:
-      operationId: policies-create
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PolicyWriteBody"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Policy"
-          description: Created
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Bad Request
-        "409":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Conflict
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Create policy
-      tags:
-        - policies
-  /api/v1/policies/evaluate:
-    post:
-      operationId: policies-evaluate
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PoliciesEvaluateBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EvaluationTrace"
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Bad Request
-        "409":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Conflict
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Evaluate policies against a download candidate
-      tags:
-        - policies
-  /api/v1/policies/fields:
-    get:
-      operationId: policies-get-fields
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/FieldDefinition"
-                type:
-                  - array
-                  - "null"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Error
-      summary: Get policy field definitions
-      tags:
-        - policies
-  /api/v1/policies/{id}:
-    delete:
-      operationId: policies-delete
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-      responses:
-        "204":
-          description: No Content
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Delete policy
-      tags:
-        - policies
-    get:
-      operationId: policies-get
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Policy"
-          description: OK
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Get policy
-      tags:
-        - policies
-    put:
-      operationId: policies-update
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PolicyWriteBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Policy"
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "409":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Conflict
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Update policy
-      tags:
-        - policies
-  /api/v1/policies/{id}/actions:
-    get:
-      operationId: policies-list-actions
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/Action"
-                type:
-                  - array
-                  - "null"
-          description: OK
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: List actions for policy
-      tags:
-        - policies
-    post:
-      operationId: policies-create-action
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ActionWriteBody"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Action"
-          description: Created
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "409":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Conflict
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Create action for policy
-      tags:
-        - policies
-  /api/v1/policies/{id}/actions/{actionId}:
-    delete:
-      operationId: policies-delete-action
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-        - description: Action ID
-          in: path
-          name: actionId
-          required: true
-          schema:
-            description: Action ID
-            format: uuid
-            type: string
-      responses:
-        "204":
-          description: No Content
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Delete action
-      tags:
-        - policies
-    get:
-      operationId: policies-get-action
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-        - description: Action ID
-          in: path
-          name: actionId
-          required: true
-          schema:
-            description: Action ID
-            format: uuid
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Action"
-          description: OK
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Get action
-      tags:
-        - policies
-    put:
-      operationId: policies-update-action
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-        - description: Action ID
-          in: path
-          name: actionId
-          required: true
-          schema:
-            description: Action ID
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ActionWriteBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Action"
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "409":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Conflict
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Update action
-      tags:
-        - policies
-  /api/v1/policies/{id}/rule:
-    delete:
-      operationId: policies-delete-rule
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-      responses:
-        "204":
-          description: No Content
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Delete rule for policy
-      tags:
-        - policies
-    get:
-      operationId: policies-get-rule
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Rule"
-          description: OK
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Get rule for policy
-      tags:
-        - policies
-    post:
-      operationId: policies-create-rule
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuleWriteBody"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Rule"
-          description: Created
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "409":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Conflict
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Create rule for policy
-      tags:
-        - policies
-    put:
-      operationId: policies-update-rule
-      parameters:
-        - description: Policy ID
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Policy ID
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuleWriteBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Rule"
-          description: OK
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "409":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Conflict
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Update rule for policy
-      tags:
-        - policies
   /api/v1/roles:
     get:
       operationId: roles-list
@@ -8171,6 +7354,319 @@ paths:
       summary: List roles
       tags:
         - roles
+  /api/v1/routing/evaluate:
+    post:
+      description: Evaluates at the grab moment and returns the per-rule tri-state dispatch record.
+      operationId: routing-evaluate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutingEvaluateBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Evaluation"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Dry-run routing rules against a download candidate
+      tags:
+        - routing
+  /api/v1/routing/fields:
+    get:
+      operationId: routing-get-fields
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/FieldDefinition"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Get routing field definitions
+      tags:
+        - routing
+  /api/v1/routing/rules:
+    get:
+      operationId: routing-list-rules
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/RoutingRule"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: List routing rules
+      tags:
+        - routing
+    post:
+      description: New rules append to the end of the evaluation order; use the positions endpoint to reorder.
+      operationId: routing-create-rule
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutingRuleWriteBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutingRule"
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Create routing rule
+      tags:
+        - routing
+  /api/v1/routing/rules/positions:
+    put:
+      description: Takes the full ordered id list — reordering is a list-level operation.
+      operationId: routing-reorder-rules
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutingReorderBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/RoutingRule"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Reorder routing rules
+      tags:
+        - routing
+  /api/v1/routing/rules/{id}:
+    delete:
+      operationId: routing-delete-rule
+      parameters:
+        - description: Routing rule ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Routing rule ID
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Delete routing rule
+      tags:
+        - routing
+    get:
+      operationId: routing-get-rule
+      parameters:
+        - description: Routing rule ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Routing rule ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutingRule"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Get routing rule
+      tags:
+        - routing
+    put:
+      operationId: routing-update-rule
+      parameters:
+        - description: Routing rule ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Routing rule ID
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutingRuleWriteBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutingRule"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Update routing rule
+      tags:
+        - routing
   /api/v1/search:
     get:
       description: Multi-search across movies, series, and people via TMDB.
@@ -8282,7 +7778,7 @@ paths:
         - media
   /api/v1/series/{id}/candidate/download:
     post:
-      description: Runs the policy engine, creates a download job (with season/episode if supplied), and returns the trace + job.
+      description: Dispatches routing rules, creates a download job (with season/episode if supplied), and returns the evaluation + job.
       operationId: download-candidates-download-series
       parameters:
         - description: TMDB series ID
@@ -8368,7 +7864,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EvaluationTrace"
+                $ref: "#/components/schemas/Evaluation"
           description: OK
         "400":
           content:
@@ -8406,7 +7902,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Bad Gateway
-      summary: Preview policy evaluation for a series candidate
+      summary: Preview routing dispatch for a series candidate
       tags:
         - download-candidates
   /api/v1/series/{id}/candidates:

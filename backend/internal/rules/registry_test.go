@@ -14,8 +14,8 @@ func TestRegistryField(t *testing.T) {
 	if !ok {
 		t.Fatal(`Field("quality.resolution") not found`)
 	}
-	if info.Type != "enum" || info.Phase != model.PhasePreDownload || len(info.EnumValues) == 0 {
-		t.Errorf("quality.resolution info = %+v, want pre_download enum with values", info)
+	if info.Type != "enum" || info.Phase != model.PhaseSearch || len(info.EnumValues) == 0 {
+		t.Errorf("quality.resolution info = %+v, want search enum with values", info)
 	}
 
 	if _, ok := reg.Field("bogus.path"); ok {
@@ -27,9 +27,9 @@ func TestHasPhase(t *testing.T) {
 	t.Parallel()
 	reg := NewRegistry()
 
-	pre := leaf(OpEq, fld("quality.resolution"), litEnum("2160p"))
-	post := leaf(OpEq, fld("mediainfo.video_codec"), litEnum("H.265"))
-	mixed := branch(OpAnd, pre, branch(OpNot, post))
+	search := leaf(OpEq, fld("quality.resolution"), litEnum("2160p"))
+	imp := leaf(OpEq, fld("mediainfo.video_codec"), litEnum("H.265"))
+	mixed := branch(OpAnd, search, branch(OpNot, imp))
 
 	tests := []struct {
 		name  string
@@ -37,14 +37,15 @@ func TestHasPhase(t *testing.T) {
 		phase model.Phase
 		want  bool
 	}{
-		{"pre tree has pre", pre, model.PhasePreDownload, true},
-		{"pre tree lacks post", pre, model.PhasePostDownload, false},
-		{"post tree has post", post, model.PhasePostDownload, true},
-		{"post tree lacks pre", post, model.PhasePreDownload, false},
-		{"mixed tree has pre", mixed, model.PhasePreDownload, true},
-		{"mixed tree has post", mixed, model.PhasePostDownload, true},
-		{"nil tree", nil, model.PhasePreDownload, false},
-		{"unknown path counts as nothing", leaf(OpEq, fld("bogus.path"), litStr("x")), model.PhasePreDownload, false},
+		{"search tree has search", search, model.PhaseSearch, true},
+		{"search tree lacks import", search, model.PhaseImport, false},
+		{"import tree has import", imp, model.PhaseImport, true},
+		{"import tree lacks search", imp, model.PhaseSearch, false},
+		{"mixed tree has search", mixed, model.PhaseSearch, true},
+		{"mixed tree has import", mixed, model.PhaseImport, true},
+		{"nothing is tagged grab yet", mixed, model.PhaseGrab, false},
+		{"nil tree", nil, model.PhaseSearch, false},
+		{"unknown path counts as nothing", leaf(OpEq, fld("bogus.path"), litStr("x")), model.PhaseSearch, false},
 	}
 
 	for _, tt := range tests {
