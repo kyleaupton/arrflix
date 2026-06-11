@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import {
   routingCreateRuleMutation,
   routingUpdateRuleMutation,
   routingDeleteRuleMutation,
   routingListRulesQueryKey,
-  indexersListConfiguredOptions,
 } from '@/client/@tanstack/vue-query.gen'
 import type {
   RoutingRule,
@@ -15,18 +14,15 @@ import type {
   Library,
   NameTemplate,
 } from '@/client/types.gen'
-import { useRoutingFields } from '@/composables/useRoutingFields'
 import { buildRoutingSummary } from '@/composables/useRoutingSummary'
 import { useModal } from '@/composables/useModal'
-import { rowsToTree, treeToRows, type ConditionRow } from '@/lib/conditions'
-import routingOptions from '@/config/routingOptions.json'
 import { problemMessage } from '@/lib/api'
+import ConditionBuilder from '@/components/conditions/ConditionBuilder.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -34,7 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Plus, Trash2, X } from 'lucide-vue-next'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Trash2 } from 'lucide-vue-next'
 
 interface Props {
   rule: RoutingRule | null
@@ -63,8 +59,6 @@ const emit = defineEmits<{
 
 const modal = useModal()
 const queryClient = useQueryClient()
-const { getFieldByPath, getValidOperators } = useRoutingFields()
-const { data: indexers } = useQuery(indexersListConfiguredOptions())
 
 function invalidateRules() {
   queryClient.invalidateQueries({ queryKey: routingListRulesQueryKey() })
@@ -117,11 +111,8 @@ const form = ref({
   nameTemplateId: '',
 })
 
-const rows = ref<ConditionRow[]>([])
-// Trees authored outside the AND-list model (nested or/not) can't round-trip
-// through rows — fall back to editing the canonical JSON directly.
-const rawMode = ref(false)
-const rawConditions = ref('')
+// The canonical condition tree, edited via ConditionBuilder (null = none).
+const conditionTree = ref<unknown>(null)
 
 function initForm() {
   saveError.value = null
@@ -134,15 +125,7 @@ function initForm() {
       libraryId: props.rule.libraryId ?? '',
       nameTemplateId: props.rule.nameTemplateId ?? '',
     }
-    const parsed = treeToRows(props.rule.conditions)
-    if (parsed) {
-      rows.value = parsed
-      rawMode.value = false
-    } else {
-      rows.value = []
-      rawMode.value = true
-      rawConditions.value = JSON.stringify(props.rule.conditions, null, 2)
-    }
+    conditionTree.value = props.rule.conditions ?? null
   } else {
     form.value = {
       name: '',
@@ -152,9 +135,7 @@ function initForm() {
       libraryId: '',
       nameTemplateId: '',
     }
-    rows.value = []
-    rawMode.value = false
-    rawConditions.value = ''
+    conditionTree.value = null
   }
   nameError.value = false
 }
@@ -174,67 +155,6 @@ const summary = computed(() =>
     : '',
 )
 
-// Condition row field logic
-const fieldOptions = computed(() => props.fields.map((f) => ({ label: f.label, value: f.path })))
-
-const selectedField = (row: ConditionRow) => getFieldByPath(row.field)
-
-const validOperatorsFor = (row: ConditionRow) => {
-  const ops = getValidOperators(selectedField(row))
-  return routingOptions.operators.filter((op) => ops.includes(op.value))
-}
-
-const valueOptionsFor = (row: ConditionRow) => {
-  const field = selectedField(row)
-  if (!field) return []
-  if (field.type === 'enum' && field.enumValues) {
-    return field.enumValues.map((ev) => ({ label: ev.label, value: ev.value }))
-  }
-  if (field.type === 'dynamic' && field.dynamicSource === '/api/v1/indexers/configured') {
-    return (
-      indexers.value?.map((idx) => ({
-        label: idx.name || 'Unknown',
-        value: idx.name || '',
-      })) || []
-    )
-  }
-  if (field.type === 'boolean') {
-    return [
-      { label: 'True', value: 'true' },
-      { label: 'False', value: 'false' },
-    ]
-  }
-  return []
-}
-
-// A select widget fits single-value operators on enum/dynamic/boolean fields;
-// `in`/`not in` take a comma-separated list via the text input.
-const useSelectWidget = (row: ConditionRow) => {
-  if (row.operator === 'in' || row.operator === 'not in') return false
-  const field = selectedField(row)
-  return !!field && ['enum', 'dynamic', 'boolean'].includes(field.type)
-}
-
-const useNumberWidget = (row: ConditionRow) => {
-  if (row.operator === 'in' || row.operator === 'not in') return false
-  return selectedField(row)?.type === 'number'
-}
-
-// Handlers
-const handleFieldChange = (row: ConditionRow, value: unknown) => {
-  row.field = String(value ?? '')
-  row.operator = ''
-  row.value = ''
-}
-
-const handleAddRow = () => {
-  rows.value.push({ field: '', operator: '', value: '' })
-}
-
-const handleRemoveRow = (index: number) => {
-  rows.value.splice(index, 1)
-}
-
 const toggleExpand = () => {
   if (isExpanded.value) {
     initForm()
@@ -243,17 +163,11 @@ const toggleExpand = () => {
 }
 
 function buildBody() {
-  let conditions: unknown
-  if (rawMode.value) {
-    conditions = JSON.parse(rawConditions.value)
-  } else {
-    conditions = rowsToTree(rows.value, props.fields)
-  }
   return {
     name: form.value.name,
     enabled: form.value.enabled,
     continue: form.value.continue,
-    conditions,
+    conditions: conditionTree.value,
     downloaderId: form.value.downloaderId || undefined,
     libraryId: form.value.libraryId || undefined,
     nameTemplateId: form.value.nameTemplateId || undefined,
@@ -276,14 +190,7 @@ const handleSave = () => {
     nameError.value = true
     return
   }
-  if (rawMode.value) {
-    try {
-      JSON.parse(rawConditions.value)
-    } catch {
-      saveError.value = 'Conditions must be valid JSON'
-      return
-    }
-  } else if (rows.value.length === 0) {
+  if (conditionTree.value == null) {
     saveError.value = 'Add at least one condition'
     return
   }
@@ -384,111 +291,8 @@ const handleDelete = async () => {
 
       <!-- Conditions section -->
       <div class="mb-6">
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-sm font-medium">Conditions (all must match)</span>
-          <Button v-if="!rawMode" size="sm" variant="outline" @click="handleAddRow">
-            <Plus class="size-3 mr-1" />
-            Add Condition
-          </Button>
-        </div>
-
-        <!-- Raw JSON fallback for trees the AND-list can't represent -->
-        <div v-if="rawMode" class="flex flex-col gap-2">
-          <p class="text-sm text-muted-foreground">
-            This rule uses a condition tree the list editor can't represent — edit the JSON
-            directly.
-          </p>
-          <Textarea v-model="rawConditions" rows="8" class="font-mono text-xs" />
-        </div>
-
-        <template v-else>
-          <div v-if="rows.length === 0" class="text-sm text-muted-foreground">
-            No conditions configured. Click "Add Condition" to add one.
-          </div>
-
-          <div v-else class="space-y-2">
-            <div v-for="(row, index) in rows" :key="index" class="flex items-start gap-2">
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
-                <!-- Field -->
-                <Select
-                  :model-value="row.field"
-                  @update:model-value="(val) => handleFieldChange(row, val)"
-                >
-                  <SelectTrigger class="w-full">
-                    <SelectValue placeholder="Select field" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem
-                      v-for="option in fieldOptions"
-                      :key="option.value"
-                      :value="option.value"
-                    >
-                      {{ option.label }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <!-- Operator -->
-                <Select v-model="row.operator" :disabled="!selectedField(row)">
-                  <SelectTrigger class="w-full">
-                    <SelectValue placeholder="Operator" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem
-                      v-for="op in validOperatorsFor(row)"
-                      :key="op.value"
-                      :value="op.value"
-                    >
-                      {{ op.label }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <!-- Value -->
-                <Select v-if="useSelectWidget(row)" v-model="row.value">
-                  <SelectTrigger class="w-full">
-                    <SelectValue placeholder="Select value" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem
-                      v-for="option in valueOptionsFor(row)"
-                      :key="option.value"
-                      :value="option.value"
-                    >
-                      {{ option.label }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  v-else-if="useNumberWidget(row)"
-                  type="number"
-                  :model-value="Number(row.value) || 0"
-                  @update:model-value="(val) => (row.value = String(val ?? 0))"
-                  placeholder="Enter number"
-                />
-                <Input
-                  v-else
-                  v-model="row.value"
-                  :placeholder="
-                    row.operator === 'in' || row.operator === 'not in'
-                      ? 'Comma-separated values'
-                      : 'Enter value'
-                  "
-                  :disabled="!selectedField(row)"
-                />
-              </div>
-
-              <Button
-                size="icon"
-                variant="ghost"
-                class="shrink-0 mt-0.5"
-                @click="handleRemoveRow(index)"
-              >
-                <X class="size-4" />
-              </Button>
-            </div>
-          </div>
-        </template>
+        <span class="text-sm font-medium block mb-3">Conditions (all must match)</span>
+        <ConditionBuilder v-model="conditionTree" :fields="props.fields" />
       </div>
 
       <!-- Actions section -->

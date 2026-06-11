@@ -282,6 +282,41 @@ func (h *QualityProfiles) ListSizeDefaults(ctx context.Context, input *QualityLi
 	return &QualityListSizeDefaultsOutput{Body: out}, nil
 }
 
+// ----- List bins -----
+
+// qualityBinOption is one entry of a domain's bin vocabulary: the identity
+// (BinKey, so it compares equal to a profile's bins/cutoff entries) plus the
+// rendered display name the editor labels and picks bins with.
+type qualityBinOption struct {
+	Bin  parsing.BinKey `json:"bin"`
+	Name string         `json:"name" doc:"Rendered display name"`
+}
+
+type QualityListBinsInput struct {
+	Domain string `query:"domain" required:"true" enum:"movie,series" doc:"Media domain"`
+}
+
+type QualityListBinsOutput struct {
+	Body []qualityBinOption
+}
+
+func (h *QualityProfiles) ListBins(ctx context.Context, input *QualityListBinsInput) (*QualityListBinsOutput, error) {
+	var domain parsing.Domain
+	switch input.Domain {
+	case "movie":
+		domain = parsing.DomainMovie
+	case "series":
+		domain = parsing.DomainSeries
+	}
+
+	bins := parsing.Vocabulary(domain)
+	opts := make([]qualityBinOption, 0, len(bins))
+	for _, b := range bins {
+		opts = append(opts, qualityBinOption{Bin: b.Key(), Name: b.Name})
+	}
+	return &QualityListBinsOutput{Body: opts}, nil
+}
+
 // ----- Test -----
 
 // qualityTestBody is the test-against-a-title request. The profile knows its own
@@ -434,6 +469,15 @@ func (h *QualityProfiles) RegisterHumachi(api huma.API) {
 		Tags:        []string{"quality"},
 		Errors:      errs(errsUpsert, errsForbidden),
 	}, h.BindTier)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "quality-list-bins",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/quality-bins",
+		Summary:     "List the bin vocabulary for a domain",
+		Description: "Returns the canonical quality bins for the domain with their rendered display names — the vocabulary editors label, pick, and order profile bins against.",
+		Tags:        []string{"quality"},
+	}, h.ListBins)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "quality-list-size-defaults",

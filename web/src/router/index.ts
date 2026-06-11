@@ -77,6 +77,10 @@ const router = createRouter({
           path: 'routing',
           component: () => import('@/views/settings/RoutingSettings.vue'),
         },
+        {
+          path: 'quality-profiles',
+          component: () => import('@/views/settings/QualityProfilesSettings.vue'),
+        },
       ],
     },
     {

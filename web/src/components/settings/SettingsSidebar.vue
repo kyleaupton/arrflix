@@ -7,19 +7,27 @@ import { PrimeIcons } from '@/icons'
 const route = useRoute()
 const router = useRouter()
 
-const currentTab = computed(() => {
+type SettingsTab =
+  | 'general'
+  | 'libraries'
+  | 'indexers'
+  | 'name-templates'
+  | 'downloaders'
+  | 'routing'
+  | 'quality-profiles'
+
+const currentTab = computed<SettingsTab>(() => {
   const path = route.path
   if (path.endsWith('/libraries')) return 'libraries'
   if (path.endsWith('/indexers')) return 'indexers'
   if (path.endsWith('/name-templates')) return 'name-templates'
   if (path.endsWith('/downloaders')) return 'downloaders'
   if (path.endsWith('/routing')) return 'routing'
+  if (path.endsWith('/quality-profiles')) return 'quality-profiles'
   return 'general'
 })
 
-const navigateToTab = (
-  tab: 'general' | 'libraries' | 'indexers' | 'name-templates' | 'downloaders' | 'routing',
-) => {
+const navigateToTab = (tab: SettingsTab) => {
   router.push(`/settings/${tab}`)
 }
 
@@ -35,6 +43,12 @@ const settingsItems = [
     label: 'Routing',
     icon: PrimeIcons.SLIDERS_H,
     to: '/settings/routing',
+  },
+  {
+    key: 'quality-profiles',
+    label: 'Quality Profiles',
+    icon: PrimeIcons.STAR,
+    to: '/settings/quality-profiles',
   },
   {
     key: 'libraries',
@@ -74,17 +88,7 @@ const settingsItems = [
         :severity="currentTab === item.key ? 'primary' : 'secondary'"
         :text="currentTab !== item.key"
         class="settings-nav-item"
-        @click="
-          navigateToTab(
-            item.key as
-              | 'general'
-              | 'libraries'
-              | 'indexers'
-              | 'name-templates'
-              | 'downloaders'
-              | 'routing',
-          )
-        "
+        @click="navigateToTab(item.key as SettingsTab)"
       />
     </nav>
   </div>

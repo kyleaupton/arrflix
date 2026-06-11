@@ -1467,6 +1467,14 @@ export type ProfileFormat = {
     weight: number;
 };
 
+export type QualityBinOption = {
+    bin: BinKey;
+    /**
+     * Rendered display name
+     */
+    name: string;
+};
+
 export type QualityBinSize = {
     bin: BinKey;
     max: number;
@@ -6188,6 +6196,36 @@ export type MediaGetPersonResponses = {
 };
 
 export type MediaGetPersonResponse = MediaGetPersonResponses[keyof MediaGetPersonResponses];
+
+export type QualityListBinsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Media domain
+         */
+        domain: 'movie' | 'series';
+    };
+    url: '/api/v1/quality-bins';
+};
+
+export type QualityListBinsErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type QualityListBinsError = QualityListBinsErrors[keyof QualityListBinsErrors];
+
+export type QualityListBinsResponses = {
+    /**
+     * OK
+     */
+    200: Array<QualityBinOption> | null;
+};
+
+export type QualityListBinsResponse = QualityListBinsResponses[keyof QualityListBinsResponses];
 
 export type QualityListProfilesData = {
     body?: never;

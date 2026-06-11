@@ -57,6 +57,22 @@ func (b Bin) Key() BinKey {
 	return BinKey{Source: b.Source, Resolution: b.Resolution, Modifier: b.Modifier}
 }
 
+// Vocabulary returns the canonical bin list for a domain, best-first, as a copy
+// callers may freely retain. It is the rendering counterpart to BinFor: BinFor
+// maps one core to its bin, Vocabulary enumerates the whole vocabulary (with
+// display Names) so editors can label, pick, and order bins by identity. An
+// unrecognized domain yields nil.
+func Vocabulary(d Domain) []Bin {
+	switch d {
+	case DomainSeries:
+		return append([]Bin(nil), seriesBins...)
+	case DomainMovie:
+		return append([]Bin(nil), movieBins...)
+	default:
+		return nil
+	}
+}
+
 // BinFor projects a parsing quality core (source, resolution, modifier) into
 // the bin for the given domain. Pure and deterministic: identical inputs always
 // return the same Bin, and the zero Bin (empty Name and zero axes) means "no

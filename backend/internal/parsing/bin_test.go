@@ -227,6 +227,28 @@ func TestMovieVocabularyMatchesRadarr(t *testing.T) {
 // TestBinFor_UnknownDomain returns the zero Bin for a domain outside the
 // {series, movie} set. Parse never calls BinFor with anything else (its domain
 // argument is required), but the safety net keeps direct callers honest.
+// TestVocabulary returns the full per-domain bin list (with names) for the two
+// real domains and nil for an unrecognized one. The returned slice is a copy:
+// mutating it must not corrupt the package vocabulary tables.
+func TestVocabulary(t *testing.T) {
+	if got := Vocabulary(DomainSeries); !reflect.DeepEqual(got, seriesBins) {
+		t.Errorf("Vocabulary(series) = %+v, want seriesBins", got)
+	}
+	if got := Vocabulary(DomainMovie); !reflect.DeepEqual(got, movieBins) {
+		t.Errorf("Vocabulary(movie) = %+v, want movieBins", got)
+	}
+	if got := Vocabulary(Domain("")); got != nil {
+		t.Errorf("Vocabulary(unknown) = %+v, want nil", got)
+	}
+
+	// Copy semantics: mutating the result must not touch the source table.
+	v := Vocabulary(DomainSeries)
+	v[0].Name = "mutated"
+	if seriesBins[0].Name == "mutated" {
+		t.Error("Vocabulary returned a view into seriesBins; want a copy")
+	}
+}
+
 func TestBinFor_UnknownDomain(t *testing.T) {
 	got := BinFor(SourceBluRay, Res1080p, ModNone, Domain(""))
 	if got != (Bin{}) {

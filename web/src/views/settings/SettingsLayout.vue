@@ -4,6 +4,7 @@
       <TabsList>
         <TabsTrigger value="general">General</TabsTrigger>
         <TabsTrigger value="routing">Routing</TabsTrigger>
+        <TabsTrigger value="quality-profiles">Quality Profiles</TabsTrigger>
         <TabsTrigger value="libraries">Libraries</TabsTrigger>
         <TabsTrigger value="indexers">Indexers</TabsTrigger>
         <TabsTrigger value="downloaders">Downloaders</TabsTrigger>

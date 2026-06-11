@@ -3575,6 +3575,18 @@ components:
         - customFormatId
         - weight
       type: object
+    QualityBinOption:
+      additionalProperties: false
+      properties:
+        bin:
+          $ref: "#/components/schemas/BinKey"
+        name:
+          description: Rendered display name
+          type: string
+      required:
+        - bin
+        - name
+      type: object
     QualityBinSize:
       additionalProperties: false
       properties:
@@ -8414,6 +8426,42 @@ paths:
       summary: Get person
       tags:
         - media
+  /api/v1/quality-bins:
+    get:
+      description: Returns the canonical quality bins for the domain with their rendered display names — the vocabulary editors label, pick, and order profile bins against.
+      operationId: quality-list-bins
+      parameters:
+        - description: Media domain
+          explode: false
+          in: query
+          name: domain
+          required: true
+          schema:
+            description: Media domain
+            enum:
+              - movie
+              - series
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/QualityBinOption"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: List the bin vocabulary for a domain
+      tags:
+        - quality
   /api/v1/quality-profiles:
     get:
       operationId: quality-list-profiles
