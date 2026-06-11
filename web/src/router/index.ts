@@ -74,8 +74,12 @@ const router = createRouter({
           component: () => import('@/views/settings/downloader/DownloaderSettings.vue'),
         },
         {
-          path: 'policies',
-          component: () => import('@/views/settings/PolicySettings.vue'),
+          path: 'routing',
+          component: () => import('@/views/settings/RoutingSettings.vue'),
+        },
+        {
+          path: 'quality-profiles',
+          component: () => import('@/views/settings/QualityProfilesSettings.vue'),
         },
       ],
     },

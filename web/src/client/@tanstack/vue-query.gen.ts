@@ -3,8 +3,8 @@
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/vue-query';
 
 import { client } from '../client.gen';
-import { authLogin, authMe, authPlexExchange, authSignup, bootstrapGet, downloadCandidatesDownloadMovie, downloadCandidatesDownloadSeries, downloadCandidatesListMovie, downloadCandidatesListSeries, downloadCandidatesPreviewMovie, downloadCandidatesPreviewSeries, downloadersCreate, downloadersDelete, downloadersGet, downloadersGetDefault, downloadersList, downloadersTest, downloadersTestConfig, downloadersUpdate, downloadJobsCancel, downloadJobsGet, downloadJobsHistory, downloadJobsList, downloadJobsListForMovie, downloadJobsListForSeries, downloadJobsListImportTasks, downloadJobsReimport, downloadJobsRetry, downloadJobsTimeline, eventsSubscriptionsAdd, eventsSubscriptionsList, eventsSubscriptionsRemove, feedGet, filesDetach, filesMatch, filesMatchDecision, filesUnmatch, filesystemBrowse, healthCheck, importTasksCancel, importTasksCounts, importTasksGet, importTasksHistory, importTasksList, importTasksReimport, importTasksTimeline, indexersAction, indexersDelete, indexersGet, indexersGetSchema, indexersListConfigured, indexersSave, indexersTestAll, indexersTestSaved, indexersTestUnsaved, indexersToggle, invitesCreate, invitesDelete, invitesList, librariesCreate, librariesDelete, librariesGet, librariesList, librariesScan, librariesUpdate, libraryList, mediaGetMovie, mediaGetPerson, mediaGetSeries, mediaSearch, nameTemplatesCreate, nameTemplatesDelete, nameTemplatesGet, nameTemplatesGetDefault, nameTemplatesList, nameTemplatesUpdate, type Options, policiesCreate, policiesCreateAction, policiesCreateRule, policiesDelete, policiesDeleteAction, policiesDeleteRule, policiesEvaluate, policiesGet, policiesGetAction, policiesGetFields, policiesGetRule, policiesList, policiesListActions, policiesUpdate, policiesUpdateAction, policiesUpdateRule, rolesList, settingsList, settingsPatch, setupInitialize, setupStatus, setupTmdb, unmatchedFilesGet, unmatchedFilesList, usersAssignRole, usersDelete, usersGet, usersGetProfile, usersList, usersUpdate, usersUpdatePassword, usersUpdateProfile, usersUpdateProfilePassword, versionGet } from '../sdk.gen';
-import type { AuthLoginData, AuthLoginError, AuthLoginResponse, AuthMeData, AuthPlexExchangeData, AuthPlexExchangeError, AuthPlexExchangeResponse, AuthSignupData, AuthSignupError, AuthSignupResponse, BootstrapGetData, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieError, DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesError, DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesListMovieData, DownloadCandidatesListSeriesData, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieError, DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesError, DownloadCandidatesPreviewSeriesResponse, DownloadersCreateData, DownloadersCreateError, DownloadersCreateResponse, DownloadersDeleteData, DownloadersDeleteError, DownloadersDeleteResponse, DownloadersGetData, DownloadersGetDefaultData, DownloadersListData, DownloadersTestConfigData, DownloadersTestConfigError, DownloadersTestConfigResponse, DownloadersTestData, DownloadersTestError, DownloadersTestResponse, DownloadersUpdateData, DownloadersUpdateError, DownloadersUpdateResponse, DownloadJobsCancelData, DownloadJobsCancelError, DownloadJobsCancelResponse, DownloadJobsGetData, DownloadJobsHistoryData, DownloadJobsListData, DownloadJobsListForMovieData, DownloadJobsListForSeriesData, DownloadJobsListImportTasksData, DownloadJobsReimportData, DownloadJobsReimportError, DownloadJobsReimportResponse, DownloadJobsRetryData, DownloadJobsRetryError, DownloadJobsRetryResponse, DownloadJobsTimelineData, EventsSubscriptionsAddData, EventsSubscriptionsAddError, EventsSubscriptionsAddResponse, EventsSubscriptionsListData, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveError, EventsSubscriptionsRemoveResponse, FeedGetData, FilesDetachData, FilesDetachError, FilesDetachResponse, FilesMatchData, FilesMatchDecisionData, FilesMatchError, FilesMatchResponse, FilesUnmatchData, FilesUnmatchError, FilesUnmatchResponse, FilesystemBrowseData, HealthCheckData, ImportTasksCancelData, ImportTasksCancelError, ImportTasksCancelResponse, ImportTasksCountsData, ImportTasksGetData, ImportTasksHistoryData, ImportTasksListData, ImportTasksListError, ImportTasksListResponse, ImportTasksReimportData, ImportTasksReimportError, ImportTasksReimportResponse, ImportTasksTimelineData, IndexersActionData, IndexersActionError, IndexersDeleteData, IndexersDeleteError, IndexersDeleteResponse, IndexersGetData, IndexersGetSchemaData, IndexersListConfiguredData, IndexersSaveData, IndexersSaveError, IndexersSaveResponse, IndexersTestAllData, IndexersTestAllError, IndexersTestAllResponse, IndexersTestSavedData, IndexersTestSavedError, IndexersTestSavedResponse, IndexersTestUnsavedData, IndexersTestUnsavedError, IndexersTestUnsavedResponse, IndexersToggleData, IndexersToggleError, IndexersToggleResponse, InvitesCreateData, InvitesCreateError, InvitesCreateResponse, InvitesDeleteData, InvitesDeleteError, InvitesDeleteResponse, InvitesListData, LibrariesCreateData, LibrariesCreateError, LibrariesCreateResponse, LibrariesDeleteData, LibrariesDeleteError, LibrariesDeleteResponse, LibrariesGetData, LibrariesListData, LibrariesScanData, LibrariesScanError, LibrariesScanResponse, LibrariesUpdateData, LibrariesUpdateError, LibrariesUpdateResponse, LibraryListData, LibraryListError, LibraryListResponse, MediaGetMovieData, MediaGetPersonData, MediaGetSeriesData, MediaSearchData, MediaSearchError, MediaSearchResponse, NameTemplatesCreateData, NameTemplatesCreateError, NameTemplatesCreateResponse, NameTemplatesDeleteData, NameTemplatesDeleteError, NameTemplatesDeleteResponse, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesListData, NameTemplatesUpdateData, NameTemplatesUpdateError, NameTemplatesUpdateResponse, PoliciesCreateActionData, PoliciesCreateActionError, PoliciesCreateActionResponse, PoliciesCreateData, PoliciesCreateError, PoliciesCreateResponse, PoliciesCreateRuleData, PoliciesCreateRuleError, PoliciesCreateRuleResponse, PoliciesDeleteActionData, PoliciesDeleteActionError, PoliciesDeleteActionResponse, PoliciesDeleteData, PoliciesDeleteError, PoliciesDeleteResponse, PoliciesDeleteRuleData, PoliciesDeleteRuleError, PoliciesDeleteRuleResponse, PoliciesEvaluateData, PoliciesEvaluateError, PoliciesEvaluateResponse, PoliciesGetActionData, PoliciesGetData, PoliciesGetFieldsData, PoliciesGetRuleData, PoliciesListActionsData, PoliciesListData, PoliciesUpdateActionData, PoliciesUpdateActionError, PoliciesUpdateActionResponse, PoliciesUpdateData, PoliciesUpdateError, PoliciesUpdateResponse, PoliciesUpdateRuleData, PoliciesUpdateRuleError, PoliciesUpdateRuleResponse, RolesListData, SettingsListData, SettingsPatchData, SettingsPatchError, SettingsPatchResponse, SetupInitializeData, SetupInitializeError, SetupInitializeResponse2, SetupStatusData, SetupTmdbData, SetupTmdbError, SetupTmdbResponse2, UnmatchedFilesGetData, UnmatchedFilesListData, UnmatchedFilesListError, UnmatchedFilesListResponse, UsersAssignRoleData, UsersAssignRoleError, UsersAssignRoleResponse, UsersDeleteData, UsersDeleteError, UsersDeleteResponse, UsersGetData, UsersGetProfileData, UsersListData, UsersUpdateData, UsersUpdateError, UsersUpdatePasswordData, UsersUpdatePasswordError, UsersUpdatePasswordResponse, UsersUpdateProfileData, UsersUpdateProfileError, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordError, UsersUpdateProfilePasswordResponse, UsersUpdateProfileResponse, UsersUpdateResponse, VersionGetData } from '../types.gen';
+import { authLogin, authMe, authPlexExchange, authSignup, bootstrapGet, downloadCandidatesDownloadMovie, downloadCandidatesDownloadSeries, downloadCandidatesListMovie, downloadCandidatesListSeries, downloadCandidatesPreviewMovie, downloadCandidatesPreviewSeries, downloadersCreate, downloadersDelete, downloadersGet, downloadersGetDefault, downloadersList, downloadersTest, downloadersTestConfig, downloadersUpdate, downloadJobsCancel, downloadJobsGet, downloadJobsHistory, downloadJobsList, downloadJobsListForMovie, downloadJobsListForSeries, downloadJobsListImportTasks, downloadJobsReimport, downloadJobsRetry, downloadJobsTimeline, eventsSubscriptionsAdd, eventsSubscriptionsList, eventsSubscriptionsRemove, feedGet, filesDetach, filesMatch, filesMatchDecision, filesUnmatch, filesystemBrowse, healthCheck, importTasksCancel, importTasksCounts, importTasksGet, importTasksHistory, importTasksList, importTasksReimport, importTasksTimeline, indexersAction, indexersDelete, indexersGet, indexersGetSchema, indexersListConfigured, indexersSave, indexersTestAll, indexersTestSaved, indexersTestUnsaved, indexersToggle, invitesCreate, invitesDelete, invitesList, librariesCreate, librariesDelete, librariesGet, librariesList, librariesScan, librariesUpdate, libraryList, mediaGetMovie, mediaGetPerson, mediaGetSeries, mediaSearch, nameTemplatesCreate, nameTemplatesDelete, nameTemplatesGet, nameTemplatesGetDefault, nameTemplatesList, nameTemplatesUpdate, type Options, qualityBindTier, qualityCreateCustomFormat, qualityCreateProfile, qualityDeleteCustomFormat, qualityDeleteProfile, qualityGetCustomFormat, qualityGetProfile, qualityListBins, qualityListCustomFormats, qualityListProfiles, qualityListSizeDefaults, qualityListTiers, qualityTestProfile, qualityUpdateCustomFormat, qualityUpdateProfile, rolesList, routingCreateRule, routingDeleteRule, routingEvaluate, routingGetFields, routingGetRule, routingListRules, routingReorderRules, routingUpdateRule, settingsList, settingsPatch, setupInitialize, setupStatus, setupTmdb, unmatchedFilesGet, unmatchedFilesList, usersAssignRole, usersDelete, usersGet, usersGetProfile, usersList, usersUpdate, usersUpdatePassword, usersUpdateProfile, usersUpdateProfilePassword, versionGet } from '../sdk.gen';
+import type { AuthLoginData, AuthLoginError, AuthLoginResponse, AuthMeData, AuthPlexExchangeData, AuthPlexExchangeError, AuthPlexExchangeResponse, AuthSignupData, AuthSignupError, AuthSignupResponse, BootstrapGetData, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieError, DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesError, DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesListMovieData, DownloadCandidatesListSeriesData, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieError, DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesError, DownloadCandidatesPreviewSeriesResponse, DownloadersCreateData, DownloadersCreateError, DownloadersCreateResponse, DownloadersDeleteData, DownloadersDeleteError, DownloadersDeleteResponse, DownloadersGetData, DownloadersGetDefaultData, DownloadersListData, DownloadersTestConfigData, DownloadersTestConfigError, DownloadersTestConfigResponse, DownloadersTestData, DownloadersTestError, DownloadersTestResponse, DownloadersUpdateData, DownloadersUpdateError, DownloadersUpdateResponse, DownloadJobsCancelData, DownloadJobsCancelError, DownloadJobsCancelResponse, DownloadJobsGetData, DownloadJobsHistoryData, DownloadJobsListData, DownloadJobsListForMovieData, DownloadJobsListForSeriesData, DownloadJobsListImportTasksData, DownloadJobsReimportData, DownloadJobsReimportError, DownloadJobsReimportResponse, DownloadJobsRetryData, DownloadJobsRetryError, DownloadJobsRetryResponse, DownloadJobsTimelineData, EventsSubscriptionsAddData, EventsSubscriptionsAddError, EventsSubscriptionsAddResponse, EventsSubscriptionsListData, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveError, EventsSubscriptionsRemoveResponse, FeedGetData, FilesDetachData, FilesDetachError, FilesDetachResponse, FilesMatchData, FilesMatchDecisionData, FilesMatchError, FilesMatchResponse, FilesUnmatchData, FilesUnmatchError, FilesUnmatchResponse, FilesystemBrowseData, HealthCheckData, ImportTasksCancelData, ImportTasksCancelError, ImportTasksCancelResponse, ImportTasksCountsData, ImportTasksGetData, ImportTasksHistoryData, ImportTasksListData, ImportTasksListError, ImportTasksListResponse, ImportTasksReimportData, ImportTasksReimportError, ImportTasksReimportResponse, ImportTasksTimelineData, IndexersActionData, IndexersActionError, IndexersDeleteData, IndexersDeleteError, IndexersDeleteResponse, IndexersGetData, IndexersGetSchemaData, IndexersListConfiguredData, IndexersSaveData, IndexersSaveError, IndexersSaveResponse, IndexersTestAllData, IndexersTestAllError, IndexersTestAllResponse, IndexersTestSavedData, IndexersTestSavedError, IndexersTestSavedResponse, IndexersTestUnsavedData, IndexersTestUnsavedError, IndexersTestUnsavedResponse, IndexersToggleData, IndexersToggleError, IndexersToggleResponse, InvitesCreateData, InvitesCreateError, InvitesCreateResponse, InvitesDeleteData, InvitesDeleteError, InvitesDeleteResponse, InvitesListData, LibrariesCreateData, LibrariesCreateError, LibrariesCreateResponse, LibrariesDeleteData, LibrariesDeleteError, LibrariesDeleteResponse, LibrariesGetData, LibrariesListData, LibrariesScanData, LibrariesScanError, LibrariesScanResponse, LibrariesUpdateData, LibrariesUpdateError, LibrariesUpdateResponse, LibraryListData, LibraryListError, LibraryListResponse, MediaGetMovieData, MediaGetPersonData, MediaGetSeriesData, MediaSearchData, MediaSearchError, MediaSearchResponse, NameTemplatesCreateData, NameTemplatesCreateError, NameTemplatesCreateResponse, NameTemplatesDeleteData, NameTemplatesDeleteError, NameTemplatesDeleteResponse, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesListData, NameTemplatesUpdateData, NameTemplatesUpdateError, NameTemplatesUpdateResponse, QualityBindTierData, QualityBindTierError, QualityBindTierResponse, QualityCreateCustomFormatData, QualityCreateCustomFormatError, QualityCreateCustomFormatResponse, QualityCreateProfileData, QualityCreateProfileError, QualityCreateProfileResponse, QualityDeleteCustomFormatData, QualityDeleteCustomFormatError, QualityDeleteCustomFormatResponse, QualityDeleteProfileData, QualityDeleteProfileError, QualityDeleteProfileResponse, QualityGetCustomFormatData, QualityGetProfileData, QualityListBinsData, QualityListCustomFormatsData, QualityListProfilesData, QualityListSizeDefaultsData, QualityListTiersData, QualityTestProfileData, QualityTestProfileError, QualityTestProfileResponse, QualityUpdateCustomFormatData, QualityUpdateCustomFormatError, QualityUpdateCustomFormatResponse, QualityUpdateProfileData, QualityUpdateProfileError, QualityUpdateProfileResponse, RolesListData, RoutingCreateRuleData, RoutingCreateRuleError, RoutingCreateRuleResponse, RoutingDeleteRuleData, RoutingDeleteRuleError, RoutingDeleteRuleResponse, RoutingEvaluateData, RoutingEvaluateError, RoutingEvaluateResponse, RoutingGetFieldsData, RoutingGetRuleData, RoutingListRulesData, RoutingReorderRulesData, RoutingReorderRulesError, RoutingReorderRulesResponse, RoutingUpdateRuleData, RoutingUpdateRuleError, RoutingUpdateRuleResponse, SettingsListData, SettingsPatchData, SettingsPatchError, SettingsPatchResponse, SetupInitializeData, SetupInitializeError, SetupInitializeResponse2, SetupStatusData, SetupTmdbData, SetupTmdbError, SetupTmdbResponse2, UnmatchedFilesGetData, UnmatchedFilesListData, UnmatchedFilesListError, UnmatchedFilesListResponse, UsersAssignRoleData, UsersAssignRoleError, UsersAssignRoleResponse, UsersDeleteData, UsersDeleteError, UsersDeleteResponse, UsersGetData, UsersGetProfileData, UsersListData, UsersUpdateData, UsersUpdateError, UsersUpdatePasswordData, UsersUpdatePasswordError, UsersUpdatePasswordResponse, UsersUpdateProfileData, UsersUpdateProfileError, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordError, UsersUpdateProfilePasswordResponse, UsersUpdateProfileResponse, UsersUpdateResponse, VersionGetData } from '../types.gen';
 
 /**
  * Login
@@ -189,6 +189,97 @@ export const bootstrapGetOptions = (options?: Options<BootstrapGetData>) => {
         },
         queryKey: bootstrapGetQueryKey(options)
     });
+};
+
+export const qualityListCustomFormatsQueryKey = (options?: Options<QualityListCustomFormatsData>) => createQueryKey('qualityListCustomFormats', options);
+
+/**
+ * List custom formats
+ */
+export const qualityListCustomFormatsOptions = (options?: Options<QualityListCustomFormatsData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await qualityListCustomFormats({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: qualityListCustomFormatsQueryKey(options)
+    });
+};
+
+/**
+ * Create custom format
+ */
+export const qualityCreateCustomFormatMutation = (options?: Partial<Options<QualityCreateCustomFormatData>>): UseMutationOptions<QualityCreateCustomFormatResponse, QualityCreateCustomFormatError, Options<QualityCreateCustomFormatData>> => {
+    const mutationOptions: UseMutationOptions<QualityCreateCustomFormatResponse, QualityCreateCustomFormatError, Options<QualityCreateCustomFormatData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await qualityCreateCustomFormat({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Delete custom format
+ */
+export const qualityDeleteCustomFormatMutation = (options?: Partial<Options<QualityDeleteCustomFormatData>>): UseMutationOptions<QualityDeleteCustomFormatResponse, QualityDeleteCustomFormatError, Options<QualityDeleteCustomFormatData>> => {
+    const mutationOptions: UseMutationOptions<QualityDeleteCustomFormatResponse, QualityDeleteCustomFormatError, Options<QualityDeleteCustomFormatData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await qualityDeleteCustomFormat({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const qualityGetCustomFormatQueryKey = (options: Options<QualityGetCustomFormatData>) => createQueryKey('qualityGetCustomFormat', options);
+
+/**
+ * Get custom format
+ */
+export const qualityGetCustomFormatOptions = (options: Options<QualityGetCustomFormatData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await qualityGetCustomFormat({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: qualityGetCustomFormatQueryKey(options)
+    });
+};
+
+/**
+ * Update custom format
+ */
+export const qualityUpdateCustomFormatMutation = (options?: Partial<Options<QualityUpdateCustomFormatData>>): UseMutationOptions<QualityUpdateCustomFormatResponse, QualityUpdateCustomFormatError, Options<QualityUpdateCustomFormatData>> => {
+    const mutationOptions: UseMutationOptions<QualityUpdateCustomFormatResponse, QualityUpdateCustomFormatError, Options<QualityUpdateCustomFormatData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await qualityUpdateCustomFormat({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
 };
 
 export const downloadJobsListQueryKey = (options?: Options<DownloadJobsListData>) => createQueryKey('downloadJobsList', options);
@@ -1280,7 +1371,7 @@ export const mediaGetMovieOptions = (options: Options<MediaGetMovieData>) => {
 
 /**
  * Enqueue a movie download candidate
- * Runs the policy engine, creates a download job, and returns the trace + job.
+ * Dispatches routing rules, creates a download job, and returns the evaluation + job.
  */
 export const downloadCandidatesDownloadMovieMutation = (options?: Partial<Options<DownloadCandidatesDownloadMovieData>>): UseMutationOptions<DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadMovieError, Options<DownloadCandidatesDownloadMovieData>> => {
     const mutationOptions: UseMutationOptions<DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadMovieError, Options<DownloadCandidatesDownloadMovieData>> = {
@@ -1297,7 +1388,7 @@ export const downloadCandidatesDownloadMovieMutation = (options?: Partial<Option
 };
 
 /**
- * Preview policy evaluation for a movie candidate
+ * Preview routing dispatch for a movie candidate
  */
 export const downloadCandidatesPreviewMovieMutation = (options?: Partial<Options<DownloadCandidatesPreviewMovieData>>): UseMutationOptions<DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewMovieError, Options<DownloadCandidatesPreviewMovieData>> => {
     const mutationOptions: UseMutationOptions<DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewMovieError, Options<DownloadCandidatesPreviewMovieData>> = {
@@ -1486,15 +1577,16 @@ export const mediaGetPersonOptions = (options: Options<MediaGetPersonData>) => {
     });
 };
 
-export const policiesListQueryKey = (options?: Options<PoliciesListData>) => createQueryKey('policiesList', options);
+export const qualityListBinsQueryKey = (options: Options<QualityListBinsData>) => createQueryKey('qualityListBins', options);
 
 /**
- * List policies
+ * List the bin vocabulary for a domain
+ * Returns the canonical quality bins for the domain with their rendered display names — the vocabulary editors label, pick, and order profile bins against.
  */
-export const policiesListOptions = (options?: Options<PoliciesListData>) => {
+export const qualityListBinsOptions = (options: Options<QualityListBinsData>) => {
     return queryOptions({
         queryFn: async ({ queryKey, signal }) => {
-            const { data } = await policiesList({
+            const { data } = await qualityListBins({
                 ...options,
                 ...queryKey[0],
                 signal,
@@ -1502,53 +1594,19 @@ export const policiesListOptions = (options?: Options<PoliciesListData>) => {
             });
             return data;
         },
-        queryKey: policiesListQueryKey(options)
+        queryKey: qualityListBinsQueryKey(options)
     });
 };
 
-/**
- * Create policy
- */
-export const policiesCreateMutation = (options?: Partial<Options<PoliciesCreateData>>): UseMutationOptions<PoliciesCreateResponse, PoliciesCreateError, Options<PoliciesCreateData>> => {
-    const mutationOptions: UseMutationOptions<PoliciesCreateResponse, PoliciesCreateError, Options<PoliciesCreateData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await policiesCreate({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
+export const qualityListProfilesQueryKey = (options?: Options<QualityListProfilesData>) => createQueryKey('qualityListProfiles', options);
 
 /**
- * Evaluate policies against a download candidate
+ * List quality profiles
  */
-export const policiesEvaluateMutation = (options?: Partial<Options<PoliciesEvaluateData>>): UseMutationOptions<PoliciesEvaluateResponse, PoliciesEvaluateError, Options<PoliciesEvaluateData>> => {
-    const mutationOptions: UseMutationOptions<PoliciesEvaluateResponse, PoliciesEvaluateError, Options<PoliciesEvaluateData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await policiesEvaluate({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-export const policiesGetFieldsQueryKey = (options?: Options<PoliciesGetFieldsData>) => createQueryKey('policiesGetFields', options);
-
-/**
- * Get policy field definitions
- */
-export const policiesGetFieldsOptions = (options?: Options<PoliciesGetFieldsData>) => {
+export const qualityListProfilesOptions = (options?: Options<QualityListProfilesData>) => {
     return queryOptions({
         queryFn: async ({ queryKey, signal }) => {
-            const { data } = await policiesGetFields({
+            const { data } = await qualityListProfiles({
                 ...options,
                 ...queryKey[0],
                 signal,
@@ -1556,17 +1614,17 @@ export const policiesGetFieldsOptions = (options?: Options<PoliciesGetFieldsData
             });
             return data;
         },
-        queryKey: policiesGetFieldsQueryKey(options)
+        queryKey: qualityListProfilesQueryKey(options)
     });
 };
 
 /**
- * Delete policy
+ * Create quality profile
  */
-export const policiesDeleteMutation = (options?: Partial<Options<PoliciesDeleteData>>): UseMutationOptions<PoliciesDeleteResponse, PoliciesDeleteError, Options<PoliciesDeleteData>> => {
-    const mutationOptions: UseMutationOptions<PoliciesDeleteResponse, PoliciesDeleteError, Options<PoliciesDeleteData>> = {
+export const qualityCreateProfileMutation = (options?: Partial<Options<QualityCreateProfileData>>): UseMutationOptions<QualityCreateProfileResponse, QualityCreateProfileError, Options<QualityCreateProfileData>> => {
+    const mutationOptions: UseMutationOptions<QualityCreateProfileResponse, QualityCreateProfileError, Options<QualityCreateProfileData>> = {
         mutationFn: async (fnOptions) => {
-            const { data } = await policiesDelete({
+            const { data } = await qualityCreateProfile({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
@@ -1577,15 +1635,32 @@ export const policiesDeleteMutation = (options?: Partial<Options<PoliciesDeleteD
     return mutationOptions;
 };
 
-export const policiesGetQueryKey = (options: Options<PoliciesGetData>) => createQueryKey('policiesGet', options);
+/**
+ * Delete quality profile
+ */
+export const qualityDeleteProfileMutation = (options?: Partial<Options<QualityDeleteProfileData>>): UseMutationOptions<QualityDeleteProfileResponse, QualityDeleteProfileError, Options<QualityDeleteProfileData>> => {
+    const mutationOptions: UseMutationOptions<QualityDeleteProfileResponse, QualityDeleteProfileError, Options<QualityDeleteProfileData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await qualityDeleteProfile({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const qualityGetProfileQueryKey = (options: Options<QualityGetProfileData>) => createQueryKey('qualityGetProfile', options);
 
 /**
- * Get policy
+ * Get quality profile
  */
-export const policiesGetOptions = (options: Options<PoliciesGetData>) => {
+export const qualityGetProfileOptions = (options: Options<QualityGetProfileData>) => {
     return queryOptions({
         queryFn: async ({ queryKey, signal }) => {
-            const { data } = await policiesGet({
+            const { data } = await qualityGetProfile({
                 ...options,
                 ...queryKey[0],
                 signal,
@@ -1593,17 +1668,17 @@ export const policiesGetOptions = (options: Options<PoliciesGetData>) => {
             });
             return data;
         },
-        queryKey: policiesGetQueryKey(options)
+        queryKey: qualityGetProfileQueryKey(options)
     });
 };
 
 /**
- * Update policy
+ * Update quality profile
  */
-export const policiesUpdateMutation = (options?: Partial<Options<PoliciesUpdateData>>): UseMutationOptions<PoliciesUpdateResponse, PoliciesUpdateError, Options<PoliciesUpdateData>> => {
-    const mutationOptions: UseMutationOptions<PoliciesUpdateResponse, PoliciesUpdateError, Options<PoliciesUpdateData>> = {
+export const qualityUpdateProfileMutation = (options?: Partial<Options<QualityUpdateProfileData>>): UseMutationOptions<QualityUpdateProfileResponse, QualityUpdateProfileError, Options<QualityUpdateProfileData>> => {
+    const mutationOptions: UseMutationOptions<QualityUpdateProfileResponse, QualityUpdateProfileError, Options<QualityUpdateProfileData>> = {
         mutationFn: async (fnOptions) => {
-            const { data } = await policiesUpdate({
+            const { data } = await qualityUpdateProfile({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
@@ -1614,15 +1689,33 @@ export const policiesUpdateMutation = (options?: Partial<Options<PoliciesUpdateD
     return mutationOptions;
 };
 
-export const policiesListActionsQueryKey = (options: Options<PoliciesListActionsData>) => createQueryKey('policiesListActions', options);
+/**
+ * Test a quality profile against a release title
+ * Parses the title in the profile's domain and returns the engine's verdict: bin, pass/reject, score, and rules traces.
+ */
+export const qualityTestProfileMutation = (options?: Partial<Options<QualityTestProfileData>>): UseMutationOptions<QualityTestProfileResponse, QualityTestProfileError, Options<QualityTestProfileData>> => {
+    const mutationOptions: UseMutationOptions<QualityTestProfileResponse, QualityTestProfileError, Options<QualityTestProfileData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await qualityTestProfile({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const qualityListSizeDefaultsQueryKey = (options: Options<QualityListSizeDefaultsData>) => createQueryKey('qualityListSizeDefaults', options);
 
 /**
- * List actions for policy
+ * List global per-bin size defaults for a domain
  */
-export const policiesListActionsOptions = (options: Options<PoliciesListActionsData>) => {
+export const qualityListSizeDefaultsOptions = (options: Options<QualityListSizeDefaultsData>) => {
     return queryOptions({
         queryFn: async ({ queryKey, signal }) => {
-            const { data } = await policiesListActions({
+            const { data } = await qualityListSizeDefaults({
                 ...options,
                 ...queryKey[0],
                 signal,
@@ -1630,53 +1723,19 @@ export const policiesListActionsOptions = (options: Options<PoliciesListActionsD
             });
             return data;
         },
-        queryKey: policiesListActionsQueryKey(options)
+        queryKey: qualityListSizeDefaultsQueryKey(options)
     });
 };
 
-/**
- * Create action for policy
- */
-export const policiesCreateActionMutation = (options?: Partial<Options<PoliciesCreateActionData>>): UseMutationOptions<PoliciesCreateActionResponse, PoliciesCreateActionError, Options<PoliciesCreateActionData>> => {
-    const mutationOptions: UseMutationOptions<PoliciesCreateActionResponse, PoliciesCreateActionError, Options<PoliciesCreateActionData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await policiesCreateAction({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
+export const qualityListTiersQueryKey = (options?: Options<QualityListTiersData>) => createQueryKey('qualityListTiers', options);
 
 /**
- * Delete action
+ * List tier bindings
  */
-export const policiesDeleteActionMutation = (options?: Partial<Options<PoliciesDeleteActionData>>): UseMutationOptions<PoliciesDeleteActionResponse, PoliciesDeleteActionError, Options<PoliciesDeleteActionData>> => {
-    const mutationOptions: UseMutationOptions<PoliciesDeleteActionResponse, PoliciesDeleteActionError, Options<PoliciesDeleteActionData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await policiesDeleteAction({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-export const policiesGetActionQueryKey = (options: Options<PoliciesGetActionData>) => createQueryKey('policiesGetAction', options);
-
-/**
- * Get action
- */
-export const policiesGetActionOptions = (options: Options<PoliciesGetActionData>) => {
+export const qualityListTiersOptions = (options?: Options<QualityListTiersData>) => {
     return queryOptions({
         queryFn: async ({ queryKey, signal }) => {
-            const { data } = await policiesGetAction({
+            const { data } = await qualityListTiers({
                 ...options,
                 ...queryKey[0],
                 signal,
@@ -1684,88 +1743,17 @@ export const policiesGetActionOptions = (options: Options<PoliciesGetActionData>
             });
             return data;
         },
-        queryKey: policiesGetActionQueryKey(options)
+        queryKey: qualityListTiersQueryKey(options)
     });
 };
 
 /**
- * Update action
+ * Bind a tier to a quality profile
  */
-export const policiesUpdateActionMutation = (options?: Partial<Options<PoliciesUpdateActionData>>): UseMutationOptions<PoliciesUpdateActionResponse, PoliciesUpdateActionError, Options<PoliciesUpdateActionData>> => {
-    const mutationOptions: UseMutationOptions<PoliciesUpdateActionResponse, PoliciesUpdateActionError, Options<PoliciesUpdateActionData>> = {
+export const qualityBindTierMutation = (options?: Partial<Options<QualityBindTierData>>): UseMutationOptions<QualityBindTierResponse, QualityBindTierError, Options<QualityBindTierData>> => {
+    const mutationOptions: UseMutationOptions<QualityBindTierResponse, QualityBindTierError, Options<QualityBindTierData>> = {
         mutationFn: async (fnOptions) => {
-            const { data } = await policiesUpdateAction({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-/**
- * Delete rule for policy
- */
-export const policiesDeleteRuleMutation = (options?: Partial<Options<PoliciesDeleteRuleData>>): UseMutationOptions<PoliciesDeleteRuleResponse, PoliciesDeleteRuleError, Options<PoliciesDeleteRuleData>> => {
-    const mutationOptions: UseMutationOptions<PoliciesDeleteRuleResponse, PoliciesDeleteRuleError, Options<PoliciesDeleteRuleData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await policiesDeleteRule({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-export const policiesGetRuleQueryKey = (options: Options<PoliciesGetRuleData>) => createQueryKey('policiesGetRule', options);
-
-/**
- * Get rule for policy
- */
-export const policiesGetRuleOptions = (options: Options<PoliciesGetRuleData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await policiesGetRule({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: policiesGetRuleQueryKey(options)
-    });
-};
-
-/**
- * Create rule for policy
- */
-export const policiesCreateRuleMutation = (options?: Partial<Options<PoliciesCreateRuleData>>): UseMutationOptions<PoliciesCreateRuleResponse, PoliciesCreateRuleError, Options<PoliciesCreateRuleData>> => {
-    const mutationOptions: UseMutationOptions<PoliciesCreateRuleResponse, PoliciesCreateRuleError, Options<PoliciesCreateRuleData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await policiesCreateRule({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-/**
- * Update rule for policy
- */
-export const policiesUpdateRuleMutation = (options?: Partial<Options<PoliciesUpdateRuleData>>): UseMutationOptions<PoliciesUpdateRuleResponse, PoliciesUpdateRuleError, Options<PoliciesUpdateRuleData>> => {
-    const mutationOptions: UseMutationOptions<PoliciesUpdateRuleResponse, PoliciesUpdateRuleError, Options<PoliciesUpdateRuleData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await policiesUpdateRule({
+            const { data } = await qualityBindTier({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
@@ -1794,6 +1782,154 @@ export const rolesListOptions = (options?: Options<RolesListData>) => {
         },
         queryKey: rolesListQueryKey(options)
     });
+};
+
+/**
+ * Dry-run routing rules against a download candidate
+ * Evaluates at the grab moment and returns the per-rule tri-state dispatch record.
+ */
+export const routingEvaluateMutation = (options?: Partial<Options<RoutingEvaluateData>>): UseMutationOptions<RoutingEvaluateResponse, RoutingEvaluateError, Options<RoutingEvaluateData>> => {
+    const mutationOptions: UseMutationOptions<RoutingEvaluateResponse, RoutingEvaluateError, Options<RoutingEvaluateData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await routingEvaluate({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const routingGetFieldsQueryKey = (options?: Options<RoutingGetFieldsData>) => createQueryKey('routingGetFields', options);
+
+/**
+ * Get routing field definitions
+ */
+export const routingGetFieldsOptions = (options?: Options<RoutingGetFieldsData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await routingGetFields({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: routingGetFieldsQueryKey(options)
+    });
+};
+
+export const routingListRulesQueryKey = (options?: Options<RoutingListRulesData>) => createQueryKey('routingListRules', options);
+
+/**
+ * List routing rules
+ */
+export const routingListRulesOptions = (options?: Options<RoutingListRulesData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await routingListRules({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: routingListRulesQueryKey(options)
+    });
+};
+
+/**
+ * Create routing rule
+ * New rules append to the end of the evaluation order; use the positions endpoint to reorder.
+ */
+export const routingCreateRuleMutation = (options?: Partial<Options<RoutingCreateRuleData>>): UseMutationOptions<RoutingCreateRuleResponse, RoutingCreateRuleError, Options<RoutingCreateRuleData>> => {
+    const mutationOptions: UseMutationOptions<RoutingCreateRuleResponse, RoutingCreateRuleError, Options<RoutingCreateRuleData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await routingCreateRule({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Reorder routing rules
+ * Takes the full ordered id list — reordering is a list-level operation.
+ */
+export const routingReorderRulesMutation = (options?: Partial<Options<RoutingReorderRulesData>>): UseMutationOptions<RoutingReorderRulesResponse, RoutingReorderRulesError, Options<RoutingReorderRulesData>> => {
+    const mutationOptions: UseMutationOptions<RoutingReorderRulesResponse, RoutingReorderRulesError, Options<RoutingReorderRulesData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await routingReorderRules({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Delete routing rule
+ */
+export const routingDeleteRuleMutation = (options?: Partial<Options<RoutingDeleteRuleData>>): UseMutationOptions<RoutingDeleteRuleResponse, RoutingDeleteRuleError, Options<RoutingDeleteRuleData>> => {
+    const mutationOptions: UseMutationOptions<RoutingDeleteRuleResponse, RoutingDeleteRuleError, Options<RoutingDeleteRuleData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await routingDeleteRule({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const routingGetRuleQueryKey = (options: Options<RoutingGetRuleData>) => createQueryKey('routingGetRule', options);
+
+/**
+ * Get routing rule
+ */
+export const routingGetRuleOptions = (options: Options<RoutingGetRuleData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await routingGetRule({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: routingGetRuleQueryKey(options)
+    });
+};
+
+/**
+ * Update routing rule
+ */
+export const routingUpdateRuleMutation = (options?: Partial<Options<RoutingUpdateRuleData>>): UseMutationOptions<RoutingUpdateRuleResponse, RoutingUpdateRuleError, Options<RoutingUpdateRuleData>> => {
+    const mutationOptions: UseMutationOptions<RoutingUpdateRuleResponse, RoutingUpdateRuleError, Options<RoutingUpdateRuleData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await routingUpdateRule({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
 };
 
 export const mediaSearchQueryKey = (options: Options<MediaSearchData>) => createQueryKey('mediaSearch', options);
@@ -1870,7 +2006,7 @@ export const mediaGetSeriesOptions = (options: Options<MediaGetSeriesData>) => {
 
 /**
  * Enqueue a series download candidate
- * Runs the policy engine, creates a download job (with season/episode if supplied), and returns the trace + job.
+ * Dispatches routing rules, creates a download job (with season/episode if supplied), and returns the evaluation + job.
  */
 export const downloadCandidatesDownloadSeriesMutation = (options?: Partial<Options<DownloadCandidatesDownloadSeriesData>>): UseMutationOptions<DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesDownloadSeriesError, Options<DownloadCandidatesDownloadSeriesData>> => {
     const mutationOptions: UseMutationOptions<DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesDownloadSeriesError, Options<DownloadCandidatesDownloadSeriesData>> = {
@@ -1887,7 +2023,7 @@ export const downloadCandidatesDownloadSeriesMutation = (options?: Partial<Optio
 };
 
 /**
- * Preview policy evaluation for a series candidate
+ * Preview routing dispatch for a series candidate
  */
 export const downloadCandidatesPreviewSeriesMutation = (options?: Partial<Options<DownloadCandidatesPreviewSeriesData>>): UseMutationOptions<DownloadCandidatesPreviewSeriesResponse, DownloadCandidatesPreviewSeriesError, Options<DownloadCandidatesPreviewSeriesData>> => {
     const mutationOptions: UseMutationOptions<DownloadCandidatesPreviewSeriesResponse, DownloadCandidatesPreviewSeriesError, Options<DownloadCandidatesPreviewSeriesData>> = {

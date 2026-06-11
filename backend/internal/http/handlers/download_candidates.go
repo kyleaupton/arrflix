@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/routing"
 	"github.com/kyleaupton/arrflix/internal/service"
 )
 
@@ -30,8 +31,8 @@ type enqueueCandidateBody struct {
 }
 
 type DownloadCandidateResponse struct {
-	Trace model.EvaluationTrace `json:"trace"`
-	Job   model.DownloadJob     `json:"job"`
+	Evaluation routing.Evaluation `json:"evaluation"`
+	Job        model.DownloadJob  `json:"job"`
 }
 
 // ----- ListMovieCandidates -----
@@ -93,7 +94,7 @@ type DownloadCandidatesPreviewMovieInput struct {
 }
 
 type DownloadCandidatesPreviewMovieOutput struct {
-	Body model.EvaluationTrace
+	Body routing.Evaluation
 }
 
 func (h *DownloadCandidates) PreviewMovie(ctx context.Context, input *DownloadCandidatesPreviewMovieInput) (*DownloadCandidatesPreviewMovieOutput, error) {
@@ -112,7 +113,7 @@ type DownloadCandidatesPreviewSeriesInput struct {
 }
 
 type DownloadCandidatesPreviewSeriesOutput struct {
-	Body model.EvaluationTrace
+	Body routing.Evaluation
 }
 
 func (h *DownloadCandidates) PreviewSeries(ctx context.Context, input *DownloadCandidatesPreviewSeriesInput) (*DownloadCandidatesPreviewSeriesOutput, error) {
@@ -139,7 +140,7 @@ func (h *DownloadCandidates) DownloadMovie(ctx context.Context, input *DownloadC
 	if err != nil {
 		return nil, err
 	}
-	return &DownloadCandidatesDownloadMovieOutput{Body: DownloadCandidateResponse{Trace: trace, Job: job}}, nil
+	return &DownloadCandidatesDownloadMovieOutput{Body: DownloadCandidateResponse{Evaluation: trace, Job: job}}, nil
 }
 
 // ----- DownloadSeriesCandidate -----
@@ -158,7 +159,7 @@ func (h *DownloadCandidates) DownloadSeries(ctx context.Context, input *Download
 	if err != nil {
 		return nil, err
 	}
-	return &DownloadCandidatesDownloadSeriesOutput{Body: DownloadCandidateResponse{Trace: trace, Job: job}}, nil
+	return &DownloadCandidatesDownloadSeriesOutput{Body: DownloadCandidateResponse{Evaluation: trace, Job: job}}, nil
 }
 
 // ----- Register -----
@@ -186,7 +187,7 @@ func (h *DownloadCandidates) RegisterHumachi(api huma.API) {
 		OperationID: "download-candidates-preview-movie",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/movie/{id}/candidate/preview",
-		Summary:     "Preview policy evaluation for a movie candidate",
+		Summary:     "Preview routing dispatch for a movie candidate",
 		Tags:        []string{"download-candidates"},
 		Errors:      errs(errsUpsert, errsUpstream),
 	}, h.PreviewMovie)
@@ -195,7 +196,7 @@ func (h *DownloadCandidates) RegisterHumachi(api huma.API) {
 		OperationID: "download-candidates-preview-series",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/series/{id}/candidate/preview",
-		Summary:     "Preview policy evaluation for a series candidate",
+		Summary:     "Preview routing dispatch for a series candidate",
 		Tags:        []string{"download-candidates"},
 		Errors:      errs(errsUpsert, errsUpstream),
 	}, h.PreviewSeries)
@@ -205,7 +206,7 @@ func (h *DownloadCandidates) RegisterHumachi(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/movie/{id}/candidate/download",
 		Summary:     "Enqueue a movie download candidate",
-		Description: "Runs the policy engine, creates a download job, and returns the trace + job.",
+		Description: "Dispatches routing rules, creates a download job, and returns the evaluation + job.",
 		Tags:        []string{"download-candidates"},
 		Errors:      errs(errsUpsert, errsUpstream),
 	}, h.DownloadMovie)
@@ -215,7 +216,7 @@ func (h *DownloadCandidates) RegisterHumachi(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/series/{id}/candidate/download",
 		Summary:     "Enqueue a series download candidate",
-		Description: "Runs the policy engine, creates a download job (with season/episode if supplied), and returns the trace + job.",
+		Description: "Dispatches routing rules, creates a download job (with season/episode if supplied), and returns the evaluation + job.",
 		Tags:        []string{"download-candidates"},
 		Errors:      errs(errsUpsert, errsUpstream),
 	}, h.DownloadSeries)

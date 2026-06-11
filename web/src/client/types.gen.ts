@@ -4,48 +4,21 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
-export type Action = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    createdAt: string;
-    id: string;
-    order: number;
-    policyId: string;
-    type: string;
-    updatedAt: string;
-    value: string;
-};
-
-export type ActionInfo = {
-    order: number;
-    type: string;
-    value: string;
-};
-
-export type ActionWriteBody = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    /**
-     * Order within the policy's action list
-     */
-    order: number;
-    /**
-     * Action type
-     */
-    type: string;
-    /**
-     * Action value
-     */
-    value: string;
+export type ActionSet = {
+    downloaderId?: string;
+    libraryId?: string;
+    nameTemplateId?: string;
 };
 
 export type Availability = {
     isInLibrary: boolean;
     libraries: Array<LibraryAvailability> | null;
+};
+
+export type BinKey = {
+    Modifier: string;
+    Resolution: string;
+    Source: string;
 };
 
 export type BootstrapConfig = {
@@ -101,6 +74,23 @@ export type BootstrapUser = {
     username: string | null;
 };
 
+export type CandidateFields = {
+    Age: number;
+    AgeHours: number;
+    Categories: Array<string> | null;
+    GUID: string;
+    Grabs: number;
+    Indexer: string;
+    IndexerID: number;
+    Link: string;
+    Peers: number;
+    Protocol: string;
+    PublishDate: string;
+    Seeders: number;
+    Size: number;
+    Title: string;
+};
+
 export type Capabilities = {
     bookSearchParams: Array<string> | null;
     categories: Array<Categories> | null;
@@ -127,27 +117,6 @@ export type Categories = {
     subCategories: Array<Categories> | null;
 };
 
-export type ContextSnapshot = {
-    candidate: {
-        [key: string]: unknown;
-    };
-    identity: {
-        [key: string]: unknown;
-    };
-    media: {
-        [key: string]: unknown;
-    };
-    mediainfo?: {
-        [key: string]: unknown;
-    };
-    quality: {
-        [key: string]: unknown;
-    };
-    release: {
-        [key: string]: unknown;
-    };
-};
-
 export type Credits = {
     cast: Array<CastMember> | null;
     crew: Array<CrewMember> | null;
@@ -159,6 +128,38 @@ export type CrewMember = {
     name: string;
     profilePath?: string;
     tmdbId: number;
+};
+
+export type CustomFormat = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    conditions: unknown;
+    createdAt: string;
+    domain: string;
+    id: string;
+    name: string;
+    updatedAt: string;
+};
+
+export type CustomFormatWriteBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Condition tree (canonical rules JSON)
+     */
+    conditions: unknown;
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Display name
+     */
+    name: string;
 };
 
 export type DecidedWithDto = {
@@ -211,8 +212,8 @@ export type DownloadCandidateResponse = {
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    evaluation: Evaluation;
     job: DownloadJob;
-    trace: EvaluationTrace;
 };
 
 export type DownloadJob = {
@@ -485,6 +486,11 @@ export type DownloadersTestConfigBody = {
     username?: string;
 };
 
+export type EncodeFields = {
+    HardcodedSubs: FieldString;
+    ReleaseGroup: FieldString;
+};
+
 export type EnqueueCandidateBody = {
     /**
      * A URL to the JSON Schema for this object.
@@ -529,14 +535,15 @@ export type EpisodeRefDto = {
     season: number;
 };
 
-export type EvaluationTrace = {
+export type Evaluation = {
     /**
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
-    context?: ContextSnapshot;
-    finalPlan: Plan;
-    policies: Array<PolicyEvaluation> | null;
+    fellBack: Fallbacks;
+    final: ActionSet;
+    fired: Array<string> | null;
+    rules: Array<RuleEvaluation> | null;
 };
 
 export type EventsSubscriptionsAddInputBody = {
@@ -566,6 +573,12 @@ export type ExternalRefDto = {
     source: 'tmdb' | 'imdb' | 'tvdb';
 };
 
+export type Fallbacks = {
+    downloader: boolean;
+    library: boolean;
+    nameTemplate: boolean;
+};
+
 export type Feed = {
     /**
      * A URL to the JSON Schema for this object.
@@ -582,12 +595,19 @@ export type FeedRow = {
     title: string;
 };
 
+export type FieldBool = {
+    Confidence: number;
+    Evidence: string;
+    Value: boolean;
+};
+
 export type FieldDefinition = {
     dynamicSource?: string;
     enumValues?: Array<EnumValue> | null;
     label: string;
     operators: Array<string> | null;
     path: string;
+    phase: string;
     type: string;
     valueType: string;
 };
@@ -603,6 +623,24 @@ export type FieldInput = {
     value?: unknown;
 };
 
+export type FieldInt = {
+    Confidence: number;
+    Evidence: string;
+    Value: number;
+};
+
+export type FieldListInt = {
+    Confidence: number;
+    Evidence: string;
+    Value: Array<number> | null;
+};
+
+export type FieldListString = {
+    Confidence: number;
+    Evidence: string;
+    Value: Array<string> | null;
+};
+
 export type FieldOutput = {
     advanced?: boolean;
     helpLink?: string;
@@ -616,6 +654,12 @@ export type FieldOutput = {
     selectOptionsProviderAction?: string;
     type?: string;
     value?: unknown;
+};
+
+export type FieldString = {
+    Confidence: number;
+    Evidence: string;
+    Value: string;
 };
 
 export type FileInfo = {
@@ -716,6 +760,31 @@ export type HydratedTitle = {
     tmdbId: number;
     voteAverage?: number;
     year?: number;
+};
+
+export type IdentityFields = {
+    AbsoluteNumbers: FieldListInt;
+    AirDate: FieldString;
+    AllTitles: FieldListString;
+    DailyPart: FieldInt;
+    Edition: FieldString;
+    EpisodeNumbers: FieldListInt;
+    FullSeason: FieldBool;
+    IsAbsoluteNumbering: FieldBool;
+    IsDaily: FieldBool;
+    IsMiniSeries: FieldBool;
+    IsMultiSeason: FieldBool;
+    IsPartialSeason: FieldBool;
+    IsPossibleSpecialEpisode: FieldBool;
+    IsSeasonExtra: FieldBool;
+    IsSplitEpisode: FieldBool;
+    ReleaseType: FieldString;
+    Season: FieldInt;
+    SeasonPart: FieldInt;
+    Special: FieldBool;
+    Title: FieldString;
+    TypeHint: FieldString;
+    Year: FieldInt;
 };
 
 export type ImportTask = {
@@ -1153,6 +1222,41 @@ export type MeResponse = {
     sub: string;
 };
 
+export type MediaFields = {
+    CleanTitle: string;
+    Episode: number | null;
+    EpisodeTitle: string | null;
+    Runtime: number | null;
+    Season: number | null;
+    Title: string;
+    TmdbID: number;
+    Type: string;
+    Year: number;
+};
+
+export type MediaInfoFields = {
+    AudioBitrate: number;
+    AudioChannels: string;
+    AudioCodec: string;
+    AudioLanguages: Array<string> | null;
+    AudioProfile: string;
+    AudioStreamCount: number;
+    Container: string;
+    Duration: number;
+    FileSize: number;
+    HDR: string;
+    Height: number;
+    ScanType: string;
+    Subtitles: Array<string> | null;
+    VideoBitDepth: number;
+    VideoBitrate: number;
+    VideoCodec: string;
+    VideoFps: number;
+    VideoMultiViewCount: number;
+    VideoProfile: string;
+    Width: number;
+};
+
 export type MetadataItem = {
     externalId: string;
     redirected?: boolean;
@@ -1324,12 +1428,6 @@ export type PingPayload = {
     ts: number;
 };
 
-export type Plan = {
-    downloaderId: string;
-    libraryId: string;
-    nameTemplateId: string;
-};
-
 export type PlexExchangeInputBody = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1352,70 +1450,6 @@ export type PlexExchangeResponse = {
     token: string;
 };
 
-export type PoliciesEvaluateBody = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    /**
-     * The download candidate to evaluate
-     */
-    candidate: DownloadCandidate;
-    /**
-     * Media type to evaluate against (movie or series). Required — parsing is now domain-dispatched.
-     */
-    mediaType: 'movie' | 'series';
-};
-
-export type Policy = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    actions: Array<Action> | null;
-    createdAt: string;
-    description: string | null;
-    enabled: boolean;
-    id: string;
-    name: string;
-    priority: number;
-    rule: Rule;
-    updatedAt: string;
-};
-
-export type PolicyEvaluation = {
-    actionsApplied: Array<ActionInfo> | null;
-    matched: boolean;
-    policyId: string;
-    policyName: string;
-    priority: number;
-    ruleEvaluated?: RuleInfo;
-    stoppedProcessing: boolean;
-};
-
-export type PolicyWriteBody = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    /**
-     * Optional description
-     */
-    description?: string;
-    /**
-     * Whether the policy is active
-     */
-    enabled: boolean;
-    /**
-     * Display name
-     */
-    name: string;
-    /**
-     * Evaluation priority (higher runs first)
-     */
-    priority: number;
-};
-
 export type ProblemDetails = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1426,6 +1460,165 @@ export type ProblemDetails = {
     status: number;
     title: string;
     type: string;
+};
+
+export type ProfileFormat = {
+    customFormatId: string;
+    weight: number;
+};
+
+export type QualityBinOption = {
+    bin: BinKey;
+    /**
+     * Rendered display name
+     */
+    name: string;
+};
+
+export type QualityBinSize = {
+    bin: BinKey;
+    max: number;
+    min: number;
+    preferred: number;
+};
+
+export type QualityBindTierBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Profile the tier resolves to
+     */
+    profileId: string;
+    /**
+     * Coarse quality tier
+     */
+    tier: 'HD' | '4K';
+};
+
+export type QualityEvaluation = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    Bin: BinKey;
+    Disposition: string;
+    Passed: boolean;
+    RejectReason: RejectReason;
+    Score: number;
+    Subject: Subject;
+    Trace: Array<Trace> | null;
+};
+
+export type QualityFields = {
+    Full: FieldString;
+    IsRepack: FieldBool;
+    Modifier: FieldString;
+    Name: FieldString;
+    Real: FieldInt;
+    Resolution: FieldString;
+    Source: FieldString;
+    Version: FieldInt;
+};
+
+export type QualityProfile = {
+    bins: Array<BinKey> | null;
+    createdAt: string;
+    cutoff: BinKey;
+    domain: string;
+    gates: unknown;
+    id: string;
+    indexers: Array<string> | null;
+    minSeeders: number;
+    name: string;
+    sizeOverrides: Array<QualityBinSize> | null;
+    updatedAt: string;
+};
+
+export type QualityProfileDetail = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    bins: Array<BinKey> | null;
+    createdAt: string;
+    cutoff: BinKey;
+    domain: string;
+    formats: Array<ProfileFormat> | null;
+    gates: unknown;
+    id: string;
+    indexers: Array<string> | null;
+    minSeeders: number;
+    name: string;
+    sizeOverrides: Array<QualityBinSize> | null;
+    updatedAt: string;
+};
+
+export type QualityProfileWriteBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Allowed bins ranked best-first (index 0 is best)
+     */
+    bins: Array<BinKey> | null;
+    /**
+     * Bin at which upgrading stops; must be one of bins
+     */
+    cutoff: BinKey;
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Scored custom-format assignments (id + weight)
+     */
+    formats?: Array<ProfileFormat> | null;
+    /**
+     * Hard gates as [{name, tree}] where tree is canonical rules JSON
+     */
+    gates?: unknown;
+    /**
+     * Indexers a search fans out to (empty = all)
+     */
+    indexers?: Array<string> | null;
+    /**
+     * Reject torrents with fewer seeders
+     */
+    minSeeders: number;
+    /**
+     * Display name
+     */
+    name: string;
+    /**
+     * Per-bin size band overrides in bytes/minute
+     */
+    sizeOverrides?: Array<QualityBinSize> | null;
+};
+
+export type QualitySizeDefault = {
+    bin: BinKey;
+    domain: string;
+    max: number;
+    min: number;
+    preferred: number;
+};
+
+export type QualityTestBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Release title to evaluate against the profile
+     */
+    title: string;
 };
 
 export type ReadyPayload = {
@@ -1442,6 +1635,25 @@ export type ReimportResult = {
     skipped_count: number;
 };
 
+export type RejectReason = {
+    Detail: string;
+    Gate: string;
+};
+
+export type Release = {
+    Candidate: CandidateFields;
+    Encode: EncodeFields;
+    Identity: IdentityFields;
+    MediaInfo: MediaInfoFields;
+    Quality: QualityFields;
+};
+
+export type Resolved = {
+    available: boolean;
+    path?: string;
+    value: unknown;
+};
+
 export type ResumeGapPayload = {
     reason: string;
 };
@@ -1454,45 +1666,93 @@ export type Role = {
     name: string;
 };
 
-export type Rule = {
+export type RoutingEvaluateBody = {
     /**
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    /**
+     * The download candidate to evaluate
+     */
+    candidate: DownloadCandidate;
+    /**
+     * Media type to evaluate against (movie or series). Required — parsing is domain-dispatched.
+     */
+    mediaType: 'movie' | 'series';
+};
+
+export type RoutingReorderBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Every rule id in the desired evaluation order
+     */
+    ids: Array<string> | null;
+};
+
+export type RoutingRule = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    conditions: unknown;
+    continue: boolean;
     createdAt: string;
+    downloaderId?: string;
+    enabled: boolean;
     id: string;
-    leftOperand: string;
-    operator: string;
-    policyId: string;
-    rightOperand: string;
+    libraryId?: string;
+    name: string;
+    nameTemplateId?: string;
+    position: number;
     updatedAt: string;
 };
 
-export type RuleInfo = {
-    leftOperand: string;
-    leftResolvedValue?: unknown;
-    operator: string;
-    rightOperand: string;
-    rightResolvedValue?: unknown;
-};
-
-export type RuleWriteBody = {
+export type RoutingRuleWriteBody = {
     /**
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
     /**
-     * Left operand of the rule
+     * Condition tree (canonical rules JSON: {op, left, right} leaves composed by and/or/not)
      */
-    leftOperand: string;
+    conditions: unknown;
     /**
-     * Operator
+     * Keep evaluating later rules after this one matches (they fill only unset slots)
      */
-    operator: string;
+    continue: boolean;
     /**
-     * Right operand
+     * Downloader applied on match
      */
-    rightOperand: string;
+    downloaderId?: string;
+    /**
+     * Whether the rule participates in dispatch
+     */
+    enabled: boolean;
+    /**
+     * Library applied on match
+     */
+    libraryId?: string;
+    /**
+     * Display name
+     */
+    name: string;
+    /**
+     * Name template applied on match
+     */
+    nameTemplateId?: string;
+};
+
+export type RuleEvaluation = {
+    fired: boolean;
+    id: string;
+    incomplete?: boolean;
+    name: string;
+    result?: string;
+    skipped?: boolean;
+    trace?: Trace;
 };
 
 export type ScanCompletedPayload = {
@@ -1721,6 +1981,12 @@ export type SignupResponse = {
     success: boolean;
 };
 
+export type Subject = {
+    Media: MediaFields;
+    Release: Release;
+    Want: WantFields;
+};
+
 export type SuggestedExternalRef = {
     externalId: string;
     source: string;
@@ -1747,6 +2013,24 @@ export type TestResult = {
     success: boolean;
     version?: string;
     webApiVersion?: string;
+};
+
+export type TierBinding = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    domain: string;
+    profileId: string;
+    tier: string;
+};
+
+export type Trace = {
+    children?: Array<Trace> | null;
+    left?: Resolved;
+    op: string;
+    result: string;
+    right?: Resolved;
 };
 
 export type UpdateDetails = {
@@ -1836,6 +2120,12 @@ export type Video = {
     type: string;
 };
 
+export type WantFields = {
+    Requesters: Array<string> | null;
+    Tier: string;
+    Trigger: string;
+};
+
 export type WatchProvider = {
     displayPriority: number;
     logoPath: string;
@@ -1848,31 +2138,6 @@ export type WatchProviders = {
     flatrate?: Array<WatchProvider> | null;
     link?: string;
     rent?: Array<WatchProvider> | null;
-};
-
-export type ActionWritable = {
-    createdAt: string;
-    id: string;
-    order: number;
-    policyId: string;
-    type: string;
-    updatedAt: string;
-    value: string;
-};
-
-export type ActionWriteBodyWritable = {
-    /**
-     * Order within the policy's action list
-     */
-    order: number;
-    /**
-     * Action type
-     */
-    type: string;
-    /**
-     * Action value
-     */
-    value: string;
 };
 
 export type BootstrapResponseWritable = {
@@ -1894,9 +2159,33 @@ export type BootstrapResponseWritable = {
     user: BootstrapUser;
 };
 
+export type CustomFormatWritable = {
+    conditions: unknown;
+    createdAt: string;
+    domain: string;
+    id: string;
+    name: string;
+    updatedAt: string;
+};
+
+export type CustomFormatWriteBodyWritable = {
+    /**
+     * Condition tree (canonical rules JSON)
+     */
+    conditions: unknown;
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Display name
+     */
+    name: string;
+};
+
 export type DownloadCandidateResponseWritable = {
+    evaluation: EvaluationWritable;
     job: DownloadJob;
-    trace: EvaluationTraceWritable;
 };
 
 export type DownloadJobWithSummaryWritable = {
@@ -2045,10 +2334,11 @@ export type EnqueueCandidateBodyWritable = {
     season?: number;
 };
 
-export type EvaluationTraceWritable = {
-    context?: ContextSnapshot;
-    finalPlan: Plan;
-    policies: Array<PolicyEvaluation> | null;
+export type EvaluationWritable = {
+    fellBack: Fallbacks;
+    final: ActionSet;
+    fired: Array<string> | null;
+    rules: Array<RuleEvaluation> | null;
 };
 
 export type EventsSubscriptionsAddInputBodyWritable = {
@@ -2483,48 +2773,6 @@ export type PlexExchangeResponseWritable = {
     token: string;
 };
 
-export type PoliciesEvaluateBodyWritable = {
-    /**
-     * The download candidate to evaluate
-     */
-    candidate: DownloadCandidate;
-    /**
-     * Media type to evaluate against (movie or series). Required — parsing is now domain-dispatched.
-     */
-    mediaType: 'movie' | 'series';
-};
-
-export type PolicyWritable = {
-    actions: Array<ActionWritable> | null;
-    createdAt: string;
-    description: string | null;
-    enabled: boolean;
-    id: string;
-    name: string;
-    priority: number;
-    rule: RuleWritable;
-    updatedAt: string;
-};
-
-export type PolicyWriteBodyWritable = {
-    /**
-     * Optional description
-     */
-    description?: string;
-    /**
-     * Whether the policy is active
-     */
-    enabled: boolean;
-    /**
-     * Display name
-     */
-    name: string;
-    /**
-     * Evaluation priority (higher runs first)
-     */
-    priority: number;
-};
-
 export type ProblemDetailsWritable = {
     detail?: string;
     errors?: Array<FieldError> | null;
@@ -2533,34 +2781,158 @@ export type ProblemDetailsWritable = {
     type: string;
 };
 
+export type QualityBindTierBodyWritable = {
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Profile the tier resolves to
+     */
+    profileId: string;
+    /**
+     * Coarse quality tier
+     */
+    tier: 'HD' | '4K';
+};
+
+export type QualityEvaluationWritable = {
+    Bin: BinKey;
+    Disposition: string;
+    Passed: boolean;
+    RejectReason: RejectReason;
+    Score: number;
+    Subject: Subject;
+    Trace: Array<Trace> | null;
+};
+
+export type QualityProfileDetailWritable = {
+    bins: Array<BinKey> | null;
+    createdAt: string;
+    cutoff: BinKey;
+    domain: string;
+    formats: Array<ProfileFormat> | null;
+    gates: unknown;
+    id: string;
+    indexers: Array<string> | null;
+    minSeeders: number;
+    name: string;
+    sizeOverrides: Array<QualityBinSize> | null;
+    updatedAt: string;
+};
+
+export type QualityProfileWriteBodyWritable = {
+    /**
+     * Allowed bins ranked best-first (index 0 is best)
+     */
+    bins: Array<BinKey> | null;
+    /**
+     * Bin at which upgrading stops; must be one of bins
+     */
+    cutoff: BinKey;
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Scored custom-format assignments (id + weight)
+     */
+    formats?: Array<ProfileFormat> | null;
+    /**
+     * Hard gates as [{name, tree}] where tree is canonical rules JSON
+     */
+    gates?: unknown;
+    /**
+     * Indexers a search fans out to (empty = all)
+     */
+    indexers?: Array<string> | null;
+    /**
+     * Reject torrents with fewer seeders
+     */
+    minSeeders: number;
+    /**
+     * Display name
+     */
+    name: string;
+    /**
+     * Per-bin size band overrides in bytes/minute
+     */
+    sizeOverrides?: Array<QualityBinSize> | null;
+};
+
+export type QualityTestBodyWritable = {
+    /**
+     * Release title to evaluate against the profile
+     */
+    title: string;
+};
+
 export type ReimportResultWritable = {
     created_tasks: Array<ImportTaskWritable> | null;
     skipped_count: number;
 };
 
-export type RuleWritable = {
+export type RoutingEvaluateBodyWritable = {
+    /**
+     * The download candidate to evaluate
+     */
+    candidate: DownloadCandidate;
+    /**
+     * Media type to evaluate against (movie or series). Required — parsing is domain-dispatched.
+     */
+    mediaType: 'movie' | 'series';
+};
+
+export type RoutingReorderBodyWritable = {
+    /**
+     * Every rule id in the desired evaluation order
+     */
+    ids: Array<string> | null;
+};
+
+export type RoutingRuleWritable = {
+    conditions: unknown;
+    continue: boolean;
     createdAt: string;
+    downloaderId?: string;
+    enabled: boolean;
     id: string;
-    leftOperand: string;
-    operator: string;
-    policyId: string;
-    rightOperand: string;
+    libraryId?: string;
+    name: string;
+    nameTemplateId?: string;
+    position: number;
     updatedAt: string;
 };
 
-export type RuleWriteBodyWritable = {
+export type RoutingRuleWriteBodyWritable = {
     /**
-     * Left operand of the rule
+     * Condition tree (canonical rules JSON: {op, left, right} leaves composed by and/or/not)
      */
-    leftOperand: string;
+    conditions: unknown;
     /**
-     * Operator
+     * Keep evaluating later rules after this one matches (they fill only unset slots)
      */
-    operator: string;
+    continue: boolean;
     /**
-     * Right operand
+     * Downloader applied on match
      */
-    rightOperand: string;
+    downloaderId?: string;
+    /**
+     * Whether the rule participates in dispatch
+     */
+    enabled: boolean;
+    /**
+     * Library applied on match
+     */
+    libraryId?: string;
+    /**
+     * Display name
+     */
+    name: string;
+    /**
+     * Name template applied on match
+     */
+    nameTemplateId?: string;
 };
 
 export type ScanResponseWritable = {
@@ -2687,6 +3059,12 @@ export type TestResultWritable = {
     success: boolean;
     version?: string;
     webApiVersion?: string;
+};
+
+export type TierBindingWritable = {
+    domain: string;
+    profileId: string;
+    tier: string;
 };
 
 export type UserWritable = {
@@ -3028,6 +3406,206 @@ export type BootstrapGetResponses = {
 };
 
 export type BootstrapGetResponse = BootstrapGetResponses[keyof BootstrapGetResponses];
+
+export type QualityListCustomFormatsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/custom-formats';
+};
+
+export type QualityListCustomFormatsErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type QualityListCustomFormatsError = QualityListCustomFormatsErrors[keyof QualityListCustomFormatsErrors];
+
+export type QualityListCustomFormatsResponses = {
+    /**
+     * OK
+     */
+    200: Array<CustomFormat> | null;
+};
+
+export type QualityListCustomFormatsResponse = QualityListCustomFormatsResponses[keyof QualityListCustomFormatsResponses];
+
+export type QualityCreateCustomFormatData = {
+    body: CustomFormatWriteBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/custom-formats';
+};
+
+export type QualityCreateCustomFormatErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityCreateCustomFormatError = QualityCreateCustomFormatErrors[keyof QualityCreateCustomFormatErrors];
+
+export type QualityCreateCustomFormatResponses = {
+    /**
+     * Created
+     */
+    201: CustomFormat;
+};
+
+export type QualityCreateCustomFormatResponse = QualityCreateCustomFormatResponses[keyof QualityCreateCustomFormatResponses];
+
+export type QualityDeleteCustomFormatData = {
+    body?: never;
+    path: {
+        /**
+         * Custom format ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/custom-formats/{id}';
+};
+
+export type QualityDeleteCustomFormatErrors = {
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityDeleteCustomFormatError = QualityDeleteCustomFormatErrors[keyof QualityDeleteCustomFormatErrors];
+
+export type QualityDeleteCustomFormatResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type QualityDeleteCustomFormatResponse = QualityDeleteCustomFormatResponses[keyof QualityDeleteCustomFormatResponses];
+
+export type QualityGetCustomFormatData = {
+    body?: never;
+    path: {
+        /**
+         * Custom format ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/custom-formats/{id}';
+};
+
+export type QualityGetCustomFormatErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityGetCustomFormatError = QualityGetCustomFormatErrors[keyof QualityGetCustomFormatErrors];
+
+export type QualityGetCustomFormatResponses = {
+    /**
+     * OK
+     */
+    200: CustomFormat;
+};
+
+export type QualityGetCustomFormatResponse = QualityGetCustomFormatResponses[keyof QualityGetCustomFormatResponses];
+
+export type QualityUpdateCustomFormatData = {
+    body: CustomFormatWriteBodyWritable;
+    path: {
+        /**
+         * Custom format ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/custom-formats/{id}';
+};
+
+export type QualityUpdateCustomFormatErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityUpdateCustomFormatError = QualityUpdateCustomFormatErrors[keyof QualityUpdateCustomFormatErrors];
+
+export type QualityUpdateCustomFormatResponses = {
+    /**
+     * OK
+     */
+    200: CustomFormat;
+};
+
+export type QualityUpdateCustomFormatResponse = QualityUpdateCustomFormatResponses[keyof QualityUpdateCustomFormatResponses];
 
 export type DownloadJobsListData = {
     body?: never;
@@ -5274,7 +5852,7 @@ export type DownloadCandidatesPreviewMovieResponses = {
     /**
      * OK
      */
-    200: EvaluationTrace;
+    200: Evaluation;
 };
 
 export type DownloadCandidatesPreviewMovieResponse = DownloadCandidatesPreviewMovieResponses[keyof DownloadCandidatesPreviewMovieResponses];
@@ -5619,227 +6197,77 @@ export type MediaGetPersonResponses = {
 
 export type MediaGetPersonResponse = MediaGetPersonResponses[keyof MediaGetPersonResponses];
 
-export type PoliciesListData = {
+export type QualityListBinsData = {
     body?: never;
     path?: never;
-    query?: never;
-    url: '/api/v1/policies';
+    query: {
+        /**
+         * Media domain
+         */
+        domain: 'movie' | 'series';
+    };
+    url: '/api/v1/quality-bins';
 };
 
-export type PoliciesListErrors = {
+export type QualityListBinsErrors = {
     /**
      * Error
      */
     default: ProblemDetails;
 };
 
-export type PoliciesListError = PoliciesListErrors[keyof PoliciesListErrors];
+export type QualityListBinsError = QualityListBinsErrors[keyof QualityListBinsErrors];
 
-export type PoliciesListResponses = {
+export type QualityListBinsResponses = {
     /**
      * OK
      */
-    200: Array<Policy> | null;
+    200: Array<QualityBinOption> | null;
 };
 
-export type PoliciesListResponse = PoliciesListResponses[keyof PoliciesListResponses];
+export type QualityListBinsResponse = QualityListBinsResponses[keyof QualityListBinsResponses];
 
-export type PoliciesCreateData = {
-    body: PolicyWriteBodyWritable;
-    path?: never;
-    query?: never;
-    url: '/api/v1/policies';
-};
-
-export type PoliciesCreateErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesCreateError = PoliciesCreateErrors[keyof PoliciesCreateErrors];
-
-export type PoliciesCreateResponses = {
-    /**
-     * Created
-     */
-    201: Policy;
-};
-
-export type PoliciesCreateResponse = PoliciesCreateResponses[keyof PoliciesCreateResponses];
-
-export type PoliciesEvaluateData = {
-    body: PoliciesEvaluateBodyWritable;
-    path?: never;
-    query?: never;
-    url: '/api/v1/policies/evaluate';
-};
-
-export type PoliciesEvaluateErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesEvaluateError = PoliciesEvaluateErrors[keyof PoliciesEvaluateErrors];
-
-export type PoliciesEvaluateResponses = {
-    /**
-     * OK
-     */
-    200: EvaluationTrace;
-};
-
-export type PoliciesEvaluateResponse = PoliciesEvaluateResponses[keyof PoliciesEvaluateResponses];
-
-export type PoliciesGetFieldsData = {
+export type QualityListProfilesData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/v1/policies/fields';
+    url: '/api/v1/quality-profiles';
 };
 
-export type PoliciesGetFieldsErrors = {
+export type QualityListProfilesErrors = {
     /**
      * Error
      */
     default: ProblemDetails;
 };
 
-export type PoliciesGetFieldsError = PoliciesGetFieldsErrors[keyof PoliciesGetFieldsErrors];
+export type QualityListProfilesError = QualityListProfilesErrors[keyof QualityListProfilesErrors];
 
-export type PoliciesGetFieldsResponses = {
+export type QualityListProfilesResponses = {
     /**
      * OK
      */
-    200: Array<FieldDefinition> | null;
+    200: Array<QualityProfile> | null;
 };
 
-export type PoliciesGetFieldsResponse = PoliciesGetFieldsResponses[keyof PoliciesGetFieldsResponses];
+export type QualityListProfilesResponse = QualityListProfilesResponses[keyof QualityListProfilesResponses];
 
-export type PoliciesDeleteData = {
-    body?: never;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
+export type QualityCreateProfileData = {
+    body: QualityProfileWriteBodyWritable;
+    path?: never;
     query?: never;
-    url: '/api/v1/policies/{id}';
+    url: '/api/v1/quality-profiles';
 };
 
-export type PoliciesDeleteErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesDeleteError = PoliciesDeleteErrors[keyof PoliciesDeleteErrors];
-
-export type PoliciesDeleteResponses = {
-    /**
-     * No Content
-     */
-    204: void;
-};
-
-export type PoliciesDeleteResponse = PoliciesDeleteResponses[keyof PoliciesDeleteResponses];
-
-export type PoliciesGetData = {
-    body?: never;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}';
-};
-
-export type PoliciesGetErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesGetError = PoliciesGetErrors[keyof PoliciesGetErrors];
-
-export type PoliciesGetResponses = {
-    /**
-     * OK
-     */
-    200: Policy;
-};
-
-export type PoliciesGetResponse = PoliciesGetResponses[keyof PoliciesGetResponses];
-
-export type PoliciesUpdateData = {
-    body: PolicyWriteBodyWritable;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}';
-};
-
-export type PoliciesUpdateErrors = {
+export type QualityCreateProfileErrors = {
     /**
      * Bad Request
      */
     400: ProblemDetails;
     /**
-     * Not Found
+     * Forbidden
      */
-    404: ProblemDetails;
+    403: ProblemDetails;
     /**
      * Conflict
      */
@@ -5854,122 +6282,42 @@ export type PoliciesUpdateErrors = {
     500: ProblemDetails;
 };
 
-export type PoliciesUpdateError = PoliciesUpdateErrors[keyof PoliciesUpdateErrors];
+export type QualityCreateProfileError = QualityCreateProfileErrors[keyof QualityCreateProfileErrors];
 
-export type PoliciesUpdateResponses = {
-    /**
-     * OK
-     */
-    200: Policy;
-};
-
-export type PoliciesUpdateResponse = PoliciesUpdateResponses[keyof PoliciesUpdateResponses];
-
-export type PoliciesListActionsData = {
-    body?: never;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/actions';
-};
-
-export type PoliciesListActionsErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesListActionsError = PoliciesListActionsErrors[keyof PoliciesListActionsErrors];
-
-export type PoliciesListActionsResponses = {
-    /**
-     * OK
-     */
-    200: Array<Action> | null;
-};
-
-export type PoliciesListActionsResponse = PoliciesListActionsResponses[keyof PoliciesListActionsResponses];
-
-export type PoliciesCreateActionData = {
-    body: ActionWriteBodyWritable;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/actions';
-};
-
-export type PoliciesCreateActionErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesCreateActionError = PoliciesCreateActionErrors[keyof PoliciesCreateActionErrors];
-
-export type PoliciesCreateActionResponses = {
+export type QualityCreateProfileResponses = {
     /**
      * Created
      */
-    201: Action;
+    201: QualityProfileDetail;
 };
 
-export type PoliciesCreateActionResponse = PoliciesCreateActionResponses[keyof PoliciesCreateActionResponses];
+export type QualityCreateProfileResponse = QualityCreateProfileResponses[keyof QualityCreateProfileResponses];
 
-export type PoliciesDeleteActionData = {
+export type QualityDeleteProfileData = {
     body?: never;
     path: {
         /**
-         * Policy ID
+         * Quality profile ID
          */
         id: string;
-        /**
-         * Action ID
-         */
-        actionId: string;
     };
     query?: never;
-    url: '/api/v1/policies/{id}/actions/{actionId}';
+    url: '/api/v1/quality-profiles/{id}';
 };
 
-export type PoliciesDeleteActionErrors = {
+export type QualityDeleteProfileErrors = {
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
     /**
      * Not Found
      */
     404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
     /**
      * Unprocessable Entity
      */
@@ -5980,34 +6328,30 @@ export type PoliciesDeleteActionErrors = {
     500: ProblemDetails;
 };
 
-export type PoliciesDeleteActionError = PoliciesDeleteActionErrors[keyof PoliciesDeleteActionErrors];
+export type QualityDeleteProfileError = QualityDeleteProfileErrors[keyof QualityDeleteProfileErrors];
 
-export type PoliciesDeleteActionResponses = {
+export type QualityDeleteProfileResponses = {
     /**
      * No Content
      */
     204: void;
 };
 
-export type PoliciesDeleteActionResponse = PoliciesDeleteActionResponses[keyof PoliciesDeleteActionResponses];
+export type QualityDeleteProfileResponse = QualityDeleteProfileResponses[keyof QualityDeleteProfileResponses];
 
-export type PoliciesGetActionData = {
+export type QualityGetProfileData = {
     body?: never;
     path: {
         /**
-         * Policy ID
+         * Quality profile ID
          */
         id: string;
-        /**
-         * Action ID
-         */
-        actionId: string;
     };
     query?: never;
-    url: '/api/v1/policies/{id}/actions/{actionId}';
+    url: '/api/v1/quality-profiles/{id}';
 };
 
-export type PoliciesGetActionErrors = {
+export type QualityGetProfileErrors = {
     /**
      * Not Found
      */
@@ -6022,34 +6366,80 @@ export type PoliciesGetActionErrors = {
     500: ProblemDetails;
 };
 
-export type PoliciesGetActionError = PoliciesGetActionErrors[keyof PoliciesGetActionErrors];
+export type QualityGetProfileError = QualityGetProfileErrors[keyof QualityGetProfileErrors];
 
-export type PoliciesGetActionResponses = {
+export type QualityGetProfileResponses = {
     /**
      * OK
      */
-    200: Action;
+    200: QualityProfileDetail;
 };
 
-export type PoliciesGetActionResponse = PoliciesGetActionResponses[keyof PoliciesGetActionResponses];
+export type QualityGetProfileResponse = QualityGetProfileResponses[keyof QualityGetProfileResponses];
 
-export type PoliciesUpdateActionData = {
-    body: ActionWriteBodyWritable;
+export type QualityUpdateProfileData = {
+    body: QualityProfileWriteBodyWritable;
     path: {
         /**
-         * Policy ID
+         * Quality profile ID
          */
         id: string;
-        /**
-         * Action ID
-         */
-        actionId: string;
     };
     query?: never;
-    url: '/api/v1/policies/{id}/actions/{actionId}';
+    url: '/api/v1/quality-profiles/{id}';
 };
 
-export type PoliciesUpdateActionErrors = {
+export type QualityUpdateProfileErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityUpdateProfileError = QualityUpdateProfileErrors[keyof QualityUpdateProfileErrors];
+
+export type QualityUpdateProfileResponses = {
+    /**
+     * OK
+     */
+    200: QualityProfileDetail;
+};
+
+export type QualityUpdateProfileResponse = QualityUpdateProfileResponses[keyof QualityUpdateProfileResponses];
+
+export type QualityTestProfileData = {
+    body: QualityTestBodyWritable;
+    path: {
+        /**
+         * Quality profile ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/quality-profiles/{id}/test';
+};
+
+export type QualityTestProfileErrors = {
     /**
      * Bad Request
      */
@@ -6072,110 +6462,88 @@ export type PoliciesUpdateActionErrors = {
     500: ProblemDetails;
 };
 
-export type PoliciesUpdateActionError = PoliciesUpdateActionErrors[keyof PoliciesUpdateActionErrors];
+export type QualityTestProfileError = QualityTestProfileErrors[keyof QualityTestProfileErrors];
 
-export type PoliciesUpdateActionResponses = {
+export type QualityTestProfileResponses = {
     /**
      * OK
      */
-    200: Action;
+    200: QualityEvaluation;
 };
 
-export type PoliciesUpdateActionResponse = PoliciesUpdateActionResponses[keyof PoliciesUpdateActionResponses];
+export type QualityTestProfileResponse = QualityTestProfileResponses[keyof QualityTestProfileResponses];
 
-export type PoliciesDeleteRuleData = {
+export type QualityListSizeDefaultsData = {
     body?: never;
-    path: {
+    path?: never;
+    query: {
         /**
-         * Policy ID
+         * Media domain
          */
-        id: string;
+        domain: 'movie' | 'series';
     };
-    query?: never;
-    url: '/api/v1/policies/{id}/rule';
+    url: '/api/v1/quality-size-defaults';
 };
 
-export type PoliciesDeleteRuleErrors = {
+export type QualityListSizeDefaultsErrors = {
     /**
-     * Not Found
+     * Error
      */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
+    default: ProblemDetails;
 };
 
-export type PoliciesDeleteRuleError = PoliciesDeleteRuleErrors[keyof PoliciesDeleteRuleErrors];
+export type QualityListSizeDefaultsError = QualityListSizeDefaultsErrors[keyof QualityListSizeDefaultsErrors];
 
-export type PoliciesDeleteRuleResponses = {
-    /**
-     * No Content
-     */
-    204: void;
-};
-
-export type PoliciesDeleteRuleResponse = PoliciesDeleteRuleResponses[keyof PoliciesDeleteRuleResponses];
-
-export type PoliciesGetRuleData = {
-    body?: never;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/rule';
-};
-
-export type PoliciesGetRuleErrors = {
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesGetRuleError = PoliciesGetRuleErrors[keyof PoliciesGetRuleErrors];
-
-export type PoliciesGetRuleResponses = {
+export type QualityListSizeDefaultsResponses = {
     /**
      * OK
      */
-    200: Rule;
+    200: Array<QualitySizeDefault> | null;
 };
 
-export type PoliciesGetRuleResponse = PoliciesGetRuleResponses[keyof PoliciesGetRuleResponses];
+export type QualityListSizeDefaultsResponse = QualityListSizeDefaultsResponses[keyof QualityListSizeDefaultsResponses];
 
-export type PoliciesCreateRuleData = {
-    body: RuleWriteBodyWritable;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
+export type QualityListTiersData = {
+    body?: never;
+    path?: never;
     query?: never;
-    url: '/api/v1/policies/{id}/rule';
+    url: '/api/v1/quality-tiers';
 };
 
-export type PoliciesCreateRuleErrors = {
+export type QualityListTiersErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type QualityListTiersError = QualityListTiersErrors[keyof QualityListTiersErrors];
+
+export type QualityListTiersResponses = {
+    /**
+     * OK
+     */
+    200: Array<TierBinding> | null;
+};
+
+export type QualityListTiersResponse = QualityListTiersResponses[keyof QualityListTiersResponses];
+
+export type QualityBindTierData = {
+    body: QualityBindTierBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/quality-tiers';
+};
+
+export type QualityBindTierErrors = {
     /**
      * Bad Request
      */
     400: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
     /**
      * Not Found
      */
@@ -6194,62 +6562,16 @@ export type PoliciesCreateRuleErrors = {
     500: ProblemDetails;
 };
 
-export type PoliciesCreateRuleError = PoliciesCreateRuleErrors[keyof PoliciesCreateRuleErrors];
+export type QualityBindTierError = QualityBindTierErrors[keyof QualityBindTierErrors];
 
-export type PoliciesCreateRuleResponses = {
-    /**
-     * Created
-     */
-    201: Rule;
-};
-
-export type PoliciesCreateRuleResponse = PoliciesCreateRuleResponses[keyof PoliciesCreateRuleResponses];
-
-export type PoliciesUpdateRuleData = {
-    body: RuleWriteBodyWritable;
-    path: {
-        /**
-         * Policy ID
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/policies/{id}/rule';
-};
-
-export type PoliciesUpdateRuleErrors = {
-    /**
-     * Bad Request
-     */
-    400: ProblemDetails;
-    /**
-     * Not Found
-     */
-    404: ProblemDetails;
-    /**
-     * Conflict
-     */
-    409: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
-};
-
-export type PoliciesUpdateRuleError = PoliciesUpdateRuleErrors[keyof PoliciesUpdateRuleErrors];
-
-export type PoliciesUpdateRuleResponses = {
+export type QualityBindTierResponses = {
     /**
      * OK
      */
-    200: Rule;
+    200: TierBinding;
 };
 
-export type PoliciesUpdateRuleResponse = PoliciesUpdateRuleResponses[keyof PoliciesUpdateRuleResponses];
+export type QualityBindTierResponse = QualityBindTierResponses[keyof QualityBindTierResponses];
 
 export type RolesListData = {
     body?: never;
@@ -6275,6 +6597,289 @@ export type RolesListResponses = {
 };
 
 export type RolesListResponse = RolesListResponses[keyof RolesListResponses];
+
+export type RoutingEvaluateData = {
+    body: RoutingEvaluateBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/evaluate';
+};
+
+export type RoutingEvaluateErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingEvaluateError = RoutingEvaluateErrors[keyof RoutingEvaluateErrors];
+
+export type RoutingEvaluateResponses = {
+    /**
+     * OK
+     */
+    200: Evaluation;
+};
+
+export type RoutingEvaluateResponse = RoutingEvaluateResponses[keyof RoutingEvaluateResponses];
+
+export type RoutingGetFieldsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/fields';
+};
+
+export type RoutingGetFieldsErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type RoutingGetFieldsError = RoutingGetFieldsErrors[keyof RoutingGetFieldsErrors];
+
+export type RoutingGetFieldsResponses = {
+    /**
+     * OK
+     */
+    200: Array<FieldDefinition> | null;
+};
+
+export type RoutingGetFieldsResponse = RoutingGetFieldsResponses[keyof RoutingGetFieldsResponses];
+
+export type RoutingListRulesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/rules';
+};
+
+export type RoutingListRulesErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type RoutingListRulesError = RoutingListRulesErrors[keyof RoutingListRulesErrors];
+
+export type RoutingListRulesResponses = {
+    /**
+     * OK
+     */
+    200: Array<RoutingRule> | null;
+};
+
+export type RoutingListRulesResponse = RoutingListRulesResponses[keyof RoutingListRulesResponses];
+
+export type RoutingCreateRuleData = {
+    body: RoutingRuleWriteBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/rules';
+};
+
+export type RoutingCreateRuleErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingCreateRuleError = RoutingCreateRuleErrors[keyof RoutingCreateRuleErrors];
+
+export type RoutingCreateRuleResponses = {
+    /**
+     * Created
+     */
+    201: RoutingRule;
+};
+
+export type RoutingCreateRuleResponse = RoutingCreateRuleResponses[keyof RoutingCreateRuleResponses];
+
+export type RoutingReorderRulesData = {
+    body: RoutingReorderBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/rules/positions';
+};
+
+export type RoutingReorderRulesErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingReorderRulesError = RoutingReorderRulesErrors[keyof RoutingReorderRulesErrors];
+
+export type RoutingReorderRulesResponses = {
+    /**
+     * OK
+     */
+    200: Array<RoutingRule> | null;
+};
+
+export type RoutingReorderRulesResponse = RoutingReorderRulesResponses[keyof RoutingReorderRulesResponses];
+
+export type RoutingDeleteRuleData = {
+    body?: never;
+    path: {
+        /**
+         * Routing rule ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/routing/rules/{id}';
+};
+
+export type RoutingDeleteRuleErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingDeleteRuleError = RoutingDeleteRuleErrors[keyof RoutingDeleteRuleErrors];
+
+export type RoutingDeleteRuleResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type RoutingDeleteRuleResponse = RoutingDeleteRuleResponses[keyof RoutingDeleteRuleResponses];
+
+export type RoutingGetRuleData = {
+    body?: never;
+    path: {
+        /**
+         * Routing rule ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/routing/rules/{id}';
+};
+
+export type RoutingGetRuleErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingGetRuleError = RoutingGetRuleErrors[keyof RoutingGetRuleErrors];
+
+export type RoutingGetRuleResponses = {
+    /**
+     * OK
+     */
+    200: RoutingRule;
+};
+
+export type RoutingGetRuleResponse = RoutingGetRuleResponses[keyof RoutingGetRuleResponses];
+
+export type RoutingUpdateRuleData = {
+    body: RoutingRuleWriteBodyWritable;
+    path: {
+        /**
+         * Routing rule ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/routing/rules/{id}';
+};
+
+export type RoutingUpdateRuleErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingUpdateRuleError = RoutingUpdateRuleErrors[keyof RoutingUpdateRuleErrors];
+
+export type RoutingUpdateRuleResponses = {
+    /**
+     * OK
+     */
+    200: RoutingRule;
+};
+
+export type RoutingUpdateRuleResponse = RoutingUpdateRuleResponses[keyof RoutingUpdateRuleResponses];
 
 export type MediaSearchData = {
     body?: never;
@@ -6459,7 +7064,7 @@ export type DownloadCandidatesPreviewSeriesResponses = {
     /**
      * OK
      */
-    200: EvaluationTrace;
+    200: Evaluation;
 };
 
 export type DownloadCandidatesPreviewSeriesResponse = DownloadCandidatesPreviewSeriesResponses[keyof DownloadCandidatesPreviewSeriesResponses];

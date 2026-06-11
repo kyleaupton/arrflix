@@ -34,3 +34,23 @@ func pgtypeFromUUIDOrNull(id uuid.UUID) pgtype.UUID {
 	}
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
+
+// uuidPtrFromPgtype converts a nullable pgtype.UUID into a *uuid.UUID — nil
+// for NULL. Use for nullable columns whose domain shape is a pointer rather
+// than the uuid.Nil sentinel.
+func uuidPtrFromPgtype(p pgtype.UUID) *uuid.UUID {
+	if !p.Valid {
+		return nil
+	}
+	id := uuid.UUID(p.Bytes)
+	return &id
+}
+
+// pgtypeFromUUIDPtr converts a *uuid.UUID into a pgtype.UUID — NULL-shaped
+// for nil. The write-side counterpart of uuidPtrFromPgtype.
+func pgtypeFromUUIDPtr(id *uuid.UUID) pgtype.UUID {
+	if id == nil {
+		return pgtype.UUID{Valid: false}
+	}
+	return pgtype.UUID{Bytes: *id, Valid: true}
+}

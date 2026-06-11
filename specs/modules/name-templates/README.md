@@ -11,7 +11,7 @@ The model is implemented and stable: Go `text/template` over a typed evaluation 
 - A name template is a `(type, template, optional folder templates, default flag)` row. Each renders to a single path component; the import worker joins them via `filepath.Join`.
 - **Two types**: `movie` and `series`. Movies have a folder template + file template. Series have a show-folder + season-folder + file template.
 - **DSL is Go `text/template`** with two custom funcs: `sanitize` (strip filesystem-illegal chars) and `clean` (drop `"unknown"` values, then sanitize).
-- **Variables come from a unified `EvaluationContext`** with five namespaces: `Candidate` (the release), `Quality` (the advertised parse — persisted per file, **immutable**), `Release` (group, edition), `Media` (TMDB), `MediaInfo` (post-download `ffprobe` analysis).
+- **Variables come from the shared `Subject`** (the [rules substrate](../../patterns/rules/README.md#the-subject)'s evaluation object) — five namespaces render here: `Candidate` (the release), `Quality` (the advertised parse — persisted per file, **immutable**), `Encode` (group, edition — named `Release` in the iteration-1 code), `Media` (TMDB), `MediaInfo` (post-download `ffprobe` analysis). Templates render at `import`, the last moment on the [timeline](../../patterns/rules/README.md#the-timeline), so every field is knowable at render time.
 - **Name from truth, not claims.** `ffprobe`-verifiable tags (codec/audio/HDR/resolution) render from `MediaInfo`; non-verifiable ones (source/group/edition) from the parse. The shipped default uses identity + quality bin only — it can't be wrong.
 - **Sonarr/Radarr parity** is read-parity (matcher, for trials) + write-parity (token-vocabulary + format-string import; byte-identical output is a harness-tested aspiration). `{{.Quality.Full}}` is the advertised parse in both tools, so honest releases render identically; the re-gate rejects resolution-mislabeled releases upstream, so there's nothing to disagree about.
 - Per-type default; routing falls back to the default for the media type when no template is explicitly chosen.
@@ -70,9 +70,11 @@ These are intentionally Sonarr/Radarr-shaped — the goal is that someone migrat
 
 ## Variable catalog
 
-Five namespaces, each a typed struct on the unified `EvaluationContext`. The catalog is **the contract** between the rest of the system and template authors. Adding a variable is additive (templates that don't use it are unaffected); removing or renaming one is a breaking change.
+Five namespaces, each a typed struct on the shared `Subject` ([rules substrate](../../patterns/rules/README.md#the-subject)). The catalog is **the contract** between the rest of the system and template authors. Adding a variable is additive (templates that don't use it are unaffected); removing or renaming one is a breaking change.
 
-The complete field-by-field list lives with the struct definitions in code (`backend/internal/model/context.go`). This spec captures the **shape** and **guarantees** of each namespace; the per-field reference is generated docs, not spec material.
+The complete field-by-field list lives with the struct definitions in code. This spec captures the **shape** and **guarantees** of each namespace; the per-field reference is the substrate's [field registry](../../patterns/rules/README.md#the-field-registry), not spec material.
+
+> **Drift note (rules-substrate alignment).** The examples in this spec document the live iteration-1 DSL: capitalized struct paths (`{{.Quality.Full}}`, `{{.Release.Edition}}`). The substrate's direction is the registry's **flat field paths** (`quality.full`, `encode.edition`) resolved through its [one resolver](../../patterns/rules/README.md#one-resolver), so a path that works in a condition works in a template by construction — Go `text/template` traverses lowercase map keys fine, so this is a vocabulary change, not an engine change. The token-grammar decision (raw `text/template` vs a chip-based editor grammar over the same paths) is this spec's iteration 2; the editor masks raw syntax either way.
 
 ### `Candidate` — the release we picked
 
@@ -248,17 +250,17 @@ A season-pack download is matched per-file to its episodes by the import matcher
 | Consumer                                          | How it uses name templates                                                                                                              |
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | **[Routing](../routing/README.md)**               | Rules pick a template by ID. The action set on a fired rule fills `download_job.name_template_id`, which propagates to import tasks.    |
-| **Import (existing)**                             | Loads the template row, renders each component against the import-task's `EvaluationContext`, joins with `filepath.Join`, appends extension. |
+| **Import (existing)**                             | Loads the template row, renders each component against the import-task's `Subject`, joins with `filepath.Join`, appends extension. |
 | **[Parsing](../parsing/README.md)** | Produces the advertised `Quality`/`Release` the templates read, persisted per file for re-render.                                     |
 | **[Quality profiles](../quality-profiles/README.md)** | The re-gate validates a grabbed file's quality before placement; it does not mutate `Quality`, which renders from the persisted advertised parse. |
-| **[Acquisition](../acquisition/README.md)**       | The pipeline assembles the `EvaluationContext` for both routing and import — the template just reads it.                                |
+| **[Acquisition](../acquisition/README.md)**       | The pipeline assembles the `Subject` for both routing and import — the template just reads it.                                |
 | **[Users](../users/README.md)**                   | `name_templates.*` permissions gate the API.                                                                                            |
 | **Frontend (`NameTemplateSettings.vue`)**         | CRUD + (v1) live preview using the new endpoint.                                                                                        |
 
 ## What name templates does NOT own
 
 - The routing decision that picks a template ([routing](../routing/README.md))
-- The variable catalog itself — that's defined by `EvaluationContext` and lives in code adjacent to whoever owns that struct (matching / metadata / mediainfo) ([metadata](../metadata/README.md), [matching](../matching/README.md))
+- The variable catalog itself — that's the [field registry](../../patterns/rules/README.md#the-field-registry) on the shared `Subject`; each namespace's fields live with whoever produces them ([parsing](../parsing/README.md), [metadata](../metadata/README.md), [matching](../matching/README.md))
 - The name-parser that produces `Quality` and `Release`, and the [persisted parse](../parsing/README.md#persisted-parse) the renderer reads them from (both [parsing](../parsing/README.md))
 - The **re-gate** that validates a grabbed file's quality before placement ([quality profiles](../quality-profiles/README.md#import-time-re-gate) / [importer](../importer/README.md)) — it doesn't mutate `Quality`
 - The mediainfo probe (lives with import / scan)
@@ -285,7 +287,7 @@ A season-pack download is matched per-file to its episodes by the import matcher
 ## What we're explicitly not deciding here
 
 - Exact JSON shape of `preview` response
-- The lint catalog (which variable paths exist) — that comes from the `EvaluationContext` struct, single source of truth
+- The lint catalog (which variable paths exist) — that comes from the [field registry](../../patterns/rules/README.md#the-field-registry), single source of truth
 - Frontend UX for the template editor (live preview, syntax highlighting, autocomplete)
 - The matcher changes required to support range-based multi-episode rendering
 - Migration plan for the new `strict_mode` column
@@ -297,7 +299,8 @@ A season-pack download is matched per-file to its episodes by the import matcher
 - [Routing](../routing/README.md) — picks the template that import applies
 - [Libraries](../libraries/README.md) — provides the root path that gets prepended
 - [Downloaders](../downloaders/README.md) — sibling routing-action
-- [Acquisition](../acquisition/README.md) — assembles the `EvaluationContext` consumed by both routing and import
+- [Rules](../../patterns/rules/README.md) — the substrate owning the `Subject` + field registry this spec renders from
+- [Acquisition](../acquisition/README.md) — assembles the `Subject` consumed by both routing and import
 - [Quality profiles](../quality-profiles/README.md) — produces `Quality.*` via the same parser the templates read
 - [Metadata](../metadata/README.md) — produces `Media.*`
 - [Matching](../matching/README.md) — determines which template runs per file (movie vs episode, season pack split)

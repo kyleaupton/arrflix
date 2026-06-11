@@ -13,8 +13,8 @@ import (
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
-	"github.com/kyleaupton/arrflix/internal/policy"
 	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/routing"
 )
 
 const cacheTTL = 5 * time.Minute
@@ -27,24 +27,24 @@ type cachedSearchResult struct {
 
 // DownloadCandidatesService handles download candidate search and enqueueing
 type DownloadCandidatesService struct {
-	repo         *repo.Repository
-	logger       *logger.Logger
-	source       indexer.IndexerSource
-	media        *MediaService
-	policyEngine *policy.Engine
-	cache        map[string]*cachedSearchResult
-	cacheMu      sync.RWMutex
+	repo    *repo.Repository
+	logger  *logger.Logger
+	source  indexer.IndexerSource
+	media   *MediaService
+	routing *RoutingService
+	cache   map[string]*cachedSearchResult
+	cacheMu sync.RWMutex
 }
 
 // NewDownloadCandidatesService creates a new download candidates service
-func NewDownloadCandidatesService(r *repo.Repository, l *logger.Logger, source indexer.IndexerSource, media *MediaService, engine *policy.Engine) *DownloadCandidatesService {
+func NewDownloadCandidatesService(r *repo.Repository, l *logger.Logger, source indexer.IndexerSource, media *MediaService, routingSvc *RoutingService) *DownloadCandidatesService {
 	return &DownloadCandidatesService{
-		repo:         r,
-		logger:       l,
-		source:       source,
-		media:        media,
-		policyEngine: engine,
-		cache:        make(map[string]*cachedSearchResult),
+		repo:    r,
+		logger:  l,
+		source:  source,
+		media:   media,
+		routing: routingSvc,
+		cache:   make(map[string]*cachedSearchResult),
 	}
 }
 
@@ -144,8 +144,8 @@ func (s *DownloadCandidatesService) searchAndCache(ctx context.Context, query in
 	return candidates, nil
 }
 
-// EvaluateCandidate returns the evaluation trace for a candidate
-func (s *DownloadCandidatesService) EvaluateCandidate(ctx context.Context, movieID int64, indexerID int64, guid string) (model.EvaluationTrace, error) {
+// EvaluateCandidate returns the routing dispatch record for a candidate
+func (s *DownloadCandidatesService) EvaluateCandidate(ctx context.Context, movieID int64, indexerID int64, guid string) (routing.Evaluation, error) {
 	// Lookup torrent from cache
 	cacheKey := s.cacheKey(indexerID, guid)
 	s.cacheMu.RLock()
@@ -153,7 +153,7 @@ func (s *DownloadCandidatesService) EvaluateCandidate(ctx context.Context, movie
 	s.cacheMu.RUnlock()
 
 	if !exists {
-		return model.EvaluationTrace{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EvaluateCandidate")
+		return routing.Evaluation{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EvaluateCandidate")
 	}
 
 	// Check if expired
@@ -161,32 +161,30 @@ func (s *DownloadCandidatesService) EvaluateCandidate(ctx context.Context, movie
 		s.cacheMu.Lock()
 		delete(s.cache, cacheKey)
 		s.cacheMu.Unlock()
-		return model.EvaluationTrace{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EvaluateCandidate")
+		return routing.Evaluation{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EvaluateCandidate")
 	}
 
 	// Transform to DownloadCandidate
 	candidate := searchResultToCandidate(cached.result)
 
-	// Build evaluation context with media info
-	evalCtx := s.buildMovieEvaluationContext(ctx, candidate, movieID)
+	// Build the subject with media info
+	subject := s.buildMovieSubject(ctx, candidate, movieID)
 
-	trace, err := s.policyEngine.Evaluate(ctx, evalCtx)
+	_, eval, err := s.routing.Dispatch(ctx, subject)
 	if err != nil {
-		s.logger.Error().Err(err).Msg("Failed to evaluate policy")
-		return model.EvaluationTrace{}, apperrors.Internalf("policy evaluation failed: %v", err).
-			Op("DownloadCandidatesService.EvaluateCandidate")
+		return routing.Evaluation{}, err
 	}
 
-	return trace, nil
+	return eval, nil
 }
 
 // PreviewCandidate previews what will happen when a candidate is enqueued.
-func (s *DownloadCandidatesService) PreviewCandidate(ctx context.Context, movieID int64, indexerID int64, guid string) (model.EvaluationTrace, error) {
+func (s *DownloadCandidatesService) PreviewCandidate(ctx context.Context, movieID int64, indexerID int64, guid string) (routing.Evaluation, error) {
 	return s.EvaluateCandidate(ctx, movieID, indexerID, guid)
 }
 
 // EnqueueCandidate creates a durable download job for a candidate (movies-only).
-func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieID int64, indexerID int64, guid string) (model.EvaluationTrace, model.DownloadJob, error) {
+func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieID int64, indexerID int64, guid string) (routing.Evaluation, model.DownloadJob, error) {
 	// Lookup candidate from cache
 	cacheKey := s.cacheKey(indexerID, guid)
 	s.cacheMu.RLock()
@@ -194,7 +192,7 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 	s.cacheMu.RUnlock()
 
 	if !exists {
-		return model.EvaluationTrace{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueCandidate")
+		return routing.Evaluation{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueCandidate")
 	}
 
 	// Check if expired
@@ -202,52 +200,35 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 		s.cacheMu.Lock()
 		delete(s.cache, cacheKey)
 		s.cacheMu.Unlock()
-		return model.EvaluationTrace{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueCandidate")
+		return routing.Evaluation{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueCandidate")
 	}
 
 	candidate := searchResultToCandidate(cached.result)
 
-	// Build evaluation context with media info
-	evalCtx := s.buildMovieEvaluationContext(ctx, candidate, movieID)
+	// Build the subject with media info
+	subject := s.buildMovieSubject(ctx, candidate, movieID)
 
-	trace, err := s.policyEngine.Evaluate(ctx, evalCtx)
+	// Dispatch at grab: every action slot is resolved (rule-set or default).
+	actions, eval, err := s.routing.Dispatch(ctx, subject)
 	if err != nil {
-		s.logger.Error().Err(err).Msg("Failed to evaluate policy")
-		return model.EvaluationTrace{}, model.DownloadJob{}, apperrors.Internalf("policy evaluation failed: %v", err).
-			Op("DownloadCandidatesService.EnqueueCandidate")
+		return routing.Evaluation{}, model.DownloadJob{}, err
 	}
-
-	downloaderID, err := uuid.Parse(trace.FinalPlan.DownloaderID)
-	if err != nil {
-		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid downloader id %q: %v", trace.FinalPlan.DownloaderID, err).
-			Op("DownloadCandidatesService.EnqueueCandidate").
-			NotRetryable()
-	}
-	libraryID, err := uuid.Parse(trace.FinalPlan.LibraryID)
-	if err != nil {
-		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid library id %q: %v", trace.FinalPlan.LibraryID, err).
-			Op("DownloadCandidatesService.EnqueueCandidate").
-			NotRetryable()
-	}
-	nameTemplateID, err := uuid.Parse(trace.FinalPlan.NameTemplateID)
-	if err != nil {
-		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid name template id %q: %v", trace.FinalPlan.NameTemplateID, err).
-			Op("DownloadCandidatesService.EnqueueCandidate").
-			NotRetryable()
-	}
+	downloaderID := *actions.DownloaderID
+	libraryID := *actions.LibraryID
+	nameTemplateID := *actions.NameTemplateID
 
 	// Ensure media_item exists for this movie/library and link the job to it.
 	mi, err := s.repo.GetMediaItemByTmdbID(ctx, movieID)
 	needsCreate := apperrors.IsNotFound(err)
 	if err != nil && !needsCreate {
-		return trace, model.DownloadJob{}, err
+		return eval, model.DownloadJob{}, err
 	}
 
 	var createParams repo.CreateMediaItemParams
 	if needsCreate {
 		movie, err := s.media.GetMovie(ctx, movieID)
 		if err != nil {
-			return trace, model.DownloadJob{}, err
+			return eval, model.DownloadJob{}, err
 		}
 		var yearInt *int32
 		if len(movie.ReleaseDate) >= 4 {
@@ -291,14 +272,14 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 		return jerr
 	})
 	if err != nil {
-		return trace, model.DownloadJob{}, err
+		return eval, model.DownloadJob{}, err
 	}
 
-	return trace, job, nil
+	return eval, job, nil
 }
 
 // EnqueueSeriesCandidate creates a durable download job for a series candidate.
-func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, seriesID int64, indexerID int64, guid string, seasonNumber *int, episodeNumber *int) (model.EvaluationTrace, model.DownloadJob, error) {
+func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, seriesID int64, indexerID int64, guid string, seasonNumber *int, episodeNumber *int) (routing.Evaluation, model.DownloadJob, error) {
 	// Lookup candidate from cache
 	cacheKey := s.cacheKey(indexerID, guid)
 	s.cacheMu.RLock()
@@ -306,7 +287,7 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 	s.cacheMu.RUnlock()
 
 	if !exists {
-		return model.EvaluationTrace{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueSeriesCandidate")
+		return routing.Evaluation{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueSeriesCandidate")
 	}
 
 	// Check if expired
@@ -314,52 +295,35 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 		s.cacheMu.Lock()
 		delete(s.cache, cacheKey)
 		s.cacheMu.Unlock()
-		return model.EvaluationTrace{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueSeriesCandidate")
+		return routing.Evaluation{}, model.DownloadJob{}, candidateNotFoundErr(indexerID, guid, "DownloadCandidatesService.EnqueueSeriesCandidate")
 	}
 
 	candidate := searchResultToCandidate(cached.result)
 
-	// Build evaluation context with media info
-	evalCtx := s.buildSeriesEvaluationContext(ctx, candidate, seriesID, seasonNumber, episodeNumber)
+	// Build the subject with media info
+	subject := s.buildSeriesSubject(ctx, candidate, seriesID, seasonNumber, episodeNumber)
 
-	trace, err := s.policyEngine.Evaluate(ctx, evalCtx)
+	// Dispatch at grab: every action slot is resolved (rule-set or default).
+	actions, eval, err := s.routing.Dispatch(ctx, subject)
 	if err != nil {
-		s.logger.Error().Err(err).Msg("Failed to evaluate policy")
-		return model.EvaluationTrace{}, model.DownloadJob{}, apperrors.Internalf("policy evaluation failed: %v", err).
-			Op("DownloadCandidatesService.EnqueueSeriesCandidate")
+		return routing.Evaluation{}, model.DownloadJob{}, err
 	}
-
-	downloaderID, err := uuid.Parse(trace.FinalPlan.DownloaderID)
-	if err != nil {
-		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid downloader id %q: %v", trace.FinalPlan.DownloaderID, err).
-			Op("DownloadCandidatesService.EnqueueSeriesCandidate").
-			NotRetryable()
-	}
-	libraryID, err := uuid.Parse(trace.FinalPlan.LibraryID)
-	if err != nil {
-		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid library id %q: %v", trace.FinalPlan.LibraryID, err).
-			Op("DownloadCandidatesService.EnqueueSeriesCandidate").
-			NotRetryable()
-	}
-	nameTemplateID, err := uuid.Parse(trace.FinalPlan.NameTemplateID)
-	if err != nil {
-		return trace, model.DownloadJob{}, apperrors.Internalf("policy returned invalid name template id %q: %v", trace.FinalPlan.NameTemplateID, err).
-			Op("DownloadCandidatesService.EnqueueSeriesCandidate").
-			NotRetryable()
-	}
+	downloaderID := *actions.DownloaderID
+	libraryID := *actions.LibraryID
+	nameTemplateID := *actions.NameTemplateID
 
 	// Ensure media_item exists for this series and link the job to it.
 	mi, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, seriesID, string(model.MediaTypeSeries))
 	needsCreateItem := apperrors.IsNotFound(err)
 	if err != nil && !needsCreateItem {
-		return trace, model.DownloadJob{}, err
+		return eval, model.DownloadJob{}, err
 	}
 
 	var createItemParams repo.CreateMediaItemParams
 	if needsCreateItem {
 		series, gerr := s.media.GetSeries(ctx, seriesID)
 		if gerr != nil {
-			return trace, model.DownloadJob{}, gerr
+			return eval, model.DownloadJob{}, gerr
 		}
 		var yearInt *int32
 		if len(series.FirstAirDate) >= 4 {
@@ -443,10 +407,10 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 		return jerr
 	})
 	if err != nil {
-		return trace, model.DownloadJob{}, err
+		return eval, model.DownloadJob{}, err
 	}
 
-	return trace, job, nil
+	return eval, job, nil
 }
 
 // searchResultToCandidate converts an indexer.SearchResult to a model.DownloadCandidate
@@ -497,10 +461,10 @@ func (s *DownloadCandidatesService) cleanExpiredCache() {
 	}
 }
 
-// buildMovieEvaluationContext creates an EvaluationContext for a movie candidate
-func (s *DownloadCandidatesService) buildMovieEvaluationContext(ctx context.Context, candidate model.DownloadCandidate, movieID int64) model.EvaluationContext {
+// buildMovieSubject creates a Subject for a movie candidate
+func (s *DownloadCandidatesService) buildMovieSubject(ctx context.Context, candidate model.DownloadCandidate, movieID int64) model.Subject {
 	q := parsing.Parse(candidate.Title, parsing.DomainMovie)
-	evalCtx := model.NewEvaluationContext(candidate, q)
+	evalCtx := model.NewSubject(candidate, q)
 
 	// Try to get movie details from TMDB to populate media fields
 	movie, err := s.media.GetMovie(ctx, movieID)
@@ -511,16 +475,33 @@ func (s *DownloadCandidatesService) buildMovieEvaluationContext(ctx context.Cont
 				year = y
 			}
 		}
-		evalCtx = evalCtx.WithMedia(model.MediaTypeMovie, movie.Title, year, movieID)
+		evalCtx = evalCtx.WithMedia(model.MediaTypeMovie, movie.Title, year, movieID, &movie.Runtime)
 	}
 
 	return evalCtx
 }
 
-// buildSeriesEvaluationContext creates an EvaluationContext for a series candidate
-func (s *DownloadCandidatesService) buildSeriesEvaluationContext(ctx context.Context, candidate model.DownloadCandidate, seriesID int64, seasonNumber *int, episodeNumber *int) model.EvaluationContext {
+// buildSeriesSubject creates a Subject for a series candidate
+func (s *DownloadCandidatesService) buildSeriesSubject(ctx context.Context, candidate model.DownloadCandidate, seriesID int64, seasonNumber *int, episodeNumber *int) model.Subject {
 	q := parsing.Parse(candidate.Title, parsing.DomainSeries)
-	evalCtx := model.NewEvaluationContext(candidate, q)
+	evalCtx := model.NewSubject(candidate, q)
+
+	// Episode details give both the title and the per-episode runtime size bands
+	// scale against. Fetched once, before WithMedia so runtime rides along.
+	var episodeTitle *string
+	var runtime *int
+	if seasonNumber != nil && episodeNumber != nil {
+		tmdbEpisode, err := s.media.tmdb.GetEpisodeDetails(ctx, seriesID, int64(*seasonNumber), int64(*episodeNumber))
+		if err == nil {
+			if tmdbEpisode.Name != "" {
+				episodeTitle = &tmdbEpisode.Name
+			}
+			if tmdbEpisode.Runtime > 0 {
+				r := tmdbEpisode.Runtime
+				runtime = &r
+			}
+		}
+	}
 
 	// Try to get series details from TMDB to populate media fields
 	series, err := s.media.GetSeries(ctx, seriesID)
@@ -531,18 +512,9 @@ func (s *DownloadCandidatesService) buildSeriesEvaluationContext(ctx context.Con
 				year = y
 			}
 		}
-		evalCtx = evalCtx.WithMedia(model.MediaTypeSeries, series.Title, year, seriesID)
+		evalCtx = evalCtx.WithMedia(model.MediaTypeSeries, series.Title, year, seriesID, runtime)
 	}
 
-	// Add season/episode info if available
-	var episodeTitle *string
-	if seasonNumber != nil && episodeNumber != nil {
-		// Try to get episode title from TMDB
-		tmdbEpisode, err := s.media.tmdb.GetEpisodeDetails(ctx, seriesID, int64(*seasonNumber), int64(*episodeNumber))
-		if err == nil && tmdbEpisode.Name != "" {
-			episodeTitle = &tmdbEpisode.Name
-		}
-	}
 	evalCtx = evalCtx.WithSeriesInfo(seasonNumber, episodeNumber, episodeTitle)
 
 	return evalCtx

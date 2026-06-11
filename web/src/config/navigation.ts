@@ -53,10 +53,10 @@ export const navigationItems: NavigationItem[] = [
     //     route: '/settings/general',
     //   },
     //   {
-    //     key: 'settings-policies',
-    //     label: 'Policies',
+    //     key: 'settings-routing',
+    //     label: 'Routing',
     //     icon: PrimeIcons.SLIDERS_H,
-    //     route: '/settings/policies',
+    //     route: '/settings/routing',
     //   },
     //   {
     //     key: 'settings-libraries',

@@ -307,7 +307,7 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 	candidate := model.DownloadCandidate{
 		Title: candidateTitle,
 	}
-	evalCtx := model.NewEvaluationContext(candidate, q)
+	evalCtx := model.NewSubject(candidate, q)
 
 	// Add media metadata
 	year := 0
@@ -319,10 +319,12 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 		tmdbID = *details.MediaTmdbID
 	}
 
+	// Runtime is nil here: the import re-gate (ReGate) does not enforce size
+	// bands, so the matched media's runtime isn't threaded through the task.
 	if task.MediaType == "movie" {
-		evalCtx = evalCtx.WithMedia(model.MediaTypeMovie, details.MediaTitle, year, tmdbID)
+		evalCtx = evalCtx.WithMedia(model.MediaTypeMovie, details.MediaTitle, year, tmdbID, nil)
 	} else {
-		evalCtx = evalCtx.WithMedia(model.MediaTypeSeries, details.MediaTitle, year, tmdbID)
+		evalCtx = evalCtx.WithMedia(model.MediaTypeSeries, details.MediaTitle, year, tmdbID, nil)
 		var seasonNum, epNum *int
 		if details.SeasonNumber != nil {
 			sn := int(*details.SeasonNumber)

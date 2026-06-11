@@ -232,16 +232,6 @@ func (ns NullMatchOutcome) Value() (driver.Value, error) {
 	return string(ns.MatchOutcome), nil
 }
 
-type Action struct {
-	ID        pgtype.UUID `json:"id"`
-	PolicyID  pgtype.UUID `json:"policy_id"`
-	Type      string      `json:"type"`
-	Value     string      `json:"value"`
-	Order     int32       `json:"order"`
-	CreatedAt time.Time   `json:"created_at"`
-	UpdatedAt time.Time   `json:"updated_at"`
-}
-
 type ApiCache struct {
 	ID          pgtype.UUID `json:"id"`
 	Key         string      `json:"key"`
@@ -279,6 +269,15 @@ type AuthAudit struct {
 	Event     string      `json:"event"`
 	Detail    []byte      `json:"detail"`
 	CreatedAt time.Time   `json:"created_at"`
+}
+
+type CustomFormat struct {
+	ID         pgtype.UUID `json:"id"`
+	Name       string      `json:"name"`
+	Domain     string      `json:"domain"`
+	Conditions []byte      `json:"conditions"`
+	CreatedAt  time.Time   `json:"created_at"`
+	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
 type DownloadJob struct {
@@ -535,14 +534,34 @@ type PermissionGrant struct {
 	CreatedAt     time.Time    `json:"created_at"`
 }
 
-type Policy struct {
-	ID          pgtype.UUID `json:"id"`
-	Name        string      `json:"name"`
-	Description *string     `json:"description"`
-	Enabled     bool        `json:"enabled"`
-	Priority    int32       `json:"priority"`
-	CreatedAt   time.Time   `json:"created_at"`
-	UpdatedAt   time.Time   `json:"updated_at"`
+type QualityProfile struct {
+	ID            pgtype.UUID `json:"id"`
+	Name          string      `json:"name"`
+	Domain        string      `json:"domain"`
+	Bins          []byte      `json:"bins"`
+	Cutoff        []byte      `json:"cutoff"`
+	MinSeeders    int32       `json:"min_seeders"`
+	Indexers      []byte      `json:"indexers"`
+	Gates         []byte      `json:"gates"`
+	SizeOverrides []byte      `json:"size_overrides"`
+	CreatedAt     time.Time   `json:"created_at"`
+	UpdatedAt     time.Time   `json:"updated_at"`
+}
+
+type QualityProfileFormat struct {
+	ProfileID      pgtype.UUID `json:"profile_id"`
+	CustomFormatID pgtype.UUID `json:"custom_format_id"`
+	Weight         int32       `json:"weight"`
+}
+
+type QualitySizeDefault struct {
+	Domain               string `json:"domain"`
+	Source               string `json:"source"`
+	Resolution           string `json:"resolution"`
+	Modifier             string `json:"modifier"`
+	MinBytesPerMin       int64  `json:"min_bytes_per_min"`
+	PreferredBytesPerMin int64  `json:"preferred_bytes_per_min"`
+	MaxBytesPerMin       int64  `json:"max_bytes_per_min"`
 }
 
 type Role struct {
@@ -553,14 +572,24 @@ type Role struct {
 	CreatedAt   time.Time   `json:"created_at"`
 }
 
-type Rule struct {
-	ID           pgtype.UUID `json:"id"`
-	PolicyID     pgtype.UUID `json:"policy_id"`
-	LeftOperand  string      `json:"left_operand"`
-	Operator     string      `json:"operator"`
-	RightOperand string      `json:"right_operand"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
+type RoutingRule struct {
+	ID             pgtype.UUID `json:"id"`
+	Name           string      `json:"name"`
+	Enabled        bool        `json:"enabled"`
+	Position       int32       `json:"position"`
+	Conditions     []byte      `json:"conditions"`
+	DownloaderID   pgtype.UUID `json:"downloader_id"`
+	LibraryID      pgtype.UUID `json:"library_id"`
+	NameTemplateID pgtype.UUID `json:"name_template_id"`
+	Continue       bool        `json:"continue"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
+}
+
+type TierBinding struct {
+	Tier      string      `json:"tier"`
+	Domain    string      `json:"domain"`
+	ProfileID pgtype.UUID `json:"profile_id"`
 }
 
 type UserIdentity struct {

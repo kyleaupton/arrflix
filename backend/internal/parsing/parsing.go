@@ -5,7 +5,7 @@ import "strings"
 // Domain selects which identity pattern set Parse applies and which bin
 // vocabulary Parse renders the quality result into. Every production consumer
 // knows the domain at the call site (TMDB-anchored search, importer's
-// media-type-typed job, library-scoped scan, UI-scoped policy test endpoint),
+// media-type-typed job, library-scoped scan, routing's dry-run endpoint),
 // so Parse takes it as a required positional argument — there is no
 // auto-detect.
 type Domain string

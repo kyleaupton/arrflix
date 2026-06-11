@@ -6,12 +6,11 @@ import (
 	"github.com/kyleaupton/arrflix/internal/parsing"
 )
 
-// quality_map mirrors the QualityFields shape EvaluationContext.ToTemplateData
-// exposes. Parse already rendered the per-domain bin onto Quality.Name /
-// Quality.Full, so this map is a direct copy — `{{.Quality.Full}}` resolves
-// the same way a real evaluation would. Built here (not via
-// model.NewEvaluationContext) to keep this test out of the model → template
-// import cycle.
+// quality_map mirrors the Quality sub-map Subject.ToTemplateData exposes.
+// Parse already rendered the per-domain bin onto Quality.Name / Quality.Full,
+// so this map is a direct copy — `{{.Quality.Full}}` resolves the same way a
+// real evaluation would. Built here (not via model.NewSubject) to keep this
+// test out of the model → template import cycle.
 func quality_map(q parsing.QualityValues) map[string]any {
 	return map[string]any{
 		"Name":       q.Name,
@@ -32,7 +31,7 @@ func TestRender(t *testing.T) {
 	q := parsing.Parse("21.Jump.Street.2012.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.Atmos-GROUP", parsing.DomainSeries).Values().Quality
 	qualityMap := quality_map(q)
 
-	// Create a namespaced context structure matching EvaluationContext.ToTemplateData()
+	// Create a namespaced context structure matching Subject.ToTemplateData()
 	media := map[string]any{
 		"Title":      "21 Jump Street",
 		"CleanTitle": "21 Jump Street",
