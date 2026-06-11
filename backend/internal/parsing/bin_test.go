@@ -420,3 +420,61 @@ func TestBinFor_ModifierProjections(t *testing.T) {
 		})
 	}
 }
+
+// TestBinKey enforces that Key drops the display Name and carries only the
+// identity triple — the contract quality profiles rely on for ordering, cutoffs,
+// and size bands.
+func TestBinKey(t *testing.T) {
+	b := Bin{Name: "Bluray-1080p", Source: SourceBluRay, Resolution: Res1080p, Modifier: ModNone}
+	if got, want := b.Key(), (BinKey{Source: SourceBluRay, Resolution: Res1080p, Modifier: ModNone}); got != want {
+		t.Errorf("Key() = %+v, want %+v", got, want)
+	}
+}
+
+// TestBinKey_FoldIdentities locks the identity semantics the quality engine
+// consumes: distinct cores that project to the same vocabulary entry must share a
+// BinKey, and a core's BinKey reflects the post-projection identity (not its raw
+// input axes). Asserted via BinFor(...).Key() rather than the rendered Name.
+func TestBinKey_FoldIdentities(t *testing.T) {
+	t.Run("series BR-DISK collapses modifier, preserves resolution", func(t *testing.T) {
+		brdisk := BinFor(SourceBluRay, Res1080p, ModBRDisk, DomainSeries).Key()
+		plain := BinFor(SourceBluRay, Res1080p, ModNone, DomainSeries).Key()
+		if brdisk != plain {
+			t.Errorf("BR-DISK key %+v != plain Bluray key %+v", brdisk, plain)
+		}
+	})
+
+	t.Run("series RAWHD is resolution-agnostic", func(t *testing.T) {
+		at720 := BinFor(SourceTV, Res720p, ModRawHD, DomainSeries).Key()
+		at1080 := BinFor(SourceTV, Res1080p, ModRawHD, DomainSeries).Key()
+		want := BinKey{Source: SourceTV, Resolution: Res1080p, Modifier: ModRawHD}
+		if at720 != at1080 || at720 != want {
+			t.Errorf("RAWHD keys: 720p=%+v 1080p=%+v, want both %+v", at720, at1080, want)
+		}
+	})
+
+	t.Run("series sub-1080p remux drops the remux modifier", func(t *testing.T) {
+		remux := BinFor(SourceBluRay, Res720p, ModRemux, DomainSeries).Key()
+		plain := BinFor(SourceBluRay, Res720p, ModNone, DomainSeries).Key()
+		if remux != plain {
+			t.Errorf("720p remux key %+v != plain Bluray-720p key %+v", remux, plain)
+		}
+	})
+
+	t.Run("movie BR-DISK is resolution-pinned and retains its modifier", func(t *testing.T) {
+		brdisk := BinFor(SourceBluRay, Res2160p, ModBRDisk, DomainMovie).Key()
+		want := BinKey{Source: SourceBluRay, Resolution: Res1080p, Modifier: ModBRDisk}
+		if brdisk != want {
+			t.Errorf("movie BR-DISK key %+v, want %+v", brdisk, want)
+		}
+		if plain := BinFor(SourceBluRay, Res2160p, ModNone, DomainMovie).Key(); brdisk == plain {
+			t.Errorf("movie BR-DISK key must differ from Bluray-2160p key %+v", plain)
+		}
+	})
+
+	t.Run("zero Bin yields zero BinKey", func(t *testing.T) {
+		if got := BinFor(SourceUnknown, ResUnknown, ModNone, Domain("bogus")).Key(); got != (BinKey{}) {
+			t.Errorf("no-match key = %+v, want zero BinKey", got)
+		}
+	})
+}

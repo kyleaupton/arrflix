@@ -39,6 +39,24 @@ type Bin struct {
 	Modifier   Modifier
 }
 
+// BinKey is a bin's identity: the (Source, Resolution, Modifier) triple with the
+// display Name dropped. It is the comparable key quality profiles order, cut off,
+// and size-band on — Name is display-only and never participates in identity, so
+// renaming a bin in the vocabulary is not a data migration.
+//
+// The zero BinKey is the identity of the zero Bin (the "no matching bin" sentinel).
+type BinKey struct {
+	Source     Source
+	Resolution Resolution
+	Modifier   Modifier
+}
+
+// Key returns the bin's identity, dropping the display Name. Two Bins that project
+// to the same vocabulary entry share a Key; the zero Bin yields the zero BinKey.
+func (b Bin) Key() BinKey {
+	return BinKey{Source: b.Source, Resolution: b.Resolution, Modifier: b.Modifier}
+}
+
 // BinFor projects a parsing quality core (source, resolution, modifier) into
 // the bin for the given domain. Pure and deterministic: identical inputs always
 // return the same Bin, and the zero Bin (empty Name and zero axes) means "no

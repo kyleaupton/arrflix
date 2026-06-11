@@ -475,7 +475,7 @@ func (s *DownloadCandidatesService) buildMovieSubject(ctx context.Context, candi
 				year = y
 			}
 		}
-		evalCtx = evalCtx.WithMedia(model.MediaTypeMovie, movie.Title, year, movieID)
+		evalCtx = evalCtx.WithMedia(model.MediaTypeMovie, movie.Title, year, movieID, &movie.Runtime)
 	}
 
 	return evalCtx
@@ -486,6 +486,23 @@ func (s *DownloadCandidatesService) buildSeriesSubject(ctx context.Context, cand
 	q := parsing.Parse(candidate.Title, parsing.DomainSeries)
 	evalCtx := model.NewSubject(candidate, q)
 
+	// Episode details give both the title and the per-episode runtime size bands
+	// scale against. Fetched once, before WithMedia so runtime rides along.
+	var episodeTitle *string
+	var runtime *int
+	if seasonNumber != nil && episodeNumber != nil {
+		tmdbEpisode, err := s.media.tmdb.GetEpisodeDetails(ctx, seriesID, int64(*seasonNumber), int64(*episodeNumber))
+		if err == nil {
+			if tmdbEpisode.Name != "" {
+				episodeTitle = &tmdbEpisode.Name
+			}
+			if tmdbEpisode.Runtime > 0 {
+				r := tmdbEpisode.Runtime
+				runtime = &r
+			}
+		}
+	}
+
 	// Try to get series details from TMDB to populate media fields
 	series, err := s.media.GetSeries(ctx, seriesID)
 	if err == nil {
@@ -495,18 +512,9 @@ func (s *DownloadCandidatesService) buildSeriesSubject(ctx context.Context, cand
 				year = y
 			}
 		}
-		evalCtx = evalCtx.WithMedia(model.MediaTypeSeries, series.Title, year, seriesID)
+		evalCtx = evalCtx.WithMedia(model.MediaTypeSeries, series.Title, year, seriesID, runtime)
 	}
 
-	// Add season/episode info if available
-	var episodeTitle *string
-	if seasonNumber != nil && episodeNumber != nil {
-		// Try to get episode title from TMDB
-		tmdbEpisode, err := s.media.tmdb.GetEpisodeDetails(ctx, seriesID, int64(*seasonNumber), int64(*episodeNumber))
-		if err == nil && tmdbEpisode.Name != "" {
-			episodeTitle = &tmdbEpisode.Name
-		}
-	}
 	evalCtx = evalCtx.WithSeriesInfo(seasonNumber, episodeNumber, episodeTitle)
 
 	return evalCtx

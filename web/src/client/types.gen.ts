@@ -15,6 +15,12 @@ export type Availability = {
     libraries: Array<LibraryAvailability> | null;
 };
 
+export type BinKey = {
+    Modifier: string;
+    Resolution: string;
+    Source: string;
+};
+
 export type BootstrapConfig = {
     /**
      * Configured signup strategy (open / invite_only)
@@ -68,6 +74,23 @@ export type BootstrapUser = {
     username: string | null;
 };
 
+export type CandidateFields = {
+    Age: number;
+    AgeHours: number;
+    Categories: Array<string> | null;
+    GUID: string;
+    Grabs: number;
+    Indexer: string;
+    IndexerID: number;
+    Link: string;
+    Peers: number;
+    Protocol: string;
+    PublishDate: string;
+    Seeders: number;
+    Size: number;
+    Title: string;
+};
+
 export type Capabilities = {
     bookSearchParams: Array<string> | null;
     categories: Array<Categories> | null;
@@ -105,6 +128,38 @@ export type CrewMember = {
     name: string;
     profilePath?: string;
     tmdbId: number;
+};
+
+export type CustomFormat = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    conditions: unknown;
+    createdAt: string;
+    domain: string;
+    id: string;
+    name: string;
+    updatedAt: string;
+};
+
+export type CustomFormatWriteBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Condition tree (canonical rules JSON)
+     */
+    conditions: unknown;
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Display name
+     */
+    name: string;
 };
 
 export type DecidedWithDto = {
@@ -431,6 +486,11 @@ export type DownloadersTestConfigBody = {
     username?: string;
 };
 
+export type EncodeFields = {
+    HardcodedSubs: FieldString;
+    ReleaseGroup: FieldString;
+};
+
 export type EnqueueCandidateBody = {
     /**
      * A URL to the JSON Schema for this object.
@@ -535,6 +595,12 @@ export type FeedRow = {
     title: string;
 };
 
+export type FieldBool = {
+    Confidence: number;
+    Evidence: string;
+    Value: boolean;
+};
+
 export type FieldDefinition = {
     dynamicSource?: string;
     enumValues?: Array<EnumValue> | null;
@@ -557,6 +623,24 @@ export type FieldInput = {
     value?: unknown;
 };
 
+export type FieldInt = {
+    Confidence: number;
+    Evidence: string;
+    Value: number;
+};
+
+export type FieldListInt = {
+    Confidence: number;
+    Evidence: string;
+    Value: Array<number> | null;
+};
+
+export type FieldListString = {
+    Confidence: number;
+    Evidence: string;
+    Value: Array<string> | null;
+};
+
 export type FieldOutput = {
     advanced?: boolean;
     helpLink?: string;
@@ -570,6 +654,12 @@ export type FieldOutput = {
     selectOptionsProviderAction?: string;
     type?: string;
     value?: unknown;
+};
+
+export type FieldString = {
+    Confidence: number;
+    Evidence: string;
+    Value: string;
 };
 
 export type FileInfo = {
@@ -670,6 +760,31 @@ export type HydratedTitle = {
     tmdbId: number;
     voteAverage?: number;
     year?: number;
+};
+
+export type IdentityFields = {
+    AbsoluteNumbers: FieldListInt;
+    AirDate: FieldString;
+    AllTitles: FieldListString;
+    DailyPart: FieldInt;
+    Edition: FieldString;
+    EpisodeNumbers: FieldListInt;
+    FullSeason: FieldBool;
+    IsAbsoluteNumbering: FieldBool;
+    IsDaily: FieldBool;
+    IsMiniSeries: FieldBool;
+    IsMultiSeason: FieldBool;
+    IsPartialSeason: FieldBool;
+    IsPossibleSpecialEpisode: FieldBool;
+    IsSeasonExtra: FieldBool;
+    IsSplitEpisode: FieldBool;
+    ReleaseType: FieldString;
+    Season: FieldInt;
+    SeasonPart: FieldInt;
+    Special: FieldBool;
+    Title: FieldString;
+    TypeHint: FieldString;
+    Year: FieldInt;
 };
 
 export type ImportTask = {
@@ -1107,6 +1222,41 @@ export type MeResponse = {
     sub: string;
 };
 
+export type MediaFields = {
+    CleanTitle: string;
+    Episode: number | null;
+    EpisodeTitle: string | null;
+    Runtime: number | null;
+    Season: number | null;
+    Title: string;
+    TmdbID: number;
+    Type: string;
+    Year: number;
+};
+
+export type MediaInfoFields = {
+    AudioBitrate: number;
+    AudioChannels: string;
+    AudioCodec: string;
+    AudioLanguages: Array<string> | null;
+    AudioProfile: string;
+    AudioStreamCount: number;
+    Container: string;
+    Duration: number;
+    FileSize: number;
+    HDR: string;
+    Height: number;
+    ScanType: string;
+    Subtitles: Array<string> | null;
+    VideoBitDepth: number;
+    VideoBitrate: number;
+    VideoCodec: string;
+    VideoFps: number;
+    VideoMultiViewCount: number;
+    VideoProfile: string;
+    Width: number;
+};
+
 export type MetadataItem = {
     externalId: string;
     redirected?: boolean;
@@ -1312,6 +1462,157 @@ export type ProblemDetails = {
     type: string;
 };
 
+export type ProfileFormat = {
+    customFormatId: string;
+    weight: number;
+};
+
+export type QualityBinSize = {
+    bin: BinKey;
+    max: number;
+    min: number;
+    preferred: number;
+};
+
+export type QualityBindTierBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Profile the tier resolves to
+     */
+    profileId: string;
+    /**
+     * Coarse quality tier
+     */
+    tier: 'HD' | '4K';
+};
+
+export type QualityEvaluation = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    Bin: BinKey;
+    Disposition: string;
+    Passed: boolean;
+    RejectReason: RejectReason;
+    Score: number;
+    Subject: Subject;
+    Trace: Array<Trace> | null;
+};
+
+export type QualityFields = {
+    Full: FieldString;
+    IsRepack: FieldBool;
+    Modifier: FieldString;
+    Name: FieldString;
+    Real: FieldInt;
+    Resolution: FieldString;
+    Source: FieldString;
+    Version: FieldInt;
+};
+
+export type QualityProfile = {
+    bins: Array<BinKey> | null;
+    createdAt: string;
+    cutoff: BinKey;
+    domain: string;
+    gates: unknown;
+    id: string;
+    indexers: Array<string> | null;
+    minSeeders: number;
+    name: string;
+    sizeOverrides: Array<QualityBinSize> | null;
+    updatedAt: string;
+};
+
+export type QualityProfileDetail = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    bins: Array<BinKey> | null;
+    createdAt: string;
+    cutoff: BinKey;
+    domain: string;
+    formats: Array<ProfileFormat> | null;
+    gates: unknown;
+    id: string;
+    indexers: Array<string> | null;
+    minSeeders: number;
+    name: string;
+    sizeOverrides: Array<QualityBinSize> | null;
+    updatedAt: string;
+};
+
+export type QualityProfileWriteBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Allowed bins ranked best-first (index 0 is best)
+     */
+    bins: Array<BinKey> | null;
+    /**
+     * Bin at which upgrading stops; must be one of bins
+     */
+    cutoff: BinKey;
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Scored custom-format assignments (id + weight)
+     */
+    formats?: Array<ProfileFormat> | null;
+    /**
+     * Hard gates as [{name, tree}] where tree is canonical rules JSON
+     */
+    gates?: unknown;
+    /**
+     * Indexers a search fans out to (empty = all)
+     */
+    indexers?: Array<string> | null;
+    /**
+     * Reject torrents with fewer seeders
+     */
+    minSeeders: number;
+    /**
+     * Display name
+     */
+    name: string;
+    /**
+     * Per-bin size band overrides in bytes/minute
+     */
+    sizeOverrides?: Array<QualityBinSize> | null;
+};
+
+export type QualitySizeDefault = {
+    bin: BinKey;
+    domain: string;
+    max: number;
+    min: number;
+    preferred: number;
+};
+
+export type QualityTestBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Release title to evaluate against the profile
+     */
+    title: string;
+};
+
 export type ReadyPayload = {
     ok: boolean;
     sessionId: string;
@@ -1324,6 +1625,19 @@ export type ReimportResult = {
     readonly $schema?: string;
     created_tasks: Array<ImportTask> | null;
     skipped_count: number;
+};
+
+export type RejectReason = {
+    Detail: string;
+    Gate: string;
+};
+
+export type Release = {
+    Candidate: CandidateFields;
+    Encode: EncodeFields;
+    Identity: IdentityFields;
+    MediaInfo: MediaInfoFields;
+    Quality: QualityFields;
 };
 
 export type Resolved = {
@@ -1659,6 +1973,12 @@ export type SignupResponse = {
     success: boolean;
 };
 
+export type Subject = {
+    Media: MediaFields;
+    Release: Release;
+    Want: WantFields;
+};
+
 export type SuggestedExternalRef = {
     externalId: string;
     source: string;
@@ -1685,6 +2005,16 @@ export type TestResult = {
     success: boolean;
     version?: string;
     webApiVersion?: string;
+};
+
+export type TierBinding = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    domain: string;
+    profileId: string;
+    tier: string;
 };
 
 export type Trace = {
@@ -1782,6 +2112,12 @@ export type Video = {
     type: string;
 };
 
+export type WantFields = {
+    Requesters: Array<string> | null;
+    Tier: string;
+    Trigger: string;
+};
+
 export type WatchProvider = {
     displayPriority: number;
     logoPath: string;
@@ -1813,6 +2149,30 @@ export type BootstrapResponseWritable = {
      * Authenticated principal, when a valid token was supplied; null otherwise
      */
     user: BootstrapUser;
+};
+
+export type CustomFormatWritable = {
+    conditions: unknown;
+    createdAt: string;
+    domain: string;
+    id: string;
+    name: string;
+    updatedAt: string;
+};
+
+export type CustomFormatWriteBodyWritable = {
+    /**
+     * Condition tree (canonical rules JSON)
+     */
+    conditions: unknown;
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Display name
+     */
+    name: string;
 };
 
 export type DownloadCandidateResponseWritable = {
@@ -2413,6 +2773,92 @@ export type ProblemDetailsWritable = {
     type: string;
 };
 
+export type QualityBindTierBodyWritable = {
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Profile the tier resolves to
+     */
+    profileId: string;
+    /**
+     * Coarse quality tier
+     */
+    tier: 'HD' | '4K';
+};
+
+export type QualityEvaluationWritable = {
+    Bin: BinKey;
+    Disposition: string;
+    Passed: boolean;
+    RejectReason: RejectReason;
+    Score: number;
+    Subject: Subject;
+    Trace: Array<Trace> | null;
+};
+
+export type QualityProfileDetailWritable = {
+    bins: Array<BinKey> | null;
+    createdAt: string;
+    cutoff: BinKey;
+    domain: string;
+    formats: Array<ProfileFormat> | null;
+    gates: unknown;
+    id: string;
+    indexers: Array<string> | null;
+    minSeeders: number;
+    name: string;
+    sizeOverrides: Array<QualityBinSize> | null;
+    updatedAt: string;
+};
+
+export type QualityProfileWriteBodyWritable = {
+    /**
+     * Allowed bins ranked best-first (index 0 is best)
+     */
+    bins: Array<BinKey> | null;
+    /**
+     * Bin at which upgrading stops; must be one of bins
+     */
+    cutoff: BinKey;
+    /**
+     * Media domain
+     */
+    domain: 'movie' | 'series';
+    /**
+     * Scored custom-format assignments (id + weight)
+     */
+    formats?: Array<ProfileFormat> | null;
+    /**
+     * Hard gates as [{name, tree}] where tree is canonical rules JSON
+     */
+    gates?: unknown;
+    /**
+     * Indexers a search fans out to (empty = all)
+     */
+    indexers?: Array<string> | null;
+    /**
+     * Reject torrents with fewer seeders
+     */
+    minSeeders: number;
+    /**
+     * Display name
+     */
+    name: string;
+    /**
+     * Per-bin size band overrides in bytes/minute
+     */
+    sizeOverrides?: Array<QualityBinSize> | null;
+};
+
+export type QualityTestBodyWritable = {
+    /**
+     * Release title to evaluate against the profile
+     */
+    title: string;
+};
+
 export type ReimportResultWritable = {
     created_tasks: Array<ImportTaskWritable> | null;
     skipped_count: number;
@@ -2605,6 +3051,12 @@ export type TestResultWritable = {
     success: boolean;
     version?: string;
     webApiVersion?: string;
+};
+
+export type TierBindingWritable = {
+    domain: string;
+    profileId: string;
+    tier: string;
 };
 
 export type UserWritable = {
@@ -2946,6 +3398,206 @@ export type BootstrapGetResponses = {
 };
 
 export type BootstrapGetResponse = BootstrapGetResponses[keyof BootstrapGetResponses];
+
+export type QualityListCustomFormatsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/custom-formats';
+};
+
+export type QualityListCustomFormatsErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type QualityListCustomFormatsError = QualityListCustomFormatsErrors[keyof QualityListCustomFormatsErrors];
+
+export type QualityListCustomFormatsResponses = {
+    /**
+     * OK
+     */
+    200: Array<CustomFormat> | null;
+};
+
+export type QualityListCustomFormatsResponse = QualityListCustomFormatsResponses[keyof QualityListCustomFormatsResponses];
+
+export type QualityCreateCustomFormatData = {
+    body: CustomFormatWriteBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/custom-formats';
+};
+
+export type QualityCreateCustomFormatErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityCreateCustomFormatError = QualityCreateCustomFormatErrors[keyof QualityCreateCustomFormatErrors];
+
+export type QualityCreateCustomFormatResponses = {
+    /**
+     * Created
+     */
+    201: CustomFormat;
+};
+
+export type QualityCreateCustomFormatResponse = QualityCreateCustomFormatResponses[keyof QualityCreateCustomFormatResponses];
+
+export type QualityDeleteCustomFormatData = {
+    body?: never;
+    path: {
+        /**
+         * Custom format ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/custom-formats/{id}';
+};
+
+export type QualityDeleteCustomFormatErrors = {
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityDeleteCustomFormatError = QualityDeleteCustomFormatErrors[keyof QualityDeleteCustomFormatErrors];
+
+export type QualityDeleteCustomFormatResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type QualityDeleteCustomFormatResponse = QualityDeleteCustomFormatResponses[keyof QualityDeleteCustomFormatResponses];
+
+export type QualityGetCustomFormatData = {
+    body?: never;
+    path: {
+        /**
+         * Custom format ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/custom-formats/{id}';
+};
+
+export type QualityGetCustomFormatErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityGetCustomFormatError = QualityGetCustomFormatErrors[keyof QualityGetCustomFormatErrors];
+
+export type QualityGetCustomFormatResponses = {
+    /**
+     * OK
+     */
+    200: CustomFormat;
+};
+
+export type QualityGetCustomFormatResponse = QualityGetCustomFormatResponses[keyof QualityGetCustomFormatResponses];
+
+export type QualityUpdateCustomFormatData = {
+    body: CustomFormatWriteBodyWritable;
+    path: {
+        /**
+         * Custom format ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/custom-formats/{id}';
+};
+
+export type QualityUpdateCustomFormatErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityUpdateCustomFormatError = QualityUpdateCustomFormatErrors[keyof QualityUpdateCustomFormatErrors];
+
+export type QualityUpdateCustomFormatResponses = {
+    /**
+     * OK
+     */
+    200: CustomFormat;
+};
+
+export type QualityUpdateCustomFormatResponse = QualityUpdateCustomFormatResponses[keyof QualityUpdateCustomFormatResponses];
 
 export type DownloadJobsListData = {
     body?: never;
@@ -5536,6 +6188,352 @@ export type MediaGetPersonResponses = {
 };
 
 export type MediaGetPersonResponse = MediaGetPersonResponses[keyof MediaGetPersonResponses];
+
+export type QualityListProfilesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/quality-profiles';
+};
+
+export type QualityListProfilesErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type QualityListProfilesError = QualityListProfilesErrors[keyof QualityListProfilesErrors];
+
+export type QualityListProfilesResponses = {
+    /**
+     * OK
+     */
+    200: Array<QualityProfile> | null;
+};
+
+export type QualityListProfilesResponse = QualityListProfilesResponses[keyof QualityListProfilesResponses];
+
+export type QualityCreateProfileData = {
+    body: QualityProfileWriteBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/quality-profiles';
+};
+
+export type QualityCreateProfileErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityCreateProfileError = QualityCreateProfileErrors[keyof QualityCreateProfileErrors];
+
+export type QualityCreateProfileResponses = {
+    /**
+     * Created
+     */
+    201: QualityProfileDetail;
+};
+
+export type QualityCreateProfileResponse = QualityCreateProfileResponses[keyof QualityCreateProfileResponses];
+
+export type QualityDeleteProfileData = {
+    body?: never;
+    path: {
+        /**
+         * Quality profile ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/quality-profiles/{id}';
+};
+
+export type QualityDeleteProfileErrors = {
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityDeleteProfileError = QualityDeleteProfileErrors[keyof QualityDeleteProfileErrors];
+
+export type QualityDeleteProfileResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type QualityDeleteProfileResponse = QualityDeleteProfileResponses[keyof QualityDeleteProfileResponses];
+
+export type QualityGetProfileData = {
+    body?: never;
+    path: {
+        /**
+         * Quality profile ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/quality-profiles/{id}';
+};
+
+export type QualityGetProfileErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityGetProfileError = QualityGetProfileErrors[keyof QualityGetProfileErrors];
+
+export type QualityGetProfileResponses = {
+    /**
+     * OK
+     */
+    200: QualityProfileDetail;
+};
+
+export type QualityGetProfileResponse = QualityGetProfileResponses[keyof QualityGetProfileResponses];
+
+export type QualityUpdateProfileData = {
+    body: QualityProfileWriteBodyWritable;
+    path: {
+        /**
+         * Quality profile ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/quality-profiles/{id}';
+};
+
+export type QualityUpdateProfileErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityUpdateProfileError = QualityUpdateProfileErrors[keyof QualityUpdateProfileErrors];
+
+export type QualityUpdateProfileResponses = {
+    /**
+     * OK
+     */
+    200: QualityProfileDetail;
+};
+
+export type QualityUpdateProfileResponse = QualityUpdateProfileResponses[keyof QualityUpdateProfileResponses];
+
+export type QualityTestProfileData = {
+    body: QualityTestBodyWritable;
+    path: {
+        /**
+         * Quality profile ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/quality-profiles/{id}/test';
+};
+
+export type QualityTestProfileErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityTestProfileError = QualityTestProfileErrors[keyof QualityTestProfileErrors];
+
+export type QualityTestProfileResponses = {
+    /**
+     * OK
+     */
+    200: QualityEvaluation;
+};
+
+export type QualityTestProfileResponse = QualityTestProfileResponses[keyof QualityTestProfileResponses];
+
+export type QualityListSizeDefaultsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Media domain
+         */
+        domain: 'movie' | 'series';
+    };
+    url: '/api/v1/quality-size-defaults';
+};
+
+export type QualityListSizeDefaultsErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type QualityListSizeDefaultsError = QualityListSizeDefaultsErrors[keyof QualityListSizeDefaultsErrors];
+
+export type QualityListSizeDefaultsResponses = {
+    /**
+     * OK
+     */
+    200: Array<QualitySizeDefault> | null;
+};
+
+export type QualityListSizeDefaultsResponse = QualityListSizeDefaultsResponses[keyof QualityListSizeDefaultsResponses];
+
+export type QualityListTiersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/quality-tiers';
+};
+
+export type QualityListTiersErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type QualityListTiersError = QualityListTiersErrors[keyof QualityListTiersErrors];
+
+export type QualityListTiersResponses = {
+    /**
+     * OK
+     */
+    200: Array<TierBinding> | null;
+};
+
+export type QualityListTiersResponse = QualityListTiersResponses[keyof QualityListTiersResponses];
+
+export type QualityBindTierData = {
+    body: QualityBindTierBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/quality-tiers';
+};
+
+export type QualityBindTierErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type QualityBindTierError = QualityBindTierErrors[keyof QualityBindTierErrors];
+
+export type QualityBindTierResponses = {
+    /**
+     * OK
+     */
+    200: TierBinding;
+};
+
+export type QualityBindTierResponse = QualityBindTierResponses[keyof QualityBindTierResponses];
 
 export type RolesListData = {
     body?: never;

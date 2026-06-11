@@ -162,6 +162,7 @@ func TestListSubjectFieldsContract(t *testing.T) {
 		{"encode.release_group", "text", "string", PhaseSearch, nil},
 		{"encode.hardcoded_subs", "text", "string", PhaseSearch, nil},
 		{"media.tmdb_id", "number", "int64", PhaseSearch, nil},
+		{"media.runtime", "number", "int", PhaseSearch, nil},
 		{"want.trigger", "enum", "string", PhaseSearch, []string{"request", "rss", "upgrade", "manual"}},
 		{"want.requesters", "dynamic", "[]string", PhaseSearch, nil},
 		{"want.tier", "dynamic", "string", PhaseSearch, nil},
@@ -217,7 +218,7 @@ func TestToTemplateDataRendering(t *testing.T) {
 	season, episode := 3, 5
 	epTitle := "Initiation"
 	s := NewSubject(DownloadCandidate{Title: "raw title"}, parsedFixture()).
-		WithMedia(MediaTypeSeries, "The Office", 2005, 2316).
+		WithMedia(MediaTypeSeries, "The Office", 2005, 2316, nil).
 		WithSeriesInfo(&season, &episode, &epTitle)
 
 	data := s.ToTemplateData()

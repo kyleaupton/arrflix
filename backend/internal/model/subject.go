@@ -63,6 +63,7 @@ type MediaFields struct {
 	CleanTitle   string  `path:"media.clean_title" label:"Clean Title" type:"text" phase:"search"`
 	Year         int     `path:"media.year" label:"Year" type:"number" phase:"search"`
 	TmdbID       int64   `path:"media.tmdb_id" label:"TMDB ID" type:"number" phase:"search"`
+	Runtime      *int    `path:"media.runtime" label:"Runtime (minutes)" type:"number" phase:"search"`
 	Season       *int    `path:"media.season" label:"Season" type:"number" phase:"search"`
 	Episode      *int    `path:"media.episode" label:"Episode" type:"number" phase:"search"`
 	EpisodeTitle *string `path:"media.episode_title" label:"Episode Title" type:"text" phase:"search"`
@@ -174,14 +175,17 @@ func NewSubject(candidate DownloadCandidate, parsed parsing.ParsedRelease) Subje
 	}
 }
 
-// WithMedia sets the media fields on the subject
-func (s Subject) WithMedia(mediaType MediaType, title string, year int, tmdbID int64) Subject {
+// WithMedia sets the media fields on the subject. runtime is the matched
+// media's runtime in minutes (the movie runtime, or a series' per-episode
+// runtime); nil when unknown, in which case size bands are not enforced.
+func (s Subject) WithMedia(mediaType MediaType, title string, year int, tmdbID int64, runtime *int) Subject {
 	s.Media = MediaFields{
 		Type:       string(mediaType),
 		Title:      title,
 		CleanTitle: template.CleanTitle(title),
 		Year:       year,
 		TmdbID:     tmdbID,
+		Runtime:    runtime,
 	}
 	return s
 }

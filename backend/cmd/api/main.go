@@ -58,6 +58,12 @@ func main() {
 		logg.Error().Err(err).Msg("failed to seed default settings")
 	}
 
+	// Seed the HD/4K quality-profile presets + tier bindings (idempotent,
+	// non-clobbering — user edits to a preset survive a restart).
+	if err := services.QualityProfiles.SeedDefaults(ctx); err != nil {
+		logg.Error().Err(err).Msg("failed to seed default quality profiles")
+	}
+
 	// Downloader Manager
 	downloaderRegistry := downloader.NewRegistry()
 	qbittorrent.Register(downloaderRegistry)
