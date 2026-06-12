@@ -564,6 +564,19 @@ type QualitySizeDefault struct {
 	MaxBytesPerMin       int64  `json:"max_bytes_per_min"`
 }
 
+type Request struct {
+	ID                pgtype.UUID `json:"id"`
+	RequestedBy       pgtype.UUID `json:"requested_by"`
+	TmdbID            int64       `json:"tmdb_id"`
+	Type              string      `json:"type"`
+	Tier              string      `json:"tier"`
+	Status            string      `json:"status"`
+	SpawnedTrackingID pgtype.UUID `json:"spawned_tracking_id"`
+	DeniedReason      *string     `json:"denied_reason"`
+	CreatedAt         time.Time   `json:"created_at"`
+	UpdatedAt         time.Time   `json:"updated_at"`
+}
+
 type Role struct {
 	ID          pgtype.UUID `json:"id"`
 	Name        string      `json:"name"`
@@ -592,6 +605,26 @@ type TierBinding struct {
 	ProfileID pgtype.UUID `json:"profile_id"`
 }
 
+type Tracking struct {
+	ID               pgtype.UUID `json:"id"`
+	MediaItemID      pgtype.UUID `json:"media_item_id"`
+	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
+	State            string      `json:"state"`
+	Scope            string      `json:"scope"`
+	UpgradeBehavior  string      `json:"upgrade_behavior"`
+	ScheduleStrategy string      `json:"schedule_strategy"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+}
+
+type TrackingRequester struct {
+	TrackingID pgtype.UUID `json:"tracking_id"`
+	UserID     pgtype.UUID `json:"user_id"`
+	Tier       string      `json:"tier"`
+	CreatedAt  time.Time   `json:"created_at"`
+	UpdatedAt  time.Time   `json:"updated_at"`
+}
+
 type UserIdentity struct {
 	ID             pgtype.UUID        `json:"id"`
 	UserID         pgtype.UUID        `json:"user_id"`
@@ -613,8 +646,28 @@ type UserInvite struct {
 	ClaimedAt pgtype.Timestamptz `json:"claimed_at"`
 }
 
+type UserPolicy struct {
+	UserID           pgtype.UUID `json:"user_id"`
+	AutoApproveMovie bool        `json:"auto_approve_movie"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+}
+
 type UserRole struct {
 	UserID    pgtype.UUID `json:"user_id"`
 	RoleID    pgtype.UUID `json:"role_id"`
 	GrantedAt time.Time   `json:"granted_at"`
+}
+
+type Want struct {
+	ID               pgtype.UUID `json:"id"`
+	TrackingID       pgtype.UUID `json:"tracking_id"`
+	MediaItemID      pgtype.UUID `json:"media_item_id"`
+	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
+	Status           string      `json:"status"`
+	NextRunAt        time.Time   `json:"next_run_at"`
+	AttemptCount     int32       `json:"attempt_count"`
+	LastError        *string     `json:"last_error"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
 }

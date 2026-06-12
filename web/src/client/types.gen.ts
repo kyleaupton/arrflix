@@ -1648,6 +1648,42 @@ export type Release = {
     Quality: QualityFields;
 };
 
+export type Request = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    createdAt: string;
+    deniedReason: string | null;
+    id: string;
+    requestedBy: string;
+    spawnedTrackingId: string;
+    status: string;
+    tier: string;
+    tmdbId: number;
+    type: string;
+    updatedAt: string;
+};
+
+export type RequestCreateBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Requested quality tier
+     */
+    tier: 'HD' | '4K';
+    /**
+     * TMDB id of the requested title
+     */
+    tmdbId: number;
+    /**
+     * Media domain (movie-only in the PoC)
+     */
+    type: 'movie' | 'series';
+};
+
 export type Resolved = {
     available: boolean;
     path?: string;
@@ -2033,6 +2069,30 @@ export type Trace = {
     right?: Resolved;
 };
 
+export type Tracking = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    createdAt: string;
+    id: string;
+    mediaItemId: string;
+    qualityProfileId: string;
+    scheduleStrategy: string;
+    scope: string;
+    state: string;
+    updatedAt: string;
+    upgradeBehavior: string;
+};
+
+export type TrackingRequester = {
+    createdAt: string;
+    tier: string;
+    trackingId: string;
+    updatedAt: string;
+    userId: string;
+};
+
 export type UpdateDetails = {
     latest?: LatestVersionInfo;
     reason?: string;
@@ -2118,6 +2178,19 @@ export type Video = {
     size: number;
     tmdbId: string;
     type: string;
+};
+
+export type Want = {
+    attemptCount: number;
+    createdAt: string;
+    id: string;
+    lastError: string | null;
+    mediaItemId: string;
+    nextRunAt: string;
+    qualityProfileId: string;
+    status: string;
+    trackingId: string;
+    updatedAt: string;
 };
 
 export type WantFields = {
@@ -2872,6 +2945,34 @@ export type ReimportResultWritable = {
     skipped_count: number;
 };
 
+export type RequestWritable = {
+    createdAt: string;
+    deniedReason: string | null;
+    id: string;
+    requestedBy: string;
+    spawnedTrackingId: string;
+    status: string;
+    tier: string;
+    tmdbId: number;
+    type: string;
+    updatedAt: string;
+};
+
+export type RequestCreateBodyWritable = {
+    /**
+     * Requested quality tier
+     */
+    tier: 'HD' | '4K';
+    /**
+     * TMDB id of the requested title
+     */
+    tmdbId: number;
+    /**
+     * Media domain (movie-only in the PoC)
+     */
+    type: 'movie' | 'series';
+};
+
 export type RoutingEvaluateBodyWritable = {
     /**
      * The download candidate to evaluate
@@ -3065,6 +3166,18 @@ export type TierBindingWritable = {
     domain: string;
     profileId: string;
     tier: string;
+};
+
+export type TrackingWritable = {
+    createdAt: string;
+    id: string;
+    mediaItemId: string;
+    qualityProfileId: string;
+    scheduleStrategy: string;
+    scope: string;
+    state: string;
+    updatedAt: string;
+    upgradeBehavior: string;
 };
 
 export type UserWritable = {
@@ -6573,6 +6686,110 @@ export type QualityBindTierResponses = {
 
 export type QualityBindTierResponse = QualityBindTierResponses[keyof QualityBindTierResponses];
 
+export type RequestsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/requests';
+};
+
+export type RequestsListErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type RequestsListError = RequestsListErrors[keyof RequestsListErrors];
+
+export type RequestsListResponses = {
+    /**
+     * OK
+     */
+    200: Array<Request> | null;
+};
+
+export type RequestsListResponse = RequestsListResponses[keyof RequestsListResponses];
+
+export type RequestsCreateData = {
+    body: RequestCreateBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/requests';
+};
+
+export type RequestsCreateErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+    /**
+     * Bad Gateway
+     */
+    502: ProblemDetails;
+};
+
+export type RequestsCreateError = RequestsCreateErrors[keyof RequestsCreateErrors];
+
+export type RequestsCreateResponses = {
+    /**
+     * Created
+     */
+    201: Request;
+};
+
+export type RequestsCreateResponse = RequestsCreateResponses[keyof RequestsCreateResponses];
+
+export type RequestsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Request ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{id}';
+};
+
+export type RequestsGetErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RequestsGetError = RequestsGetErrors[keyof RequestsGetErrors];
+
+export type RequestsGetResponses = {
+    /**
+     * OK
+     */
+    200: Request;
+};
+
+export type RequestsGetResponse = RequestsGetResponses[keyof RequestsGetResponses];
+
 export type RolesListData = {
     body?: never;
     path?: never;
@@ -7320,6 +7537,145 @@ export type SetupTmdbResponses = {
 };
 
 export type SetupTmdbResponse2 = SetupTmdbResponses[keyof SetupTmdbResponses];
+
+export type TrackingListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/tracking';
+};
+
+export type TrackingListErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type TrackingListError = TrackingListErrors[keyof TrackingListErrors];
+
+export type TrackingListResponses = {
+    /**
+     * OK
+     */
+    200: Array<Tracking> | null;
+};
+
+export type TrackingListResponse = TrackingListResponses[keyof TrackingListResponses];
+
+export type TrackingGetData = {
+    body?: never;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}';
+};
+
+export type TrackingGetErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingGetError = TrackingGetErrors[keyof TrackingGetErrors];
+
+export type TrackingGetResponses = {
+    /**
+     * OK
+     */
+    200: Tracking;
+};
+
+export type TrackingGetResponse = TrackingGetResponses[keyof TrackingGetResponses];
+
+export type TrackingRequestersData = {
+    body?: never;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}/requesters';
+};
+
+export type TrackingRequestersErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingRequestersError = TrackingRequestersErrors[keyof TrackingRequestersErrors];
+
+export type TrackingRequestersResponses = {
+    /**
+     * OK
+     */
+    200: Array<TrackingRequester> | null;
+};
+
+export type TrackingRequestersResponse = TrackingRequestersResponses[keyof TrackingRequestersResponses];
+
+export type TrackingWantsData = {
+    body?: never;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}/wants';
+};
+
+export type TrackingWantsErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingWantsError = TrackingWantsErrors[keyof TrackingWantsErrors];
+
+export type TrackingWantsResponses = {
+    /**
+     * OK
+     */
+    200: Array<Want> | null;
+};
+
+export type TrackingWantsResponse = TrackingWantsResponses[keyof TrackingWantsResponses];
 
 export type UnmatchedFilesListData = {
     body?: never;
