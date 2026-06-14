@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"path/filepath"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/importer"
+	"github.com/kyleaupton/arrflix/internal/jobs/jobutil"
 	"github.com/kyleaupton/arrflix/internal/jobs/state"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -197,13 +197,13 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 	updated, err := w.repo.SetDownloadJobDownloadSnapshot(ctx, repo.SetDownloadJobDownloadSnapshotParams{
 		ID:               job.ID,
 		Status:           newStatus,
-		DownloaderStatus: ptr(string(item.Status)),
-		Progress:         ptr(item.Progress),
-		SavePath:         ptr(item.SavePath),
-		ContentPath:      ptr(item.ContentPath),
-		DownloadSpeed:    ptr(item.DownloadSpeed),
-		EtaSeconds:       ptr(item.ETA),
-		TotalSize:        ptr(item.TotalSize),
+		DownloaderStatus: jobutil.Ptr(string(item.Status)),
+		Progress:         jobutil.Ptr(item.Progress),
+		SavePath:         jobutil.Ptr(item.SavePath),
+		ContentPath:      jobutil.Ptr(item.ContentPath),
+		DownloadSpeed:    jobutil.Ptr(item.DownloadSpeed),
+		EtaSeconds:       jobutil.Ptr(item.ETA),
+		TotalSize:        jobutil.Ptr(item.TotalSize),
 	})
 	if err != nil {
 		return err
@@ -214,7 +214,7 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 	// observed 'downloading' skips it — the import worker advances the want from
 	// there.
 	if job.WantID != uuid.Nil && job.Status != newStatus && newStatus == "downloading" {
-		w.mirrorWant(ctx, job.WantID, model.WantDownloading)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantDownloading)
 	}
 
 	if job.Status != newStatus {
@@ -231,7 +231,7 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 	if newStatus == "failed" {
 		w.logEvent(ctx, job.ID, "error", "downloader reported failed status", nil)
 		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID, "downloader reported failed status", apperrors.KindBadGateway)
-		w.mirrorWant(ctx, job.WantID, model.WantFailed)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantFailed)
 		return nil
 	}
 
@@ -465,7 +465,7 @@ func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err err
 	// Non-retryable errors fail immediately.
 	if !apperrors.IsRetryable(err) {
 		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID, msg, kind)
-		w.mirrorWant(ctx, job.WantID, model.WantFailed)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantFailed)
 		return
 	}
 
@@ -475,12 +475,12 @@ func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err err
 		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID,
 			fmt.Sprintf("max attempts (%d) exceeded: %s", w.maxAttempts, msg),
 			kind)
-		w.mirrorWant(ctx, job.WantID, model.WantFailed)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantFailed)
 		return
 	}
 
 	// Schedule retry with exponential backoff
-	backoff := time.Duration(math.Pow(2, float64(attempt))) * time.Second
+	backoff := jobutil.Backoff(attempt)
 	nextRun := time.Now().Add(backoff)
 
 	w.logEvent(ctx, job.ID, "retry_scheduled", msg, map[string]any{
@@ -507,7 +507,7 @@ func (w *Worker) logEvent(ctx context.Context, jobID uuid.UUID, eventType, messa
 		EventType:     eventType,
 		OldStatus:     nil,
 		NewStatus:     nil,
-		Message:       strPtr(message),
+		Message:       jobutil.StrPtr(message),
 		Metadata:      metaBytes,
 	})
 	if err != nil {
@@ -539,34 +539,4 @@ func mapItemStatus(st downloader.JobStatus) string {
 	default:
 		return "downloading"
 	}
-}
-
-// mirrorWant best-effort reflects a job transition onto its owning want. It
-// no-ops when the job has no want (uuid.Nil — the interactive/legacy path) and
-// swallows errors after logging: a want-mirror failure must never break the
-// download pipeline. The mirror routes through MirrorWantStatus, the
-// terminal-sticky guard: a want flipped 'canceled' (or already terminal) is left
-// untouched, so a late job transition can't resurrect it.
-func (w *Worker) mirrorWant(ctx context.Context, wantID uuid.UUID, status model.WantStatus) {
-	if wantID == uuid.Nil {
-		return
-	}
-	want, ok, err := w.repo.MirrorWantStatus(ctx, wantID, string(status))
-	if err != nil {
-		w.log.Warn().Err(err).Str("want_id", wantID.String()).Msg("failed to mirror want status")
-		return
-	}
-	if !ok {
-		return
-	}
-	realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
-}
-
-func ptr[T any](v T) *T { return &v }
-
-func strPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }

@@ -45,13 +45,14 @@ func NewAcquisitionService(r *repo.Repository, l *logger.Logger, source indexer.
 }
 
 // ProcessWant runs the happy path for one claimed want: search → pick → route →
-// enqueue, flipping the want to 'grabbed' in a single transaction. It returns
-// grabbed=false (with nil error) when the search yields no eligible release, so
-// the worker can reschedule rather than fail.
-func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (grabbed bool, err error) {
+// enqueue, flipping the want to 'grabbed' in a single transaction. On success it
+// returns the grabbed want (grabbed=true) so the worker can emit the transition
+// without re-reading. It returns grabbed=false (with nil error) when the search
+// yields no eligible release, so the worker can reschedule rather than fail.
+func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (grabbedWant model.Want, grabbed bool, err error) {
 	mi, err := s.repo.GetMediaItem(ctx, want.MediaItemID)
 	if err != nil {
-		return false, err
+		return model.Want{}, false, err
 	}
 
 	// IMDb id is best-effort: capable indexers (e.g. IPTorrents) accept it for
@@ -59,23 +60,23 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	// which case the query and gate fall back to title+year.
 	imdbID, err := s.repo.GetMediaItemExternalID(ctx, mi.ID, string(metadata.SourceIMDB))
 	if err != nil {
-		return false, err
+		return model.Want{}, false, err
 	}
 
 	results, err := s.source.Search(ctx, s.wantToQuery(mi))
 	if err != nil {
-		return false, apperrors.BadGatewayf("indexer search %q: %v", mi.Title, err).
+		return model.Want{}, false, apperrors.BadGatewayf("indexer search %q: %v", mi.Title, err).
 			Op("AcquisitionService.ProcessWant")
 	}
 
 	picked, err := s.pick(ctx, want, mi, imdbID, results)
 	if err != nil {
-		return false, err
+		return model.Want{}, false, err
 	}
 	if picked == nil {
 		// Every candidate was gated out — behaviorally identical to no results.
 		// The worker reschedules with backoff.
-		return false, nil
+		return model.Want{}, false, nil
 	}
 	cand := picked.Subject.Release.Candidate
 
@@ -83,7 +84,7 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	// picked Subject already carries its Media fields from pick.
 	actions, _, err := s.routing.Dispatch(ctx, picked.Subject)
 	if err != nil {
-		return false, err
+		return model.Want{}, false, err
 	}
 	downloaderID := *actions.DownloaderID
 	libraryID := *actions.LibraryID
@@ -97,7 +98,7 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	// only after the job insert, so an insert failure rolls back the whole tx
 	// (want stays 'searching') and the worker reschedules.
 	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
-		_, ok, gerr := r.GrabWant(ctx, want.ID)
+		gw, ok, gerr := r.GrabWant(ctx, want.ID)
 		if gerr != nil {
 			return gerr
 		}
@@ -119,14 +120,15 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 		}); jerr != nil {
 			return jerr
 		}
+		grabbedWant = gw
 		grabbed = true
 		return nil
 	})
 	if err != nil {
-		return false, err
+		return model.Want{}, false, err
 	}
 
-	return grabbed, nil
+	return grabbedWant, grabbed, nil
 }
 
 // wantToQuery builds the indexer query from the stored media_item (no TMDB

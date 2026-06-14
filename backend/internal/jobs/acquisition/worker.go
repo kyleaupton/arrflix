@@ -7,12 +7,12 @@ package acquisition
 import (
 	"context"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/google/uuid"
 
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/jobs/jobutil"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/realtime"
@@ -127,7 +127,7 @@ func (w *Worker) reap(ctx context.Context) {
 }
 
 func (w *Worker) handle(ctx context.Context, want model.Want) {
-	grabbed, err := w.svc.ProcessWant(ctx, want)
+	grabbedWant, grabbed, err := w.svc.ProcessWant(ctx, want)
 	if err != nil {
 		w.handleError(ctx, want, err)
 		return
@@ -141,12 +141,10 @@ func (w *Worker) handle(ctx context.Context, want model.Want) {
 		return
 	}
 
-	// grabbed: ProcessWant already flipped the want to 'grabbed' in its tx.
-	// Re-read post-commit to emit the transition for the frontend pill; the
-	// download worker drives the subsequent 'downloading' delta.
-	if grabbedWant, err := w.repo.GetWant(ctx, want.ID); err == nil {
-		realtime.Emit(ctx, w.broker, realtime.WantUpdated(grabbedWant))
-	}
+	// grabbed: ProcessWant flipped the want to 'grabbed' in its tx and handed back
+	// the updated row, so emit the transition for the frontend pill; the download
+	// worker drives the subsequent 'downloading' delta.
+	realtime.Emit(ctx, w.broker, realtime.WantUpdated(grabbedWant))
 }
 
 func (w *Worker) handleError(ctx context.Context, want model.Want, err error) {
@@ -190,8 +188,7 @@ func (w *Worker) fail(ctx context.Context, wantID uuid.UUID, msg string) {
 // no longer 'searching', so nothing changed and nothing is emitted.
 func (w *Worker) reschedule(ctx context.Context, want model.Want, lastError string) {
 	attempt := int(want.AttemptCount) + 1
-	backoff := time.Duration(math.Pow(2, float64(attempt))) * time.Second
-	nextRun := time.Now().Add(backoff)
+	nextRun := time.Now().Add(jobutil.Backoff(attempt))
 
 	updated, ok, err := w.repo.ScheduleWantRetry(ctx, repo.ScheduleWantRetryParams{
 		ID:        want.ID,

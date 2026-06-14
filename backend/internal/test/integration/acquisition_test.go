@@ -170,7 +170,7 @@ func TestAcquisition_ProcessWant_HappyPath(t *testing.T) {
 	}
 	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
 
-	grabbed, err := svc.ProcessWant(ctx, want)
+	_, grabbed, err := svc.ProcessWant(ctx, want)
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestAcquisition_ProcessWant_PicksQualified(t *testing.T) {
 	}
 	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
 
-	grabbed, err := svc.ProcessWant(ctx, want)
+	_, grabbed, err := svc.ProcessWant(ctx, want)
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestAcquisition_ProcessWant_AllGatedOut(t *testing.T) {
 	}
 	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
 
-	grabbed, err := svc.ProcessWant(ctx, want)
+	_, grabbed, err := svc.ProcessWant(ctx, want)
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestAcquisition_ProcessWant_RejectsWrongTitle(t *testing.T) {
 	}
 	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
 
-	grabbed, err := svc.ProcessWant(ctx, want)
+	_, grabbed, err := svc.ProcessWant(ctx, want)
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestAcquisition_ProcessWant_NoRelease(t *testing.T) {
 	}
 	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
 
-	grabbed, err := svc.ProcessWant(ctx, want)
+	_, grabbed, err := svc.ProcessWant(ctx, want)
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -735,7 +735,7 @@ func TestAcquisition_ProcessWant_DedupesSupersededGrab(t *testing.T) {
 	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
 
 	// First run: the CAS owns the 'searching' want, grabs it, creates one job.
-	grabbed, err := svc.ProcessWant(ctx, want)
+	_, grabbed, err := svc.ProcessWant(ctx, want)
 	if err != nil {
 		t.Fatalf("first ProcessWant: %v", err)
 	}
@@ -745,7 +745,7 @@ func TestAcquisition_ProcessWant_DedupesSupersededGrab(t *testing.T) {
 
 	// Second run with the same (now-stale) want value: the want is no longer
 	// 'searching', so the grab CAS matches 0 rows and ProcessWant no-ops.
-	grabbedAgain, err := svc.ProcessWant(ctx, want)
+	_, grabbedAgain, err := svc.ProcessWant(ctx, want)
 	if err != nil {
 		t.Fatalf("second ProcessWant: %v", err)
 	}
