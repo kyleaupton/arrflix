@@ -7,6 +7,10 @@
 #   just fix        # autofix everything that can be: fmt, lint --fix, regen
 #   just preflight  # fix then check — run before declaring work done
 
+# Load .env so recipes can read secrets/config (e.g. DOWNLOADER_PASSWORD) the
+# same way the app does. Missing .env is not an error.
+set dotenv-load := true
+
 container := "arrflix-dev"
 backend-exec := "docker compose exec -T -w /app/backend " + container
 web-exec := "docker compose exec -T -w /app/web " + container
@@ -22,6 +26,10 @@ host-gid := `id -g`
 exec-rw := "docker compose exec -T -u " + host-uid + ":" + host-gid + " -e HOME=/tmp/arrflix-dev-home-" + host-uid
 backend-exec-rw := exec-rw + " -w /app/backend " + container
 web-exec-rw := exec-rw + " -w /app/web " + container
+
+# In-container connection string (matches config.go's default). Postgres listens
+# on localhost inside the dev container with trust auth.
+db-url := "postgres://arrflix:arrflixpw@127.0.0.1:5432/arrflix?sslmode=disable"
 
 # Default recipe: list everything organized by group.
 default:
@@ -97,6 +105,23 @@ backend-genspec: _ensure-up
 [group('backend')]
 backend-sqlc: _ensure-up
     {{backend-exec-rw}} sqlc generate
+
+# Wipe the app DB, re-apply migrations, and load the dev seed. The seeded
+# downloader password comes from DOWNLOADER_PASSWORD in .env (kept out of git),
+# defaulting to 'admin'. Only touches the arrflix DB — Prowlarr's DBs are left
+# alone.
+[group('backend')]
+db-reseed: _ensure-up
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pw="${DOWNLOADER_PASSWORD:-admin}"
+    echo "→ resetting schema"
+    {{backend-exec}} psql '{{db-url}}' -v ON_ERROR_STOP=1 -c 'drop schema public cascade; create schema public;'
+    echo "→ applying migrations"
+    {{backend-exec}} go run ./cmd/migrate
+    echo "→ seeding"
+    {{backend-exec}} psql '{{db-url}}' -v ON_ERROR_STOP=1 -v downloader_password="$pw" -f internal/db/seed/seed_dev.sql
+    echo "✓ db reseeded"
 
 # --- frontend (in-container) -------------------------------------------------
 

@@ -311,6 +311,55 @@ func TestAcquisition_ProcessWant_AllGatedOut(t *testing.T) {
 	}
 }
 
+// TestAcquisition_ProcessWant_RejectsWrongTitle proves the relevance gate: a
+// release with passing quality (1080p BluRay, identical to the happy path) but a
+// title for a different work is dropped before quality selection, so ProcessWant
+// returns grabbed=false and no download_job is created. The release here mirrors
+// the production incident — a "Michael"-style want grabbing an unrelated boxing
+// release that merely shared a word — but with the seeded Matrix want.
+func TestAcquisition_ProcessWant_RejectsWrongTitle(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	want := seedPendingWant(t, ctx, r)
+
+	source := stubIndexerSource{
+		SearchFn: func(ctx context.Context, q indexer.SearchQuery) ([]indexer.SearchResult, error) {
+			return []indexer.SearchResult{
+				{
+					IndexerID:   7,
+					IndexerName: "test-indexer",
+					GUID:        "guid-wrong",
+					Title:       "Boxing 2026 Nikita Tszyu vs Matrix Zerafa 1080p BluRay x264",
+					DownloadURL: "http://localhost/wrong.torrent",
+					Protocol:    "torrent",
+					Size:        10 << 30,
+					Categories:  []string{"Movies"},
+				},
+			}, nil
+		},
+	}
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+
+	grabbed, err := svc.ProcessWant(ctx, want)
+	if err != nil {
+		t.Fatalf("ProcessWant: %v", err)
+	}
+	if grabbed {
+		t.Fatalf("ProcessWant grabbed = true, want false (wrong-title release must fail the relevance gate)")
+	}
+
+	jobs, err := r.ListDownloadJobsByMediaItem(ctx, want.MediaItemID)
+	if err != nil {
+		t.Fatalf("list download jobs: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("download jobs = %d, want 0", len(jobs))
+	}
+}
+
 // TestAcquisition_ProcessWant_NoRelease proves an empty search is a no-op
 // (grabbed=false, err=nil) and that a subsequent reschedule returns the want to
 // 'pending' with an incremented attempt count — the worker's no-release path.

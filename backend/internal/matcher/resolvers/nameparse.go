@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-	"unicode"
 
 	"github.com/kyleaupton/arrflix/internal/matcher"
 	"github.com/kyleaupton/arrflix/internal/metadata"
@@ -196,24 +195,13 @@ func scoreSearchResult(r metadata.Candidate, hint parsing.IdentityAttrs, total, 
 	return score
 }
 
-// titleEquivalent compares two titles after lowercasing and stripping
-// non-alphanumerics. The exact-match bonus is meant to reward "we got
-// the title right at the character level", not "we got the same TMDB
-// record" — punctuation drift between release titles and TMDB ("WALL-E"
-// vs "Wall E") shouldn't cost the bonus.
+// titleEquivalent rewards "we got the title right at the character level", not
+// "we got the same TMDB record" — punctuation drift between release titles and
+// TMDB ("WALL-E" vs "Wall E") shouldn't cost the bonus. It defers to
+// parsing.TitlesMatch so the import matcher and the acquisition relevance gate
+// share one canonical title comparison and can't drift.
 func titleEquivalent(a, b string) bool {
-	return normalizeTitle(a) == normalizeTitle(b) && a != "" && b != ""
-}
-
-func normalizeTitle(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range strings.ToLower(s) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
+	return parsing.TitlesMatch(a, b)
 }
 
 // entityTypeFromHint maps the parser's domain-typed type hint

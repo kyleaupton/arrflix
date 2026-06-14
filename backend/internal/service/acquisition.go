@@ -129,9 +129,21 @@ func (s *AcquisitionService) wantToQuery(mi model.MediaItem) indexer.SearchQuery
 func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model.MediaItem, results []indexer.SearchResult) (*qualityprofile.Evaluation, error) {
 	year, tmdbID, runtime := mediaFields(mi)
 	subjects := make([]model.Subject, 0, len(results))
+	var relevanceRejects []relevanceReject
 	for _, res := range results {
 		cand := searchResultToCandidate(res)
 		parsed := parsing.Parse(cand.Title, parsing.DomainMovie)
+
+		// Relevance gate: drop releases whose parsed identity isn't the wanted
+		// movie before quality even looks at them. This is the autonomous flow's
+		// only identity check — the download is filed onto the want by linkage
+		// with no import-time re-match — so a wrong-title release that slips
+		// through here would be filed as the movie.
+		if reason, ok := relevanceReason(parsed, mi); !ok {
+			relevanceRejects = append(relevanceRejects, relevanceReject{title: cand.Title, reason: reason})
+			continue
+		}
+
 		subjects = append(subjects, model.NewSubject(cand, parsed).
 			WithMedia(model.MediaTypeMovie, mi.Title, year, tmdbID, runtime))
 	}
@@ -140,8 +152,40 @@ func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model
 	if err != nil {
 		return nil, err
 	}
-	s.logDecisions(want, sel)
+	s.logDecisions(want, sel, relevanceRejects)
 	return sel.Picked, nil
+}
+
+// relevanceReject records a release dropped by the identity gate, for logging.
+type relevanceReject struct {
+	title  string
+	reason string
+}
+
+// relevanceReason reports whether a parsed release identity refers to the same
+// movie as the wanted media item, returning a human reason when it does not. A
+// parsed title (primary or AKA) must match the wanted title, and the parsed year
+// must agree — an absent parsed year (0) passes, since many release names omit
+// it. Mirrors Radarr's ParsingService.TryGetMovieBySearchCriteria + the
+// DecisionEngine MovieSpecification "Wrong movie" rejection.
+func relevanceReason(parsed parsing.ParsedRelease, mi model.MediaItem) (reason string, ok bool) {
+	releaseTitles := append([]string{parsed.Identity.Title.Value}, parsed.Identity.AllTitles.Value...)
+	titleOK := false
+	for _, rt := range releaseTitles {
+		if parsing.TitlesMatch(rt, mi.Title) {
+			titleOK = true
+			break
+		}
+	}
+	if !titleOK {
+		return fmt.Sprintf("title %q does not match %q", parsed.Identity.Title.Value, mi.Title), false
+	}
+
+	if py := parsed.Identity.Year.Value; py != 0 && mi.Year != nil && py != int(*mi.Year) {
+		return fmt.Sprintf("year %d does not match %d", py, *mi.Year), false
+	}
+
+	return "", true
 }
 
 // mediaFields pulls the movie metadata pick feeds into the engine: year and
@@ -168,14 +212,17 @@ func binLabel(b parsing.BinKey) string {
 	return fmt.Sprintf("%s/%s/%s", b.Source, b.Resolution, b.Modifier)
 }
 
-// logDecisions records the selection outcome: the considered count, the pick
-// (bin + score), and the rejection reason for each gated-out candidate. Decisions
-// are logged, not persisted — the audit table is a deferred add.
-func (s *AcquisitionService) logDecisions(want model.Want, sel qualityprofile.Selection) {
+// logDecisions records the selection outcome: the considered count (including
+// releases dropped by the relevance gate before quality saw them), the pick (bin
+// + score), and the rejection reason for each gated-out candidate. Decisions are
+// logged, not persisted — the audit table is a deferred add.
+func (s *AcquisitionService) logDecisions(want model.Want, sel qualityprofile.Selection, relevanceRejects []relevanceReject) {
+	considered := len(sel.All) + len(relevanceRejects)
 	if sel.Picked != nil {
 		s.log.Info().
 			Str("want_id", want.ID.String()).
-			Int("considered", len(sel.All)).
+			Int("considered", considered).
+			Int("relevance_rejected", len(relevanceRejects)).
 			Str("title", sel.Picked.Subject.Release.Candidate.Title).
 			Str("bin", binLabel(sel.Picked.Bin)).
 			Int("score", sel.Picked.Score).
@@ -183,8 +230,17 @@ func (s *AcquisitionService) logDecisions(want model.Want, sel qualityprofile.Se
 	} else {
 		s.log.Info().
 			Str("want_id", want.ID.String()).
-			Int("considered", len(sel.All)).
+			Int("considered", considered).
+			Int("relevance_rejected", len(relevanceRejects)).
 			Msg("acquisition picked no release: all candidates gated out")
+	}
+	for _, rr := range relevanceRejects {
+		s.log.Debug().
+			Str("want_id", want.ID.String()).
+			Str("title", rr.title).
+			Str("gate", "relevance").
+			Str("reason", rr.reason).
+			Msg("acquisition rejected candidate")
 	}
 	for _, e := range sel.All {
 		if e.Disposition == qualityprofile.DispositionRejected {
