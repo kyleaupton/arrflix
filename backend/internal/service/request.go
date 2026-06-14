@@ -134,30 +134,14 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 			}
 		}
 
-		// Dedup: at most one tracking per media item. A NotFound is the
-		// "not yet tracked" signal and takes the create branch; a hit is the
-		// join path (a second requester for an already-tracked movie).
-		tracking, err := r.FindTrackingByMediaItem(ctx, mediaItem.ID)
-		trackingCreated := false
-		switch {
-		case apperrors.IsNotFound(err):
-			// quality_profile_id is single-valued, set from this request's
-			// tier. Two requesters at different tiers (HD vs 4K) on one movie
-			// is real multi-tier reconciliation, deferred — the first spawn
-			// wins the profile.
-			tracking, err = r.CreateTracking(ctx, repo.CreateTrackingParams{
-				MediaItemID:      mediaItem.ID,
-				QualityProfileID: profile.ID,
-				State:            string(model.TrackingActive),
-				Scope:            "self",
-				UpgradeBehavior:  "none",
-				ScheduleStrategy: "smart",
-			})
-			if err != nil {
-				return err
-			}
-			trackingCreated = true
-		case err != nil:
+		// Dedup: at most one tracking per media item. ensureMovieTracking finds
+		// the existing tracking (join path: a second requester for an
+		// already-tracked movie) or creates a fresh 'active' one. The profile
+		// is single-valued, set from this request's tier on creation; two
+		// requesters at different tiers (HD vs 4K) on one movie is real
+		// multi-tier reconciliation, deferred — the first spawn wins the profile.
+		tracking, trackingCreated, err := ensureMovieTracking(ctx, r, mediaItem.ID, profile.ID)
+		if err != nil {
 			return err
 		}
 
@@ -192,6 +176,35 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 		return model.Request{}, err
 	}
 	return spawned, nil
+}
+
+// ensureMovieTracking finds the existing tracking for a media item or creates a
+// fresh one, returning (tracking, created, err). The dedup boundary is
+// UNIQUE(media_item_id): a NotFound from the lookup is the "not yet tracked"
+// signal and takes the create branch; a hit is the join path. A created tracking
+// is born 'active'/'self'/'none'/'smart' with the given profile. The helper is
+// neutral — it never reactivates a terminal tracking; that is a caller-specific
+// concern (the manual-grab path).
+func ensureMovieTracking(ctx context.Context, r *repo.Repository, mediaItemID, profileID uuid.UUID) (model.Tracking, bool, error) {
+	tracking, err := r.FindTrackingByMediaItem(ctx, mediaItemID)
+	switch {
+	case apperrors.IsNotFound(err):
+		tracking, err = r.CreateTracking(ctx, repo.CreateTrackingParams{
+			MediaItemID:      mediaItemID,
+			QualityProfileID: profileID,
+			State:            string(model.TrackingActive),
+			Scope:            "self",
+			UpgradeBehavior:  "none",
+			ScheduleStrategy: "smart",
+		})
+		if err != nil {
+			return model.Tracking{}, false, err
+		}
+		return tracking, true, nil
+	case err != nil:
+		return model.Tracking{}, false, err
+	}
+	return tracking, false, nil
 }
 
 func (s *RequestService) Get(ctx context.Context, id uuid.UUID) (model.Request, error) {

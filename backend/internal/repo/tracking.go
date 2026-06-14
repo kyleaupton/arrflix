@@ -39,7 +39,7 @@ func toModelTracking(row dbgen.Tracking) model.Tracking {
 func (r *Repository) CreateTracking(ctx context.Context, params CreateTrackingParams) (model.Tracking, error) {
 	row, err := r.Q.CreateTracking(ctx, dbgen.CreateTrackingParams{
 		MediaItemID:      pgtypeFromUUID(params.MediaItemID),
-		QualityProfileID: pgtypeFromUUID(params.QualityProfileID),
+		QualityProfileID: pgtypeFromUUIDOrNull(params.QualityProfileID),
 		State:            params.State,
 		Scope:            params.Scope,
 		UpgradeBehavior:  params.UpgradeBehavior,

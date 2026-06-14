@@ -41,12 +41,6 @@
           </SelectContent>
         </Select>
       </div>
-
-      <!-- Untracked but a manual grab is in flight (orphan job, split-brain). -->
-      <Badge v-if="manualJobActive" variant="secondary">
-        <Download class="size-3" />
-        Downloading (manual)
-      </Badge>
     </template>
 
     <!-- Manual override — admin only. Available in both tracked and untracked
@@ -61,7 +55,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
-import { Download, Plus, Search, X } from 'lucide-vue-next'
+import { Plus, Search, X } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
   trackingByTmdbOptions,
@@ -71,7 +65,6 @@ import {
   downloadJobsListForMovieOptions,
 } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -109,23 +102,18 @@ const {
 
 const want = computed(() => tracking.value?.wants?.[0] ?? null)
 
-// Download jobs for this movie, to correlate progress onto the want and to spot
-// an in-flight manual grab when untracked. wantId links a job to its want.
+// Download jobs for this movie, to correlate download progress onto the want.
+// wantId links a job to its want — including a manual grab, which now always
+// produces a want, so there is no orphan-job split-brain to reconcile.
 const { data: jobs } = useQuery(
   computed(() => downloadJobsListForMovieOptions({ path: { id: props.tmdbId } })),
 )
-
-const ACTIVE_JOB_STATUSES = new Set(['created', 'enqueued', 'downloading', 'importing'])
 
 const wantProgress = computed(() => {
   if (!want.value) return null
   const job = jobs.value?.find((j) => j.wantId === want.value!.id)
   return job?.progress ?? null
 })
-
-const manualJobActive = computed(
-  () => !want.value && (jobs.value?.some((j) => ACTIVE_JOB_STATUSES.has(j.status)) ?? false),
-)
 
 const primaryLabel = computed(() => (auth.canAutoApproveMovie ? 'Add to Library' : 'Request'))
 

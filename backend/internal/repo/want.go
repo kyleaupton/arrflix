@@ -43,7 +43,7 @@ func (r *Repository) CreateWant(ctx context.Context, params CreateWantParams) (m
 	row, err := r.Q.CreateWant(ctx, dbgen.CreateWantParams{
 		TrackingID:       pgtypeFromUUID(params.TrackingID),
 		MediaItemID:      pgtypeFromUUID(params.MediaItemID),
-		QualityProfileID: pgtypeFromUUID(params.QualityProfileID),
+		QualityProfileID: pgtypeFromUUIDOrNull(params.QualityProfileID),
 		Status:           params.Status,
 	})
 	if err != nil {
@@ -143,6 +143,22 @@ func (r *Repository) GrabWant(ctx context.Context, id uuid.UUID) (model.Want, bo
 			return model.Want{}, false, nil
 		}
 		return model.Want{}, false, apperrors.FromPg(err, "grab want %s", id)
+	}
+	return toModelWant(row), true, nil
+}
+
+// GrabWantManual flips a want to 'grabbed' for the manual-grab path via
+// compare-and-swap. The bool reports whether the flip landed: false (a 0-row
+// CAS, surfaced as pgx.ErrNoRows) means the want wasn't in a grabbable state
+// ('pending'/'searching'/'failed'/'canceled') — already in flight or available
+// — so the service rejects it as a conflict. Mirrors GrabWant's contract.
+func (r *Repository) GrabWantManual(ctx context.Context, id uuid.UUID) (model.Want, bool, error) {
+	row, err := r.Q.GrabWantManual(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "grab want %s manually", id)
 	}
 	return toModelWant(row), true, nil
 }

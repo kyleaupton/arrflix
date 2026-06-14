@@ -28,14 +28,16 @@ CREATE TABLE IF NOT EXISTS user_policy (
 --
 -- quality_profile_id is single-valued here, resolved at spawn from the
 -- requesting tier. Reconciling two requesters at different tiers (HD vs 4K) is
--- deferred to multi-tier/series work.
+-- deferred to multi-tier/series work. NULL = no autonomous selection policy
+-- (hand-grabbed): a manual grab tracks the download lifecycle without holding a
+-- profile, since the user picked the release directly.
 --
 -- scope/upgrade_behavior/schedule_strategy exist but are inert — placeholders
 -- where series tracking and the scheduler plug in.
 CREATE TABLE IF NOT EXISTS tracking (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   media_item_id UUID NOT NULL REFERENCES media_item(id) ON DELETE RESTRICT,
-  quality_profile_id UUID NOT NULL REFERENCES quality_profile(id) ON DELETE RESTRICT,
+  quality_profile_id UUID REFERENCES quality_profile(id) ON DELETE RESTRICT,
   state TEXT NOT NULL CHECK (state IN ('active', 'paused', 'archived', 'canceled')),
   scope TEXT NOT NULL DEFAULT 'self',
   upgrade_behavior TEXT NOT NULL DEFAULT 'none' CHECK (upgrade_behavior IN ('auto', 'propose', 'none')),
@@ -81,12 +83,15 @@ CREATE TABLE IF NOT EXISTS tracking_requester (
 -- claim it with FOR UPDATE SKIP LOCKED. media_item_id and quality_profile_id
 -- are denormalized/snapshotted at creation for claim convenience, like
 -- download_job. next_run_at is the scheduler's future home (a movie will anchor
--- it to release_date later).
+-- it to release_date later). quality_profile_id NULL = no autonomous selection
+-- policy (hand-grabbed): a manual want is born 'grabbed' and never enters
+-- pending/searching, so the worker — the only reader of the profile — never
+-- touches it.
 CREATE TABLE IF NOT EXISTS want (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tracking_id UUID NOT NULL REFERENCES tracking(id) ON DELETE CASCADE,
   media_item_id UUID NOT NULL REFERENCES media_item(id) ON DELETE RESTRICT,
-  quality_profile_id UUID NOT NULL REFERENCES quality_profile(id) ON DELETE RESTRICT,
+  quality_profile_id UUID REFERENCES quality_profile(id) ON DELETE RESTRICT,
   status TEXT NOT NULL CHECK (status IN (
     'pending',      -- created, not yet searched
     'searching',    -- claimed by the worker, hunting a release

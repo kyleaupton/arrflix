@@ -195,6 +195,40 @@ func (q *Queries) GrabWant(ctx context.Context, id pgtype.UUID) (Want, error) {
 	return i, err
 }
 
+const grabWantManual = `-- name: GrabWantManual :one
+UPDATE want
+SET status = 'grabbed',
+    updated_at = now()
+WHERE id = $1
+  AND status IN ('pending', 'searching', 'failed', 'canceled')
+RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+// GrabWantManual flips a want to 'grabbed' for the manual-grab path via
+// compare-and-swap. The IN (...) set is the race-safe gate: it fires only from
+// the pre-grab/terminal states a manual grab may pre-empt or reactivate
+// ('pending'/'searching' pre-empts the autonomous search; 'failed'/'canceled'
+// reactivates). A want the worker already advanced ('grabbed'/'downloading'/
+// 'imported'/'available') isn't in the set, so the manual grab loses cleanly
+// (0 rows, surfaced as pgx.ErrNoRows) and the service rejects it as a conflict.
+func (q *Queries) GrabWantManual(ctx context.Context, id pgtype.UUID) (Want, error) {
+	row := q.db.QueryRow(ctx, grabWantManual, id)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listWantsByTracking = `-- name: ListWantsByTracking :many
 SELECT id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
 WHERE tracking_id = $1

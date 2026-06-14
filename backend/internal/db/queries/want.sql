@@ -87,6 +87,21 @@ WHERE id = sqlc.arg(id)
   AND status = 'searching'
 RETURNING *;
 
+-- GrabWantManual flips a want to 'grabbed' for the manual-grab path via
+-- compare-and-swap. The IN (...) set is the race-safe gate: it fires only from
+-- the pre-grab/terminal states a manual grab may pre-empt or reactivate
+-- ('pending'/'searching' pre-empts the autonomous search; 'failed'/'canceled'
+-- reactivates). A want the worker already advanced ('grabbed'/'downloading'/
+-- 'imported'/'available') isn't in the set, so the manual grab loses cleanly
+-- (0 rows, surfaced as pgx.ErrNoRows) and the service rejects it as a conflict.
+-- name: GrabWantManual :one
+UPDATE want
+SET status = 'grabbed',
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND status IN ('pending', 'searching', 'failed', 'canceled')
+RETURNING *;
+
 -- ReclaimStaleSearchingWants resets wants wedged in 'searching' past the cutoff
 -- back to 'pending' so the AcquisitionWorker reclaims them — the self-heal for a
 -- crash between ClaimRunnableWants' flip and a terminal transition. Reset-only:
