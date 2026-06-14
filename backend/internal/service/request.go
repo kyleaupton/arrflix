@@ -155,9 +155,11 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 			return err
 		}
 
-		// One want per tracking: only a freshly-created tracking gets a want.
-		// A second requester joining an existing tracking adds a requester row
-		// but no second want — the dedup invariant Story 1 requires.
+		// One want per tracking. A freshly-created tracking gets a new pending
+		// want. A request that joined an existing tracking adds a requester row
+		// but no second want (the dedup invariant Story 1 requires) — instead it
+		// re-arms the existing want if a prior attempt left it terminal, so a
+		// re-request resumes acquisition rather than silently dead-ending.
 		if trackingCreated {
 			if _, err := r.CreateWant(ctx, repo.CreateWantParams{
 				TrackingID:       tracking.ID,
@@ -167,6 +169,8 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 			}); err != nil {
 				return err
 			}
+		} else if err := rearmMovieWant(ctx, r, tracking.ID, mediaItem.ID, profile.ID); err != nil {
+			return err
 		}
 
 		spawned, err = r.SetRequestSpawned(ctx, req.ID, tracking.ID)
@@ -178,33 +182,71 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 	return spawned, nil
 }
 
-// ensureMovieTracking finds the existing tracking for a media item or creates a
-// fresh one, returning (tracking, created, err). The dedup boundary is
-// UNIQUE(media_item_id): a NotFound from the lookup is the "not yet tracked"
-// signal and takes the create branch; a hit is the join path. A created tracking
-// is born 'active'/'self'/'none'/'smart' with the given profile. The helper is
-// neutral — it never reactivates a terminal tracking; that is a caller-specific
-// concern (the manual-grab path).
+// ensureMovieTracking gets-or-creates the tracking for a media item, returning
+// (tracking, created, err). The dedup boundary is UNIQUE(media_item_id), and the
+// get-or-create is race-safe: CreateTrackingIfAbsent inserts on the winning
+// spawn (created=true) and no-ops on a concurrent or prior one, where the loser
+// re-reads the existing row (created=false) instead of rolling back with a 409.
+// A created tracking is born 'active'/'self'/'none'/'smart' with the given
+// profile. The helper is neutral — it never reactivates a terminal tracking;
+// re-arming a terminal want on the join path is the caller's concern
+// (rearmMovieWant here, GrabManualWant on the manual-grab path).
 func ensureMovieTracking(ctx context.Context, r *repo.Repository, mediaItemID, profileID uuid.UUID) (model.Tracking, bool, error) {
-	tracking, err := r.FindTrackingByMediaItem(ctx, mediaItemID)
-	switch {
-	case apperrors.IsNotFound(err):
-		tracking, err = r.CreateTracking(ctx, repo.CreateTrackingParams{
-			MediaItemID:      mediaItemID,
-			QualityProfileID: profileID,
-			State:            string(model.TrackingActive),
-			Scope:            "self",
-			UpgradeBehavior:  "none",
-			ScheduleStrategy: "smart",
-		})
-		if err != nil {
-			return model.Tracking{}, false, err
-		}
+	tracking, created, err := r.CreateTrackingIfAbsent(ctx, repo.CreateTrackingParams{
+		MediaItemID:      mediaItemID,
+		QualityProfileID: profileID,
+		State:            string(model.TrackingActive),
+		Scope:            "self",
+		UpgradeBehavior:  "none",
+		ScheduleStrategy: "smart",
+	})
+	if err != nil {
+		return model.Tracking{}, false, err
+	}
+	if created {
 		return tracking, true, nil
-	case err != nil:
+	}
+	tracking, err = r.FindTrackingByMediaItem(ctx, mediaItemID)
+	if err != nil {
 		return model.Tracking{}, false, err
 	}
 	return tracking, false, nil
+}
+
+// rearmMovieWant resumes acquisition when an already-tracked movie is requested
+// again. The single-atom invariant caps a movie tracking at one want, so a
+// terminal want ('failed'/'canceled') is re-armed in place rather than
+// duplicated; an in-flight or 'available' want is left untouched (RearmWant's
+// CAS no-ops). A tracking that somehow has no want gets a fresh pending one. A
+// re-armed want that was 'canceled' also flips its tracking — which CancelWant
+// parked in 'canceled' — back to 'active'.
+func rearmMovieWant(ctx context.Context, r *repo.Repository, trackingID, mediaItemID, profileID uuid.UUID) error {
+	wants, err := r.ListWantsByTracking(ctx, trackingID)
+	if err != nil {
+		return err
+	}
+	if len(wants) == 0 {
+		_, err := r.CreateWant(ctx, repo.CreateWantParams{
+			TrackingID:       trackingID,
+			MediaItemID:      mediaItemID,
+			QualityProfileID: profileID,
+			Status:           string(model.WantPending),
+		})
+		return err
+	}
+
+	_, ok, err := r.RearmWant(ctx, wants[0].ID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		// In-flight or already 'available' — acquisition is already handled.
+		return nil
+	}
+	// The re-armed want was terminal; restore a tracking CancelWant left
+	// 'canceled'. A no-op for a still-active tracking (the failed-want case).
+	_, err = r.SetTrackingState(ctx, trackingID, string(model.TrackingActive))
+	return err
 }
 
 func (s *RequestService) Get(ctx context.Context, id uuid.UUID) (model.Request, error) {

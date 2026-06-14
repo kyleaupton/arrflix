@@ -209,6 +209,23 @@ func (r *Repository) ScheduleWantRetry(ctx context.Context, params ScheduleWantR
 	return toModelWant(row), true, nil
 }
 
+// RearmWant resumes a terminal want when its movie is re-requested, flipping a
+// 'failed'/'canceled' want back to 'pending' (attempt counter and backoff reset)
+// so the AcquisitionWorker re-claims it. The single-atom invariant means the one
+// existing want is re-armed rather than a second created. The bool reports
+// whether the re-arm landed: false (a 0-row CAS, surfaced as pgx.ErrNoRows)
+// means the want is in-flight or already 'available' — nothing to resume.
+func (r *Repository) RearmWant(ctx context.Context, id uuid.UUID) (model.Want, bool, error) {
+	row, err := r.Q.RearmWant(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "rearm want %s", id)
+	}
+	return toModelWant(row), true, nil
+}
+
 // MarkWantFailed terminally fails a still-'searching' want via compare-and-swap.
 // The bool reports ownership: false (a 0-row CAS, surfaced as pgx.ErrNoRows)
 // means the want is no longer 'searching' — the reaper reset it and another

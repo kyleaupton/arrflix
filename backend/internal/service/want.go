@@ -62,6 +62,14 @@ func (s *WantService) CancelWant(ctx context.Context, id uuid.UUID) (model.Want,
 		// deleting data) is more destructive than flipping a DB row, so it must not
 		// stay open to "any authenticated user" once per-action authz lands.
 		if err := s.downloadJobs.Cancel(ctx, j.ID); err != nil {
+			// The job was listed as active but raced to a terminal state before we
+			// could cancel it — its CAS now matches 0 rows, surfaced as NotFound.
+			// That's the outcome we wanted (already terminal); skip it. The want
+			// is already flipped 'canceled' above, so don't fail the whole cancel
+			// on a benign race. Any other error is real.
+			if apperrors.IsNotFound(err) {
+				continue
+			}
 			return model.Want{}, err
 		}
 	}

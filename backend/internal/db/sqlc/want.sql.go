@@ -340,6 +340,42 @@ func (q *Queries) MirrorWantStatus(ctx context.Context, arg MirrorWantStatusPara
 	return i, err
 }
 
+const rearmWant = `-- name: RearmWant :one
+UPDATE want
+SET status = 'pending',
+    attempt_count = 0,
+    last_error = NULL,
+    next_run_at = now(),
+    updated_at = now()
+WHERE id = $1
+  AND status IN ('failed', 'canceled')
+RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+// RearmWant resumes a terminal want when its movie is re-requested, flipping a
+// 'failed'/'canceled' want back to 'pending' with the backoff reset so the
+// AcquisitionWorker re-claims it. The single-atom invariant means a re-request
+// re-arms the one existing want rather than creating a second. A 0-row match
+// (pgx.ErrNoRows) means the want is in-flight or already 'available' — nothing
+// to resume. Mirrors GrabWant's CAS contract.
+func (q *Queries) RearmWant(ctx context.Context, id pgtype.UUID) (Want, error) {
+	row := q.db.QueryRow(ctx, rearmWant, id)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const reclaimStaleSearchingWants = `-- name: ReclaimStaleSearchingWants :many
 UPDATE want
 SET status = 'pending',

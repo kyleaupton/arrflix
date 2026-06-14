@@ -12,6 +12,23 @@ VALUES (
 )
 RETURNING *;
 
+-- CreateTrackingIfAbsent is the race-safe get-or-create for the dedup boundary:
+-- ON CONFLICT (media_item_id) DO NOTHING means a concurrent spawn that lost the
+-- insert matches 0 rows (surfaced as pgx.ErrNoRows) instead of erroring on the
+-- UNIQUE violation. The caller reads no-row as "already tracked, re-read it".
+-- name: CreateTrackingIfAbsent :one
+INSERT INTO tracking (media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy)
+VALUES (
+  sqlc.arg(media_item_id),
+  sqlc.arg(quality_profile_id),
+  sqlc.arg(state),
+  sqlc.arg(scope),
+  sqlc.arg(upgrade_behavior),
+  sqlc.arg(schedule_strategy)
+)
+ON CONFLICT (media_item_id) DO NOTHING
+RETURNING *;
+
 -- name: GetTracking :one
 SELECT * FROM tracking
 WHERE id = $1;

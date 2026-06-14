@@ -2,8 +2,10 @@ package repo
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -49,6 +51,30 @@ func (r *Repository) CreateTracking(ctx context.Context, params CreateTrackingPa
 		return model.Tracking{}, apperrors.FromPg(err, "create tracking for media item %s", params.MediaItemID)
 	}
 	return toModelTracking(row), nil
+}
+
+// CreateTrackingIfAbsent is the race-safe get-or-create over the
+// UNIQUE(media_item_id) dedup boundary. The bool reports whether THIS call
+// inserted the row: true → freshly created; false (a 0-row ON CONFLICT, surfaced
+// as pgx.ErrNoRows) → a concurrent or prior spawn already created it, so the
+// caller re-reads via FindTrackingByMediaItem. Mirrors the CAS-returns-bool
+// convention used across the want methods.
+func (r *Repository) CreateTrackingIfAbsent(ctx context.Context, params CreateTrackingParams) (model.Tracking, bool, error) {
+	row, err := r.Q.CreateTrackingIfAbsent(ctx, dbgen.CreateTrackingIfAbsentParams{
+		MediaItemID:      pgtypeFromUUID(params.MediaItemID),
+		QualityProfileID: pgtypeFromUUIDOrNull(params.QualityProfileID),
+		State:            params.State,
+		Scope:            params.Scope,
+		UpgradeBehavior:  params.UpgradeBehavior,
+		ScheduleStrategy: params.ScheduleStrategy,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Tracking{}, false, nil
+		}
+		return model.Tracking{}, false, apperrors.FromPg(err, "create tracking for media item %s", params.MediaItemID)
+	}
+	return toModelTracking(row), true, nil
 }
 
 func (r *Repository) GetTracking(ctx context.Context, id uuid.UUID) (model.Tracking, error) {

@@ -59,6 +59,57 @@ func (q *Queries) CreateTracking(ctx context.Context, arg CreateTrackingParams) 
 	return i, err
 }
 
+const createTrackingIfAbsent = `-- name: CreateTrackingIfAbsent :one
+INSERT INTO tracking (media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy)
+VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6
+)
+ON CONFLICT (media_item_id) DO NOTHING
+RETURNING id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, created_at, updated_at
+`
+
+type CreateTrackingIfAbsentParams struct {
+	MediaItemID      pgtype.UUID `json:"media_item_id"`
+	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
+	State            string      `json:"state"`
+	Scope            string      `json:"scope"`
+	UpgradeBehavior  string      `json:"upgrade_behavior"`
+	ScheduleStrategy string      `json:"schedule_strategy"`
+}
+
+// CreateTrackingIfAbsent is the race-safe get-or-create for the dedup boundary:
+// ON CONFLICT (media_item_id) DO NOTHING means a concurrent spawn that lost the
+// insert matches 0 rows (surfaced as pgx.ErrNoRows) instead of erroring on the
+// UNIQUE violation. The caller reads no-row as "already tracked, re-read it".
+func (q *Queries) CreateTrackingIfAbsent(ctx context.Context, arg CreateTrackingIfAbsentParams) (Tracking, error) {
+	row := q.db.QueryRow(ctx, createTrackingIfAbsent,
+		arg.MediaItemID,
+		arg.QualityProfileID,
+		arg.State,
+		arg.Scope,
+		arg.UpgradeBehavior,
+		arg.ScheduleStrategy,
+	)
+	var i Tracking
+	err := row.Scan(
+		&i.ID,
+		&i.MediaItemID,
+		&i.QualityProfileID,
+		&i.State,
+		&i.Scope,
+		&i.UpgradeBehavior,
+		&i.ScheduleStrategy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const findTrackingByMediaItem = `-- name: FindTrackingByMediaItem :one
 SELECT id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, created_at, updated_at FROM tracking
 WHERE media_item_id = $1

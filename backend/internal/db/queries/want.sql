@@ -132,6 +132,23 @@ WHERE id = sqlc.arg(id)
   AND status = 'searching'
 RETURNING *;
 
+-- RearmWant resumes a terminal want when its movie is re-requested, flipping a
+-- 'failed'/'canceled' want back to 'pending' with the backoff reset so the
+-- AcquisitionWorker re-claims it. The single-atom invariant means a re-request
+-- re-arms the one existing want rather than creating a second. A 0-row match
+-- (pgx.ErrNoRows) means the want is in-flight or already 'available' — nothing
+-- to resume. Mirrors GrabWant's CAS contract.
+-- name: RearmWant :one
+UPDATE want
+SET status = 'pending',
+    attempt_count = 0,
+    last_error = NULL,
+    next_run_at = now(),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND status IN ('failed', 'canceled')
+RETURNING *;
+
 -- MarkWantFailed terminally fails a want. Mirrors MarkDownloadJobFailed. The
 -- 'searching' guard keeps the worker from clobbering a want the reaper reset and
 -- another worker re-grabbed.
