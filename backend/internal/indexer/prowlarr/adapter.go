@@ -32,30 +32,19 @@ func (p *ProwlarrSource) Search(ctx context.Context, query indexer.SearchQuery) 
 		Limit: query.Limit,
 	}
 
-	// Set search type based on media type
+	// Set search type based on media type. We deliberately do NOT embed
+	// Prowlarr's {ImdbId:…}/{TmdbId:…} query tokens: Prowlarr restricts an
+	// ID-token search to indexers that natively support that exact id type and
+	// returns nothing from the rest (no text fallback), which silently drops
+	// text-only indexers. Instead we search by text across all indexers and let
+	// the acquisition gate match on the imdbId/tmdbId Prowlarr echoes onto each
+	// result (mapped below), falling back to title+year where a result carries
+	// no id.
 	switch query.MediaType {
 	case indexer.MediaTypeSeries:
 		input.Type = "tvsearch"
 	default:
 		input.Type = "search"
-	}
-
-	// ID-precise search: Prowlarr parses {ImdbId:…}/{TmdbId:…} tokens from the
-	// query string, but only when the search type is "movie". When no IDs are
-	// present we keep type=search so indexers without movie-search caps still
-	// run a broad basic search. Tokens append to the free-text query, which
-	// remains the fallback on indexers that advertise text-only movie search.
-	if query.MediaType == indexer.MediaTypeMovie && (query.ImdbID != nil || query.TmdbID != nil) {
-		input.Type = "movie"
-		var b strings.Builder
-		b.WriteString(query.Query)
-		if query.ImdbID != nil {
-			fmt.Fprintf(&b, " {ImdbId:%s}", *query.ImdbID)
-		}
-		if query.TmdbID != nil {
-			fmt.Fprintf(&b, " {TmdbId:%d}", *query.TmdbID)
-		}
-		input.Query = b.String()
 	}
 
 	results, err := p.client.SearchContext(ctx, input)

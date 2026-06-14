@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/qualityprofile"
@@ -121,6 +122,16 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 		})
 		if err != nil {
 			return err
+		}
+
+		// Persist the imdb id now (the details fetch already carries it) so the
+		// acquisition gate can ID-match on the first search, rather than waiting
+		// for the async enrichment worker to backfill it. Full enrichment
+		// (poster, runtime, …) still lands later via that worker.
+		if details.IMDbID != "" {
+			if err := r.UpsertMediaItemExternalID(ctx, mediaItem.ID, string(metadata.SourceIMDB), details.IMDbID); err != nil {
+				return err
+			}
 		}
 
 		// Dedup: at most one tracking per media item. A NotFound is the

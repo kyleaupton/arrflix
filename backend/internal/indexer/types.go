@@ -17,12 +17,6 @@ type SearchQuery struct {
 	Season    *int
 	Episode   *int
 	Limit     int
-
-	// Structured identifiers for ID-precise search. The prowlarr adapter
-	// composes these into Prowlarr's query-token syntax when present; absent
-	// (nil) IDs fall back to the free-text Query.
-	TmdbID *int64
-	ImdbID *string
 }
 
 // SearchResult represents a validated search result from an indexer.
@@ -33,9 +27,9 @@ type SearchResult struct {
 	IndexerName string
 	GUID        string
 
-	// Structured identifiers Prowlarr echoes from capable indexers. 0 means
-	// the indexer didn't report that id; the gate uses them to verify a result
-	// refers to the wanted movie.
+	// Structured identifiers Prowlarr echoes onto a result (parsed from the
+	// release or supplied by the indexer). 0 means none was reported; the
+	// acquisition gate uses them to verify a result refers to the wanted movie.
 	TmdbID int64
 	ImdbID int64
 

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/indexer"
@@ -63,7 +62,7 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 		return false, err
 	}
 
-	results, err := s.source.Search(ctx, s.wantToQuery(mi, imdbID))
+	results, err := s.source.Search(ctx, s.wantToQuery(mi))
 	if err != nil {
 		return false, apperrors.BadGatewayf("indexer search %q: %v", mi.Title, err).
 			Op("AcquisitionService.ProcessWant")
@@ -131,23 +130,20 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 }
 
 // wantToQuery builds the indexer query from the stored media_item (no TMDB
-// call — title+year are already persisted). The free-text "<Title> <Year>" is
-// the fallback for text-only indexers; TmdbID/ImdbID ride alongside for the
-// prowlarr adapter to compose into ID-search tokens. Braces are stripped from
-// the title so a stray brace can't corrupt Prowlarr's token regex. Movie-only;
-// series adds a branch here once it lands.
-func (s *AcquisitionService) wantToQuery(mi model.MediaItem, imdbID *string) indexer.SearchQuery {
-	title := strings.NewReplacer("{", "", "}", "").Replace(mi.Title)
-	query := title
+// call — title+year are already persisted). The search is free-text across all
+// indexers; identity precision comes from the relevance gate matching on the
+// ids Prowlarr echoes per result, not from embedding ID tokens (which would
+// drop text-only indexers — see the prowlarr adapter). Movie-only; series adds
+// a branch here once it lands.
+func (s *AcquisitionService) wantToQuery(mi model.MediaItem) indexer.SearchQuery {
+	query := mi.Title
 	if mi.Year != nil {
-		query = fmt.Sprintf("%s %d", title, *mi.Year)
+		query = fmt.Sprintf("%s %d", mi.Title, *mi.Year)
 	}
 	return indexer.SearchQuery{
 		Query:     query,
 		MediaType: indexer.MediaTypeMovie,
 		Limit:     100,
-		TmdbID:    mi.TmdbID,
-		ImdbID:    imdbID,
 	}
 }
 
