@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/indexer"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/qualityprofile"
@@ -53,13 +55,21 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 		return false, err
 	}
 
-	results, err := s.source.Search(ctx, s.wantToQuery(mi))
+	// IMDb id is best-effort: capable indexers (e.g. IPTorrents) accept it for
+	// ID-precise search, and the gate verifies it. Absent pre-enrichment, in
+	// which case the query and gate fall back to title+year.
+	imdbID, err := s.repo.GetMediaItemExternalID(ctx, mi.ID, string(metadata.SourceIMDB))
+	if err != nil {
+		return false, err
+	}
+
+	results, err := s.source.Search(ctx, s.wantToQuery(mi, imdbID))
 	if err != nil {
 		return false, apperrors.BadGatewayf("indexer search %q: %v", mi.Title, err).
 			Op("AcquisitionService.ProcessWant")
 	}
 
-	picked, err := s.pick(ctx, want, mi, results)
+	picked, err := s.pick(ctx, want, mi, imdbID, results)
 	if err != nil {
 		return false, err
 	}
@@ -121,17 +131,23 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 }
 
 // wantToQuery builds the indexer query from the stored media_item (no TMDB
-// call — title+year are already persisted). Movie-only; series adds a branch
-// here once it lands.
-func (s *AcquisitionService) wantToQuery(mi model.MediaItem) indexer.SearchQuery {
-	query := mi.Title
+// call — title+year are already persisted). The free-text "<Title> <Year>" is
+// the fallback for text-only indexers; TmdbID/ImdbID ride alongside for the
+// prowlarr adapter to compose into ID-search tokens. Braces are stripped from
+// the title so a stray brace can't corrupt Prowlarr's token regex. Movie-only;
+// series adds a branch here once it lands.
+func (s *AcquisitionService) wantToQuery(mi model.MediaItem, imdbID *string) indexer.SearchQuery {
+	title := strings.NewReplacer("{", "", "}", "").Replace(mi.Title)
+	query := title
 	if mi.Year != nil {
-		query = fmt.Sprintf("%s %d", mi.Title, *mi.Year)
+		query = fmt.Sprintf("%s %d", title, *mi.Year)
 	}
 	return indexer.SearchQuery{
 		Query:     query,
 		MediaType: indexer.MediaTypeMovie,
 		Limit:     100,
+		TmdbID:    mi.TmdbID,
+		ImdbID:    imdbID,
 	}
 }
 
@@ -140,7 +156,7 @@ func (s *AcquisitionService) wantToQuery(mi model.MediaItem) indexer.SearchQuery
 // picked Evaluation (nil when every candidate was gated out) after logging the
 // per-release decisions. The picked Subject carries its Media fields, so the
 // caller can route it directly.
-func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model.MediaItem, results []indexer.SearchResult) (*qualityprofile.Evaluation, error) {
+func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model.MediaItem, imdbID *string, results []indexer.SearchResult) (*qualityprofile.Evaluation, error) {
 	year, tmdbID, runtime := mediaFields(mi)
 	subjects := make([]model.Subject, 0, len(results))
 	var relevanceRejects []relevanceReject
@@ -148,12 +164,12 @@ func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model
 		cand := searchResultToCandidate(res)
 		parsed := parsing.Parse(cand.Title, parsing.DomainMovie)
 
-		// Relevance gate: drop releases whose parsed identity isn't the wanted
-		// movie before quality even looks at them. This is the autonomous flow's
-		// only identity check — the download is filed onto the want by linkage
-		// with no import-time re-match — so a wrong-title release that slips
-		// through here would be filed as the movie.
-		if reason, ok := relevanceReason(parsed, mi); !ok {
+		// Relevance gate: drop releases that aren't the wanted movie before
+		// quality even looks at them. This is the autonomous flow's only
+		// identity check — the download is filed onto the want by linkage with
+		// no import-time re-match — so a wrong release that slips through here
+		// would be filed as the movie.
+		if reason, ok := relevanceReason(res, parsed, mi, imdbID); !ok {
 			relevanceRejects = append(relevanceRejects, relevanceReject{title: cand.Title, reason: reason})
 			continue
 		}
@@ -176,13 +192,40 @@ type relevanceReject struct {
 	reason string
 }
 
-// relevanceReason reports whether a parsed release identity refers to the same
-// movie as the wanted media item, returning a human reason when it does not. A
-// parsed title (primary or AKA) must match the wanted title, and the parsed year
-// must agree — an absent parsed year (0) passes, since many release names omit
-// it. Mirrors Radarr's ParsingService.TryGetMovieBySearchCriteria + the
-// DecisionEngine MovieSpecification "Wrong movie" rejection.
-func relevanceReason(parsed parsing.ParsedRelease, mi model.MediaItem) (reason string, ok bool) {
+// relevanceReason reports whether a search result refers to the same movie as
+// the wanted media item, returning a human reason when it does not. It is
+// ID-preferred, mirroring Radarr's ParsingService.FindMovie priority: a result
+// carrying a stable id is decided by that id alone (never falling through to the
+// fuzzier title check); only an id-less result — the text-only-indexer case —
+// is judged by parsed title + year.
+//
+//   - TMDb id present: accept iff it equals the want's tmdb id, else reject.
+//   - else IMDb id present and the want has an imdb id: compare numerically
+//     (the want id's "tt" prefix stripped), accept on match, reject on mismatch.
+//   - else: parsed title (primary or AKA) must match the wanted title and the
+//     parsed year must agree — an absent parsed year (0) passes, since many
+//     release names omit it.
+func relevanceReason(res indexer.SearchResult, parsed parsing.ParsedRelease, mi model.MediaItem, imdbID *string) (reason string, ok bool) {
+	if res.TmdbID != 0 {
+		wantTmdb := int64(0)
+		if mi.TmdbID != nil {
+			wantTmdb = *mi.TmdbID
+		}
+		if res.TmdbID == wantTmdb {
+			return "", true
+		}
+		return fmt.Sprintf("tmdbId %d does not match %d", res.TmdbID, wantTmdb), false
+	}
+
+	if res.ImdbID != 0 && imdbID != nil {
+		if want := imdbNumeric(*imdbID); want != 0 {
+			if res.ImdbID == want {
+				return "", true
+			}
+			return fmt.Sprintf("imdbId %d does not match %d", res.ImdbID, want), false
+		}
+	}
+
 	releaseTitles := append([]string{parsed.Identity.Title.Value}, parsed.Identity.AllTitles.Value...)
 	titleOK := false
 	for _, rt := range releaseTitles {
@@ -200,6 +243,19 @@ func relevanceReason(parsed parsing.ParsedRelease, mi model.MediaItem) (reason s
 	}
 
 	return "", true
+}
+
+// imdbNumeric parses the numeric form of an IMDb id ("tt0137523" → 137523) for
+// comparison against the integer ids Prowlarr echoes. Returns 0 when the value
+// holds no digits, which the caller treats as "no usable id".
+func imdbNumeric(id string) int64 {
+	n := int64(0)
+	for _, c := range id {
+		if c >= '0' && c <= '9' {
+			n = n*10 + int64(c-'0')
+		}
+	}
+	return n
 }
 
 // mediaFields pulls the movie metadata pick feeds into the engine: year and

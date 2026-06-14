@@ -369,6 +369,24 @@ func (r *Repository) UpsertMediaMetadataSource(ctx context.Context, params Upser
 	}), "upsert metadata source %q for media item %s", params.Source, params.MediaItemID)
 }
 
+// GetMediaItemExternalID reads a secondary-namespace cross-reference
+// (imdb/tvdb/…) for a media item. A missing row is normal pre-enrichment, not
+// an error: it returns (nil, nil) so callers can treat absence as "no id yet".
+func (r *Repository) GetMediaItemExternalID(ctx context.Context, mediaItemID uuid.UUID, source string) (*string, error) {
+	id, err := r.Q.GetMediaItemExternalID(ctx, dbgen.GetMediaItemExternalIDParams{
+		MediaItemID: pgtypeFromUUID(mediaItemID),
+		Source:      source,
+	})
+	if err != nil {
+		err = apperrors.FromPg(err, "external id %q for media item %s", source, mediaItemID)
+		if apperrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &id, nil
+}
+
 // UpsertMediaItemExternalID writes a secondary-namespace cross-reference
 // (imdb/tvdb/…) for a media item. One row per (item, source); re-running
 // refreshes the external_id in place.

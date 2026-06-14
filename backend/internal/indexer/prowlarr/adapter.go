@@ -40,6 +40,24 @@ func (p *ProwlarrSource) Search(ctx context.Context, query indexer.SearchQuery) 
 		input.Type = "search"
 	}
 
+	// ID-precise search: Prowlarr parses {ImdbId:…}/{TmdbId:…} tokens from the
+	// query string, but only when the search type is "movie". When no IDs are
+	// present we keep type=search so indexers without movie-search caps still
+	// run a broad basic search. Tokens append to the free-text query, which
+	// remains the fallback on indexers that advertise text-only movie search.
+	if query.MediaType == indexer.MediaTypeMovie && (query.ImdbID != nil || query.TmdbID != nil) {
+		input.Type = "movie"
+		var b strings.Builder
+		b.WriteString(query.Query)
+		if query.ImdbID != nil {
+			fmt.Fprintf(&b, " {ImdbId:%s}", *query.ImdbID)
+		}
+		if query.TmdbID != nil {
+			fmt.Fprintf(&b, " {TmdbId:%d}", *query.TmdbID)
+		}
+		input.Query = b.String()
+	}
+
 	results, err := p.client.SearchContext(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("prowlarr search: %w", err)
@@ -146,6 +164,8 @@ func (p *ProwlarrSource) mapResult(r *prowlarr.Search) (indexer.SearchResult, er
 		IndexerID:    r.IndexerID,
 		IndexerName:  r.Indexer,
 		GUID:         r.GUID,
+		TmdbID:       r.TmdbID,
+		ImdbID:       r.ImdbID,
 		Title:        r.Title,
 		DownloadURL:  downloadURL,
 		Protocol:     string(r.Protocol),
