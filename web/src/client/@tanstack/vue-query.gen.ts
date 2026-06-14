@@ -3,8 +3,8 @@
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/vue-query';
 
 import { client } from '../client.gen';
-import { authLogin, authMe, authPlexExchange, authSignup, bootstrapGet, downloadCandidatesDownloadMovie, downloadCandidatesDownloadSeries, downloadCandidatesListMovie, downloadCandidatesListSeries, downloadCandidatesPreviewMovie, downloadCandidatesPreviewSeries, downloadersCreate, downloadersDelete, downloadersGet, downloadersGetDefault, downloadersList, downloadersTest, downloadersTestConfig, downloadersUpdate, downloadJobsCancel, downloadJobsGet, downloadJobsHistory, downloadJobsList, downloadJobsListForMovie, downloadJobsListForSeries, downloadJobsListImportTasks, downloadJobsReimport, downloadJobsRetry, downloadJobsTimeline, eventsSubscriptionsAdd, eventsSubscriptionsList, eventsSubscriptionsRemove, feedGet, filesDetach, filesMatch, filesMatchDecision, filesUnmatch, filesystemBrowse, healthCheck, importTasksCancel, importTasksCounts, importTasksGet, importTasksHistory, importTasksList, importTasksReimport, importTasksTimeline, indexersAction, indexersDelete, indexersGet, indexersGetSchema, indexersListConfigured, indexersSave, indexersTestAll, indexersTestSaved, indexersTestUnsaved, indexersToggle, invitesCreate, invitesDelete, invitesList, librariesCreate, librariesDelete, librariesGet, librariesList, librariesScan, librariesUpdate, libraryList, mediaGetMovie, mediaGetPerson, mediaGetSeries, mediaSearch, nameTemplatesCreate, nameTemplatesDelete, nameTemplatesGet, nameTemplatesGetDefault, nameTemplatesList, nameTemplatesUpdate, type Options, qualityBindTier, qualityCreateCustomFormat, qualityCreateProfile, qualityDeleteCustomFormat, qualityDeleteProfile, qualityGetCustomFormat, qualityGetProfile, qualityListBins, qualityListCustomFormats, qualityListProfiles, qualityListSizeDefaults, qualityListTiers, qualityTestProfile, qualityUpdateCustomFormat, qualityUpdateProfile, rolesList, routingCreateRule, routingDeleteRule, routingEvaluate, routingGetFields, routingGetRule, routingListRules, routingReorderRules, routingUpdateRule, settingsList, settingsPatch, setupInitialize, setupStatus, setupTmdb, unmatchedFilesGet, unmatchedFilesList, usersAssignRole, usersDelete, usersGet, usersGetProfile, usersList, usersUpdate, usersUpdatePassword, usersUpdateProfile, usersUpdateProfilePassword, versionGet } from '../sdk.gen';
-import type { AuthLoginData, AuthLoginError, AuthLoginResponse, AuthMeData, AuthPlexExchangeData, AuthPlexExchangeError, AuthPlexExchangeResponse, AuthSignupData, AuthSignupError, AuthSignupResponse, BootstrapGetData, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieError, DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesError, DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesListMovieData, DownloadCandidatesListSeriesData, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieError, DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesError, DownloadCandidatesPreviewSeriesResponse, DownloadersCreateData, DownloadersCreateError, DownloadersCreateResponse, DownloadersDeleteData, DownloadersDeleteError, DownloadersDeleteResponse, DownloadersGetData, DownloadersGetDefaultData, DownloadersListData, DownloadersTestConfigData, DownloadersTestConfigError, DownloadersTestConfigResponse, DownloadersTestData, DownloadersTestError, DownloadersTestResponse, DownloadersUpdateData, DownloadersUpdateError, DownloadersUpdateResponse, DownloadJobsCancelData, DownloadJobsCancelError, DownloadJobsCancelResponse, DownloadJobsGetData, DownloadJobsHistoryData, DownloadJobsListData, DownloadJobsListForMovieData, DownloadJobsListForSeriesData, DownloadJobsListImportTasksData, DownloadJobsReimportData, DownloadJobsReimportError, DownloadJobsReimportResponse, DownloadJobsRetryData, DownloadJobsRetryError, DownloadJobsRetryResponse, DownloadJobsTimelineData, EventsSubscriptionsAddData, EventsSubscriptionsAddError, EventsSubscriptionsAddResponse, EventsSubscriptionsListData, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveError, EventsSubscriptionsRemoveResponse, FeedGetData, FilesDetachData, FilesDetachError, FilesDetachResponse, FilesMatchData, FilesMatchDecisionData, FilesMatchError, FilesMatchResponse, FilesUnmatchData, FilesUnmatchError, FilesUnmatchResponse, FilesystemBrowseData, HealthCheckData, ImportTasksCancelData, ImportTasksCancelError, ImportTasksCancelResponse, ImportTasksCountsData, ImportTasksGetData, ImportTasksHistoryData, ImportTasksListData, ImportTasksListError, ImportTasksListResponse, ImportTasksReimportData, ImportTasksReimportError, ImportTasksReimportResponse, ImportTasksTimelineData, IndexersActionData, IndexersActionError, IndexersDeleteData, IndexersDeleteError, IndexersDeleteResponse, IndexersGetData, IndexersGetSchemaData, IndexersListConfiguredData, IndexersSaveData, IndexersSaveError, IndexersSaveResponse, IndexersTestAllData, IndexersTestAllError, IndexersTestAllResponse, IndexersTestSavedData, IndexersTestSavedError, IndexersTestSavedResponse, IndexersTestUnsavedData, IndexersTestUnsavedError, IndexersTestUnsavedResponse, IndexersToggleData, IndexersToggleError, IndexersToggleResponse, InvitesCreateData, InvitesCreateError, InvitesCreateResponse, InvitesDeleteData, InvitesDeleteError, InvitesDeleteResponse, InvitesListData, LibrariesCreateData, LibrariesCreateError, LibrariesCreateResponse, LibrariesDeleteData, LibrariesDeleteError, LibrariesDeleteResponse, LibrariesGetData, LibrariesListData, LibrariesScanData, LibrariesScanError, LibrariesScanResponse, LibrariesUpdateData, LibrariesUpdateError, LibrariesUpdateResponse, LibraryListData, LibraryListError, LibraryListResponse, MediaGetMovieData, MediaGetPersonData, MediaGetSeriesData, MediaSearchData, MediaSearchError, MediaSearchResponse, NameTemplatesCreateData, NameTemplatesCreateError, NameTemplatesCreateResponse, NameTemplatesDeleteData, NameTemplatesDeleteError, NameTemplatesDeleteResponse, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesListData, NameTemplatesUpdateData, NameTemplatesUpdateError, NameTemplatesUpdateResponse, QualityBindTierData, QualityBindTierError, QualityBindTierResponse, QualityCreateCustomFormatData, QualityCreateCustomFormatError, QualityCreateCustomFormatResponse, QualityCreateProfileData, QualityCreateProfileError, QualityCreateProfileResponse, QualityDeleteCustomFormatData, QualityDeleteCustomFormatError, QualityDeleteCustomFormatResponse, QualityDeleteProfileData, QualityDeleteProfileError, QualityDeleteProfileResponse, QualityGetCustomFormatData, QualityGetProfileData, QualityListBinsData, QualityListCustomFormatsData, QualityListProfilesData, QualityListSizeDefaultsData, QualityListTiersData, QualityTestProfileData, QualityTestProfileError, QualityTestProfileResponse, QualityUpdateCustomFormatData, QualityUpdateCustomFormatError, QualityUpdateCustomFormatResponse, QualityUpdateProfileData, QualityUpdateProfileError, QualityUpdateProfileResponse, RolesListData, RoutingCreateRuleData, RoutingCreateRuleError, RoutingCreateRuleResponse, RoutingDeleteRuleData, RoutingDeleteRuleError, RoutingDeleteRuleResponse, RoutingEvaluateData, RoutingEvaluateError, RoutingEvaluateResponse, RoutingGetFieldsData, RoutingGetRuleData, RoutingListRulesData, RoutingReorderRulesData, RoutingReorderRulesError, RoutingReorderRulesResponse, RoutingUpdateRuleData, RoutingUpdateRuleError, RoutingUpdateRuleResponse, SettingsListData, SettingsPatchData, SettingsPatchError, SettingsPatchResponse, SetupInitializeData, SetupInitializeError, SetupInitializeResponse2, SetupStatusData, SetupTmdbData, SetupTmdbError, SetupTmdbResponse2, UnmatchedFilesGetData, UnmatchedFilesListData, UnmatchedFilesListError, UnmatchedFilesListResponse, UsersAssignRoleData, UsersAssignRoleError, UsersAssignRoleResponse, UsersDeleteData, UsersDeleteError, UsersDeleteResponse, UsersGetData, UsersGetProfileData, UsersListData, UsersUpdateData, UsersUpdateError, UsersUpdatePasswordData, UsersUpdatePasswordError, UsersUpdatePasswordResponse, UsersUpdateProfileData, UsersUpdateProfileError, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordError, UsersUpdateProfilePasswordResponse, UsersUpdateProfileResponse, UsersUpdateResponse, VersionGetData } from '../types.gen';
+import { authLogin, authMe, authPlexExchange, authSignup, bootstrapGet, downloadCandidatesDownloadMovie, downloadCandidatesDownloadSeries, downloadCandidatesListMovie, downloadCandidatesListSeries, downloadCandidatesPreviewMovie, downloadCandidatesPreviewSeries, downloadersCreate, downloadersDelete, downloadersGet, downloadersGetDefault, downloadersList, downloadersTest, downloadersTestConfig, downloadersUpdate, downloadJobsCancel, downloadJobsGet, downloadJobsHistory, downloadJobsList, downloadJobsListForMovie, downloadJobsListForSeries, downloadJobsListImportTasks, downloadJobsReimport, downloadJobsRetry, downloadJobsTimeline, eventsSubscriptionsAdd, eventsSubscriptionsList, eventsSubscriptionsRemove, feedGet, filesDetach, filesMatch, filesMatchDecision, filesUnmatch, filesystemBrowse, healthCheck, importTasksCancel, importTasksCounts, importTasksGet, importTasksHistory, importTasksList, importTasksReimport, importTasksTimeline, indexersAction, indexersDelete, indexersGet, indexersGetSchema, indexersListConfigured, indexersSave, indexersTestAll, indexersTestSaved, indexersTestUnsaved, indexersToggle, invitesCreate, invitesDelete, invitesList, librariesCreate, librariesDelete, librariesGet, librariesList, librariesScan, librariesUpdate, libraryList, mediaGetMovie, mediaGetPerson, mediaGetSeries, mediaSearch, nameTemplatesCreate, nameTemplatesDelete, nameTemplatesGet, nameTemplatesGetDefault, nameTemplatesList, nameTemplatesUpdate, type Options, qualityBindTier, qualityCreateCustomFormat, qualityCreateProfile, qualityDeleteCustomFormat, qualityDeleteProfile, qualityGetCustomFormat, qualityGetProfile, qualityListBins, qualityListCustomFormats, qualityListProfiles, qualityListSizeDefaults, qualityListTiers, qualityTestProfile, qualityUpdateCustomFormat, qualityUpdateProfile, requestsCreate, requestsGet, requestsList, rolesList, routingCreateRule, routingDeleteRule, routingEvaluate, routingGetFields, routingGetRule, routingListRules, routingReorderRules, routingUpdateRule, settingsList, settingsPatch, setupInitialize, setupStatus, setupTmdb, trackingByTmdb, trackingGet, trackingList, trackingRequesters, trackingWants, unmatchedFilesGet, unmatchedFilesList, usersAssignRole, usersDelete, usersGet, usersGetProfile, usersList, usersUpdate, usersUpdatePassword, usersUpdateProfile, usersUpdateProfilePassword, versionGet, wantsCancel } from '../sdk.gen';
+import type { AuthLoginData, AuthLoginError, AuthLoginResponse, AuthMeData, AuthPlexExchangeData, AuthPlexExchangeError, AuthPlexExchangeResponse, AuthSignupData, AuthSignupError, AuthSignupResponse, BootstrapGetData, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieError, DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesError, DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesListMovieData, DownloadCandidatesListSeriesData, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieError, DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesError, DownloadCandidatesPreviewSeriesResponse, DownloadersCreateData, DownloadersCreateError, DownloadersCreateResponse, DownloadersDeleteData, DownloadersDeleteError, DownloadersDeleteResponse, DownloadersGetData, DownloadersGetDefaultData, DownloadersListData, DownloadersTestConfigData, DownloadersTestConfigError, DownloadersTestConfigResponse, DownloadersTestData, DownloadersTestError, DownloadersTestResponse, DownloadersUpdateData, DownloadersUpdateError, DownloadersUpdateResponse, DownloadJobsCancelData, DownloadJobsCancelError, DownloadJobsCancelResponse, DownloadJobsGetData, DownloadJobsHistoryData, DownloadJobsListData, DownloadJobsListForMovieData, DownloadJobsListForSeriesData, DownloadJobsListImportTasksData, DownloadJobsReimportData, DownloadJobsReimportError, DownloadJobsReimportResponse, DownloadJobsRetryData, DownloadJobsRetryError, DownloadJobsRetryResponse, DownloadJobsTimelineData, EventsSubscriptionsAddData, EventsSubscriptionsAddError, EventsSubscriptionsAddResponse, EventsSubscriptionsListData, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveError, EventsSubscriptionsRemoveResponse, FeedGetData, FilesDetachData, FilesDetachError, FilesDetachResponse, FilesMatchData, FilesMatchDecisionData, FilesMatchError, FilesMatchResponse, FilesUnmatchData, FilesUnmatchError, FilesUnmatchResponse, FilesystemBrowseData, HealthCheckData, ImportTasksCancelData, ImportTasksCancelError, ImportTasksCancelResponse, ImportTasksCountsData, ImportTasksGetData, ImportTasksHistoryData, ImportTasksListData, ImportTasksListError, ImportTasksListResponse, ImportTasksReimportData, ImportTasksReimportError, ImportTasksReimportResponse, ImportTasksTimelineData, IndexersActionData, IndexersActionError, IndexersDeleteData, IndexersDeleteError, IndexersDeleteResponse, IndexersGetData, IndexersGetSchemaData, IndexersListConfiguredData, IndexersSaveData, IndexersSaveError, IndexersSaveResponse, IndexersTestAllData, IndexersTestAllError, IndexersTestAllResponse, IndexersTestSavedData, IndexersTestSavedError, IndexersTestSavedResponse, IndexersTestUnsavedData, IndexersTestUnsavedError, IndexersTestUnsavedResponse, IndexersToggleData, IndexersToggleError, IndexersToggleResponse, InvitesCreateData, InvitesCreateError, InvitesCreateResponse, InvitesDeleteData, InvitesDeleteError, InvitesDeleteResponse, InvitesListData, LibrariesCreateData, LibrariesCreateError, LibrariesCreateResponse, LibrariesDeleteData, LibrariesDeleteError, LibrariesDeleteResponse, LibrariesGetData, LibrariesListData, LibrariesScanData, LibrariesScanError, LibrariesScanResponse, LibrariesUpdateData, LibrariesUpdateError, LibrariesUpdateResponse, LibraryListData, LibraryListError, LibraryListResponse, MediaGetMovieData, MediaGetPersonData, MediaGetSeriesData, MediaSearchData, MediaSearchError, MediaSearchResponse, NameTemplatesCreateData, NameTemplatesCreateError, NameTemplatesCreateResponse, NameTemplatesDeleteData, NameTemplatesDeleteError, NameTemplatesDeleteResponse, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesListData, NameTemplatesUpdateData, NameTemplatesUpdateError, NameTemplatesUpdateResponse, QualityBindTierData, QualityBindTierError, QualityBindTierResponse, QualityCreateCustomFormatData, QualityCreateCustomFormatError, QualityCreateCustomFormatResponse, QualityCreateProfileData, QualityCreateProfileError, QualityCreateProfileResponse, QualityDeleteCustomFormatData, QualityDeleteCustomFormatError, QualityDeleteCustomFormatResponse, QualityDeleteProfileData, QualityDeleteProfileError, QualityDeleteProfileResponse, QualityGetCustomFormatData, QualityGetProfileData, QualityListBinsData, QualityListCustomFormatsData, QualityListProfilesData, QualityListSizeDefaultsData, QualityListTiersData, QualityTestProfileData, QualityTestProfileError, QualityTestProfileResponse, QualityUpdateCustomFormatData, QualityUpdateCustomFormatError, QualityUpdateCustomFormatResponse, QualityUpdateProfileData, QualityUpdateProfileError, QualityUpdateProfileResponse, RequestsCreateData, RequestsCreateError, RequestsCreateResponse, RequestsGetData, RequestsListData, RolesListData, RoutingCreateRuleData, RoutingCreateRuleError, RoutingCreateRuleResponse, RoutingDeleteRuleData, RoutingDeleteRuleError, RoutingDeleteRuleResponse, RoutingEvaluateData, RoutingEvaluateError, RoutingEvaluateResponse, RoutingGetFieldsData, RoutingGetRuleData, RoutingListRulesData, RoutingReorderRulesData, RoutingReorderRulesError, RoutingReorderRulesResponse, RoutingUpdateRuleData, RoutingUpdateRuleError, RoutingUpdateRuleResponse, SettingsListData, SettingsPatchData, SettingsPatchError, SettingsPatchResponse, SetupInitializeData, SetupInitializeError, SetupInitializeResponse2, SetupStatusData, SetupTmdbData, SetupTmdbError, SetupTmdbResponse2, TrackingByTmdbData, TrackingGetData, TrackingListData, TrackingRequestersData, TrackingWantsData, UnmatchedFilesGetData, UnmatchedFilesListData, UnmatchedFilesListError, UnmatchedFilesListResponse, UsersAssignRoleData, UsersAssignRoleError, UsersAssignRoleResponse, UsersDeleteData, UsersDeleteError, UsersDeleteResponse, UsersGetData, UsersGetProfileData, UsersListData, UsersUpdateData, UsersUpdateError, UsersUpdatePasswordData, UsersUpdatePasswordError, UsersUpdatePasswordResponse, UsersUpdateProfileData, UsersUpdateProfileError, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordError, UsersUpdateProfilePasswordResponse, UsersUpdateProfileResponse, UsersUpdateResponse, VersionGetData, WantsCancelData, WantsCancelError, WantsCancelResponse } from '../types.gen';
 
 /**
  * Login
@@ -1764,6 +1764,64 @@ export const qualityBindTierMutation = (options?: Partial<Options<QualityBindTie
     return mutationOptions;
 };
 
+export const requestsListQueryKey = (options?: Options<RequestsListData>) => createQueryKey('requestsList', options);
+
+/**
+ * List requests
+ */
+export const requestsListOptions = (options?: Options<RequestsListData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await requestsList({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: requestsListQueryKey(options)
+    });
+};
+
+/**
+ * Create a request
+ * Validates the body and resolves the title against TMDB, then runs the spawn: an approved movie request produces a tracking and a pending want; an unapproved one is persisted pending with no spawn.
+ */
+export const requestsCreateMutation = (options?: Partial<Options<RequestsCreateData>>): UseMutationOptions<RequestsCreateResponse, RequestsCreateError, Options<RequestsCreateData>> => {
+    const mutationOptions: UseMutationOptions<RequestsCreateResponse, RequestsCreateError, Options<RequestsCreateData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await requestsCreate({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const requestsGetQueryKey = (options: Options<RequestsGetData>) => createQueryKey('requestsGet', options);
+
+/**
+ * Get request
+ */
+export const requestsGetOptions = (options: Options<RequestsGetData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await requestsGet({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: requestsGetQueryKey(options)
+    });
+};
+
 export const rolesListQueryKey = (options?: Options<RolesListData>) => createQueryKey('rolesList', options);
 
 /**
@@ -2174,6 +2232,107 @@ export const setupTmdbMutation = (options?: Partial<Options<SetupTmdbData>>): Us
     return mutationOptions;
 };
 
+export const trackingListQueryKey = (options?: Options<TrackingListData>) => createQueryKey('trackingList', options);
+
+/**
+ * List trackings
+ */
+export const trackingListOptions = (options?: Options<TrackingListData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await trackingList({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: trackingListQueryKey(options)
+    });
+};
+
+export const trackingByTmdbQueryKey = (options: Options<TrackingByTmdbData>) => createQueryKey('trackingByTmdb', options);
+
+/**
+ * Get tracking by TMDB id
+ * Resolves a movie's acquisition state (tracking + wants) from its TMDB id. Returns 404 when the movie is not tracked.
+ */
+export const trackingByTmdbOptions = (options: Options<TrackingByTmdbData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await trackingByTmdb({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: trackingByTmdbQueryKey(options)
+    });
+};
+
+export const trackingGetQueryKey = (options: Options<TrackingGetData>) => createQueryKey('trackingGet', options);
+
+/**
+ * Get tracking
+ */
+export const trackingGetOptions = (options: Options<TrackingGetData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await trackingGet({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: trackingGetQueryKey(options)
+    });
+};
+
+export const trackingRequestersQueryKey = (options: Options<TrackingRequestersData>) => createQueryKey('trackingRequesters', options);
+
+/**
+ * List a tracking's requesters
+ */
+export const trackingRequestersOptions = (options: Options<TrackingRequestersData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await trackingRequesters({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: trackingRequestersQueryKey(options)
+    });
+};
+
+export const trackingWantsQueryKey = (options: Options<TrackingWantsData>) => createQueryKey('trackingWants', options);
+
+/**
+ * List a tracking's wants
+ */
+export const trackingWantsOptions = (options: Options<TrackingWantsData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await trackingWants({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: trackingWantsQueryKey(options)
+    });
+};
+
 export const unmatchedFilesListQueryKey = (options?: Options<UnmatchedFilesListData>) => createQueryKey('unmatchedFilesList', options);
 
 /**
@@ -2372,6 +2531,24 @@ export const versionGetOptions = (options?: Options<VersionGetData>) => {
         },
         queryKey: versionGetQueryKey(options)
     });
+};
+
+/**
+ * Cancel a want
+ * Cancels a want (and its tracking), stopping its in-flight download job and pending import tasks. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.
+ */
+export const wantsCancelMutation = (options?: Partial<Options<WantsCancelData>>): UseMutationOptions<WantsCancelResponse, WantsCancelError, Options<WantsCancelData>> => {
+    const mutationOptions: UseMutationOptions<WantsCancelResponse, WantsCancelError, Options<WantsCancelData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await wantsCancel({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
 };
 
 export const healthCheckQueryKey = (options?: Options<HealthCheckData>) => createQueryKey('healthCheck', options);

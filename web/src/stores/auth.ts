@@ -6,21 +6,27 @@ import { problemMessage } from '@/lib/api'
 
 type Nullable<T> = T | null
 
-interface MeResponseMinimal {
+interface AuthUser {
   sub?: string
   email?: string | null
   name?: string | null
+  roles: string[]
+  canAutoApproveMovie: boolean
 }
 
 const AUTH_TOKEN_KEY = 'arrflix.auth.token'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<Nullable<string>>(null)
-  const user = ref<Nullable<MeResponseMinimal>>(null)
+  const user = ref<Nullable<AuthUser>>(null)
   const isLoading = ref(false)
   const errorMessage = ref<Nullable<string>>(null)
 
   const isAuthenticated = computed(() => Boolean(token.value))
+  // Admin gates operator-only controls (e.g. manual torrent search). Distinct
+  // from canAutoApproveMovie, which only decides the Add-vs-Request button face.
+  const isAdmin = computed(() => user.value?.roles.includes('admin') ?? false)
+  const canAutoApproveMovie = computed(() => user.value?.canAutoApproveMovie ?? false)
 
   function applyTokenToClient(nextToken: string | null) {
     // Put Authorization on all requests
@@ -57,6 +63,8 @@ export const useAuthStore = defineStore('auth', () => {
         sub: res.data.sub,
         email: res.data.email ?? null,
         name: res.data.name ?? null,
+        roles: res.data.roles ?? [],
+        canAutoApproveMovie: res.data.canAutoApproveMovie ?? false,
       }
     } catch {
       // Token likely invalid
@@ -75,7 +83,11 @@ export const useAuthStore = defineStore('auth', () => {
     return true
   }
 
-  /** Set user state directly from bootstrap response data. */
+  /**
+   * Set user state directly from bootstrap response data. Bootstrap carries
+   * only identity, so roles/policy default empty here; callers that need them
+   * (admin gating, Add-vs-Request) follow with fetchMe to enrich.
+   */
   function setUserFromBootstrap(u: {
     id: string
     email?: string | null
@@ -85,6 +97,8 @@ export const useAuthStore = defineStore('auth', () => {
       sub: u.id,
       email: u.email,
       name: u.username,
+      roles: [],
+      canAutoApproveMovie: false,
     }
   }
 
@@ -169,7 +183,10 @@ export const useAuthStore = defineStore('auth', () => {
     isLoading,
     errorMessage,
     isAuthenticated,
+    isAdmin,
+    canAutoApproveMovie,
     // actions
+    fetchMe,
     rehydrateToken,
     setUserFromBootstrap,
     rehydrate,

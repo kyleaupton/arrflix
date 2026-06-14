@@ -246,6 +246,7 @@ export type DownloadJob = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
+    wantId: string;
 };
 
 export type DownloadJobBySeriesEntry = {
@@ -280,6 +281,7 @@ export type DownloadJobBySeriesEntry = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
+    wantId: string;
 };
 
 export type DownloadJobHistoryEntry = {
@@ -313,6 +315,7 @@ export type DownloadJobHistoryEntry = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
+    wantId: string;
 };
 
 export type DownloadJobTimelineEvent = {
@@ -375,6 +378,7 @@ export type DownloadJobWithSummary = {
     totalImportTasks: number;
     totalSize: number | null;
     updatedAt: string;
+    wantId: string;
 };
 
 export type Downloader = {
@@ -812,6 +816,7 @@ export type ImportTask = {
     sourcePath: string;
     status: string;
     updatedAt: string;
+    wantId: string;
 };
 
 export type ImportTaskCounts = {
@@ -859,6 +864,7 @@ export type ImportTaskHistoryEntry = {
     sourcePath: string;
     status: string;
     updatedAt: string;
+    wantId: string;
 };
 
 export type ImportTaskUpdatedPayload = {
@@ -904,6 +910,7 @@ export type ImportTaskWithDetails = {
     sourcePath: string;
     status: string;
     updatedAt: string;
+    wantId: string;
 };
 
 export type InboxItem = {
@@ -1209,6 +1216,10 @@ export type MeResponse = {
      */
     readonly $schema?: string;
     /**
+     * Whether a movie request by this user auto-approves into a tracking
+     */
+    canAutoApproveMovie: boolean;
+    /**
      * Email from JWT claims
      */
     email?: string;
@@ -1216,6 +1227,10 @@ export type MeResponse = {
      * Username from JWT claims
      */
     name?: string;
+    /**
+     * Role names assigned to the user
+     */
+    roles: Array<string> | null;
     /**
      * User id (UUID string from JWT subject)
      */
@@ -1648,6 +1663,42 @@ export type Release = {
     Quality: QualityFields;
 };
 
+export type Request = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    createdAt: string;
+    deniedReason: string | null;
+    id: string;
+    requestedBy: string;
+    spawnedTrackingId: string;
+    status: string;
+    tier: string;
+    tmdbId: number;
+    type: string;
+    updatedAt: string;
+};
+
+export type RequestCreateBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Requested quality tier
+     */
+    tier: 'HD' | '4K';
+    /**
+     * TMDB id of the requested title
+     */
+    tmdbId: number;
+    /**
+     * Media domain (movie-only in the PoC)
+     */
+    type: 'movie' | 'series';
+};
+
 export type Resolved = {
     available: boolean;
     path?: string;
@@ -2033,6 +2084,39 @@ export type Trace = {
     right?: Resolved;
 };
 
+export type Tracking = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    createdAt: string;
+    id: string;
+    mediaItemId: string;
+    qualityProfileId: string;
+    scheduleStrategy: string;
+    scope: string;
+    state: string;
+    updatedAt: string;
+    upgradeBehavior: string;
+};
+
+export type TrackingByTmdb = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    tracking: Tracking;
+    wants: Array<Want> | null;
+};
+
+export type TrackingRequester = {
+    createdAt: string;
+    tier: string;
+    trackingId: string;
+    updatedAt: string;
+    userId: string;
+};
+
 export type UpdateDetails = {
     latest?: LatestVersionInfo;
     reason?: string;
@@ -2118,6 +2202,23 @@ export type Video = {
     size: number;
     tmdbId: string;
     type: string;
+};
+
+export type Want = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    attemptCount: number;
+    createdAt: string;
+    id: string;
+    lastError: string | null;
+    mediaItemId: string;
+    nextRunAt: string;
+    qualityProfileId: string;
+    status: string;
+    trackingId: string;
+    updatedAt: string;
 };
 
 export type WantFields = {
@@ -2232,6 +2333,7 @@ export type DownloadJobWithSummaryWritable = {
     totalImportTasks: number;
     totalSize: number | null;
     updatedAt: string;
+    wantId: string;
 };
 
 export type DownloaderWritable = {
@@ -2408,6 +2510,7 @@ export type ImportTaskWritable = {
     sourcePath: string;
     status: string;
     updatedAt: string;
+    wantId: string;
 };
 
 export type ImportTaskCountsWritable = {
@@ -2453,6 +2556,7 @@ export type ImportTaskWithDetailsWritable = {
     sourcePath: string;
     status: string;
     updatedAt: string;
+    wantId: string;
 };
 
 export type InboxItemWritable = {
@@ -2660,6 +2764,10 @@ export type MatchDecisionsGetResponseWritable = {
 
 export type MeResponseWritable = {
     /**
+     * Whether a movie request by this user auto-approves into a tracking
+     */
+    canAutoApproveMovie: boolean;
+    /**
      * Email from JWT claims
      */
     email?: string;
@@ -2667,6 +2775,10 @@ export type MeResponseWritable = {
      * Username from JWT claims
      */
     name?: string;
+    /**
+     * Role names assigned to the user
+     */
+    roles: Array<string> | null;
     /**
      * User id (UUID string from JWT subject)
      */
@@ -2872,6 +2984,34 @@ export type ReimportResultWritable = {
     skipped_count: number;
 };
 
+export type RequestWritable = {
+    createdAt: string;
+    deniedReason: string | null;
+    id: string;
+    requestedBy: string;
+    spawnedTrackingId: string;
+    status: string;
+    tier: string;
+    tmdbId: number;
+    type: string;
+    updatedAt: string;
+};
+
+export type RequestCreateBodyWritable = {
+    /**
+     * Requested quality tier
+     */
+    tier: 'HD' | '4K';
+    /**
+     * TMDB id of the requested title
+     */
+    tmdbId: number;
+    /**
+     * Media domain (movie-only in the PoC)
+     */
+    type: 'movie' | 'series';
+};
+
 export type RoutingEvaluateBodyWritable = {
     /**
      * The download candidate to evaluate
@@ -3067,6 +3207,23 @@ export type TierBindingWritable = {
     tier: string;
 };
 
+export type TrackingWritable = {
+    createdAt: string;
+    id: string;
+    mediaItemId: string;
+    qualityProfileId: string;
+    scheduleStrategy: string;
+    scope: string;
+    state: string;
+    updatedAt: string;
+    upgradeBehavior: string;
+};
+
+export type TrackingByTmdbWritable = {
+    tracking: TrackingWritable;
+    wants: Array<WantWritable> | null;
+};
+
 export type UserWritable = {
     avatarUrl?: string;
     createdAt: string;
@@ -3115,6 +3272,19 @@ export type VersionInfoWritable = {
     };
     update: UpdateDetails;
     version: string;
+};
+
+export type WantWritable = {
+    attemptCount: number;
+    createdAt: string;
+    id: string;
+    lastError: string | null;
+    mediaItemId: string;
+    nextRunAt: string;
+    qualityProfileId: string;
+    status: string;
+    trackingId: string;
+    updatedAt: string;
 };
 
 export type AuthLoginData = {
@@ -4366,6 +4536,20 @@ export type EventsStreamResponses = {
          * The event name.
          */
         event: 'scan_started';
+        /**
+         * The event ID (sortable; used for Last-Event-ID resume).
+         */
+        id?: string;
+        /**
+         * The retry time in milliseconds.
+         */
+        retry?: number;
+    } | {
+        data: Want;
+        /**
+         * The event name.
+         */
+        event: 'want_updated';
         /**
          * The event ID (sortable; used for Last-Event-ID resume).
          */
@@ -6573,6 +6757,110 @@ export type QualityBindTierResponses = {
 
 export type QualityBindTierResponse = QualityBindTierResponses[keyof QualityBindTierResponses];
 
+export type RequestsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/requests';
+};
+
+export type RequestsListErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type RequestsListError = RequestsListErrors[keyof RequestsListErrors];
+
+export type RequestsListResponses = {
+    /**
+     * OK
+     */
+    200: Array<Request> | null;
+};
+
+export type RequestsListResponse = RequestsListResponses[keyof RequestsListResponses];
+
+export type RequestsCreateData = {
+    body: RequestCreateBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/requests';
+};
+
+export type RequestsCreateErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+    /**
+     * Bad Gateway
+     */
+    502: ProblemDetails;
+};
+
+export type RequestsCreateError = RequestsCreateErrors[keyof RequestsCreateErrors];
+
+export type RequestsCreateResponses = {
+    /**
+     * Created
+     */
+    201: Request;
+};
+
+export type RequestsCreateResponse = RequestsCreateResponses[keyof RequestsCreateResponses];
+
+export type RequestsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Request ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{id}';
+};
+
+export type RequestsGetErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RequestsGetError = RequestsGetErrors[keyof RequestsGetErrors];
+
+export type RequestsGetResponses = {
+    /**
+     * OK
+     */
+    200: Request;
+};
+
+export type RequestsGetResponse = RequestsGetResponses[keyof RequestsGetResponses];
+
 export type RolesListData = {
     body?: never;
     path?: never;
@@ -7321,6 +7609,183 @@ export type SetupTmdbResponses = {
 
 export type SetupTmdbResponse2 = SetupTmdbResponses[keyof SetupTmdbResponses];
 
+export type TrackingListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/tracking';
+};
+
+export type TrackingListErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type TrackingListError = TrackingListErrors[keyof TrackingListErrors];
+
+export type TrackingListResponses = {
+    /**
+     * OK
+     */
+    200: Array<Tracking> | null;
+};
+
+export type TrackingListResponse = TrackingListResponses[keyof TrackingListResponses];
+
+export type TrackingByTmdbData = {
+    body?: never;
+    path: {
+        /**
+         * TMDB id of the movie
+         */
+        tmdbId: number;
+    };
+    query?: never;
+    url: '/api/v1/tracking/by-tmdb/{tmdbId}';
+};
+
+export type TrackingByTmdbErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingByTmdbError = TrackingByTmdbErrors[keyof TrackingByTmdbErrors];
+
+export type TrackingByTmdbResponses = {
+    /**
+     * OK
+     */
+    200: TrackingByTmdb;
+};
+
+export type TrackingByTmdbResponse = TrackingByTmdbResponses[keyof TrackingByTmdbResponses];
+
+export type TrackingGetData = {
+    body?: never;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}';
+};
+
+export type TrackingGetErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingGetError = TrackingGetErrors[keyof TrackingGetErrors];
+
+export type TrackingGetResponses = {
+    /**
+     * OK
+     */
+    200: Tracking;
+};
+
+export type TrackingGetResponse = TrackingGetResponses[keyof TrackingGetResponses];
+
+export type TrackingRequestersData = {
+    body?: never;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}/requesters';
+};
+
+export type TrackingRequestersErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingRequestersError = TrackingRequestersErrors[keyof TrackingRequestersErrors];
+
+export type TrackingRequestersResponses = {
+    /**
+     * OK
+     */
+    200: Array<TrackingRequester> | null;
+};
+
+export type TrackingRequestersResponse = TrackingRequestersResponses[keyof TrackingRequestersResponses];
+
+export type TrackingWantsData = {
+    body?: never;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}/wants';
+};
+
+export type TrackingWantsErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingWantsError = TrackingWantsErrors[keyof TrackingWantsErrors];
+
+export type TrackingWantsResponses = {
+    /**
+     * OK
+     */
+    200: Array<Want> | null;
+};
+
+export type TrackingWantsResponse = TrackingWantsResponses[keyof TrackingWantsResponses];
+
 export type UnmatchedFilesListData = {
     body?: never;
     path?: never;
@@ -7668,6 +8133,52 @@ export type VersionGetResponses = {
 };
 
 export type VersionGetResponse = VersionGetResponses[keyof VersionGetResponses];
+
+export type WantsCancelData = {
+    body?: never;
+    path: {
+        /**
+         * Want ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/wants/{id}/cancel';
+};
+
+export type WantsCancelErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type WantsCancelError = WantsCancelErrors[keyof WantsCancelErrors];
+
+export type WantsCancelResponses = {
+    /**
+     * OK
+     */
+    200: Want;
+};
+
+export type WantsCancelResponse = WantsCancelResponses[keyof WantsCancelResponses];
 
 export type HealthCheckData = {
     body?: never;

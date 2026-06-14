@@ -8,6 +8,7 @@ INSERT INTO download_job (
   media_item_id,
   season_id,
   episode_id,
+  want_id,
   indexer_id,
   guid,
   candidate_title,
@@ -23,6 +24,7 @@ VALUES (
   sqlc.arg(media_item_id),
   sqlc.arg(season_id),
   sqlc.arg(episode_id),
+  sqlc.arg(want_id),
   sqlc.arg(indexer_id),
   sqlc.arg(guid),
   sqlc.arg(candidate_title),
@@ -46,6 +48,16 @@ WHERE indexer_id = $1 AND guid = $2;
 -- name: ListDownloadJobsByMediaItem :many
 SELECT * FROM download_job
 WHERE media_item_id = $1
+ORDER BY created_at DESC;
+
+-- ListActiveDownloadJobsByWant returns the non-terminal download jobs linked to
+-- a want, backing the want-cancel cascade. At most one row in practice (the #2a
+-- pre-grab CAS prevents a want from having two in-flight jobs), but a slice is
+-- safe. Uses idx_download_job_want.
+-- name: ListActiveDownloadJobsByWant :many
+SELECT * FROM download_job
+WHERE want_id = $1
+  AND status NOT IN ('completed', 'failed', 'cancelled')
 ORDER BY created_at DESC;
 
 -- name: ListDownloadJobs :many

@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthPlexExchangeData, AuthPlexExchangeErrors, AuthPlexExchangeResponses, AuthSignupData, AuthSignupErrors, AuthSignupResponses, BootstrapGetData, BootstrapGetErrors, BootstrapGetResponses, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieErrors, DownloadCandidatesDownloadMovieResponses, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesErrors, DownloadCandidatesDownloadSeriesResponses, DownloadCandidatesListMovieData, DownloadCandidatesListMovieErrors, DownloadCandidatesListMovieResponses, DownloadCandidatesListSeriesData, DownloadCandidatesListSeriesErrors, DownloadCandidatesListSeriesResponses, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieErrors, DownloadCandidatesPreviewMovieResponses, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesErrors, DownloadCandidatesPreviewSeriesResponses, DownloadersCreateData, DownloadersCreateErrors, DownloadersCreateResponses, DownloadersDeleteData, DownloadersDeleteErrors, DownloadersDeleteResponses, DownloadersGetData, DownloadersGetDefaultData, DownloadersGetDefaultErrors, DownloadersGetDefaultResponses, DownloadersGetErrors, DownloadersGetResponses, DownloadersListData, DownloadersListErrors, DownloadersListResponses, DownloadersTestConfigData, DownloadersTestConfigErrors, DownloadersTestConfigResponses, DownloadersTestData, DownloadersTestErrors, DownloadersTestResponses, DownloadersUpdateData, DownloadersUpdateErrors, DownloadersUpdateResponses, DownloadJobsCancelData, DownloadJobsCancelErrors, DownloadJobsCancelResponses, DownloadJobsGetData, DownloadJobsGetErrors, DownloadJobsGetResponses, DownloadJobsHistoryData, DownloadJobsHistoryErrors, DownloadJobsHistoryResponses, DownloadJobsListData, DownloadJobsListErrors, DownloadJobsListForMovieData, DownloadJobsListForMovieErrors, DownloadJobsListForMovieResponses, DownloadJobsListForSeriesData, DownloadJobsListForSeriesErrors, DownloadJobsListForSeriesResponses, DownloadJobsListImportTasksData, DownloadJobsListImportTasksErrors, DownloadJobsListImportTasksResponses, DownloadJobsListResponses, DownloadJobsReimportData, DownloadJobsReimportErrors, DownloadJobsReimportResponses, DownloadJobsRetryData, DownloadJobsRetryErrors, DownloadJobsRetryResponses, DownloadJobsTimelineData, DownloadJobsTimelineErrors, DownloadJobsTimelineResponses, EventsStreamData, EventsStreamErrors, EventsStreamResponses, EventsSubscriptionsAddData, EventsSubscriptionsAddErrors, EventsSubscriptionsAddResponses, EventsSubscriptionsListData, EventsSubscriptionsListErrors, EventsSubscriptionsListResponses, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveErrors, EventsSubscriptionsRemoveResponses, FeedGetData, FeedGetErrors, FeedGetResponses, FilesDetachData, FilesDetachErrors, FilesDetachResponses, FilesMatchData, FilesMatchDecisionData, FilesMatchDecisionErrors, FilesMatchDecisionResponses, FilesMatchErrors, FilesMatchResponses, FilesUnmatchData, FilesUnmatchErrors, FilesUnmatchResponses, FilesystemBrowseData, FilesystemBrowseErrors, FilesystemBrowseResponses, HealthCheckData, HealthCheckErrors, HealthCheckResponses, ImportTasksCancelData, ImportTasksCancelErrors, ImportTasksCancelResponses, ImportTasksCountsData, ImportTasksCountsErrors, ImportTasksCountsResponses, ImportTasksGetData, ImportTasksGetErrors, ImportTasksGetResponses, ImportTasksHistoryData, ImportTasksHistoryErrors, ImportTasksHistoryResponses, ImportTasksListData, ImportTasksListErrors, ImportTasksListResponses, ImportTasksReimportData, ImportTasksReimportErrors, ImportTasksReimportResponses, ImportTasksTimelineData, ImportTasksTimelineErrors, ImportTasksTimelineResponses, IndexersActionData, IndexersActionErrors, IndexersActionResponses, IndexersDeleteData, IndexersDeleteErrors, IndexersDeleteResponses, IndexersGetData, IndexersGetErrors, IndexersGetResponses, IndexersGetSchemaData, IndexersGetSchemaErrors, IndexersGetSchemaResponses, IndexersListConfiguredData, IndexersListConfiguredErrors, IndexersListConfiguredResponses, IndexersSaveData, IndexersSaveErrors, IndexersSaveResponses, IndexersTestAllData, IndexersTestAllErrors, IndexersTestAllResponses, IndexersTestSavedData, IndexersTestSavedErrors, IndexersTestSavedResponses, IndexersTestUnsavedData, IndexersTestUnsavedErrors, IndexersTestUnsavedResponses, IndexersToggleData, IndexersToggleErrors, IndexersToggleResponses, InvitesCreateData, InvitesCreateErrors, InvitesCreateResponses, InvitesDeleteData, InvitesDeleteErrors, InvitesDeleteResponses, InvitesListData, InvitesListErrors, InvitesListResponses, LibrariesCreateData, LibrariesCreateErrors, LibrariesCreateResponses, LibrariesDeleteData, LibrariesDeleteErrors, LibrariesDeleteResponses, LibrariesGetData, LibrariesGetErrors, LibrariesGetResponses, LibrariesListData, LibrariesListErrors, LibrariesListResponses, LibrariesScanData, LibrariesScanErrors, LibrariesScanResponses, LibrariesUpdateData, LibrariesUpdateErrors, LibrariesUpdateResponses, LibraryListData, LibraryListErrors, LibraryListResponses, MediaGetMovieData, MediaGetMovieErrors, MediaGetMovieResponses, MediaGetPersonData, MediaGetPersonErrors, MediaGetPersonResponses, MediaGetSeriesData, MediaGetSeriesErrors, MediaGetSeriesResponses, MediaSearchData, MediaSearchErrors, MediaSearchResponses, NameTemplatesCreateData, NameTemplatesCreateErrors, NameTemplatesCreateResponses, NameTemplatesDeleteData, NameTemplatesDeleteErrors, NameTemplatesDeleteResponses, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesGetDefaultErrors, NameTemplatesGetDefaultResponses, NameTemplatesGetErrors, NameTemplatesGetResponses, NameTemplatesListData, NameTemplatesListErrors, NameTemplatesListResponses, NameTemplatesUpdateData, NameTemplatesUpdateErrors, NameTemplatesUpdateResponses, QualityBindTierData, QualityBindTierErrors, QualityBindTierResponses, QualityCreateCustomFormatData, QualityCreateCustomFormatErrors, QualityCreateCustomFormatResponses, QualityCreateProfileData, QualityCreateProfileErrors, QualityCreateProfileResponses, QualityDeleteCustomFormatData, QualityDeleteCustomFormatErrors, QualityDeleteCustomFormatResponses, QualityDeleteProfileData, QualityDeleteProfileErrors, QualityDeleteProfileResponses, QualityGetCustomFormatData, QualityGetCustomFormatErrors, QualityGetCustomFormatResponses, QualityGetProfileData, QualityGetProfileErrors, QualityGetProfileResponses, QualityListBinsData, QualityListBinsErrors, QualityListBinsResponses, QualityListCustomFormatsData, QualityListCustomFormatsErrors, QualityListCustomFormatsResponses, QualityListProfilesData, QualityListProfilesErrors, QualityListProfilesResponses, QualityListSizeDefaultsData, QualityListSizeDefaultsErrors, QualityListSizeDefaultsResponses, QualityListTiersData, QualityListTiersErrors, QualityListTiersResponses, QualityTestProfileData, QualityTestProfileErrors, QualityTestProfileResponses, QualityUpdateCustomFormatData, QualityUpdateCustomFormatErrors, QualityUpdateCustomFormatResponses, QualityUpdateProfileData, QualityUpdateProfileErrors, QualityUpdateProfileResponses, RolesListData, RolesListErrors, RolesListResponses, RoutingCreateRuleData, RoutingCreateRuleErrors, RoutingCreateRuleResponses, RoutingDeleteRuleData, RoutingDeleteRuleErrors, RoutingDeleteRuleResponses, RoutingEvaluateData, RoutingEvaluateErrors, RoutingEvaluateResponses, RoutingGetFieldsData, RoutingGetFieldsErrors, RoutingGetFieldsResponses, RoutingGetRuleData, RoutingGetRuleErrors, RoutingGetRuleResponses, RoutingListRulesData, RoutingListRulesErrors, RoutingListRulesResponses, RoutingReorderRulesData, RoutingReorderRulesErrors, RoutingReorderRulesResponses, RoutingUpdateRuleData, RoutingUpdateRuleErrors, RoutingUpdateRuleResponses, SettingsListData, SettingsListErrors, SettingsListResponses, SettingsPatchData, SettingsPatchErrors, SettingsPatchResponses, SetupInitializeData, SetupInitializeErrors, SetupInitializeResponses, SetupStatusData, SetupStatusErrors, SetupStatusResponses, SetupTmdbData, SetupTmdbErrors, SetupTmdbResponses, UnmatchedFilesGetData, UnmatchedFilesGetErrors, UnmatchedFilesGetResponses, UnmatchedFilesListData, UnmatchedFilesListErrors, UnmatchedFilesListResponses, UsersAssignRoleData, UsersAssignRoleErrors, UsersAssignRoleResponses, UsersDeleteData, UsersDeleteErrors, UsersDeleteResponses, UsersGetData, UsersGetErrors, UsersGetProfileData, UsersGetProfileErrors, UsersGetProfileResponses, UsersGetResponses, UsersListData, UsersListErrors, UsersListResponses, UsersUpdateData, UsersUpdateErrors, UsersUpdatePasswordData, UsersUpdatePasswordErrors, UsersUpdatePasswordResponses, UsersUpdateProfileData, UsersUpdateProfileErrors, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordErrors, UsersUpdateProfilePasswordResponses, UsersUpdateProfileResponses, UsersUpdateResponses, VersionGetData, VersionGetErrors, VersionGetResponses } from './types.gen';
+import type { AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthPlexExchangeData, AuthPlexExchangeErrors, AuthPlexExchangeResponses, AuthSignupData, AuthSignupErrors, AuthSignupResponses, BootstrapGetData, BootstrapGetErrors, BootstrapGetResponses, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieErrors, DownloadCandidatesDownloadMovieResponses, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesErrors, DownloadCandidatesDownloadSeriesResponses, DownloadCandidatesListMovieData, DownloadCandidatesListMovieErrors, DownloadCandidatesListMovieResponses, DownloadCandidatesListSeriesData, DownloadCandidatesListSeriesErrors, DownloadCandidatesListSeriesResponses, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieErrors, DownloadCandidatesPreviewMovieResponses, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesErrors, DownloadCandidatesPreviewSeriesResponses, DownloadersCreateData, DownloadersCreateErrors, DownloadersCreateResponses, DownloadersDeleteData, DownloadersDeleteErrors, DownloadersDeleteResponses, DownloadersGetData, DownloadersGetDefaultData, DownloadersGetDefaultErrors, DownloadersGetDefaultResponses, DownloadersGetErrors, DownloadersGetResponses, DownloadersListData, DownloadersListErrors, DownloadersListResponses, DownloadersTestConfigData, DownloadersTestConfigErrors, DownloadersTestConfigResponses, DownloadersTestData, DownloadersTestErrors, DownloadersTestResponses, DownloadersUpdateData, DownloadersUpdateErrors, DownloadersUpdateResponses, DownloadJobsCancelData, DownloadJobsCancelErrors, DownloadJobsCancelResponses, DownloadJobsGetData, DownloadJobsGetErrors, DownloadJobsGetResponses, DownloadJobsHistoryData, DownloadJobsHistoryErrors, DownloadJobsHistoryResponses, DownloadJobsListData, DownloadJobsListErrors, DownloadJobsListForMovieData, DownloadJobsListForMovieErrors, DownloadJobsListForMovieResponses, DownloadJobsListForSeriesData, DownloadJobsListForSeriesErrors, DownloadJobsListForSeriesResponses, DownloadJobsListImportTasksData, DownloadJobsListImportTasksErrors, DownloadJobsListImportTasksResponses, DownloadJobsListResponses, DownloadJobsReimportData, DownloadJobsReimportErrors, DownloadJobsReimportResponses, DownloadJobsRetryData, DownloadJobsRetryErrors, DownloadJobsRetryResponses, DownloadJobsTimelineData, DownloadJobsTimelineErrors, DownloadJobsTimelineResponses, EventsStreamData, EventsStreamErrors, EventsStreamResponses, EventsSubscriptionsAddData, EventsSubscriptionsAddErrors, EventsSubscriptionsAddResponses, EventsSubscriptionsListData, EventsSubscriptionsListErrors, EventsSubscriptionsListResponses, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveErrors, EventsSubscriptionsRemoveResponses, FeedGetData, FeedGetErrors, FeedGetResponses, FilesDetachData, FilesDetachErrors, FilesDetachResponses, FilesMatchData, FilesMatchDecisionData, FilesMatchDecisionErrors, FilesMatchDecisionResponses, FilesMatchErrors, FilesMatchResponses, FilesUnmatchData, FilesUnmatchErrors, FilesUnmatchResponses, FilesystemBrowseData, FilesystemBrowseErrors, FilesystemBrowseResponses, HealthCheckData, HealthCheckErrors, HealthCheckResponses, ImportTasksCancelData, ImportTasksCancelErrors, ImportTasksCancelResponses, ImportTasksCountsData, ImportTasksCountsErrors, ImportTasksCountsResponses, ImportTasksGetData, ImportTasksGetErrors, ImportTasksGetResponses, ImportTasksHistoryData, ImportTasksHistoryErrors, ImportTasksHistoryResponses, ImportTasksListData, ImportTasksListErrors, ImportTasksListResponses, ImportTasksReimportData, ImportTasksReimportErrors, ImportTasksReimportResponses, ImportTasksTimelineData, ImportTasksTimelineErrors, ImportTasksTimelineResponses, IndexersActionData, IndexersActionErrors, IndexersActionResponses, IndexersDeleteData, IndexersDeleteErrors, IndexersDeleteResponses, IndexersGetData, IndexersGetErrors, IndexersGetResponses, IndexersGetSchemaData, IndexersGetSchemaErrors, IndexersGetSchemaResponses, IndexersListConfiguredData, IndexersListConfiguredErrors, IndexersListConfiguredResponses, IndexersSaveData, IndexersSaveErrors, IndexersSaveResponses, IndexersTestAllData, IndexersTestAllErrors, IndexersTestAllResponses, IndexersTestSavedData, IndexersTestSavedErrors, IndexersTestSavedResponses, IndexersTestUnsavedData, IndexersTestUnsavedErrors, IndexersTestUnsavedResponses, IndexersToggleData, IndexersToggleErrors, IndexersToggleResponses, InvitesCreateData, InvitesCreateErrors, InvitesCreateResponses, InvitesDeleteData, InvitesDeleteErrors, InvitesDeleteResponses, InvitesListData, InvitesListErrors, InvitesListResponses, LibrariesCreateData, LibrariesCreateErrors, LibrariesCreateResponses, LibrariesDeleteData, LibrariesDeleteErrors, LibrariesDeleteResponses, LibrariesGetData, LibrariesGetErrors, LibrariesGetResponses, LibrariesListData, LibrariesListErrors, LibrariesListResponses, LibrariesScanData, LibrariesScanErrors, LibrariesScanResponses, LibrariesUpdateData, LibrariesUpdateErrors, LibrariesUpdateResponses, LibraryListData, LibraryListErrors, LibraryListResponses, MediaGetMovieData, MediaGetMovieErrors, MediaGetMovieResponses, MediaGetPersonData, MediaGetPersonErrors, MediaGetPersonResponses, MediaGetSeriesData, MediaGetSeriesErrors, MediaGetSeriesResponses, MediaSearchData, MediaSearchErrors, MediaSearchResponses, NameTemplatesCreateData, NameTemplatesCreateErrors, NameTemplatesCreateResponses, NameTemplatesDeleteData, NameTemplatesDeleteErrors, NameTemplatesDeleteResponses, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesGetDefaultErrors, NameTemplatesGetDefaultResponses, NameTemplatesGetErrors, NameTemplatesGetResponses, NameTemplatesListData, NameTemplatesListErrors, NameTemplatesListResponses, NameTemplatesUpdateData, NameTemplatesUpdateErrors, NameTemplatesUpdateResponses, QualityBindTierData, QualityBindTierErrors, QualityBindTierResponses, QualityCreateCustomFormatData, QualityCreateCustomFormatErrors, QualityCreateCustomFormatResponses, QualityCreateProfileData, QualityCreateProfileErrors, QualityCreateProfileResponses, QualityDeleteCustomFormatData, QualityDeleteCustomFormatErrors, QualityDeleteCustomFormatResponses, QualityDeleteProfileData, QualityDeleteProfileErrors, QualityDeleteProfileResponses, QualityGetCustomFormatData, QualityGetCustomFormatErrors, QualityGetCustomFormatResponses, QualityGetProfileData, QualityGetProfileErrors, QualityGetProfileResponses, QualityListBinsData, QualityListBinsErrors, QualityListBinsResponses, QualityListCustomFormatsData, QualityListCustomFormatsErrors, QualityListCustomFormatsResponses, QualityListProfilesData, QualityListProfilesErrors, QualityListProfilesResponses, QualityListSizeDefaultsData, QualityListSizeDefaultsErrors, QualityListSizeDefaultsResponses, QualityListTiersData, QualityListTiersErrors, QualityListTiersResponses, QualityTestProfileData, QualityTestProfileErrors, QualityTestProfileResponses, QualityUpdateCustomFormatData, QualityUpdateCustomFormatErrors, QualityUpdateCustomFormatResponses, QualityUpdateProfileData, QualityUpdateProfileErrors, QualityUpdateProfileResponses, RequestsCreateData, RequestsCreateErrors, RequestsCreateResponses, RequestsGetData, RequestsGetErrors, RequestsGetResponses, RequestsListData, RequestsListErrors, RequestsListResponses, RolesListData, RolesListErrors, RolesListResponses, RoutingCreateRuleData, RoutingCreateRuleErrors, RoutingCreateRuleResponses, RoutingDeleteRuleData, RoutingDeleteRuleErrors, RoutingDeleteRuleResponses, RoutingEvaluateData, RoutingEvaluateErrors, RoutingEvaluateResponses, RoutingGetFieldsData, RoutingGetFieldsErrors, RoutingGetFieldsResponses, RoutingGetRuleData, RoutingGetRuleErrors, RoutingGetRuleResponses, RoutingListRulesData, RoutingListRulesErrors, RoutingListRulesResponses, RoutingReorderRulesData, RoutingReorderRulesErrors, RoutingReorderRulesResponses, RoutingUpdateRuleData, RoutingUpdateRuleErrors, RoutingUpdateRuleResponses, SettingsListData, SettingsListErrors, SettingsListResponses, SettingsPatchData, SettingsPatchErrors, SettingsPatchResponses, SetupInitializeData, SetupInitializeErrors, SetupInitializeResponses, SetupStatusData, SetupStatusErrors, SetupStatusResponses, SetupTmdbData, SetupTmdbErrors, SetupTmdbResponses, TrackingByTmdbData, TrackingByTmdbErrors, TrackingByTmdbResponses, TrackingGetData, TrackingGetErrors, TrackingGetResponses, TrackingListData, TrackingListErrors, TrackingListResponses, TrackingRequestersData, TrackingRequestersErrors, TrackingRequestersResponses, TrackingWantsData, TrackingWantsErrors, TrackingWantsResponses, UnmatchedFilesGetData, UnmatchedFilesGetErrors, UnmatchedFilesGetResponses, UnmatchedFilesListData, UnmatchedFilesListErrors, UnmatchedFilesListResponses, UsersAssignRoleData, UsersAssignRoleErrors, UsersAssignRoleResponses, UsersDeleteData, UsersDeleteErrors, UsersDeleteResponses, UsersGetData, UsersGetErrors, UsersGetProfileData, UsersGetProfileErrors, UsersGetProfileResponses, UsersGetResponses, UsersListData, UsersListErrors, UsersListResponses, UsersUpdateData, UsersUpdateErrors, UsersUpdatePasswordData, UsersUpdatePasswordErrors, UsersUpdatePasswordResponses, UsersUpdateProfileData, UsersUpdateProfileErrors, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordErrors, UsersUpdateProfilePasswordResponses, UsersUpdateProfileResponses, UsersUpdateResponses, VersionGetData, VersionGetErrors, VersionGetResponses, WantsCancelData, WantsCancelErrors, WantsCancelResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -1039,6 +1039,41 @@ export const qualityBindTier = <ThrowOnError extends boolean = false>(options: O
 };
 
 /**
+ * List requests
+ */
+export const requestsList = <ThrowOnError extends boolean = false>(options?: Options<RequestsListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<RequestsListResponses, RequestsListErrors, ThrowOnError>({
+        url: '/api/v1/requests',
+        ...options
+    });
+};
+
+/**
+ * Create a request
+ * Validates the body and resolves the title against TMDB, then runs the spawn: an approved movie request produces a tracking and a pending want; an unapproved one is persisted pending with no spawn.
+ */
+export const requestsCreate = <ThrowOnError extends boolean = false>(options: Options<RequestsCreateData, ThrowOnError>) => {
+    return (options.client ?? client).post<RequestsCreateResponses, RequestsCreateErrors, ThrowOnError>({
+        url: '/api/v1/requests',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * Get request
+ */
+export const requestsGet = <ThrowOnError extends boolean = false>(options: Options<RequestsGetData, ThrowOnError>) => {
+    return (options.client ?? client).get<RequestsGetResponses, RequestsGetErrors, ThrowOnError>({
+        url: '/api/v1/requests/{id}',
+        ...options
+    });
+};
+
+/**
  * List roles
  */
 export const rolesList = <ThrowOnError extends boolean = false>(options?: Options<RolesListData, ThrowOnError>) => {
@@ -1285,6 +1320,57 @@ export const setupTmdb = <ThrowOnError extends boolean = false>(options: Options
 };
 
 /**
+ * List trackings
+ */
+export const trackingList = <ThrowOnError extends boolean = false>(options?: Options<TrackingListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<TrackingListResponses, TrackingListErrors, ThrowOnError>({
+        url: '/api/v1/tracking',
+        ...options
+    });
+};
+
+/**
+ * Get tracking by TMDB id
+ * Resolves a movie's acquisition state (tracking + wants) from its TMDB id. Returns 404 when the movie is not tracked.
+ */
+export const trackingByTmdb = <ThrowOnError extends boolean = false>(options: Options<TrackingByTmdbData, ThrowOnError>) => {
+    return (options.client ?? client).get<TrackingByTmdbResponses, TrackingByTmdbErrors, ThrowOnError>({
+        url: '/api/v1/tracking/by-tmdb/{tmdbId}',
+        ...options
+    });
+};
+
+/**
+ * Get tracking
+ */
+export const trackingGet = <ThrowOnError extends boolean = false>(options: Options<TrackingGetData, ThrowOnError>) => {
+    return (options.client ?? client).get<TrackingGetResponses, TrackingGetErrors, ThrowOnError>({
+        url: '/api/v1/tracking/{id}',
+        ...options
+    });
+};
+
+/**
+ * List a tracking's requesters
+ */
+export const trackingRequesters = <ThrowOnError extends boolean = false>(options: Options<TrackingRequestersData, ThrowOnError>) => {
+    return (options.client ?? client).get<TrackingRequestersResponses, TrackingRequestersErrors, ThrowOnError>({
+        url: '/api/v1/tracking/{id}/requesters',
+        ...options
+    });
+};
+
+/**
+ * List a tracking's wants
+ */
+export const trackingWants = <ThrowOnError extends boolean = false>(options: Options<TrackingWantsData, ThrowOnError>) => {
+    return (options.client ?? client).get<TrackingWantsResponses, TrackingWantsErrors, ThrowOnError>({
+        url: '/api/v1/tracking/{id}/wants',
+        ...options
+    });
+};
+
+/**
  * List files needing review
  * Paginated matcher inbox: files whose current match decision banded to something other than confident/detached (includes confident_review and partial_series). Optional libraryId and outcome filters; response carries per-band counts. Match/un-match/detach are on /api/v1/files/{fileId}*.
  */
@@ -1384,6 +1470,17 @@ export const usersAssignRole = <ThrowOnError extends boolean = false>(options: O
 export const versionGet = <ThrowOnError extends boolean = false>(options?: Options<VersionGetData, ThrowOnError>) => {
     return (options?.client ?? client).get<VersionGetResponses, VersionGetErrors, ThrowOnError>({
         url: '/api/v1/version',
+        ...options
+    });
+};
+
+/**
+ * Cancel a want
+ * Cancels a want (and its tracking), stopping its in-flight download job and pending import tasks. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.
+ */
+export const wantsCancel = <ThrowOnError extends boolean = false>(options: Options<WantsCancelData, ThrowOnError>) => {
+    return (options.client ?? client).post<WantsCancelResponses, WantsCancelErrors, ThrowOnError>({
+        url: '/api/v1/wants/{id}/cancel',
         ...options
     });
 };

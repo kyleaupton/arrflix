@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"path/filepath"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/importer"
+	"github.com/kyleaupton/arrflix/internal/jobs/jobutil"
 	"github.com/kyleaupton/arrflix/internal/jobs/state"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -197,16 +197,24 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 	updated, err := w.repo.SetDownloadJobDownloadSnapshot(ctx, repo.SetDownloadJobDownloadSnapshotParams{
 		ID:               job.ID,
 		Status:           newStatus,
-		DownloaderStatus: ptr(string(item.Status)),
-		Progress:         ptr(item.Progress),
-		SavePath:         ptr(item.SavePath),
-		ContentPath:      ptr(item.ContentPath),
-		DownloadSpeed:    ptr(item.DownloadSpeed),
-		EtaSeconds:       ptr(item.ETA),
-		TotalSize:        ptr(item.TotalSize),
+		DownloaderStatus: jobutil.Ptr(string(item.Status)),
+		Progress:         jobutil.Ptr(item.Progress),
+		SavePath:         jobutil.Ptr(item.SavePath),
+		ContentPath:      jobutil.Ptr(item.ContentPath),
+		DownloadSpeed:    jobutil.Ptr(item.DownloadSpeed),
+		EtaSeconds:       jobutil.Ptr(item.ETA),
+		TotalSize:        jobutil.Ptr(item.TotalSize),
 	})
 	if err != nil {
 		return err
+	}
+
+	// Mirror the want to 'downloading' on the transition edge only, so it isn't
+	// re-set on every poll. A job that races straight to completed without an
+	// observed 'downloading' skips it — the import worker advances the want from
+	// there.
+	if job.WantID != uuid.Nil && job.Status != newStatus && newStatus == "downloading" {
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantDownloading)
 	}
 
 	if job.Status != newStatus {
@@ -223,6 +231,7 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 	if newStatus == "failed" {
 		w.logEvent(ctx, job.ID, "error", "downloader reported failed status", nil)
 		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID, "downloader reported failed status", apperrors.KindBadGateway)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantFailed)
 		return nil
 	}
 
@@ -280,6 +289,7 @@ func (w *Worker) spawnMovieImportTask(ctx context.Context, client downloader.Cli
 		DownloadJobID:  job.ID,
 		SourcePath:     sourcePath,
 		PreviousTaskID: uuid.Nil,
+		WantID:         job.WantID,
 		MediaType:      "movie",
 		MediaItemID:    job.MediaItemID,
 		EpisodeID:      uuid.Nil,
@@ -367,6 +377,7 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 			DownloadJobID:  job.ID,
 			SourcePath:     sourcePath,
 			PreviousTaskID: uuid.Nil,
+			WantID:         job.WantID,
 			MediaType:      "series",
 			MediaItemID:    job.MediaItemID,
 			EpisodeID:      episodeID,
@@ -454,6 +465,7 @@ func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err err
 	// Non-retryable errors fail immediately.
 	if !apperrors.IsRetryable(err) {
 		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID, msg, kind)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantFailed)
 		return
 	}
 
@@ -463,11 +475,12 @@ func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err err
 		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID,
 			fmt.Sprintf("max attempts (%d) exceeded: %s", w.maxAttempts, msg),
 			kind)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantFailed)
 		return
 	}
 
 	// Schedule retry with exponential backoff
-	backoff := time.Duration(math.Pow(2, float64(attempt))) * time.Second
+	backoff := jobutil.Backoff(attempt)
 	nextRun := time.Now().Add(backoff)
 
 	w.logEvent(ctx, job.ID, "retry_scheduled", msg, map[string]any{
@@ -494,7 +507,7 @@ func (w *Worker) logEvent(ctx context.Context, jobID uuid.UUID, eventType, messa
 		EventType:     eventType,
 		OldStatus:     nil,
 		NewStatus:     nil,
-		Message:       strPtr(message),
+		Message:       jobutil.StrPtr(message),
 		Metadata:      metaBytes,
 	})
 	if err != nil {
@@ -526,13 +539,4 @@ func mapItemStatus(st downloader.JobStatus) string {
 	default:
 		return "downloading"
 	}
-}
-
-func ptr[T any](v T) *T { return &v }
-
-func strPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }

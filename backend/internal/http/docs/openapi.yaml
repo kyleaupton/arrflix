@@ -568,6 +568,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - id
         - status
@@ -580,6 +582,7 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
+        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId
@@ -699,6 +702,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - seasonNumber
         - episodeNumber
@@ -713,6 +718,7 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
+        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId
@@ -825,6 +831,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - chainDepth
         - id
@@ -838,6 +846,7 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
+        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId
@@ -1046,6 +1055,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - tmdbId
         - mediaPosterPath
@@ -1072,6 +1083,7 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
+        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId
@@ -2016,12 +2028,15 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - id
         - status
         - downloadJobId
         - sourcePath
         - previousTaskId
+        - wantId
         - mediaType
         - mediaItemId
         - episodeId
@@ -2166,6 +2181,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - chainDepth
         - id
@@ -2173,6 +2190,7 @@ components:
         - downloadJobId
         - sourcePath
         - previousTaskId
+        - wantId
         - mediaType
         - mediaItemId
         - episodeId
@@ -2310,6 +2328,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - mediaTitle
         - mediaYear
@@ -2330,6 +2350,7 @@ components:
         - downloadJobId
         - sourcePath
         - previousTaskId
+        - wantId
         - mediaType
         - mediaItemId
         - episodeId
@@ -2986,17 +3007,29 @@ components:
           format: uri
           readOnly: true
           type: string
+        canAutoApproveMovie:
+          description: Whether a movie request by this user auto-approves into a tracking
+          type: boolean
         email:
           description: Email from JWT claims
           type: string
         name:
           description: Username from JWT claims
           type: string
+        roles:
+          description: Role names assigned to the user
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         sub:
           description: User id (UUID string from JWT subject)
           type: string
       required:
         - sub
+        - roles
+        - canAutoApproveMovie
       type: object
     MediaFields:
       additionalProperties: false
@@ -3992,6 +4025,85 @@ components:
         - Encode
         - MediaInfo
       type: object
+    Request:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/Request.json
+          format: uri
+          readOnly: true
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        deniedReason:
+          type:
+            - string
+            - "null"
+        id:
+          type: string
+        requestedBy:
+          type: string
+        spawnedTrackingId:
+          type: string
+        status:
+          type: string
+        tier:
+          type: string
+        tmdbId:
+          format: int64
+          type: integer
+        type:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - requestedBy
+        - tmdbId
+        - type
+        - tier
+        - status
+        - spawnedTrackingId
+        - deniedReason
+        - createdAt
+        - updatedAt
+      type: object
+    RequestCreateBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/RequestCreateBody.json
+          format: uri
+          readOnly: true
+          type: string
+        tier:
+          description: Requested quality tier
+          enum:
+            - HD
+            - 4K
+          type: string
+        tmdbId:
+          description: TMDB id of the requested title
+          format: int64
+          minimum: 1
+          type: integer
+        type:
+          description: Media domain (movie-only in the PoC)
+          enum:
+            - movie
+            - series
+          type: string
+      required:
+        - tmdbId
+        - type
+        - tier
+      type: object
     Resolved:
       additionalProperties: false
       properties:
@@ -4759,6 +4871,91 @@ components:
         - op
         - result
       type: object
+    Tracking:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/Tracking.json
+          format: uri
+          readOnly: true
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        mediaItemId:
+          type: string
+        qualityProfileId:
+          type: string
+        scheduleStrategy:
+          type: string
+        scope:
+          type: string
+        state:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        upgradeBehavior:
+          type: string
+      required:
+        - id
+        - mediaItemId
+        - qualityProfileId
+        - state
+        - scope
+        - upgradeBehavior
+        - scheduleStrategy
+        - createdAt
+        - updatedAt
+      type: object
+    TrackingByTmdb:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/TrackingByTmdb.json
+          format: uri
+          readOnly: true
+          type: string
+        tracking:
+          $ref: "#/components/schemas/Tracking"
+        wants:
+          items:
+            $ref: "#/components/schemas/Want"
+          type:
+            - array
+            - "null"
+      required:
+        - tracking
+        - wants
+      type: object
+    TrackingRequester:
+      additionalProperties: false
+      properties:
+        createdAt:
+          format: date-time
+          type: string
+        tier:
+          type: string
+        trackingId:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        userId:
+          type: string
+      required:
+        - trackingId
+        - userId
+        - tier
+        - createdAt
+        - updatedAt
+      type: object
     UpdateDetails:
       additionalProperties: false
       properties:
@@ -4928,6 +5125,54 @@ components:
         - type
         - size
         - isOfficialTrailer
+      type: object
+    Want:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/Want.json
+          format: uri
+          readOnly: true
+          type: string
+        attemptCount:
+          format: int32
+          type: integer
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        lastError:
+          type:
+            - string
+            - "null"
+        mediaItemId:
+          type: string
+        nextRunAt:
+          format: date-time
+          type: string
+        qualityProfileId:
+          type: string
+        status:
+          type: string
+        trackingId:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - trackingId
+        - mediaItemId
+        - qualityProfileId
+        - status
+        - nextRunAt
+        - attemptCount
+        - lastError
+        - createdAt
+        - updatedAt
       type: object
     WantFields:
       additionalProperties: false
@@ -6387,6 +6632,24 @@ paths:
                         - data
                         - event
                       title: Event scan_started
+                      type: object
+                    - properties:
+                        data:
+                          $ref: "#/components/schemas/Want"
+                        event:
+                          const: want_updated
+                          description: The event name.
+                          type: string
+                        id:
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
+                        retry:
+                          description: The retry time in milliseconds.
+                          type: integer
+                      required:
+                        - data
+                        - event
+                      title: Event want_updated
                       type: object
                 title: Server Sent Events
                 type: array
@@ -8854,6 +9117,118 @@ paths:
       summary: Bind a tier to a quality profile
       tags:
         - quality
+  /api/v1/requests:
+    get:
+      operationId: requests-list
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Request"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: List requests
+      tags:
+        - requests
+    post:
+      description: "Validates the body and resolves the title against TMDB, then runs the spawn: an approved movie request produces a tracking and a pending want; an unapproved one is persisted pending with no spawn."
+      operationId: requests-create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestCreateBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Request"
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+      summary: Create a request
+      tags:
+        - requests
+  /api/v1/requests/{id}:
+    get:
+      operationId: requests-get
+      parameters:
+        - description: Request ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Request ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Request"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Get request
+      tags:
+        - requests
   /api/v1/roles:
     get:
       operationId: roles-list
@@ -9706,6 +10081,199 @@ paths:
       summary: Set TMDB API key
       tags:
         - setup
+  /api/v1/tracking:
+    get:
+      operationId: tracking-list
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Tracking"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: List trackings
+      tags:
+        - tracking
+  /api/v1/tracking/by-tmdb/{tmdbId}:
+    get:
+      description: Resolves a movie's acquisition state (tracking + wants) from its TMDB id. Returns 404 when the movie is not tracked.
+      operationId: tracking-by-tmdb
+      parameters:
+        - description: TMDB id of the movie
+          in: path
+          name: tmdbId
+          required: true
+          schema:
+            description: TMDB id of the movie
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingByTmdb"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Get tracking by TMDB id
+      tags:
+        - tracking
+  /api/v1/tracking/{id}:
+    get:
+      operationId: tracking-get
+      parameters:
+        - description: Tracking ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Tracking ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tracking"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Get tracking
+      tags:
+        - tracking
+  /api/v1/tracking/{id}/requesters:
+    get:
+      operationId: tracking-requesters
+      parameters:
+        - description: Tracking ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Tracking ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/TrackingRequester"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: List a tracking's requesters
+      tags:
+        - tracking
+  /api/v1/tracking/{id}/wants:
+    get:
+      operationId: tracking-wants
+      parameters:
+        - description: Tracking ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Tracking ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Want"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: List a tracking's wants
+      tags:
+        - tracking
   /api/v1/unmatched-files:
     get:
       description: "Paginated matcher inbox: files whose current match decision banded to something other than confident/detached (includes confident_review and partial_series). Optional libraryId and outcome filters; response carries per-band counts. Match/un-match/detach are on /api/v1/files/{fileId}/*."
@@ -10098,6 +10666,59 @@ paths:
       summary: Get version and update information
       tags:
         - version
+  /api/v1/wants/{id}/cancel:
+    post:
+      description: Cancels a want (and its tracking), stopping its in-flight download job and pending import tasks. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.
+      operationId: wants-cancel
+      parameters:
+        - description: Want ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Want ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Want"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Cancel a want
+      tags:
+        - tracking
   /health:
     get:
       description: Liveness probe; returns 200 with body "ok". Bypasses auth and setup-mode.

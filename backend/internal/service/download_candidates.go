@@ -255,12 +255,28 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 				return cerr
 			}
 		}
+
+		// Enter the same want spine as the autonomous flow, but at 'grabbed':
+		// the user picked the release, so selection is skipped. A fresh tracking
+		// and want are born with a NULL profile (uuid.Nil) — a manual grab holds
+		// no selection policy. The lifecycle mirror and cancel then apply
+		// uniformly to manual and autonomous grabs.
+		tracking, created, terr := ensureMovieTracking(ctx, r, mi.ID, uuid.Nil)
+		if terr != nil {
+			return terr
+		}
+		want, werr := GrabManualWant(ctx, r, tracking.ID, mi.ID, created)
+		if werr != nil {
+			return werr
+		}
+
 		var jerr error
 		job, jerr = r.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
 			Protocol:       candidate.Protocol,
 			MediaType:      "movie",
 			MediaItemID:    mi.ID,
 			EpisodeID:      uuid.Nil,
+			WantID:         want.ID,
 			IndexerID:      indexerID,
 			Guid:           guid,
 			CandidateTitle: candidate.Title,
@@ -276,6 +292,63 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 	}
 
 	return eval, job, nil
+}
+
+// GrabManualWant drives a manual grab into the want spine at 'grabbed',
+// returning the want the download_job links to. It encodes the manual-grab
+// decision table over the movie's current want:
+//
+//   - fresh tracking (created) or no existing want → create a want directly
+//     'grabbed' with a NULL profile (uuid.Nil): a manual grab replaces selection
+//     entirely, so it holds no autonomous selection policy.
+//   - 'pending'/'searching' → CAS-flip to 'grabbed', pre-empting the autonomous
+//     search (the worker's later grab CAS then no-ops).
+//   - 'failed'/'canceled' → reactivate: CAS-flip to 'grabbed'; a 'canceled' want
+//     also flips its tracking back to 'active'.
+//   - 'grabbed'/'downloading'/'imported'/'available' → Conflict: already
+//     acquiring or in the library, cancel first.
+//
+// GrabWantManual's CAS is the authoritative race guard — a prior-status read
+// drives the reject/reactivate branches, but a want the worker advanced between
+// the read and the CAS loses cleanly (ok=false) and surfaces as the same
+// Conflict.
+func GrabManualWant(ctx context.Context, r *repo.Repository, trackingID, mediaItemID uuid.UUID, created bool) (model.Want, error) {
+	const op = "DownloadCandidatesService.GrabManualWant"
+
+	if !created {
+		wants, err := r.ListWantsByTracking(ctx, trackingID)
+		if err != nil {
+			return model.Want{}, err
+		}
+		if len(wants) > 0 {
+			prior := wants[0]
+			switch prior.Status {
+			case string(model.WantGrabbed), string(model.WantDownloading), string(model.WantImported), string(model.WantAvailable):
+				return model.Want{}, apperrors.Conflictf("movie is already being acquired (want is %q); cancel it before grabbing manually", prior.Status).Op(op)
+			}
+
+			grabbed, ok, err := r.GrabWantManual(ctx, prior.ID)
+			if err != nil {
+				return model.Want{}, err
+			}
+			if !ok {
+				return model.Want{}, apperrors.Conflictf("movie is already being acquired; cancel it before grabbing manually").Op(op)
+			}
+			if prior.Status == string(model.WantCanceled) {
+				if _, err := r.SetTrackingState(ctx, trackingID, string(model.TrackingActive)); err != nil {
+					return model.Want{}, err
+				}
+			}
+			return grabbed, nil
+		}
+	}
+
+	return r.CreateWant(ctx, repo.CreateWantParams{
+		TrackingID:       trackingID,
+		MediaItemID:      mediaItemID,
+		QualityProfileID: uuid.Nil,
+		Status:           string(model.WantGrabbed),
+	})
 }
 
 // EnqueueSeriesCandidate creates a durable download job for a series candidate.
@@ -396,6 +469,7 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 			MediaItemID:    mi.ID,
 			SeasonID:       seasonID,
 			EpisodeID:      episodeID,
+			WantID:         uuid.Nil,
 			IndexerID:      indexerID,
 			Guid:           guid,
 			CandidateTitle: candidate.Title,

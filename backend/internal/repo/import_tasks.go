@@ -45,6 +45,7 @@ type CreateImportTaskParams struct {
 	DownloadJobID  uuid.UUID
 	SourcePath     string
 	PreviousTaskID uuid.UUID
+	WantID         uuid.UUID
 	MediaType      string
 	MediaItemID    uuid.UUID
 	EpisodeID      uuid.UUID
@@ -104,6 +105,7 @@ func toModelImportTask(row dbgen.ImportTask) model.ImportTask {
 		DownloadJobID:  uuidFromPgtype(row.DownloadJobID),
 		SourcePath:     row.SourcePath,
 		PreviousTaskID: uuidFromPgtype(row.PreviousTaskID),
+		WantID:         uuidFromPgtype(row.WantID),
 		MediaType:      row.MediaType,
 		MediaItemID:    uuidFromPgtype(row.MediaItemID),
 		EpisodeID:      uuidFromPgtype(row.EpisodeID),
@@ -134,6 +136,7 @@ func toModelImportTaskWithDetails(row dbgen.GetImportTaskWithDetailsRow) model.I
 			DownloadJobID:  uuidFromPgtype(row.DownloadJobID),
 			SourcePath:     row.SourcePath,
 			PreviousTaskID: uuidFromPgtype(row.PreviousTaskID),
+			WantID:         uuidFromPgtype(row.WantID),
 			MediaType:      row.MediaType,
 			MediaItemID:    uuidFromPgtype(row.MediaItemID),
 			EpisodeID:      uuidFromPgtype(row.EpisodeID),
@@ -177,6 +180,7 @@ func toModelImportTaskHistoryEntry(row dbgen.GetImportTaskHistoryRow) model.Impo
 			DownloadJobID:  uuidFromPgtype(row.DownloadJobID),
 			SourcePath:     row.SourcePath,
 			PreviousTaskID: uuidFromPgtype(row.PreviousTaskID),
+			WantID:         uuidFromPgtype(row.WantID),
 			MediaType:      row.MediaType,
 			MediaItemID:    uuidFromPgtype(row.MediaItemID),
 			EpisodeID:      uuidFromPgtype(row.EpisodeID),
@@ -229,6 +233,7 @@ func (r *Repository) CreateImportTask(ctx context.Context, params CreateImportTa
 		DownloadJobID:  pgtypeFromUUID(params.DownloadJobID),
 		SourcePath:     params.SourcePath,
 		PreviousTaskID: pgtypeFromUUIDOrNull(params.PreviousTaskID),
+		WantID:         pgtypeFromUUIDOrNull(params.WantID),
 		MediaType:      params.MediaType,
 		MediaItemID:    pgtypeFromUUID(params.MediaItemID),
 		EpisodeID:      pgtypeFromUUIDOrNull(params.EpisodeID),

@@ -27,6 +27,12 @@ type SearchResult struct {
 	IndexerName string
 	GUID        string
 
+	// Structured identifiers Prowlarr echoes onto a result (parsed from the
+	// release or supplied by the indexer). 0 means none was reported; the
+	// acquisition gate uses them to verify a result refers to the wanted movie.
+	TmdbID int64
+	ImdbID int64
+
 	// Required - validated at adapter boundary
 	Title       string // MUST be non-empty
 	DownloadURL string // MUST be non-empty

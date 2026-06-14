@@ -606,6 +606,24 @@ func (q *Queries) GetMediaItemByTmdbIDAndType(ctx context.Context, arg GetMediaI
 	return i, err
 }
 
+const getMediaItemExternalID = `-- name: GetMediaItemExternalID :one
+select external_id from media_item_external_id
+where media_item_id = $1 and source = $2
+`
+
+type GetMediaItemExternalIDParams struct {
+	MediaItemID pgtype.UUID `json:"media_item_id"`
+	Source      string      `json:"source"`
+}
+
+// Reads one secondary-namespace cross-reference (imdb/tvdb/…) for a media_item.
+func (q *Queries) GetMediaItemExternalID(ctx context.Context, arg GetMediaItemExternalIDParams) (string, error) {
+	row := q.db.QueryRow(ctx, getMediaItemExternalID, arg.MediaItemID, arg.Source)
+	var external_id string
+	err := row.Scan(&external_id)
+	return external_id, err
+}
+
 const getMediaItemsByTmdbIDs = `-- name: GetMediaItemsByTmdbIDs :many
 SELECT tmdb_id FROM media_item
 WHERE tmdb_id = ANY($1::bigint[]) AND type = $2

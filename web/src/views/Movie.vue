@@ -31,10 +31,7 @@
             <RatingBadge source="tmdb" :score="data.voteAverage" :vote-count="data.voteCount" />
           </template>
           <template #actions>
-            <Button @click="searchForDownloadCandidates">
-              <Download class="mr-2 size-4" />
-              Download
-            </Button>
+            <AcquisitionControl :tmdb-id="id" />
           </template>
         </MediaHero>
 
@@ -92,9 +89,8 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useQuery } from '@tanstack/vue-query'
-import { Download, File } from 'lucide-vue-next'
+import { File } from 'lucide-vue-next'
 import { mediaGetMovieOptions } from '@/client/@tanstack/vue-query.gen'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import MediaHero from '@/components/media/MediaHero.vue'
 import RatingBadge from '@/components/media/RatingBadge.vue'
@@ -106,15 +102,13 @@ import WatchProviders from '@/components/media/WatchProviders.vue'
 import FeaturedTrailer from '@/components/videos/FeaturedTrailer.vue'
 import DataTable from '@/components/tables/DataTable.vue'
 import { movieFilesColumns } from '@/components/tables/configs/movieFilesTableConfig'
-import { useModal } from '@/composables/useModal'
 import { buildMetadataSubtitle } from '@/lib/utils'
 import { useDownloadJobs, isJobActive } from '@/composables/useDownloadJobs'
-import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
+import AcquisitionControl from '@/components/acquisition/AcquisitionControl.vue'
 import type { FileInfo } from '@/client/types.gen'
 
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
-const modal = useModal()
 const { getJobById } = useDownloadJobs()
 
 const id = computed(() => {
@@ -227,15 +221,6 @@ function mapJobStatusToFileStatus(jobStatus: string): string {
     default:
       return 'downloading' // fallback
   }
-}
-
-const searchForDownloadCandidates = () => {
-  modal.open(DownloadCandidatesDialog, {
-    props: {
-      class: 'max-w-[90vw] sm:max-w-4xl lg:max-w-6xl',
-      movieId: id.value,
-    },
-  })
 }
 </script>
 

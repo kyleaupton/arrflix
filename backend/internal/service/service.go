@@ -17,6 +17,7 @@ import (
 )
 
 type Services struct {
+	Acquisition        *AcquisitionService
 	Auth               *AuthService
 	Downloaders        *DownloadersService
 	DownloadCandidates *DownloadCandidatesService
@@ -33,13 +34,16 @@ type Services struct {
 	Media              *MediaService
 	NameTemplates      *NameTemplatesService
 	QualityProfiles    *QualityProfileService
+	Requests           *RequestService
 	Routing            *RoutingService
 	Scanner            *ScannerService
+	Tracking           *TrackingService
 	Settings           *SettingsService
 	Setup              *SetupService
 	Tmdb               *TmdbService
 	UnmatchedFiles     *UnmatchedFilesService
 	Users              *UsersService
+	Wants              *WantService
 	Filesystem         *FilesystemService
 	Version            *VersionService
 }
@@ -80,9 +84,11 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	indexerSource := prowlarradapter.New(indexer.Client(), l)
 	media := NewMediaService(r, l, tmdb, settings)
 	routingSvc := NewRoutingService(r)
+	quality := NewQualityProfileService(r)
 	users := NewUsersService(r)
 	invites := NewInvitesService(r)
 	enrichment := NewEnrichmentService(r, l, tmdb)
+	downloadJobs := NewDownloadJobsService(r)
 
 	// Matcher: the v1 resolver catalog (path-embed + name-parse) wires
 	// up via DefaultRegistry. ScannerService.MatchBatch is the only
@@ -103,10 +109,11 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	matchDecisionsSvc := NewMatchDecisionsService(r, l, tmdb, enrichment, metadataProvider, settings)
 
 	return &Services{
+		Acquisition:        NewAcquisitionService(r, l, indexerSource, routingSvc, quality),
 		Auth:               NewAuthService(r, cfg, settings, invites),
 		Downloaders:        NewDownloadersService(r),
 		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, routingSvc),
-		DownloadJobs:       NewDownloadJobsService(r),
+		DownloadJobs:       downloadJobs,
 		Enrichment:         enrichment,
 		Invites:            invites,
 		Filesystem:         NewFilesystemService(),
@@ -119,14 +126,17 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		MatchDecisions:     matchDecisionsSvc,
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
-		QualityProfiles:    NewQualityProfileService(r),
+		QualityProfiles:    quality,
+		Requests:           NewRequestService(r, tmdb, quality),
 		Routing:            routingSvc,
 		Scanner:            NewScannerService(r, l, tmdb, broker, matcherSvc, enrichment),
 		Settings:           settings,
 		Setup:              NewSetupService(r, users, settings, tmdb),
 		Tmdb:               tmdb,
+		Tracking:           NewTrackingService(r),
 		UnmatchedFiles:     NewUnmatchedFilesService(r, l, tmdb),
 		Users:              users,
+		Wants:              NewWantService(r, downloadJobs),
 		Version:            NewVersionService(r, l),
 	}
 }

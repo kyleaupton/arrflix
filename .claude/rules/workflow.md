@@ -33,6 +33,14 @@ Per-step recipes (`just backend-sqlc`, `just backend-genspec`, `just web-genclie
 
 Migrations run automatically on API startup via `db.ApplyMigrations()`. Add new migrations as sequentially numbered files in `backend/internal/db/migrations/`.
 
+## Database reset & seeding
+
+```bash
+just db-reseed   # drop+recreate the arrflix schema, re-migrate, load the dev seed
+```
+
+`db-reseed` wipes the `arrflix` DB (Prowlarr's DBs are untouched), re-applies migrations via `cmd/migrate`, then loads `backend/internal/db/seed/seed_dev.sql` (dev user, libraries, name templates, downloader). The seeded downloader password comes from `DOWNLOADER_PASSWORD` in `.env` (kept out of git), defaulting to `admin`. If pgx hits a transient "cached plan" error afterward, restart the backend so its pool reconnects.
+
 ## Testing
 
 ```bash

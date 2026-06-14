@@ -419,6 +419,11 @@ DO UPDATE SET data = excluded.data, fetched_at = now();
 SELECT * FROM media_metadata_source
 WHERE media_item_id = sqlc.arg(media_item_id) AND source = sqlc.arg(source);
 
+-- name: GetMediaItemExternalID :one
+-- Reads one secondary-namespace cross-reference (imdb/tvdb/…) for a media_item.
+select external_id from media_item_external_id
+where media_item_id = sqlc.arg(media_item_id) and source = sqlc.arg(source);
+
 -- name: UpsertMediaItemExternalID :exec
 -- Secondary-namespace cross-reference for a media_item (imdb/tvdb/…). One row
 -- per (item, source); re-running enrichment refreshes the external_id in place.

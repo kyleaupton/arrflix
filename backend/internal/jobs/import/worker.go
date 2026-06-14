@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/importer"
+	"github.com/kyleaupton/arrflix/internal/jobs/jobutil"
 	"github.com/kyleaupton/arrflix/internal/jobs/state"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/mediainfo"
@@ -210,6 +210,19 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 		Str("dest", fullDest).
 		Msg("file imported successfully")
 
+	// Verify the placed file is present and non-empty BEFORE recording it.
+	// HardlinkOrCopy can report success while the file is missing or zero-length
+	// (overlay/network FS hiccup, a disk that errored). Committing a file row +
+	// 'available' want for a file that isn't really there is the divergence this
+	// guards against: failing here means no file row is written, so the DB and
+	// disk stay consistent — the import retries, and the want only advances once
+	// the bytes are confirmed on disk. This is the VerifyStep, run as a precondition
+	// of the commit rather than after it.
+	if info, serr := os.Stat(fullDest); serr != nil || info.Size() == 0 {
+		return apperrors.Internalf("verify failed: imported file missing or empty: %s", fullDest).
+			Op("ImportWorker.processTask")
+	}
+
 	var episodeIDPtr *uuid.UUID
 	if task.EpisodeID != uuid.Nil {
 		ep := task.EpisodeID
@@ -264,17 +277,37 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 			return ierr
 		}
 
-		_, terr := r.SetImportTaskCompleted(ctx, repo.SetImportTaskCompletedParams{
+		if _, terr := r.SetImportTaskCompleted(ctx, repo.SetImportTaskCompletedParams{
 			ID:           task.ID,
 			DestPath:     destPath,
 			ImportMethod: method,
 			FileID:       file.ID,
-		})
-		return terr
+		}); terr != nil {
+			return terr
+		}
+
+		// want→imported commits atomically with task completion + the file row,
+		// via the tx-bound r. Guarded so the interactive/legacy path (no want)
+		// is untouched. The mirror routes through MirrorWantStatus's
+		// terminal-sticky guard: if the want was canceled mid-flight, the file
+		// import still commits but the want stays 'canceled' (ok==false) rather
+		// than being resurrected to 'imported'.
+		if task.WantID != uuid.Nil {
+			if _, _, werr := r.MirrorWantStatus(ctx, task.WantID, string(model.WantImported)); werr != nil {
+				return werr
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return err
 	}
+
+	// Presence/size was confirmed before the file row committed (see the verify
+	// guard above), so the want advances 'imported' → 'available' — Arrflix's own
+	// authority that the file is on disk, reachable with no media server. MirrorWant
+	// no-ops on the interactive/legacy path (no want).
+	jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, task.WantID, model.WantAvailable)
 
 	w.logEvent(ctx, task.ID, "status_changed", "", map[string]any{
 		"old_status":    "in_progress",
@@ -298,7 +331,10 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 
 	// Domain is known: the task is scoped to a single media type. Pass it to
 	// Parse — it drives both the identity pattern set and the bin vocabulary
-	// the rendered quality.name / quality.full use.
+	// the rendered quality.name / quality.full use. This re-parses the same
+	// candidate_title the acquisition pick parsed; Parse is pure, so the rendered
+	// quality matches the selection by construction (no need to thread the picked
+	// Subject through — re-parsing a string is cheaper than persisting it).
 	domain := parsing.DomainSeries
 	if task.MediaType == "movie" {
 		domain = parsing.DomainMovie
@@ -319,8 +355,11 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 		tmdbID = *details.MediaTmdbID
 	}
 
-	// Runtime is nil here: the import re-gate (ReGate) does not enforce size
-	// bands, so the matched media's runtime isn't threaded through the task.
+	// Runtime is nil here: the import path renders the template from the parsed
+	// title plus ffprobe mediainfo and runs no size-band gating, so the matched
+	// media's runtime isn't threaded through the task. (The import-time re-gate
+	// the acquisition spec describes is not wired in yet — when it lands, it will
+	// supply asserted attributes here.)
 	if task.MediaType == "movie" {
 		evalCtx = evalCtx.WithMedia(model.MediaTypeMovie, details.MediaTitle, year, tmdbID, nil)
 	} else {
@@ -347,13 +386,13 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 	// Render template parts
 	var rel string
 	if task.MediaType == "series" {
-		showPart, err := template.Render(coalesce(details.SeriesShowTemplate), templateData)
+		showPart, err := template.Render(jobutil.Deref(details.SeriesShowTemplate), templateData)
 		if err != nil {
 			return "", apperrors.Internalf("render show template: %v", err).
 				Op("ImportWorker.computeDestPath").
 				NotRetryable()
 		}
-		seasonPart, err := template.Render(coalesce(details.SeriesSeasonTemplate), templateData)
+		seasonPart, err := template.Render(jobutil.Deref(details.SeriesSeasonTemplate), templateData)
 		if err != nil {
 			return "", apperrors.Internalf("render season template: %v", err).
 				Op("ImportWorker.computeDestPath").
@@ -413,6 +452,7 @@ func (w *Worker) handleError(ctx context.Context, task model.ImportTask, err err
 	// Non-retryable errors fail immediately.
 	if !apperrors.IsRetryable(err) {
 		_, _ = w.repo.SetImportTaskFailed(ctx, task.ID, msg, kind)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, task.WantID, model.WantFailed)
 		w.publishTaskUpdated(ctx, task)
 		return
 	}
@@ -428,12 +468,13 @@ func (w *Worker) handleError(ctx context.Context, task model.ImportTask, err err
 		_, _ = w.repo.SetImportTaskFailed(ctx, task.ID,
 			fmt.Sprintf("max attempts (%d) exceeded: %s", maxAttempts, msg),
 			kind)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, task.WantID, model.WantFailed)
 		w.publishTaskUpdated(ctx, task)
 		return
 	}
 
 	// Schedule retry with exponential backoff
-	backoff := time.Duration(math.Pow(2, float64(attempt))) * time.Second
+	backoff := jobutil.Backoff(attempt)
 	nextRun := time.Now().Add(backoff)
 
 	w.logEvent(ctx, task.ID, "retry_scheduled", msg, map[string]any{
@@ -461,7 +502,7 @@ func (w *Worker) logEvent(ctx context.Context, taskID uuid.UUID, eventType, mess
 		EventType:    eventType,
 		OldStatus:    nil,
 		NewStatus:    nil,
-		Message:      strPtr(message),
+		Message:      jobutil.StrPtr(message),
 		Metadata:     metaBytes,
 	})
 	if err != nil {
@@ -580,18 +621,4 @@ func (w *Worker) deriveSourcePath(ctx context.Context, task model.ImportTask) (s
 
 	// Apply path mapping (stub - returns unchanged for now)
 	return w.pathMapper.Apply(ctx, job.DownloaderID, rawPath), nil
-}
-
-func strPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
-func coalesce(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }

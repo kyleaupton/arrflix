@@ -18,7 +18,7 @@ SET status = 'cancelled',
     updated_at = now()
 WHERE id = $1
   AND status NOT IN ('completed', 'failed', 'cancelled')
-RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind
+RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id
 `
 
 func (q *Queries) CancelDownloadJob(ctx context.Context, id pgtype.UUID) (DownloadJob, error) {
@@ -54,6 +54,7 @@ func (q *Queries) CancelDownloadJob(ctx context.Context, id pgtype.UUID) (Downlo
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -72,7 +73,7 @@ UPDATE download_job j
 SET updated_at = now()
 FROM cte
 WHERE j.id = cte.id
-RETURNING j.id, j.status, j.protocol, j.indexer_id, j.guid, j.candidate_title, j.candidate_link, j.media_type, j.media_item_id, j.season_id, j.episode_id, j.library_id, j.name_template_id, j.downloader_id, j.downloader_external_id, j.downloader_status, j.progress, j.save_path, j.content_path, j.attempt_count, j.next_run_at, j.last_error, j.created_at, j.updated_at, j.previous_job_id, j.download_speed, j.eta_seconds, j.total_size, j.error_kind
+RETURNING j.id, j.status, j.protocol, j.indexer_id, j.guid, j.candidate_title, j.candidate_link, j.media_type, j.media_item_id, j.season_id, j.episode_id, j.library_id, j.name_template_id, j.downloader_id, j.downloader_external_id, j.downloader_status, j.progress, j.save_path, j.content_path, j.attempt_count, j.next_run_at, j.last_error, j.created_at, j.updated_at, j.previous_job_id, j.download_speed, j.eta_seconds, j.total_size, j.error_kind, j.want_id
 `
 
 // Claims jobs that are ready to be processed (created, enqueued, or downloading)
@@ -116,6 +117,7 @@ func (q *Queries) ClaimRunnableDownloadJobs(ctx context.Context, limit int32) ([
 			&i.EtaSeconds,
 			&i.TotalSize,
 			&i.ErrorKind,
+			&i.WantID,
 		); err != nil {
 			return nil, err
 		}
@@ -136,6 +138,7 @@ INSERT INTO download_job (
   media_item_id,
   season_id,
   episode_id,
+  want_id,
   indexer_id,
   guid,
   candidate_title,
@@ -157,11 +160,12 @@ VALUES (
   $9,
   $10,
   $11,
-  $12
+  $12,
+  $13
 )
 ON CONFLICT (indexer_id, guid) WHERE status NOT IN ('failed', 'cancelled') DO UPDATE
 SET updated_at = now()
-RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind
+RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id
 `
 
 type CreateDownloadJobParams struct {
@@ -170,6 +174,7 @@ type CreateDownloadJobParams struct {
 	MediaItemID    pgtype.UUID `json:"media_item_id"`
 	SeasonID       pgtype.UUID `json:"season_id"`
 	EpisodeID      pgtype.UUID `json:"episode_id"`
+	WantID         pgtype.UUID `json:"want_id"`
 	IndexerID      int64       `json:"indexer_id"`
 	Guid           string      `json:"guid"`
 	CandidateTitle string      `json:"candidate_title"`
@@ -187,6 +192,7 @@ func (q *Queries) CreateDownloadJob(ctx context.Context, arg CreateDownloadJobPa
 		arg.MediaItemID,
 		arg.SeasonID,
 		arg.EpisodeID,
+		arg.WantID,
 		arg.IndexerID,
 		arg.Guid,
 		arg.CandidateTitle,
@@ -226,12 +232,13 @@ func (q *Queries) CreateDownloadJob(ctx context.Context, arg CreateDownloadJobPa
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
 
 const getDownloadJob = `-- name: GetDownloadJob :one
-SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind FROM download_job
+SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id FROM download_job
 WHERE id = $1
 `
 
@@ -268,12 +275,13 @@ func (q *Queries) GetDownloadJob(ctx context.Context, id pgtype.UUID) (DownloadJ
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
 
 const getDownloadJobByCandidate = `-- name: GetDownloadJobByCandidate :one
-SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind FROM download_job
+SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id FROM download_job
 WHERE indexer_id = $1 AND guid = $2
 `
 
@@ -315,6 +323,7 @@ func (q *Queries) GetDownloadJobByCandidate(ctx context.Context, arg GetDownload
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -322,19 +331,19 @@ func (q *Queries) GetDownloadJobByCandidate(ctx context.Context, arg GetDownload
 const getDownloadJobHistory = `-- name: GetDownloadJobHistory :many
 WITH RECURSIVE job_chain AS (
   -- Start with the given job
-  SELECT dj.id, dj.status, dj.protocol, dj.indexer_id, dj.guid, dj.candidate_title, dj.candidate_link, dj.media_type, dj.media_item_id, dj.season_id, dj.episode_id, dj.library_id, dj.name_template_id, dj.downloader_id, dj.downloader_external_id, dj.downloader_status, dj.progress, dj.save_path, dj.content_path, dj.attempt_count, dj.next_run_at, dj.last_error, dj.created_at, dj.updated_at, dj.previous_job_id, dj.download_speed, dj.eta_seconds, dj.total_size, dj.error_kind, 0 AS chain_depth
+  SELECT dj.id, dj.status, dj.protocol, dj.indexer_id, dj.guid, dj.candidate_title, dj.candidate_link, dj.media_type, dj.media_item_id, dj.season_id, dj.episode_id, dj.library_id, dj.name_template_id, dj.downloader_id, dj.downloader_external_id, dj.downloader_status, dj.progress, dj.save_path, dj.content_path, dj.attempt_count, dj.next_run_at, dj.last_error, dj.created_at, dj.updated_at, dj.previous_job_id, dj.download_speed, dj.eta_seconds, dj.total_size, dj.error_kind, dj.want_id, 0 AS chain_depth
   FROM download_job dj
   WHERE dj.id = $1
 
   UNION ALL
 
   -- Follow previous_job_id links
-  SELECT prev.id, prev.status, prev.protocol, prev.indexer_id, prev.guid, prev.candidate_title, prev.candidate_link, prev.media_type, prev.media_item_id, prev.season_id, prev.episode_id, prev.library_id, prev.name_template_id, prev.downloader_id, prev.downloader_external_id, prev.downloader_status, prev.progress, prev.save_path, prev.content_path, prev.attempt_count, prev.next_run_at, prev.last_error, prev.created_at, prev.updated_at, prev.previous_job_id, prev.download_speed, prev.eta_seconds, prev.total_size, prev.error_kind, jc.chain_depth + 1
+  SELECT prev.id, prev.status, prev.protocol, prev.indexer_id, prev.guid, prev.candidate_title, prev.candidate_link, prev.media_type, prev.media_item_id, prev.season_id, prev.episode_id, prev.library_id, prev.name_template_id, prev.downloader_id, prev.downloader_external_id, prev.downloader_status, prev.progress, prev.save_path, prev.content_path, prev.attempt_count, prev.next_run_at, prev.last_error, prev.created_at, prev.updated_at, prev.previous_job_id, prev.download_speed, prev.eta_seconds, prev.total_size, prev.error_kind, prev.want_id, jc.chain_depth + 1
   FROM download_job prev
   JOIN job_chain jc ON jc.previous_job_id = prev.id
   WHERE jc.chain_depth < 50  -- Safety limit
 )
-SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, chain_depth FROM job_chain
+SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id, chain_depth FROM job_chain
 ORDER BY chain_depth ASC
 `
 
@@ -368,6 +377,7 @@ type GetDownloadJobHistoryRow struct {
 	EtaSeconds           *int64        `json:"eta_seconds"`
 	TotalSize            *int64        `json:"total_size"`
 	ErrorKind            NullErrorKind `json:"error_kind"`
+	WantID               pgtype.UUID   `json:"want_id"`
 	ChainDepth           int32         `json:"chain_depth"`
 }
 
@@ -411,6 +421,7 @@ func (q *Queries) GetDownloadJobHistory(ctx context.Context, id pgtype.UUID) ([]
 			&i.EtaSeconds,
 			&i.TotalSize,
 			&i.ErrorKind,
+			&i.WantID,
 			&i.ChainDepth,
 		); err != nil {
 			return nil, err
@@ -501,7 +512,7 @@ func (q *Queries) GetDownloadJobTimeline(ctx context.Context, downloadJobID pgty
 
 const getDownloadJobWithImportSummary = `-- name: GetDownloadJobWithImportSummary :one
 SELECT
-  dj.id, dj.status, dj.protocol, dj.indexer_id, dj.guid, dj.candidate_title, dj.candidate_link, dj.media_type, dj.media_item_id, dj.season_id, dj.episode_id, dj.library_id, dj.name_template_id, dj.downloader_id, dj.downloader_external_id, dj.downloader_status, dj.progress, dj.save_path, dj.content_path, dj.attempt_count, dj.next_run_at, dj.last_error, dj.created_at, dj.updated_at, dj.previous_job_id, dj.download_speed, dj.eta_seconds, dj.total_size, dj.error_kind,
+  dj.id, dj.status, dj.protocol, dj.indexer_id, dj.guid, dj.candidate_title, dj.candidate_link, dj.media_type, dj.media_item_id, dj.season_id, dj.episode_id, dj.library_id, dj.name_template_id, dj.downloader_id, dj.downloader_external_id, dj.downloader_status, dj.progress, dj.save_path, dj.content_path, dj.attempt_count, dj.next_run_at, dj.last_error, dj.created_at, dj.updated_at, dj.previous_job_id, dj.download_speed, dj.eta_seconds, dj.total_size, dj.error_kind, dj.want_id,
   mi.tmdb_id,
   mi.poster_path AS media_poster_path,
   mi.title AS media_title,
@@ -569,6 +580,7 @@ type GetDownloadJobWithImportSummaryRow struct {
 	EtaSeconds           *int64        `json:"eta_seconds"`
 	TotalSize            *int64        `json:"total_size"`
 	ErrorKind            NullErrorKind `json:"error_kind"`
+	WantID               pgtype.UUID   `json:"want_id"`
 	TmdbID               *int64        `json:"tmdb_id"`
 	MediaPosterPath      *string       `json:"media_poster_path"`
 	MediaTitle           *string       `json:"media_title"`
@@ -620,6 +632,7 @@ func (q *Queries) GetDownloadJobWithImportSummary(ctx context.Context, id pgtype
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.ErrorKind,
+		&i.WantID,
 		&i.TmdbID,
 		&i.MediaPosterPath,
 		&i.MediaTitle,
@@ -638,8 +651,70 @@ func (q *Queries) GetDownloadJobWithImportSummary(ctx context.Context, id pgtype
 	return i, err
 }
 
+const listActiveDownloadJobsByWant = `-- name: ListActiveDownloadJobsByWant :many
+SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id FROM download_job
+WHERE want_id = $1
+  AND status NOT IN ('completed', 'failed', 'cancelled')
+ORDER BY created_at DESC
+`
+
+// ListActiveDownloadJobsByWant returns the non-terminal download jobs linked to
+// a want, backing the want-cancel cascade. At most one row in practice (the #2a
+// pre-grab CAS prevents a want from having two in-flight jobs), but a slice is
+// safe. Uses idx_download_job_want.
+func (q *Queries) ListActiveDownloadJobsByWant(ctx context.Context, wantID pgtype.UUID) ([]DownloadJob, error) {
+	rows, err := q.db.Query(ctx, listActiveDownloadJobsByWant, wantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DownloadJob
+	for rows.Next() {
+		var i DownloadJob
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.Protocol,
+			&i.IndexerID,
+			&i.Guid,
+			&i.CandidateTitle,
+			&i.CandidateLink,
+			&i.MediaType,
+			&i.MediaItemID,
+			&i.SeasonID,
+			&i.EpisodeID,
+			&i.LibraryID,
+			&i.NameTemplateID,
+			&i.DownloaderID,
+			&i.DownloaderExternalID,
+			&i.DownloaderStatus,
+			&i.Progress,
+			&i.SavePath,
+			&i.ContentPath,
+			&i.AttemptCount,
+			&i.NextRunAt,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PreviousJobID,
+			&i.DownloadSpeed,
+			&i.EtaSeconds,
+			&i.TotalSize,
+			&i.ErrorKind,
+			&i.WantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDownloadJobs = `-- name: ListDownloadJobs :many
-SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind FROM download_job
+SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id FROM download_job
 ORDER BY created_at DESC
 `
 
@@ -682,6 +757,7 @@ func (q *Queries) ListDownloadJobs(ctx context.Context) ([]DownloadJob, error) {
 			&i.EtaSeconds,
 			&i.TotalSize,
 			&i.ErrorKind,
+			&i.WantID,
 		); err != nil {
 			return nil, err
 		}
@@ -694,7 +770,7 @@ func (q *Queries) ListDownloadJobs(ctx context.Context) ([]DownloadJob, error) {
 }
 
 const listDownloadJobsByMediaItem = `-- name: ListDownloadJobsByMediaItem :many
-SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind FROM download_job
+SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id FROM download_job
 WHERE media_item_id = $1
 ORDER BY created_at DESC
 `
@@ -738,6 +814,7 @@ func (q *Queries) ListDownloadJobsByMediaItem(ctx context.Context, mediaItemID p
 			&i.EtaSeconds,
 			&i.TotalSize,
 			&i.ErrorKind,
+			&i.WantID,
 		); err != nil {
 			return nil, err
 		}
@@ -750,7 +827,7 @@ func (q *Queries) ListDownloadJobsByMediaItem(ctx context.Context, mediaItemID p
 }
 
 const listDownloadJobsByTmdbMovieID = `-- name: ListDownloadJobsByTmdbMovieID :many
-SELECT j.id, j.status, j.protocol, j.indexer_id, j.guid, j.candidate_title, j.candidate_link, j.media_type, j.media_item_id, j.season_id, j.episode_id, j.library_id, j.name_template_id, j.downloader_id, j.downloader_external_id, j.downloader_status, j.progress, j.save_path, j.content_path, j.attempt_count, j.next_run_at, j.last_error, j.created_at, j.updated_at, j.previous_job_id, j.download_speed, j.eta_seconds, j.total_size, j.error_kind
+SELECT j.id, j.status, j.protocol, j.indexer_id, j.guid, j.candidate_title, j.candidate_link, j.media_type, j.media_item_id, j.season_id, j.episode_id, j.library_id, j.name_template_id, j.downloader_id, j.downloader_external_id, j.downloader_status, j.progress, j.save_path, j.content_path, j.attempt_count, j.next_run_at, j.last_error, j.created_at, j.updated_at, j.previous_job_id, j.download_speed, j.eta_seconds, j.total_size, j.error_kind, j.want_id
 FROM download_job j
 JOIN media_item mi ON mi.id = j.media_item_id
 WHERE mi.type = 'movie' AND mi.tmdb_id = $1
@@ -796,6 +873,7 @@ func (q *Queries) ListDownloadJobsByTmdbMovieID(ctx context.Context, tmdbID *int
 			&i.EtaSeconds,
 			&i.TotalSize,
 			&i.ErrorKind,
+			&i.WantID,
 		); err != nil {
 			return nil, err
 		}
@@ -808,7 +886,7 @@ func (q *Queries) ListDownloadJobsByTmdbMovieID(ctx context.Context, tmdbID *int
 }
 
 const listDownloadJobsByTmdbSeriesID = `-- name: ListDownloadJobsByTmdbSeriesID :many
-SELECT j.id, j.status, j.protocol, j.indexer_id, j.guid, j.candidate_title, j.candidate_link, j.media_type, j.media_item_id, j.season_id, j.episode_id, j.library_id, j.name_template_id, j.downloader_id, j.downloader_external_id, j.downloader_status, j.progress, j.save_path, j.content_path, j.attempt_count, j.next_run_at, j.last_error, j.created_at, j.updated_at, j.previous_job_id, j.download_speed, j.eta_seconds, j.total_size, j.error_kind,
+SELECT j.id, j.status, j.protocol, j.indexer_id, j.guid, j.candidate_title, j.candidate_link, j.media_type, j.media_item_id, j.season_id, j.episode_id, j.library_id, j.name_template_id, j.downloader_id, j.downloader_external_id, j.downloader_status, j.progress, j.save_path, j.content_path, j.attempt_count, j.next_run_at, j.last_error, j.created_at, j.updated_at, j.previous_job_id, j.download_speed, j.eta_seconds, j.total_size, j.error_kind, j.want_id,
        ms.season_number,
        me.episode_number
 FROM download_job j
@@ -849,6 +927,7 @@ type ListDownloadJobsByTmdbSeriesIDRow struct {
 	EtaSeconds           *int64        `json:"eta_seconds"`
 	TotalSize            *int64        `json:"total_size"`
 	ErrorKind            NullErrorKind `json:"error_kind"`
+	WantID               pgtype.UUID   `json:"want_id"`
 	SeasonNumber         *int32        `json:"season_number"`
 	EpisodeNumber        *int32        `json:"episode_number"`
 }
@@ -892,6 +971,7 @@ func (q *Queries) ListDownloadJobsByTmdbSeriesID(ctx context.Context, tmdbID *in
 			&i.EtaSeconds,
 			&i.TotalSize,
 			&i.ErrorKind,
+			&i.WantID,
 			&i.SeasonNumber,
 			&i.EpisodeNumber,
 		); err != nil {
@@ -907,7 +987,7 @@ func (q *Queries) ListDownloadJobsByTmdbSeriesID(ctx context.Context, tmdbID *in
 
 const listDownloadJobsWithImportSummary = `-- name: ListDownloadJobsWithImportSummary :many
 SELECT
-  dj.id, dj.status, dj.protocol, dj.indexer_id, dj.guid, dj.candidate_title, dj.candidate_link, dj.media_type, dj.media_item_id, dj.season_id, dj.episode_id, dj.library_id, dj.name_template_id, dj.downloader_id, dj.downloader_external_id, dj.downloader_status, dj.progress, dj.save_path, dj.content_path, dj.attempt_count, dj.next_run_at, dj.last_error, dj.created_at, dj.updated_at, dj.previous_job_id, dj.download_speed, dj.eta_seconds, dj.total_size, dj.error_kind,
+  dj.id, dj.status, dj.protocol, dj.indexer_id, dj.guid, dj.candidate_title, dj.candidate_link, dj.media_type, dj.media_item_id, dj.season_id, dj.episode_id, dj.library_id, dj.name_template_id, dj.downloader_id, dj.downloader_external_id, dj.downloader_status, dj.progress, dj.save_path, dj.content_path, dj.attempt_count, dj.next_run_at, dj.last_error, dj.created_at, dj.updated_at, dj.previous_job_id, dj.download_speed, dj.eta_seconds, dj.total_size, dj.error_kind, dj.want_id,
   mi.tmdb_id,
   mi.poster_path AS media_poster_path,
   mi.title AS media_title,
@@ -979,6 +1059,7 @@ type ListDownloadJobsWithImportSummaryRow struct {
 	EtaSeconds           *int64        `json:"eta_seconds"`
 	TotalSize            *int64        `json:"total_size"`
 	ErrorKind            NullErrorKind `json:"error_kind"`
+	WantID               pgtype.UUID   `json:"want_id"`
 	TmdbID               *int64        `json:"tmdb_id"`
 	MediaPosterPath      *string       `json:"media_poster_path"`
 	MediaTitle           *string       `json:"media_title"`
@@ -1036,6 +1117,7 @@ func (q *Queries) ListDownloadJobsWithImportSummary(ctx context.Context) ([]List
 			&i.EtaSeconds,
 			&i.TotalSize,
 			&i.ErrorKind,
+			&i.WantID,
 			&i.TmdbID,
 			&i.MediaPosterPath,
 			&i.MediaTitle,
@@ -1068,7 +1150,7 @@ SET status = 'failed',
     error_kind = $2,
     updated_at = now()
 WHERE id = $3
-RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind
+RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id
 `
 
 type MarkDownloadJobFailedParams struct {
@@ -1110,6 +1192,7 @@ func (q *Queries) MarkDownloadJobFailed(ctx context.Context, arg MarkDownloadJob
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -1148,7 +1231,7 @@ SELECT
   old.id
 FROM download_job old
 WHERE old.id = $1
-RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind
+RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id
 `
 
 // Creates a new download job by copying from a failed job, setting previous_job_id
@@ -1185,6 +1268,7 @@ func (q *Queries) RetryDownloadJob(ctx context.Context, id pgtype.UUID) (Downloa
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -1197,7 +1281,7 @@ SET attempt_count = attempt_count + 1,
     next_run_at = $3,
     updated_at = now()
 WHERE id = $4
-RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind
+RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id
 `
 
 type ScheduleDownloadJobRetryParams struct {
@@ -1245,6 +1329,7 @@ func (q *Queries) ScheduleDownloadJobRetry(ctx context.Context, arg ScheduleDown
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -1256,7 +1341,7 @@ SET status = 'completed',
     content_path = $2,
     updated_at = now()
 WHERE id = $3
-RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind
+RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id
 `
 
 type SetDownloadJobCompletedParams struct {
@@ -1298,6 +1383,7 @@ func (q *Queries) SetDownloadJobCompleted(ctx context.Context, arg SetDownloadJo
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -1314,7 +1400,7 @@ SET status = $1,
     total_size = $8,
     updated_at = now()
 WHERE id = $9
-RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind
+RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id
 `
 
 type SetDownloadJobDownloadSnapshotParams struct {
@@ -1372,6 +1458,7 @@ func (q *Queries) SetDownloadJobDownloadSnapshot(ctx context.Context, arg SetDow
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -1383,7 +1470,7 @@ SET status = 'enqueued',
     attempt_count = attempt_count + 1,
     updated_at = now()
 WHERE id = $2
-RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind
+RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id
 `
 
 type SetDownloadJobEnqueuedParams struct {
@@ -1424,6 +1511,7 @@ func (q *Queries) SetDownloadJobEnqueued(ctx context.Context, arg SetDownloadJob
 		&i.EtaSeconds,
 		&i.TotalSize,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
