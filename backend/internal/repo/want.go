@@ -18,6 +18,7 @@ import (
 type CreateWantParams struct {
 	TrackingID       uuid.UUID
 	MediaItemID      uuid.UUID
+	EpisodeID        *uuid.UUID
 	QualityProfileID uuid.UUID
 	Status           string
 }
@@ -29,6 +30,7 @@ func toModelWant(row dbgen.Want) model.Want {
 		ID:               uuidFromPgtype(row.ID),
 		TrackingID:       uuidFromPgtype(row.TrackingID),
 		MediaItemID:      uuidFromPgtype(row.MediaItemID),
+		EpisodeID:        uuidPtrFromPgtype(row.EpisodeID),
 		QualityProfileID: uuidFromPgtype(row.QualityProfileID),
 		Status:           row.Status,
 		NextRunAt:        row.NextRunAt,
@@ -43,6 +45,7 @@ func (r *Repository) CreateWant(ctx context.Context, params CreateWantParams) (m
 	row, err := r.Q.CreateWant(ctx, dbgen.CreateWantParams{
 		TrackingID:       pgtypeFromUUID(params.TrackingID),
 		MediaItemID:      pgtypeFromUUID(params.MediaItemID),
+		EpisodeID:        pgtypeFromUUIDPtr(params.EpisodeID),
 		QualityProfileID: pgtypeFromUUIDOrNull(params.QualityProfileID),
 		Status:           params.Status,
 	})

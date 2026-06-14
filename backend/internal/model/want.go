@@ -25,17 +25,19 @@ const (
 
 // Want is the domain shape for a want row — the work item, shaped as a durable
 // work-dispatch queue. MediaItemID and QualityProfileID are denormalized/
-// snapshotted at creation for claim convenience. NextRunAt is the scheduler's
-// home. Mirrors dbgen.Want.
+// snapshotted at creation for claim convenience. EpisodeID is set for series
+// wants (one want per in-scope episode) and NULL for movies. NextRunAt is the
+// scheduler's home. Mirrors dbgen.Want.
 type Want struct {
-	ID               uuid.UUID `json:"id"`
-	TrackingID       uuid.UUID `json:"trackingId"`
-	MediaItemID      uuid.UUID `json:"mediaItemId"`
-	QualityProfileID uuid.UUID `json:"qualityProfileId"`
-	Status           string    `json:"status"`
-	NextRunAt        time.Time `json:"nextRunAt"`
-	AttemptCount     int32     `json:"attemptCount"`
-	LastError        *string   `json:"lastError"`
-	CreatedAt        time.Time `json:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
+	ID               uuid.UUID  `json:"id"`
+	TrackingID       uuid.UUID  `json:"trackingId"`
+	MediaItemID      uuid.UUID  `json:"mediaItemId"`
+	EpisodeID        *uuid.UUID `json:"episodeId,omitempty"`
+	QualityProfileID uuid.UUID  `json:"qualityProfileId"`
+	Status           string     `json:"status"`
+	NextRunAt        time.Time  `json:"nextRunAt"`
+	AttemptCount     int32      `json:"attemptCount"`
+	LastError        *string    `json:"lastError"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	UpdatedAt        time.Time  `json:"updatedAt"`
 }

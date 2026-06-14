@@ -18,7 +18,7 @@ SET status = 'canceled',
     updated_at = now()
 WHERE id = $1
   AND status NOT IN ('available', 'failed', 'canceled')
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 // CancelWant terminally cancels a want via compare-and-swap: it succeeds only
@@ -33,6 +33,7 @@ func (q *Queries) CancelWant(ctx context.Context, id pgtype.UUID) (Want, error) 
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
 		&i.NextRunAt,
@@ -59,7 +60,7 @@ SET status = 'searching',
     updated_at = now()
 FROM cte
 WHERE w.id = cte.id
-RETURNING w.id, w.tracking_id, w.media_item_id, w.quality_profile_id, w.status, w.next_run_at, w.attempt_count, w.last_error, w.created_at, w.updated_at
+RETURNING w.id, w.tracking_id, w.media_item_id, w.episode_id, w.quality_profile_id, w.status, w.next_run_at, w.attempt_count, w.last_error, w.created_at, w.updated_at
 `
 
 // ClaimRunnableWants atomically claims pending wants that are due, flipping them
@@ -78,6 +79,7 @@ func (q *Queries) ClaimRunnableWants(ctx context.Context, limit int32) ([]Want, 
 			&i.ID,
 			&i.TrackingID,
 			&i.MediaItemID,
+			&i.EpisodeID,
 			&i.QualityProfileID,
 			&i.Status,
 			&i.NextRunAt,
@@ -98,19 +100,21 @@ func (q *Queries) ClaimRunnableWants(ctx context.Context, limit int32) ([]Want, 
 
 const createWant = `-- name: CreateWant :one
 
-INSERT INTO want (tracking_id, media_item_id, quality_profile_id, status)
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status)
 VALUES (
   $1,
   $2,
   $3,
-  $4
+  $4,
+  $5
 )
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type CreateWantParams struct {
 	TrackingID       pgtype.UUID `json:"tracking_id"`
 	MediaItemID      pgtype.UUID `json:"media_item_id"`
+	EpisodeID        pgtype.UUID `json:"episode_id"`
 	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
 	Status           string      `json:"status"`
 }
@@ -120,6 +124,7 @@ func (q *Queries) CreateWant(ctx context.Context, arg CreateWantParams) (Want, e
 	row := q.db.QueryRow(ctx, createWant,
 		arg.TrackingID,
 		arg.MediaItemID,
+		arg.EpisodeID,
 		arg.QualityProfileID,
 		arg.Status,
 	)
@@ -128,6 +133,7 @@ func (q *Queries) CreateWant(ctx context.Context, arg CreateWantParams) (Want, e
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
 		&i.NextRunAt,
@@ -140,7 +146,7 @@ func (q *Queries) CreateWant(ctx context.Context, arg CreateWantParams) (Want, e
 }
 
 const getWant = `-- name: GetWant :one
-SELECT id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
+SELECT id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
 WHERE id = $1
 `
 
@@ -151,6 +157,7 @@ func (q *Queries) GetWant(ctx context.Context, id pgtype.UUID) (Want, error) {
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
 		&i.NextRunAt,
@@ -168,7 +175,7 @@ SET status = 'grabbed',
     updated_at = now()
 WHERE id = $1
   AND status = 'searching'
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 // GrabWant claims a searching want for grab via compare-and-swap: it succeeds
@@ -184,6 +191,7 @@ func (q *Queries) GrabWant(ctx context.Context, id pgtype.UUID) (Want, error) {
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
 		&i.NextRunAt,
@@ -201,7 +209,7 @@ SET status = 'grabbed',
     updated_at = now()
 WHERE id = $1
   AND status IN ('pending', 'searching', 'failed', 'canceled')
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 // GrabWantManual flips a want to 'grabbed' for the manual-grab path via
@@ -218,6 +226,7 @@ func (q *Queries) GrabWantManual(ctx context.Context, id pgtype.UUID) (Want, err
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
 		&i.NextRunAt,
@@ -230,7 +239,7 @@ func (q *Queries) GrabWantManual(ctx context.Context, id pgtype.UUID) (Want, err
 }
 
 const listWantsByTracking = `-- name: ListWantsByTracking :many
-SELECT id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
+SELECT id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
 WHERE tracking_id = $1
 ORDER BY created_at DESC
 `
@@ -248,6 +257,7 @@ func (q *Queries) ListWantsByTracking(ctx context.Context, trackingID pgtype.UUI
 			&i.ID,
 			&i.TrackingID,
 			&i.MediaItemID,
+			&i.EpisodeID,
 			&i.QualityProfileID,
 			&i.Status,
 			&i.NextRunAt,
@@ -273,7 +283,7 @@ SET status = 'failed',
     updated_at = now()
 WHERE id = $2
   AND status = 'searching'
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type MarkWantFailedParams struct {
@@ -291,6 +301,7 @@ func (q *Queries) MarkWantFailed(ctx context.Context, arg MarkWantFailedParams) 
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
 		&i.NextRunAt,
@@ -308,7 +319,7 @@ SET status = $1,
     updated_at = now()
 WHERE id = $2
   AND status NOT IN ('available', 'failed', 'canceled')
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type MirrorWantStatusParams struct {
@@ -329,6 +340,7 @@ func (q *Queries) MirrorWantStatus(ctx context.Context, arg MirrorWantStatusPara
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
 		&i.NextRunAt,
@@ -349,7 +361,7 @@ SET status = 'pending',
     updated_at = now()
 WHERE id = $1
   AND status IN ('failed', 'canceled')
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 // RearmWant resumes a terminal want when its movie is re-requested, flipping a
@@ -365,6 +377,7 @@ func (q *Queries) RearmWant(ctx context.Context, id pgtype.UUID) (Want, error) {
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
 		&i.NextRunAt,
@@ -384,7 +397,7 @@ SET status = 'pending',
     updated_at = now()
 WHERE status = 'searching'
   AND updated_at < $2
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type ReclaimStaleSearchingWantsParams struct {
@@ -410,6 +423,7 @@ func (q *Queries) ReclaimStaleSearchingWants(ctx context.Context, arg ReclaimSta
 			&i.ID,
 			&i.TrackingID,
 			&i.MediaItemID,
+			&i.EpisodeID,
 			&i.QualityProfileID,
 			&i.Status,
 			&i.NextRunAt,
@@ -437,7 +451,7 @@ SET status = 'pending',
     updated_at = now()
 WHERE id = $3
   AND status = 'searching'
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type ScheduleWantRetryParams struct {
@@ -457,6 +471,7 @@ func (q *Queries) ScheduleWantRetry(ctx context.Context, arg ScheduleWantRetryPa
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
 		&i.NextRunAt,
@@ -473,7 +488,7 @@ UPDATE want
 SET status = $1,
     updated_at = now()
 WHERE id = $2
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type SetWantStatusParams struct {
@@ -488,6 +503,7 @@ func (q *Queries) SetWantStatus(ctx context.Context, arg SetWantStatusParams) (W
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
 		&i.NextRunAt,

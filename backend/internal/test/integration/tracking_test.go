@@ -4,12 +4,15 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/scope"
 	"github.com/kyleaupton/arrflix/internal/test/dbtest"
 )
 
@@ -114,6 +117,7 @@ func TestTracking_RoundTrip(t *testing.T) {
 		TrackingID: tracking.ID,
 		UserID:     user.ID,
 		Tier:       "HD",
+		ScopeRule:  string(scope.RuleAll),
 	})
 	if err != nil {
 		t.Fatalf("add requester: %v", err)
@@ -127,6 +131,88 @@ func TestTracking_RoundTrip(t *testing.T) {
 	}
 	if gotRequester.UserID != user.ID {
 		t.Errorf("find requester = %+v, want user %s", gotRequester, user.ID)
+	}
+	// The movie requester carries the inert 'all' scope default, no season, no
+	// overrides.
+	if requester.ScopeRule != string(scope.RuleAll) || requester.ScopeSeason != nil || requester.ScopeOverrides != nil {
+		t.Errorf("default scope = {rule:%q season:%v overrides:%v}, want {all nil nil}",
+			requester.ScopeRule, requester.ScopeSeason, requester.ScopeOverrides)
+	}
+
+	// Scope round-trip: a second user joins with a real series scope —
+	// scope_rule='season', scope_season=2, plus an include/exclude overrides
+	// blob — and reads back with every field intact.
+	scopedUser, err := r.CreateUser(ctx, repo.CreateUserParams{
+		Email:        "scoped@example.com",
+		Username:     "scoped",
+		PasswordHash: "x",
+		IsActive:     true,
+	})
+	if err != nil {
+		t.Fatalf("create scoped user: %v", err)
+	}
+	season := int32(2)
+	wantIncl, wantExcl := uuid.New(), uuid.New()
+	overrides := json.RawMessage(`{"include":["` + wantIncl.String() + `"],"exclude":["` + wantExcl.String() + `"]}`)
+	scopedRequester, err := r.AddRequester(ctx, repo.AddRequesterParams{
+		TrackingID:     tracking.ID,
+		UserID:         scopedUser.ID,
+		Tier:           "HD",
+		ScopeRule:      string(scope.RuleSeason),
+		ScopeSeason:    &season,
+		ScopeOverrides: overrides,
+	})
+	if err != nil {
+		t.Fatalf("add scoped requester: %v", err)
+	}
+	assertScope := func(label string, got model.TrackingRequester) {
+		if got.ScopeRule != string(scope.RuleSeason) || got.ScopeSeason == nil || *got.ScopeSeason != season {
+			t.Errorf("%s scope = {rule:%q season:%v}, want {season 2}", label, got.ScopeRule, got.ScopeSeason)
+		}
+		// JSONB normalizes key order and whitespace, so compare semantically.
+		var ov scope.Overrides
+		if err := json.Unmarshal(got.ScopeOverrides, &ov); err != nil {
+			t.Fatalf("%s overrides unmarshal: %v", label, err)
+		}
+		if len(ov.Include) != 1 || ov.Include[0] != wantIncl || len(ov.Exclude) != 1 || ov.Exclude[0] != wantExcl {
+			t.Errorf("%s overrides = %+v, want include=[%s] exclude=[%s]", label, ov, wantIncl, wantExcl)
+		}
+	}
+	assertScope("added", scopedRequester)
+
+	requesters, err := r.ListRequestersByTracking(ctx, tracking.ID)
+	if err != nil {
+		t.Fatalf("list requesters: %v", err)
+	}
+	var roundTripped *model.TrackingRequester
+	for i := range requesters {
+		if requesters[i].UserID == scopedUser.ID {
+			roundTripped = &requesters[i]
+		}
+	}
+	if roundTripped == nil {
+		t.Fatalf("scoped requester missing from ListRequestersByTracking")
+	}
+	assertScope("listed", *roundTripped)
+
+	// The (scope_rule='season') = (scope_season IS NOT NULL) CHECK rejects a
+	// 'season' rule with no season number, surfacing as a Validation error.
+	badUser, err := r.CreateUser(ctx, repo.CreateUserParams{
+		Email:        "badscope@example.com",
+		Username:     "badscope",
+		PasswordHash: "x",
+		IsActive:     true,
+	})
+	if err != nil {
+		t.Fatalf("create bad-scope user: %v", err)
+	}
+	if _, err := r.AddRequester(ctx, repo.AddRequesterParams{
+		TrackingID: tracking.ID,
+		UserID:     badUser.ID,
+		Tier:       "HD",
+		ScopeRule:  string(scope.RuleSeason), // season rule, but ScopeSeason nil
+	}); !apperrors.IsValidation(err) {
+		t.Errorf("season rule without season number = %v, want Validation (CHECK violation)", err)
 	}
 
 	// want round-trip.

@@ -68,10 +68,23 @@ CREATE TABLE IF NOT EXISTS request (
 -- a second user requests an already-tracked movie they join here rather than
 -- creating a second tracking. The (tracking_id, user_id) PK makes the join
 -- idempotent.
+--
+-- Scope is held per-requester (one preset rule + per-episode overrides); the
+-- tracking's effective scope is the union across requesters, computed live by
+-- the reconciler. The hybrid columns are: scope_rule (the preset), scope_season
+-- (its only parameter, for 'season'), and scope_overrides (the JSONB include/
+-- exclude lists keyed on media_episode UUID). Movie requester rows carry the
+-- 'all' default but never consult it — movie tracking is single-atom, so scope
+-- is inert for them, exactly as tracking.scope stays an inert 'self' placeholder.
 CREATE TABLE IF NOT EXISTS tracking_requester (
   tracking_id UUID NOT NULL REFERENCES tracking(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
   tier TEXT NOT NULL,
+  scope_rule TEXT NOT NULL DEFAULT 'all'
+    CHECK (scope_rule IN ('all','future_only','season','pilot','latest_season_plus_future')),
+  scope_season INT,            -- param for scope_rule='season'; NULL otherwise
+  scope_overrides JSONB,       -- {"include":[uuid...],"exclude":[uuid...]}; NULL = none
+  CHECK ((scope_rule = 'season') = (scope_season IS NOT NULL)),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (tracking_id, user_id)
@@ -91,6 +104,10 @@ CREATE TABLE IF NOT EXISTS want (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tracking_id UUID NOT NULL REFERENCES tracking(id) ON DELETE CASCADE,
   media_item_id UUID NOT NULL REFERENCES media_item(id) ON DELETE RESTRICT,
+  -- The episode this want targets, for series. NULL for movies (single-atom
+  -- tracking). RESTRICT mirrors media_item_id: episodes are deprecated, never
+  -- hard-deleted, so a want's episode reference always resolves.
+  episode_id UUID REFERENCES media_episode(id) ON DELETE RESTRICT,
   quality_profile_id UUID REFERENCES quality_profile(id) ON DELETE RESTRICT,
   status TEXT NOT NULL CHECK (status IN (
     'pending',      -- created, not yet searched

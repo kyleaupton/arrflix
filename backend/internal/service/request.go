@@ -11,6 +11,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/qualityprofile"
 	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/scope"
 )
 
 // RequestService owns request reads and the spawn orchestration that turns a
@@ -151,6 +152,10 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 			TrackingID: tracking.ID,
 			UserID:     in.RequestedBy,
 			Tier:       in.Tier,
+			// Movie tracking is single-atom: scope is inert, so the requester
+			// carries the 'all' default and never consults it. Series spawn
+			// seeds real scope in Phase 3.
+			ScopeRule: string(scope.RuleAll),
 		}); err != nil {
 			return err
 		}

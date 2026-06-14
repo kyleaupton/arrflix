@@ -4940,6 +4940,12 @@ components:
         createdAt:
           format: date-time
           type: string
+        scopeOverrides: {}
+        scopeRule:
+          type: string
+        scopeSeason:
+          format: int32
+          type: integer
         tier:
           type: string
         trackingId:
@@ -4953,6 +4959,7 @@ components:
         - trackingId
         - userId
         - tier
+        - scopeRule
         - createdAt
         - updatedAt
       type: object
@@ -5141,6 +5148,8 @@ components:
           type: integer
         createdAt:
           format: date-time
+          type: string
+        episodeId:
           type: string
         id:
           type: string

@@ -1,10 +1,11 @@
 -- Wants: the work item, shaped as a durable work-dispatch queue.
 
 -- name: CreateWant :one
-INSERT INTO want (tracking_id, media_item_id, quality_profile_id, status)
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status)
 VALUES (
   sqlc.arg(tracking_id),
   sqlc.arg(media_item_id),
+  sqlc.arg(episode_id),
   sqlc.arg(quality_profile_id),
   sqlc.arg(status)
 )

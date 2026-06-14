@@ -620,11 +620,14 @@ type Tracking struct {
 }
 
 type TrackingRequester struct {
-	TrackingID pgtype.UUID `json:"tracking_id"`
-	UserID     pgtype.UUID `json:"user_id"`
-	Tier       string      `json:"tier"`
-	CreatedAt  time.Time   `json:"created_at"`
-	UpdatedAt  time.Time   `json:"updated_at"`
+	TrackingID     pgtype.UUID `json:"tracking_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	Tier           string      `json:"tier"`
+	ScopeRule      string      `json:"scope_rule"`
+	ScopeSeason    *int32      `json:"scope_season"`
+	ScopeOverrides []byte      `json:"scope_overrides"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
 }
 
 type UserIdentity struct {
@@ -665,6 +668,7 @@ type Want struct {
 	ID               pgtype.UUID `json:"id"`
 	TrackingID       pgtype.UUID `json:"tracking_id"`
 	MediaItemID      pgtype.UUID `json:"media_item_id"`
+	EpisodeID        pgtype.UUID `json:"episode_id"`
 	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
 	Status           string      `json:"status"`
 	NextRunAt        time.Time   `json:"next_run_at"`
