@@ -2,9 +2,11 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -96,6 +98,72 @@ func (r *Repository) SetWantStatus(ctx context.Context, id uuid.UUID, status str
 	return toModelWant(row), nil
 }
 
+// CancelWant terminally cancels a non-terminal want via compare-and-swap. The
+// bool reports whether the cancel landed: false (a 0-row CAS, surfaced as
+// pgx.ErrNoRows) means the want was already terminal — the service distinguishes
+// idempotent (already 'canceled') from conflict ('available'/'failed').
+func (r *Repository) CancelWant(ctx context.Context, id uuid.UUID) (model.Want, bool, error) {
+	row, err := r.Q.CancelWant(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "cancel want %s", id)
+	}
+	return toModelWant(row), true, nil
+}
+
+// MirrorWantStatus is the terminal-sticky mirror the workers route status
+// updates through. The bool reports whether the mirror landed: false (a 0-row
+// CAS, surfaced as pgx.ErrNoRows) means the want is terminal and the mirror was
+// blocked — the resurrection guard. A false return is benign, not an error.
+func (r *Repository) MirrorWantStatus(ctx context.Context, id uuid.UUID, status string) (model.Want, bool, error) {
+	row, err := r.Q.MirrorWantStatus(ctx, dbgen.MirrorWantStatusParams{
+		ID:     pgtypeFromUUID(id),
+		Status: status,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "mirror status for want %s", id)
+	}
+	return toModelWant(row), true, nil
+}
+
+// GrabWant claims a still-'searching' want for grab via compare-and-swap. The
+// bool reports ownership: true when the want was flipped to 'grabbed', false
+// when it's no longer 'searching' (a 0-row CAS, surfaced as pgx.ErrNoRows) —
+// meaning the reaper reset it and another worker re-claimed, or a concurrent
+// grab won. A false return is benign, not an error.
+func (r *Repository) GrabWant(ctx context.Context, id uuid.UUID) (model.Want, bool, error) {
+	row, err := r.Q.GrabWant(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "grab want %s", id)
+	}
+	return toModelWant(row), true, nil
+}
+
+// ReclaimStaleSearchingWants resets wants wedged in 'searching' past staleBefore
+// back to 'pending'. The crash-window reaper's entry point.
+func (r *Repository) ReclaimStaleSearchingWants(ctx context.Context, staleBefore time.Time, lastError string) ([]model.Want, error) {
+	rows, err := r.Q.ReclaimStaleSearchingWants(ctx, dbgen.ReclaimStaleSearchingWantsParams{
+		LastError:   &lastError,
+		StaleBefore: staleBefore,
+	})
+	if err != nil {
+		return nil, apperrors.FromPg(err, "reclaim stale searching wants")
+	}
+	out := make([]model.Want, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelWant(row))
+	}
+	return out, nil
+}
+
 // ScheduleWantRetryParams is the domain-shaped input for ScheduleWantRetry.
 // Mirrors the columns the AcquisitionWorker writes when scheduling a backoff
 // retry. Unlike ScheduleDownloadJobRetryParams there's no Kind — want has no
@@ -106,25 +174,39 @@ type ScheduleWantRetryParams struct {
 	NextRunAt time.Time
 }
 
-func (r *Repository) ScheduleWantRetry(ctx context.Context, params ScheduleWantRetryParams) (model.Want, error) {
+// ScheduleWantRetry reschedules a still-'searching' want via compare-and-swap.
+// The bool reports ownership: false (a 0-row CAS, surfaced as pgx.ErrNoRows)
+// means the want is no longer 'searching' — the reaper reset it and another
+// worker re-claimed — so the reschedule is a benign no-op, not an error.
+func (r *Repository) ScheduleWantRetry(ctx context.Context, params ScheduleWantRetryParams) (model.Want, bool, error) {
 	row, err := r.Q.ScheduleWantRetry(ctx, dbgen.ScheduleWantRetryParams{
 		ID:        pgtypeFromUUID(params.ID),
 		LastError: &params.LastError,
 		NextRunAt: params.NextRunAt,
 	})
 	if err != nil {
-		return model.Want{}, apperrors.FromPg(err, "schedule retry for want %s", params.ID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "schedule retry for want %s", params.ID)
 	}
-	return toModelWant(row), nil
+	return toModelWant(row), true, nil
 }
 
-func (r *Repository) MarkWantFailed(ctx context.Context, id uuid.UUID, lastError string) (model.Want, error) {
+// MarkWantFailed terminally fails a still-'searching' want via compare-and-swap.
+// The bool reports ownership: false (a 0-row CAS, surfaced as pgx.ErrNoRows)
+// means the want is no longer 'searching' — the reaper reset it and another
+// worker re-claimed — so the fail is a benign no-op, not an error.
+func (r *Repository) MarkWantFailed(ctx context.Context, id uuid.UUID, lastError string) (model.Want, bool, error) {
 	row, err := r.Q.MarkWantFailed(ctx, dbgen.MarkWantFailedParams{
 		ID:        pgtypeFromUUID(id),
 		LastError: &lastError,
 	})
 	if err != nil {
-		return model.Want{}, apperrors.FromPg(err, "mark want %s failed", id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "mark want %s failed", id)
 	}
-	return toModelWant(row), nil
+	return toModelWant(row), true, nil
 }

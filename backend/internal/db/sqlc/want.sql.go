@@ -12,6 +12,38 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelWant = `-- name: CancelWant :one
+UPDATE want
+SET status = 'canceled',
+    updated_at = now()
+WHERE id = $1
+  AND status NOT IN ('available', 'failed', 'canceled')
+RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+// CancelWant terminally cancels a want via compare-and-swap: it succeeds only
+// while the want is non-terminal, so a want already 'available'/'failed'/
+// 'canceled' matches 0 rows (surfaced as pgx.ErrNoRows). The service reads that
+// as "nothing to cancel" — idempotent on an already-canceled want, a conflict
+// otherwise.
+func (q *Queries) CancelWant(ctx context.Context, id pgtype.UUID) (Want, error) {
+	row := q.db.QueryRow(ctx, cancelWant, id)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const claimRunnableWants = `-- name: ClaimRunnableWants :many
 WITH cte AS (
   SELECT id
@@ -130,6 +162,39 @@ func (q *Queries) GetWant(ctx context.Context, id pgtype.UUID) (Want, error) {
 	return i, err
 }
 
+const grabWant = `-- name: GrabWant :one
+UPDATE want
+SET status = 'grabbed',
+    updated_at = now()
+WHERE id = $1
+  AND status = 'searching'
+RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+// GrabWant claims a searching want for grab via compare-and-swap: it succeeds
+// only while the want is still 'searching', and the UPDATE holds the row lock
+// through commit so concurrent grabbers serialize and the loser matches 0 rows.
+// This is the dedup guard against the reaper re-claiming a want a live worker
+// still holds. A 0-row match surfaces as pgx.ErrNoRows; the repo reads it as
+// "no longer owned".
+func (q *Queries) GrabWant(ctx context.Context, id pgtype.UUID) (Want, error) {
+	row := q.db.QueryRow(ctx, grabWant, id)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listWantsByTracking = `-- name: ListWantsByTracking :many
 SELECT id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
 WHERE tracking_id = $1
@@ -173,6 +238,7 @@ SET status = 'failed',
     last_error = $1,
     updated_at = now()
 WHERE id = $2
+  AND status = 'searching'
 RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
@@ -181,7 +247,9 @@ type MarkWantFailedParams struct {
 	ID        pgtype.UUID `json:"id"`
 }
 
-// MarkWantFailed terminally fails a want. Mirrors MarkDownloadJobFailed.
+// MarkWantFailed terminally fails a want. Mirrors MarkDownloadJobFailed. The
+// 'searching' guard keeps the worker from clobbering a want the reaper reset and
+// another worker re-grabbed.
 func (q *Queries) MarkWantFailed(ctx context.Context, arg MarkWantFailedParams) (Want, error) {
 	row := q.db.QueryRow(ctx, markWantFailed, arg.LastError, arg.ID)
 	var i Want
@@ -200,6 +268,96 @@ func (q *Queries) MarkWantFailed(ctx context.Context, arg MarkWantFailedParams) 
 	return i, err
 }
 
+const mirrorWantStatus = `-- name: MirrorWantStatus :one
+UPDATE want
+SET status = $1,
+    updated_at = now()
+WHERE id = $2
+  AND status NOT IN ('available', 'failed', 'canceled')
+RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type MirrorWantStatusParams struct {
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+// MirrorWantStatus is the terminal-sticky want-status mirror the workers route
+// through: it sets status only while the want is non-terminal, so a want flipped
+// 'canceled' (or already 'available'/'failed') can't be resurrected by a late
+// in-flight job/task completing after a cancel. A 0-row match (pgx.ErrNoRows)
+// means the guard blocked the mirror. Every legitimate forward mirror has a
+// non-terminal source state, so the guard only ever blocks resurrection.
+func (q *Queries) MirrorWantStatus(ctx context.Context, arg MirrorWantStatusParams) (Want, error) {
+	row := q.db.QueryRow(ctx, mirrorWantStatus, arg.Status, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const reclaimStaleSearchingWants = `-- name: ReclaimStaleSearchingWants :many
+UPDATE want
+SET status = 'pending',
+    last_error = $1,
+    next_run_at = now(),
+    updated_at = now()
+WHERE status = 'searching'
+  AND updated_at < $2
+RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type ReclaimStaleSearchingWantsParams struct {
+	LastError   *string   `json:"last_error"`
+	StaleBefore time.Time `json:"stale_before"`
+}
+
+// ReclaimStaleSearchingWants resets wants wedged in 'searching' past the cutoff
+// back to 'pending' so the AcquisitionWorker reclaims them — the self-heal for a
+// crash between ClaimRunnableWants' flip and a terminal transition. Reset-only:
+// attempt_count is untouched and no want is failed (mirrors the "no release yet"
+// reschedule). The cutoff is passed from Go for testability.
+func (q *Queries) ReclaimStaleSearchingWants(ctx context.Context, arg ReclaimStaleSearchingWantsParams) ([]Want, error) {
+	rows, err := q.db.Query(ctx, reclaimStaleSearchingWants, arg.LastError, arg.StaleBefore)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const scheduleWantRetry = `-- name: ScheduleWantRetry :one
 UPDATE want
 SET status = 'pending',
@@ -208,6 +366,7 @@ SET status = 'pending',
     next_run_at = $2,
     updated_at = now()
 WHERE id = $3
+  AND status = 'searching'
 RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
@@ -219,7 +378,8 @@ type ScheduleWantRetryParams struct {
 
 // ScheduleWantRetry returns a want to 'pending' with a backoff so the
 // AcquisitionWorker can reclaim it; want has no error_kind column, only
-// last_error. Mirrors ScheduleDownloadJobRetry.
+// last_error. Mirrors ScheduleDownloadJobRetry. The 'searching' guard keeps the
+// worker from reverting a want the reaper reset and another worker re-grabbed.
 func (q *Queries) ScheduleWantRetry(ctx context.Context, arg ScheduleWantRetryParams) (Want, error) {
 	row := q.db.QueryRow(ctx, scheduleWantRetry, arg.LastError, arg.NextRunAt, arg.ID)
 	var i Want

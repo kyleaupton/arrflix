@@ -1,7 +1,8 @@
 -- Tracking: the ongoing-intent primitive that sits between requests (its
 -- producer) and acquisition (its consumer). The Story-1 flow is
 -- request → tracking → want → acquisition → import. This migration is the
--- persistence floor for the movie-only PoC: five tables, no service logic.
+-- persistence floor for the movie-only PoC: five tables plus the want-linkage
+-- columns on download_job/import_task, no service logic.
 --
 -- Lifecycle states are TEXT + CHECK (matching download_job/import_task) rather
 -- than enum types — easier to evolve than ALTER TYPE. The app sets
@@ -107,3 +108,17 @@ CREATE INDEX IF NOT EXISTS idx_want_status ON want(status);
 CREATE INDEX IF NOT EXISTS idx_want_next_run ON want(next_run_at)
   WHERE status IN ('pending', 'searching', 'grabbed', 'downloading', 'imported');
 CREATE INDEX IF NOT EXISTS idx_want_tracking ON want(tracking_id);
+
+-- want linkage: download_job and import_task carry the want they satisfy, so a
+-- transition can mirror back onto the want's lifecycle. Null for the
+-- interactive (manual-grab) path, which has no want. ON DELETE SET NULL keeps
+-- the job/task row if its want is removed. The partial indexes back the pre-grab
+-- dedup lookup ("does this want already have an in-flight job?").
+ALTER TABLE download_job
+  ADD COLUMN want_id UUID REFERENCES want(id) ON DELETE SET NULL;
+
+ALTER TABLE import_task
+  ADD COLUMN want_id UUID REFERENCES want(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_download_job_want ON download_job(want_id) WHERE want_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_import_task_want ON import_task(want_id) WHERE want_id IS NOT NULL;

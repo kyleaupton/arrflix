@@ -544,14 +544,19 @@ func mapItemStatus(st downloader.JobStatus) string {
 // mirrorWant best-effort reflects a job transition onto its owning want. It
 // no-ops when the job has no want (uuid.Nil — the interactive/legacy path) and
 // swallows errors after logging: a want-mirror failure must never break the
-// download pipeline.
+// download pipeline. The mirror routes through MirrorWantStatus, the
+// terminal-sticky guard: a want flipped 'canceled' (or already terminal) is left
+// untouched, so a late job transition can't resurrect it.
 func (w *Worker) mirrorWant(ctx context.Context, wantID uuid.UUID, status model.WantStatus) {
 	if wantID == uuid.Nil {
 		return
 	}
-	want, err := w.repo.SetWantStatus(ctx, wantID, string(status))
+	want, ok, err := w.repo.MirrorWantStatus(ctx, wantID, string(status))
 	if err != nil {
 		w.log.Warn().Err(err).Str("want_id", wantID.String()).Msg("failed to mirror want status")
+		return
+	}
+	if !ok {
 		return
 	}
 	realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))

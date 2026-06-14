@@ -55,6 +55,7 @@ func RegisterHumachiHandlers(api huma.API, deps Deps) {
 	NewMatchDecisions(deps.Services).RegisterHumachi(api)
 	NewRequests(deps.Services).RegisterHumachi(api)
 	NewTracking(deps.Services).RegisterHumachi(api)
+	NewWants(deps.Services).RegisterHumachi(api)
 }
 
 // RegisterChiRoutes wires plain-chi routes that don't fit humachi's typed

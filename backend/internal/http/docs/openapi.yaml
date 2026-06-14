@@ -5129,6 +5129,13 @@ components:
     Want:
       additionalProperties: false
       properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/Want.json
+          format: uri
+          readOnly: true
+          type: string
         attemptCount:
           format: int32
           type: integer
@@ -10659,6 +10666,59 @@ paths:
       summary: Get version and update information
       tags:
         - version
+  /api/v1/wants/{id}/cancel:
+    post:
+      description: Cancels a want (and its tracking), stopping its in-flight download job and pending import tasks. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.
+      operationId: wants-cancel
+      parameters:
+        - description: Want ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Want ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Want"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Cancel a want
+      tags:
+        - tracking
   /health:
     get:
       description: Liveness probe; returns 200 with body "ok". Bypasses auth and setup-mode.

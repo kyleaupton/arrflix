@@ -118,6 +118,25 @@ func seedPendingWant(t *testing.T, ctx context.Context, r *repo.Repository) mode
 	return want
 }
 
+// claimWant flips the seeded want to 'searching' via the production claim path,
+// exactly as the AcquisitionWorker does before ProcessWant runs. ProcessWant's
+// grab CAS only fires while the want is 'searching', so tests that reach the
+// grab must claim first. Returns the claimed want (Status now 'searching').
+func claimWant(t *testing.T, ctx context.Context, r *repo.Repository, id uuid.UUID) model.Want {
+	t.Helper()
+	claimed, err := r.ClaimRunnableWants(ctx, 20)
+	if err != nil {
+		t.Fatalf("claim runnable wants: %v", err)
+	}
+	for _, w := range claimed {
+		if w.ID == id {
+			return w
+		}
+	}
+	t.Fatalf("want %s not claimed", id)
+	return model.Want{}
+}
+
 // cannedResult is the single SearchResult the happy-path stub returns.
 func cannedResult() indexer.SearchResult {
 	return indexer.SearchResult{
@@ -142,6 +161,7 @@ func TestAcquisition_ProcessWant_HappyPath(t *testing.T) {
 	ctx := context.Background()
 
 	want := seedPendingWant(t, ctx, r)
+	want = claimWant(t, ctx, r, want.ID)
 
 	source := stubIndexerSource{
 		SearchFn: func(ctx context.Context, q indexer.SearchQuery) ([]indexer.SearchResult, error) {
@@ -192,6 +212,7 @@ func TestAcquisition_ProcessWant_PicksQualified(t *testing.T) {
 	ctx := context.Background()
 
 	want := seedPendingWant(t, ctx, r)
+	want = claimWant(t, ctx, r, want.ID)
 
 	source := stubIndexerSource{
 		SearchFn: func(ctx context.Context, q indexer.SearchQuery) ([]indexer.SearchResult, error) {
@@ -267,6 +288,7 @@ func TestAcquisition_ProcessWant_AllGatedOut(t *testing.T) {
 	ctx := context.Background()
 
 	want := seedPendingWant(t, ctx, r)
+	want = claimWant(t, ctx, r, want.ID)
 
 	source := stubIndexerSource{
 		SearchFn: func(ctx context.Context, q indexer.SearchQuery) ([]indexer.SearchResult, error) {
@@ -324,6 +346,7 @@ func TestAcquisition_ProcessWant_RejectsWrongTitle(t *testing.T) {
 	ctx := context.Background()
 
 	want := seedPendingWant(t, ctx, r)
+	want = claimWant(t, ctx, r, want.ID)
 
 	source := stubIndexerSource{
 		SearchFn: func(ctx context.Context, q indexer.SearchQuery) ([]indexer.SearchResult, error) {
@@ -370,6 +393,7 @@ func TestAcquisition_ProcessWant_NoRelease(t *testing.T) {
 	ctx := context.Background()
 
 	want := seedPendingWant(t, ctx, r)
+	want = claimWant(t, ctx, r, want.ID)
 
 	source := stubIndexerSource{
 		SearchFn: func(ctx context.Context, q indexer.SearchQuery) ([]indexer.SearchResult, error) {
@@ -395,14 +419,18 @@ func TestAcquisition_ProcessWant_NoRelease(t *testing.T) {
 		t.Fatalf("download jobs = %d, want 0", len(jobs))
 	}
 
-	// Drive the worker's reschedule path directly.
-	rescheduled, err := r.ScheduleWantRetry(ctx, repo.ScheduleWantRetryParams{
+	// Drive the worker's reschedule path directly. The want is still 'searching'
+	// (ProcessWant's no-release path doesn't touch it), so the CAS owns it.
+	rescheduled, ok, err := r.ScheduleWantRetry(ctx, repo.ScheduleWantRetryParams{
 		ID:        want.ID,
 		LastError: "no eligible release",
 		NextRunAt: time.Now().Add(2 * time.Second),
 	})
 	if err != nil {
 		t.Fatalf("schedule want retry: %v", err)
+	}
+	if !ok {
+		t.Fatalf("ScheduleWantRetry ok = false, want true (want was 'searching')")
 	}
 	if rescheduled.Status != string(model.WantPending) {
 		t.Errorf("rescheduled want status = %q, want %q", rescheduled.Status, model.WantPending)
@@ -412,9 +440,11 @@ func TestAcquisition_ProcessWant_NoRelease(t *testing.T) {
 	}
 }
 
-// TestAcquisition_WantRescheduleAndFail is the repo round-trip for the two new
-// want methods: ScheduleWantRetry sets pending + last_error + attempt bump, and
-// MarkWantFailed sets the terminal failed status.
+// TestAcquisition_WantRescheduleAndFail is the repo round-trip for the two
+// CAS-from-'searching' want methods: ScheduleWantRetry sets pending + last_error
+// + attempt bump, and MarkWantFailed sets the terminal failed status. Both only
+// fire while the want is 'searching' (the worker's ownership phase), so each is
+// driven from a freshly-claimed want.
 func TestAcquisition_WantRescheduleAndFail(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -422,14 +452,18 @@ func TestAcquisition_WantRescheduleAndFail(t *testing.T) {
 	ctx := context.Background()
 
 	want := seedPendingWant(t, ctx, r)
+	want = claimWant(t, ctx, r, want.ID)
 
-	retried, err := r.ScheduleWantRetry(ctx, repo.ScheduleWantRetryParams{
+	retried, ok, err := r.ScheduleWantRetry(ctx, repo.ScheduleWantRetryParams{
 		ID:        want.ID,
 		LastError: "transient blip",
 		NextRunAt: time.Now().Add(4 * time.Second),
 	})
 	if err != nil {
 		t.Fatalf("schedule want retry: %v", err)
+	}
+	if !ok {
+		t.Fatalf("ScheduleWantRetry ok = false, want true (want was 'searching')")
 	}
 	if retried.Status != string(model.WantPending) {
 		t.Errorf("retried status = %q, want %q", retried.Status, model.WantPending)
@@ -441,9 +475,18 @@ func TestAcquisition_WantRescheduleAndFail(t *testing.T) {
 		t.Errorf("retried lastError = %v, want %q", retried.LastError, "transient blip")
 	}
 
-	failed, err := r.MarkWantFailed(ctx, want.ID, "gave up")
+	// The reschedule returned the want to 'pending'; re-flip to 'searching' for
+	// the fail CAS (next_run_at is now in the future, so claim wouldn't pick it).
+	if _, err := r.SetWantStatus(ctx, want.ID, string(model.WantSearching)); err != nil {
+		t.Fatalf("set want searching: %v", err)
+	}
+
+	failed, ok, err := r.MarkWantFailed(ctx, want.ID, "gave up")
 	if err != nil {
 		t.Fatalf("mark want failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("MarkWantFailed ok = false, want true (want was 'searching')")
 	}
 	if failed.Status != string(model.WantFailed) {
 		t.Errorf("failed status = %q, want %q", failed.Status, model.WantFailed)
@@ -610,5 +653,119 @@ func TestAcquisition_WantLinkage(t *testing.T) {
 	}
 	if nilJob.WantID != uuid.Nil {
 		t.Errorf("download job without want wantId = %s, want uuid.Nil", nilJob.WantID)
+	}
+}
+
+// TestAcquisition_ReclaimStaleSearchingWants proves the crash-window reaper: a
+// want wedged in 'searching' past the cutoff is reset to 'pending' (reset-only,
+// attempt_count untouched), while one inside the window is left alone.
+func TestAcquisition_ReclaimStaleSearchingWants(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	want := seedPendingWant(t, ctx, r)
+	want = claimWant(t, ctx, r, want.ID)
+
+	// Negative: a past cutoff (the production case for a freshly-claimed want)
+	// finds nothing stale — the want is well inside the window.
+	none, err := r.ReclaimStaleSearchingWants(ctx, time.Now().Add(-time.Hour), "stale")
+	if err != nil {
+		t.Fatalf("reclaim with past cutoff: %v", err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("reclaimed = %d, want 0 (want is inside the window)", len(none))
+	}
+	still, err := r.GetWant(ctx, want.ID)
+	if err != nil {
+		t.Fatalf("get want: %v", err)
+	}
+	if still.Status != string(model.WantSearching) {
+		t.Errorf("want status = %q, want %q (untouched)", still.Status, model.WantSearching)
+	}
+
+	// Positive: a future cutoff treats every 'searching' want as stale, so the
+	// reaper resets it to 'pending' without bumping attempt_count.
+	reclaimed, err := r.ReclaimStaleSearchingWants(ctx, time.Now().Add(time.Hour), "reset from stale 'searching'")
+	if err != nil {
+		t.Fatalf("reclaim with future cutoff: %v", err)
+	}
+	if len(reclaimed) != 1 {
+		t.Fatalf("reclaimed = %d, want 1", len(reclaimed))
+	}
+	if reclaimed[0].ID != want.ID {
+		t.Errorf("reclaimed want = %s, want %s", reclaimed[0].ID, want.ID)
+	}
+	if reclaimed[0].Status != string(model.WantPending) {
+		t.Errorf("reclaimed status = %q, want %q", reclaimed[0].Status, model.WantPending)
+	}
+	if reclaimed[0].AttemptCount != want.AttemptCount {
+		t.Errorf("reclaimed attemptCount = %d, want %d (reset-only, untouched)", reclaimed[0].AttemptCount, want.AttemptCount)
+	}
+
+	got, err := r.GetWant(ctx, want.ID)
+	if err != nil {
+		t.Fatalf("get want: %v", err)
+	}
+	if got.Status != string(model.WantPending) {
+		t.Errorf("persisted status = %q, want %q", got.Status, model.WantPending)
+	}
+}
+
+// TestAcquisition_ProcessWant_DedupesSupersededGrab proves the grab CAS dedup:
+// re-running ProcessWant on a now-stale want (one already grabbed by a prior run)
+// is a benign no-op — grabbed=false, no second job, the want unchanged. This is
+// the race the reaper would otherwise open (reset + re-claim while a live worker
+// still holds the want).
+func TestAcquisition_ProcessWant_DedupesSupersededGrab(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	want := seedPendingWant(t, ctx, r)
+	want = claimWant(t, ctx, r, want.ID)
+
+	source := stubIndexerSource{
+		SearchFn: func(ctx context.Context, q indexer.SearchQuery) ([]indexer.SearchResult, error) {
+			return []indexer.SearchResult{cannedResult()}, nil
+		},
+	}
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+
+	// First run: the CAS owns the 'searching' want, grabs it, creates one job.
+	grabbed, err := svc.ProcessWant(ctx, want)
+	if err != nil {
+		t.Fatalf("first ProcessWant: %v", err)
+	}
+	if !grabbed {
+		t.Fatalf("first ProcessWant grabbed = false, want true")
+	}
+
+	// Second run with the same (now-stale) want value: the want is no longer
+	// 'searching', so the grab CAS matches 0 rows and ProcessWant no-ops.
+	grabbedAgain, err := svc.ProcessWant(ctx, want)
+	if err != nil {
+		t.Fatalf("second ProcessWant: %v", err)
+	}
+	if grabbedAgain {
+		t.Fatalf("second ProcessWant grabbed = true, want false (superseded grab must dedup)")
+	}
+
+	jobs, err := r.ListDownloadJobsByMediaItem(ctx, want.MediaItemID)
+	if err != nil {
+		t.Fatalf("list download jobs: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("download jobs = %d, want 1 (no duplicate from the superseded grab)", len(jobs))
+	}
+
+	got, err := r.GetWant(ctx, want.ID)
+	if err != nil {
+		t.Fatalf("get want: %v", err)
+	}
+	if got.Status != string(model.WantGrabbed) {
+		t.Errorf("want status = %q, want %q (unchanged by the superseded grab)", got.Status, model.WantGrabbed)
 	}
 }

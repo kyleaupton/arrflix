@@ -43,6 +43,7 @@ type Services struct {
 	Tmdb               *TmdbService
 	UnmatchedFiles     *UnmatchedFilesService
 	Users              *UsersService
+	Wants              *WantService
 	Filesystem         *FilesystemService
 	Version            *VersionService
 }
@@ -87,6 +88,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	users := NewUsersService(r)
 	invites := NewInvitesService(r)
 	enrichment := NewEnrichmentService(r, l, tmdb)
+	downloadJobs := NewDownloadJobsService(r)
 
 	// Matcher: the v1 resolver catalog (path-embed + name-parse) wires
 	// up via DefaultRegistry. ScannerService.MatchBatch is the only
@@ -111,7 +113,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Auth:               NewAuthService(r, cfg, settings, invites),
 		Downloaders:        NewDownloadersService(r),
 		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, routingSvc),
-		DownloadJobs:       NewDownloadJobsService(r),
+		DownloadJobs:       downloadJobs,
 		Enrichment:         enrichment,
 		Invites:            invites,
 		Filesystem:         NewFilesystemService(),
@@ -134,6 +136,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Tracking:           NewTrackingService(r),
 		UnmatchedFiles:     NewUnmatchedFilesService(r, l, tmdb),
 		Users:              users,
+		Wants:              NewWantService(r, downloadJobs),
 		Version:            NewVersionService(r, l),
 	}
 }

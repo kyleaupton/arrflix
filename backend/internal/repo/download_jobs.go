@@ -17,6 +17,7 @@ type DownloadJobsRepo interface {
 	GetDownloadJobWithImportSummary(ctx context.Context, id uuid.UUID) (model.DownloadJobWithSummary, error)
 	GetDownloadJobTimeline(ctx context.Context, downloadJobID uuid.UUID) ([]model.DownloadJobTimelineEvent, error)
 	ListDownloadJobsByMediaItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.DownloadJob, error)
+	ListActiveDownloadJobsByWant(ctx context.Context, wantID uuid.UUID) ([]model.DownloadJob, error)
 	ListDownloadJobsByTmdbMovieID(ctx context.Context, tmdbMovieID int64) ([]model.DownloadJob, error)
 	ListDownloadJobsByTmdbSeriesID(ctx context.Context, tmdbSeriesID int64) ([]model.DownloadJobBySeriesEntry, error)
 	ListDownloadJobs(ctx context.Context) ([]model.DownloadJob, error)
@@ -440,6 +441,18 @@ func (r *Repository) ListDownloadJobsByMediaItem(ctx context.Context, mediaItemI
 	rows, err := r.Q.ListDownloadJobsByMediaItem(ctx, pgtypeFromUUID(mediaItemID))
 	if err != nil {
 		return nil, apperrors.FromPg(err, "list download jobs for media item %s", mediaItemID)
+	}
+	out := make([]model.DownloadJob, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelDownloadJob(row))
+	}
+	return out, nil
+}
+
+func (r *Repository) ListActiveDownloadJobsByWant(ctx context.Context, wantID uuid.UUID) ([]model.DownloadJob, error) {
+	rows, err := r.Q.ListActiveDownloadJobsByWant(ctx, pgtypeFromUUID(wantID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list active download jobs for want %s", wantID)
 	}
 	out := make([]model.DownloadJob, 0, len(rows))
 	for _, row := range rows {

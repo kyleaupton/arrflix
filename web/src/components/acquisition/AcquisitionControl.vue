@@ -8,6 +8,15 @@
         :last-error="want.lastError"
         :progress="wantProgress"
       />
+      <Button
+        v-if="canCancel"
+        variant="outline"
+        :disabled="cancelWant.isPending.value"
+        @click="handleCancel"
+      >
+        <X class="mr-2 size-4" />
+        {{ cancelWant.isPending.value ? 'Canceling…' : 'Cancel' }}
+      </Button>
     </template>
 
     <!-- A genuine (non-404) load failure: 404 is the untracked signal, anything
@@ -52,12 +61,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
-import { Download, Plus, Search } from 'lucide-vue-next'
+import { Download, Plus, Search, X } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
   trackingByTmdbOptions,
   trackingByTmdbQueryKey,
   requestsCreateMutation,
+  wantsCancelMutation,
   downloadJobsListForMovieOptions,
 } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
@@ -140,6 +150,36 @@ const createRequest = useMutation({
 
 function handleAdd() {
   createRequest.mutate({ body: { tmdbId: props.tmdbId, type: 'movie', tier: tier.value } })
+}
+
+// Cancel is offered only while the want is still in flight; terminal states
+// ('available', 'failed', 'canceled') have nothing to stop.
+const CANCELABLE_STATUSES = new Set(['pending', 'searching', 'grabbed', 'downloading', 'imported'])
+
+const canCancel = computed(() => !!want.value && CANCELABLE_STATUSES.has(want.value.status))
+
+const cancelWant = useMutation({
+  ...wantsCancelMutation(),
+  onSuccess: () => {
+    toast.success('Canceled')
+    queryClient.invalidateQueries({
+      queryKey: trackingByTmdbQueryKey({ path: { tmdbId: props.tmdbId } }),
+    })
+  },
+  onError: (err) => {
+    toast.error(problemMessage(err, 'Failed to cancel'))
+  },
+})
+
+async function handleCancel() {
+  if (!want.value) return
+  const confirmed = await modal.confirm({
+    title: 'Cancel acquisition',
+    message: 'Stop searching/downloading and mark this movie canceled?',
+    severity: 'danger',
+  })
+  if (!confirmed) return
+  cancelWant.mutate({ path: { id: want.value.id } })
 }
 
 function openManualSearch() {

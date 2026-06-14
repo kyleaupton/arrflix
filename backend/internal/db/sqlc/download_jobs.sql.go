@@ -651,6 +651,68 @@ func (q *Queries) GetDownloadJobWithImportSummary(ctx context.Context, id pgtype
 	return i, err
 }
 
+const listActiveDownloadJobsByWant = `-- name: ListActiveDownloadJobsByWant :many
+SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id FROM download_job
+WHERE want_id = $1
+  AND status NOT IN ('completed', 'failed', 'cancelled')
+ORDER BY created_at DESC
+`
+
+// ListActiveDownloadJobsByWant returns the non-terminal download jobs linked to
+// a want, backing the want-cancel cascade. At most one row in practice (the #2a
+// pre-grab CAS prevents a want from having two in-flight jobs), but a slice is
+// safe. Uses idx_download_job_want.
+func (q *Queries) ListActiveDownloadJobsByWant(ctx context.Context, wantID pgtype.UUID) ([]DownloadJob, error) {
+	rows, err := q.db.Query(ctx, listActiveDownloadJobsByWant, wantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DownloadJob
+	for rows.Next() {
+		var i DownloadJob
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.Protocol,
+			&i.IndexerID,
+			&i.Guid,
+			&i.CandidateTitle,
+			&i.CandidateLink,
+			&i.MediaType,
+			&i.MediaItemID,
+			&i.SeasonID,
+			&i.EpisodeID,
+			&i.LibraryID,
+			&i.NameTemplateID,
+			&i.DownloaderID,
+			&i.DownloaderExternalID,
+			&i.DownloaderStatus,
+			&i.Progress,
+			&i.SavePath,
+			&i.ContentPath,
+			&i.AttemptCount,
+			&i.NextRunAt,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PreviousJobID,
+			&i.DownloadSpeed,
+			&i.EtaSeconds,
+			&i.TotalSize,
+			&i.ErrorKind,
+			&i.WantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDownloadJobs = `-- name: ListDownloadJobs :many
 SELECT id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id FROM download_job
 ORDER BY created_at DESC

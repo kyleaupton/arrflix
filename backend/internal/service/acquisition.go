@@ -80,7 +80,21 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	libraryID := *actions.LibraryID
 	nameTemplateID := *actions.NameTemplateID
 
+	// CAS first, job second: GrabWant flips 'searching → grabbed' only while the
+	// worker still owns the want, and its UPDATE holds the row lock through
+	// commit so concurrent grabbers serialize. A 0-row CAS (ok=false) means the
+	// want was superseded — the reaper reset it and another worker re-claimed,
+	// or a concurrent grab won — a benign no-op, not an error. grabbed is set
+	// only after the job insert, so an insert failure rolls back the whole tx
+	// (want stays 'searching') and the worker reschedules.
 	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
+		_, ok, gerr := r.GrabWant(ctx, want.ID)
+		if gerr != nil {
+			return gerr
+		}
+		if !ok {
+			return nil
+		}
 		if _, jerr := r.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
 			Protocol:       cand.Protocol,
 			MediaType:      "movie",
@@ -96,14 +110,14 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 		}); jerr != nil {
 			return jerr
 		}
-		_, serr := r.SetWantStatus(ctx, want.ID, string(model.WantGrabbed))
-		return serr
+		grabbed = true
+		return nil
 	})
 	if err != nil {
 		return false, err
 	}
 
-	return true, nil
+	return grabbed, nil
 }
 
 // wantToQuery builds the indexer query from the stored media_item (no TMDB

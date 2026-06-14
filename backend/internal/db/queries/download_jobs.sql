@@ -50,6 +50,16 @@ SELECT * FROM download_job
 WHERE media_item_id = $1
 ORDER BY created_at DESC;
 
+-- ListActiveDownloadJobsByWant returns the non-terminal download jobs linked to
+-- a want, backing the want-cancel cascade. At most one row in practice (the #2a
+-- pre-grab CAS prevents a want from having two in-flight jobs), but a slice is
+-- safe. Uses idx_download_job_want.
+-- name: ListActiveDownloadJobsByWant :many
+SELECT * FROM download_job
+WHERE want_id = $1
+  AND status NOT IN ('completed', 'failed', 'cancelled')
+ORDER BY created_at DESC;
+
 -- name: ListDownloadJobs :many
 SELECT * FROM download_job
 ORDER BY created_at DESC;

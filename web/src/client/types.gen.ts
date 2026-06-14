@@ -2205,6 +2205,10 @@ export type Video = {
 };
 
 export type Want = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
     attemptCount: number;
     createdAt: string;
     id: string;
@@ -3217,7 +3221,7 @@ export type TrackingWritable = {
 
 export type TrackingByTmdbWritable = {
     tracking: TrackingWritable;
-    wants: Array<Want> | null;
+    wants: Array<WantWritable> | null;
 };
 
 export type UserWritable = {
@@ -3268,6 +3272,19 @@ export type VersionInfoWritable = {
     };
     update: UpdateDetails;
     version: string;
+};
+
+export type WantWritable = {
+    attemptCount: number;
+    createdAt: string;
+    id: string;
+    lastError: string | null;
+    mediaItemId: string;
+    nextRunAt: string;
+    qualityProfileId: string;
+    status: string;
+    trackingId: string;
+    updatedAt: string;
 };
 
 export type AuthLoginData = {
@@ -8116,6 +8133,52 @@ export type VersionGetResponses = {
 };
 
 export type VersionGetResponse = VersionGetResponses[keyof VersionGetResponses];
+
+export type WantsCancelData = {
+    body?: never;
+    path: {
+        /**
+         * Want ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/wants/{id}/cancel';
+};
+
+export type WantsCancelErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type WantsCancelError = WantsCancelErrors[keyof WantsCancelErrors];
+
+export type WantsCancelResponses = {
+    /**
+     * OK
+     */
+    200: Want;
+};
+
+export type WantsCancelResponse = WantsCancelResponses[keyof WantsCancelResponses];
 
 export type HealthCheckData = {
     body?: never;

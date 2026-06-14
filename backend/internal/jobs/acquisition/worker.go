@@ -31,6 +31,7 @@ type Worker struct {
 	pollInterval time.Duration
 	claimLimit   int32
 	maxAttempts  int
+	reapAfter    time.Duration
 }
 
 // Config holds worker configuration.
@@ -38,6 +39,9 @@ type Config struct {
 	PollInterval time.Duration
 	ClaimLimit   int32
 	MaxAttempts  int
+	// ReapAfter is how long a want may sit in 'searching' before the reaper
+	// resets it to 'pending' — the crash-window self-heal.
+	ReapAfter time.Duration
 }
 
 // DefaultConfig returns default worker configuration, matching the download
@@ -47,6 +51,7 @@ func DefaultConfig() Config {
 		PollInterval: 3 * time.Second,
 		ClaimLimit:   20,
 		MaxAttempts:  3,
+		ReapAfter:    5 * time.Minute,
 	}
 }
 
@@ -61,6 +66,7 @@ func New(r *repo.Repository, svc *service.AcquisitionService, log *logger.Logger
 		pollInterval: cfg.PollInterval,
 		claimLimit:   cfg.ClaimLimit,
 		maxAttempts:  cfg.MaxAttempts,
+		reapAfter:    cfg.ReapAfter,
 	}
 }
 
@@ -83,9 +89,12 @@ func (w *Worker) Run(ctx context.Context) {
 }
 
 func (w *Worker) tick(ctx context.Context) {
-	// ClaimRunnableWants flips claimed wants to 'searching'. A crash between
-	// here and a terminal transition wedges the want in 'searching', since the
-	// claim only reclaims 'pending'. A stale-claim reaper is Phase 5.
+	// Reap first: ClaimRunnableWants flips claimed wants to 'searching', and a
+	// crash between that flip and a terminal transition wedges the want there
+	// (the claim only reclaims 'pending'). The reaper's WHERE makes it a cheap
+	// no-op when nothing is stale, so running it every tick is fine.
+	w.reap(ctx)
+
 	wants, err := w.repo.ClaimRunnableWants(ctx, w.claimLimit)
 	if err != nil {
 		w.log.Error().Err(err).Msg("failed to claim wants")
@@ -96,6 +105,24 @@ func (w *Worker) tick(ctx context.Context) {
 		// ClaimRunnableWants returned this want already flipped to 'searching'.
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
 		w.handle(ctx, want)
+	}
+}
+
+// reap resets wants wedged in 'searching' past the reapAfter window back to
+// 'pending' so the next claim reclaims them. Reset-only: attempt_count is
+// untouched and no want is failed, mirroring the "no release yet" reschedule.
+func (w *Worker) reap(ctx context.Context) {
+	staleBefore := time.Now().Add(-w.reapAfter)
+	reclaimed, err := w.repo.ReclaimStaleSearchingWants(ctx, staleBefore, "reset from stale 'searching' (crash-window reaper)")
+	if err != nil {
+		w.log.Error().Err(err).Msg("failed to reclaim stale searching wants")
+		return
+	}
+	for _, want := range reclaimed {
+		w.log.Warn().
+			Str("want_id", want.ID.String()).
+			Msg("reclaimed stale searching want")
+		realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
 	}
 }
 
@@ -148,25 +175,30 @@ func (w *Worker) handleError(ctx context.Context, want model.Want, err error) {
 	w.reschedule(ctx, want, msg)
 }
 
-// fail marks a want failed (terminal) and emits the transition.
+// fail marks a want failed (terminal) and emits the transition. A superseded
+// want (ok=false — the reaper reset it and another worker re-claimed) is a
+// no-op: nothing changed, so nothing is emitted.
 func (w *Worker) fail(ctx context.Context, wantID uuid.UUID, msg string) {
-	if want, err := w.repo.MarkWantFailed(ctx, wantID, msg); err == nil {
+	if want, ok, err := w.repo.MarkWantFailed(ctx, wantID, msg); err == nil && ok {
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
 	}
 }
 
-// reschedule returns the want to 'pending' with exponential backoff.
+// reschedule returns the want to 'pending' with exponential backoff. A
+// superseded want (ok=false — the reaper reset it and another worker
+// re-claimed, including the benign grabbed=false path) is a no-op: the want is
+// no longer 'searching', so nothing changed and nothing is emitted.
 func (w *Worker) reschedule(ctx context.Context, want model.Want, lastError string) {
 	attempt := int(want.AttemptCount) + 1
 	backoff := time.Duration(math.Pow(2, float64(attempt))) * time.Second
 	nextRun := time.Now().Add(backoff)
 
-	updated, err := w.repo.ScheduleWantRetry(ctx, repo.ScheduleWantRetryParams{
+	updated, ok, err := w.repo.ScheduleWantRetry(ctx, repo.ScheduleWantRetryParams{
 		ID:        want.ID,
 		LastError: lastError,
 		NextRunAt: nextRun,
 	})
-	if err == nil {
+	if err == nil && ok {
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(updated))
 	}
 }

@@ -275,9 +275,12 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 
 		// want→imported commits atomically with task completion + the file row,
 		// via the tx-bound r. Guarded so the interactive/legacy path (no want)
-		// is untouched.
+		// is untouched. The mirror routes through MirrorWantStatus's
+		// terminal-sticky guard: if the want was canceled mid-flight, the file
+		// import still commits but the want stays 'canceled' (ok==false) rather
+		// than being resurrected to 'imported'.
 		if task.WantID != uuid.Nil {
-			if _, werr := r.SetWantStatus(ctx, task.WantID, string(model.WantImported)); werr != nil {
+			if _, _, werr := r.MirrorWantStatus(ctx, task.WantID, string(model.WantImported)); werr != nil {
 				return werr
 			}
 		}
@@ -294,9 +297,10 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 	if task.WantID != uuid.Nil {
 		if info, serr := os.Stat(fullDest); serr != nil || info.Size() == 0 {
 			w.log.Warn().Err(serr).Str("dest", fullDest).Msg("verify failed: imported file missing/empty")
-			if want, ferr := w.repo.MarkWantFailed(ctx, task.WantID, "verify failed: imported file not present on disk"); ferr == nil {
-				realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
-			}
+			// Post-grab, job-driven transition: the want is 'imported' here, not
+			// 'searching', so this fails it unconditionally via mirrorWant —
+			// MarkWantFailed is now the acquisition worker's searching-guarded CAS.
+			w.mirrorWant(ctx, task.WantID, model.WantFailed)
 		} else {
 			w.mirrorWant(ctx, task.WantID, model.WantAvailable)
 		}
@@ -613,14 +617,19 @@ func (w *Worker) deriveSourcePath(ctx context.Context, task model.ImportTask) (s
 // mirrorWant best-effort reflects a task transition onto its owning want. It
 // no-ops when the task has no want (uuid.Nil — the manual/legacy import path)
 // and swallows errors after logging: a want-mirror failure must never break the
-// import pipeline.
+// import pipeline. The mirror routes through MirrorWantStatus, the
+// terminal-sticky guard: a want flipped 'canceled' (or already terminal) is left
+// untouched, so a late task transition can't resurrect it.
 func (w *Worker) mirrorWant(ctx context.Context, wantID uuid.UUID, status model.WantStatus) {
 	if wantID == uuid.Nil {
 		return
 	}
-	want, err := w.repo.SetWantStatus(ctx, wantID, string(status))
+	want, ok, err := w.repo.MirrorWantStatus(ctx, wantID, string(status))
 	if err != nil {
 		w.log.Warn().Err(err).Str("want_id", wantID.String()).Msg("failed to mirror want status")
+		return
+	}
+	if !ok {
 		return
 	}
 	realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
