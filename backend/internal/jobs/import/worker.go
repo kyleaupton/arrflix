@@ -210,6 +210,19 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 		Str("dest", fullDest).
 		Msg("file imported successfully")
 
+	// Verify the placed file is present and non-empty BEFORE recording it.
+	// HardlinkOrCopy can report success while the file is missing or zero-length
+	// (overlay/network FS hiccup, a disk that errored). Committing a file row +
+	// 'available' want for a file that isn't really there is the divergence this
+	// guards against: failing here means no file row is written, so the DB and
+	// disk stay consistent — the import retries, and the want only advances once
+	// the bytes are confirmed on disk. This is the VerifyStep, run as a precondition
+	// of the commit rather than after it.
+	if info, serr := os.Stat(fullDest); serr != nil || info.Size() == 0 {
+		return apperrors.Internalf("verify failed: imported file missing or empty: %s", fullDest).
+			Op("ImportWorker.processTask")
+	}
+
 	var episodeIDPtr *uuid.UUID
 	if task.EpisodeID != uuid.Nil {
 		ep := task.EpisodeID
@@ -290,21 +303,11 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 		return err
 	}
 
-	// VerifyStep: Arrflix's own authority that the file is on disk, reachable
-	// with no media server. Runs after the tx commits because it does disk I/O.
-	// An imported-but-missing file is a genuine failure, not a wedge at
-	// 'imported' — exactly the case this step exists to catch.
-	if task.WantID != uuid.Nil {
-		if info, serr := os.Stat(fullDest); serr != nil || info.Size() == 0 {
-			w.log.Warn().Err(serr).Str("dest", fullDest).Msg("verify failed: imported file missing/empty")
-			// Post-grab, job-driven transition: the want is 'imported' here, not
-			// 'searching', so this fails it unconditionally via mirrorWant —
-			// MarkWantFailed is now the acquisition worker's searching-guarded CAS.
-			w.mirrorWant(ctx, task.WantID, model.WantFailed)
-		} else {
-			w.mirrorWant(ctx, task.WantID, model.WantAvailable)
-		}
-	}
+	// Presence/size was confirmed before the file row committed (see the verify
+	// guard above), so the want advances 'imported' → 'available' — Arrflix's own
+	// authority that the file is on disk, reachable with no media server. mirrorWant
+	// no-ops on the interactive/legacy path (no want).
+	w.mirrorWant(ctx, task.WantID, model.WantAvailable)
 
 	w.logEvent(ctx, task.ID, "status_changed", "", map[string]any{
 		"old_status":    "in_progress",

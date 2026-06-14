@@ -202,15 +202,14 @@ type relevanceReject struct {
 //     parsed year must agree — an absent parsed year (0) passes, since many
 //     release names omit it.
 func relevanceReason(res indexer.SearchResult, parsed parsing.ParsedRelease, mi model.MediaItem, imdbID *string) (reason string, ok bool) {
-	if res.TmdbID != 0 {
-		wantTmdb := int64(0)
-		if mi.TmdbID != nil {
-			wantTmdb = *mi.TmdbID
-		}
-		if res.TmdbID == wantTmdb {
+	// Only decide on tmdb id when the want actually has one to compare against.
+	// A want with no tmdb id (wantTmdb would be 0) must fall through to the imdb
+	// and title checks, not reject every id-carrying result as "does not match 0".
+	if res.TmdbID != 0 && mi.TmdbID != nil {
+		if res.TmdbID == *mi.TmdbID {
 			return "", true
 		}
-		return fmt.Sprintf("tmdbId %d does not match %d", res.TmdbID, wantTmdb), false
+		return fmt.Sprintf("tmdbId %d does not match %d", res.TmdbID, *mi.TmdbID), false
 	}
 
 	if res.ImdbID != 0 && imdbID != nil {
