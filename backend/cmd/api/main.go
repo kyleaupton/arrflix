@@ -13,6 +13,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	"github.com/kyleaupton/arrflix/internal/downloader/qbittorrent"
 	"github.com/kyleaupton/arrflix/internal/http"
+	acquisitionworker "github.com/kyleaupton/arrflix/internal/jobs/acquisition"
 	downloadworker "github.com/kyleaupton/arrflix/internal/jobs/download"
 	enrichmentworker "github.com/kyleaupton/arrflix/internal/jobs/enrichment"
 	importworker "github.com/kyleaupton/arrflix/internal/jobs/import"
@@ -90,9 +91,11 @@ func main() {
 	dlWorker := downloadworker.New(repo, downloaderManager, logg, broker)
 	impWorker := importworker.New(repo, downloaderManager, logg, broker)
 	enrichWorker := enrichmentworker.New(services.Enrichment, logg)
+	acqWorker := acquisitionworker.New(repo, services.Acquisition, logg, broker)
 	go dlWorker.Run(workerCtx)
 	go impWorker.Run(workerCtx)
 	go enrichWorker.Run(workerCtx)
+	go acqWorker.Run(workerCtx)
 
 	// Graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -17,6 +17,7 @@ import (
 )
 
 type Services struct {
+	Acquisition        *AcquisitionService
 	Auth               *AuthService
 	Downloaders        *DownloadersService
 	DownloadCandidates *DownloadCandidatesService
@@ -106,6 +107,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	matchDecisionsSvc := NewMatchDecisionsService(r, l, tmdb, enrichment, metadataProvider, settings)
 
 	return &Services{
+		Acquisition:        NewAcquisitionService(r, l, indexerSource, routingSvc, quality),
 		Auth:               NewAuthService(r, cfg, settings, invites),
 		Downloaders:        NewDownloadersService(r),
 		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, routingSvc),

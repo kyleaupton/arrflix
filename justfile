@@ -79,7 +79,7 @@ backend-test: _ensure-up
 # Run backend integration tests (spins up postgres testcontainers).
 [group('backend')]
 backend-test-integration: _ensure-up
-    {{backend-exec}} go test -race -tags=integration ./internal/test/integration/...
+    {{backend-exec}} go test -race -tags=integration ./internal/test/integration/... ./internal/jobs/...
 
 # Regenerate the parser parity goldens from live pinned Sonarr/Radarr
 # containers (Tier 2 — slow, spins up two containers via the docker socket).
@@ -174,7 +174,7 @@ check: _ensure-up
 [group('aggregate')]
 check-all: check
     @echo "→ backend integration tests"
-    {{backend-exec}} go test -race -tags=integration ./internal/test/integration/...
+    {{backend-exec}} go test -race -tags=integration ./internal/test/integration/... ./internal/jobs/...
     @echo "All checks (incl. integration) passed."
 
 # Agent's pre-push entry point: fix then check. If this is green, work is

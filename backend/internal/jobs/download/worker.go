@@ -209,6 +209,14 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 		return err
 	}
 
+	// Mirror the want to 'downloading' on the transition edge only, so it isn't
+	// re-set on every poll. A job that races straight to completed without an
+	// observed 'downloading' skips it — the import worker advances the want from
+	// there.
+	if job.WantID != uuid.Nil && job.Status != newStatus && newStatus == "downloading" {
+		w.mirrorWant(ctx, job.WantID, model.WantDownloading)
+	}
+
 	if job.Status != newStatus {
 		w.logEvent(ctx, job.ID, "status_changed", "", map[string]any{
 			"old_status": job.Status,
@@ -223,6 +231,7 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 	if newStatus == "failed" {
 		w.logEvent(ctx, job.ID, "error", "downloader reported failed status", nil)
 		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID, "downloader reported failed status", apperrors.KindBadGateway)
+		w.mirrorWant(ctx, job.WantID, model.WantFailed)
 		return nil
 	}
 
@@ -280,6 +289,7 @@ func (w *Worker) spawnMovieImportTask(ctx context.Context, client downloader.Cli
 		DownloadJobID:  job.ID,
 		SourcePath:     sourcePath,
 		PreviousTaskID: uuid.Nil,
+		WantID:         job.WantID,
 		MediaType:      "movie",
 		MediaItemID:    job.MediaItemID,
 		EpisodeID:      uuid.Nil,
@@ -367,6 +377,7 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 			DownloadJobID:  job.ID,
 			SourcePath:     sourcePath,
 			PreviousTaskID: uuid.Nil,
+			WantID:         job.WantID,
 			MediaType:      "series",
 			MediaItemID:    job.MediaItemID,
 			EpisodeID:      episodeID,
@@ -454,6 +465,7 @@ func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err err
 	// Non-retryable errors fail immediately.
 	if !apperrors.IsRetryable(err) {
 		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID, msg, kind)
+		w.mirrorWant(ctx, job.WantID, model.WantFailed)
 		return
 	}
 
@@ -463,6 +475,7 @@ func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err err
 		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID,
 			fmt.Sprintf("max attempts (%d) exceeded: %s", w.maxAttempts, msg),
 			kind)
+		w.mirrorWant(ctx, job.WantID, model.WantFailed)
 		return
 	}
 
@@ -526,6 +539,22 @@ func mapItemStatus(st downloader.JobStatus) string {
 	default:
 		return "downloading"
 	}
+}
+
+// mirrorWant best-effort reflects a job transition onto its owning want. It
+// no-ops when the job has no want (uuid.Nil — the interactive/legacy path) and
+// swallows errors after logging: a want-mirror failure must never break the
+// download pipeline.
+func (w *Worker) mirrorWant(ctx context.Context, wantID uuid.UUID, status model.WantStatus) {
+	if wantID == uuid.Nil {
+		return
+	}
+	want, err := w.repo.SetWantStatus(ctx, wantID, string(status))
+	if err != nil {
+		w.log.Warn().Err(err).Str("want_id", wantID.String()).Msg("failed to mirror want status")
+		return
+	}
+	realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
 }
 
 func ptr[T any](v T) *T { return &v }

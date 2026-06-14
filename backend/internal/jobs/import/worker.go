@@ -264,16 +264,42 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 			return ierr
 		}
 
-		_, terr := r.SetImportTaskCompleted(ctx, repo.SetImportTaskCompletedParams{
+		if _, terr := r.SetImportTaskCompleted(ctx, repo.SetImportTaskCompletedParams{
 			ID:           task.ID,
 			DestPath:     destPath,
 			ImportMethod: method,
 			FileID:       file.ID,
-		})
-		return terr
+		}); terr != nil {
+			return terr
+		}
+
+		// want→imported commits atomically with task completion + the file row,
+		// via the tx-bound r. Guarded so the interactive/legacy path (no want)
+		// is untouched.
+		if task.WantID != uuid.Nil {
+			if _, werr := r.SetWantStatus(ctx, task.WantID, string(model.WantImported)); werr != nil {
+				return werr
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return err
+	}
+
+	// VerifyStep: Arrflix's own authority that the file is on disk, reachable
+	// with no media server. Runs after the tx commits because it does disk I/O.
+	// An imported-but-missing file is a genuine failure, not a wedge at
+	// 'imported' — exactly the case this step exists to catch.
+	if task.WantID != uuid.Nil {
+		if info, serr := os.Stat(fullDest); serr != nil || info.Size() == 0 {
+			w.log.Warn().Err(serr).Str("dest", fullDest).Msg("verify failed: imported file missing/empty")
+			if want, ferr := w.repo.MarkWantFailed(ctx, task.WantID, "verify failed: imported file not present on disk"); ferr == nil {
+				realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
+			}
+		} else {
+			w.mirrorWant(ctx, task.WantID, model.WantAvailable)
+		}
 	}
 
 	w.logEvent(ctx, task.ID, "status_changed", "", map[string]any{
@@ -413,6 +439,7 @@ func (w *Worker) handleError(ctx context.Context, task model.ImportTask, err err
 	// Non-retryable errors fail immediately.
 	if !apperrors.IsRetryable(err) {
 		_, _ = w.repo.SetImportTaskFailed(ctx, task.ID, msg, kind)
+		w.mirrorWant(ctx, task.WantID, model.WantFailed)
 		w.publishTaskUpdated(ctx, task)
 		return
 	}
@@ -428,6 +455,7 @@ func (w *Worker) handleError(ctx context.Context, task model.ImportTask, err err
 		_, _ = w.repo.SetImportTaskFailed(ctx, task.ID,
 			fmt.Sprintf("max attempts (%d) exceeded: %s", maxAttempts, msg),
 			kind)
+		w.mirrorWant(ctx, task.WantID, model.WantFailed)
 		w.publishTaskUpdated(ctx, task)
 		return
 	}
@@ -580,6 +608,22 @@ func (w *Worker) deriveSourcePath(ctx context.Context, task model.ImportTask) (s
 
 	// Apply path mapping (stub - returns unchanged for now)
 	return w.pathMapper.Apply(ctx, job.DownloaderID, rawPath), nil
+}
+
+// mirrorWant best-effort reflects a task transition onto its owning want. It
+// no-ops when the task has no want (uuid.Nil — the manual/legacy import path)
+// and swallows errors after logging: a want-mirror failure must never break the
+// import pipeline.
+func (w *Worker) mirrorWant(ctx context.Context, wantID uuid.UUID, status model.WantStatus) {
+	if wantID == uuid.Nil {
+		return
+	}
+	want, err := w.repo.SetWantStatus(ctx, wantID, string(status))
+	if err != nil {
+		w.log.Warn().Err(err).Str("want_id", wantID.String()).Msg("failed to mirror want status")
+		return
+	}
+	realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
 }
 
 func strPtr(s string) *string {

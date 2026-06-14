@@ -72,6 +72,31 @@ func (h *Tracking) ListWants(ctx context.Context, input *TrackingWantsInput) (*T
 	return &TrackingWantsOutput{Body: out}, nil
 }
 
+// ----- Get by TMDB id -----
+
+type TrackingByTmdbInput struct {
+	TmdbID int64 `path:"tmdbId" minimum:"1" doc:"TMDB id of the movie"`
+}
+
+// TrackingByTmdb is the acquisition state for a movie keyed by TMDB id: the
+// tracking plus its wants. Movie-only in the PoC, so there is one want.
+type TrackingByTmdb struct {
+	Tracking model.Tracking `json:"tracking"`
+	Wants    []model.Want   `json:"wants"`
+}
+
+type TrackingByTmdbOutput struct {
+	Body TrackingByTmdb
+}
+
+func (h *Tracking) GetByTmdb(ctx context.Context, input *TrackingByTmdbInput) (*TrackingByTmdbOutput, error) {
+	tracking, wants, err := h.svc.Tracking.GetByTmdbID(ctx, input.TmdbID)
+	if err != nil {
+		return nil, err
+	}
+	return &TrackingByTmdbOutput{Body: TrackingByTmdb{Tracking: tracking, Wants: wants}}, nil
+}
+
 // ----- List requesters -----
 
 type TrackingRequestersInput struct {
@@ -118,6 +143,16 @@ func (h *Tracking) RegisterHumachi(api huma.API) {
 		Tags:        []string{"tracking"},
 		Errors:      errsRead,
 	}, h.ListWants)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "tracking-by-tmdb",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/tracking/by-tmdb/{tmdbId}",
+		Summary:     "Get tracking by TMDB id",
+		Description: "Resolves a movie's acquisition state (tracking + wants) from its TMDB id. Returns 404 when the movie is not tracked.",
+		Tags:        []string{"tracking"},
+		Errors:      errsRead,
+	}, h.GetByTmdb)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "tracking-requesters",

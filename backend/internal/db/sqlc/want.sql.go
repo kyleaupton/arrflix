@@ -7,6 +7,7 @@ package dbgen
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -164,6 +165,77 @@ func (q *Queries) ListWantsByTracking(ctx context.Context, trackingID pgtype.UUI
 		return nil, err
 	}
 	return items, nil
+}
+
+const markWantFailed = `-- name: MarkWantFailed :one
+UPDATE want
+SET status = 'failed',
+    last_error = $1,
+    updated_at = now()
+WHERE id = $2
+RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type MarkWantFailedParams struct {
+	LastError *string     `json:"last_error"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// MarkWantFailed terminally fails a want. Mirrors MarkDownloadJobFailed.
+func (q *Queries) MarkWantFailed(ctx context.Context, arg MarkWantFailedParams) (Want, error) {
+	row := q.db.QueryRow(ctx, markWantFailed, arg.LastError, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const scheduleWantRetry = `-- name: ScheduleWantRetry :one
+UPDATE want
+SET status = 'pending',
+    attempt_count = attempt_count + 1,
+    last_error = $1,
+    next_run_at = $2,
+    updated_at = now()
+WHERE id = $3
+RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type ScheduleWantRetryParams struct {
+	LastError *string     `json:"last_error"`
+	NextRunAt time.Time   `json:"next_run_at"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// ScheduleWantRetry returns a want to 'pending' with a backoff so the
+// AcquisitionWorker can reclaim it; want has no error_kind column, only
+// last_error. Mirrors ScheduleDownloadJobRetry.
+func (q *Queries) ScheduleWantRetry(ctx context.Context, arg ScheduleWantRetryParams) (Want, error) {
+	row := q.db.QueryRow(ctx, scheduleWantRetry, arg.LastError, arg.NextRunAt, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const setWantStatus = `-- name: SetWantStatus :one

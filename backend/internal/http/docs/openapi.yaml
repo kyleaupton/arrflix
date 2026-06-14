@@ -568,6 +568,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - id
         - status
@@ -580,6 +582,7 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
+        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId
@@ -699,6 +702,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - seasonNumber
         - episodeNumber
@@ -713,6 +718,7 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
+        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId
@@ -825,6 +831,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - chainDepth
         - id
@@ -838,6 +846,7 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
+        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId
@@ -1046,6 +1055,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - tmdbId
         - mediaPosterPath
@@ -1072,6 +1083,7 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
+        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId
@@ -2016,12 +2028,15 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - id
         - status
         - downloadJobId
         - sourcePath
         - previousTaskId
+        - wantId
         - mediaType
         - mediaItemId
         - episodeId
@@ -2166,6 +2181,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - chainDepth
         - id
@@ -2173,6 +2190,7 @@ components:
         - downloadJobId
         - sourcePath
         - previousTaskId
+        - wantId
         - mediaType
         - mediaItemId
         - episodeId
@@ -2310,6 +2328,8 @@ components:
         updatedAt:
           format: date-time
           type: string
+        wantId:
+          type: string
       required:
         - mediaTitle
         - mediaYear
@@ -2330,6 +2350,7 @@ components:
         - downloadJobId
         - sourcePath
         - previousTaskId
+        - wantId
         - mediaType
         - mediaItemId
         - episodeId
@@ -2986,17 +3007,29 @@ components:
           format: uri
           readOnly: true
           type: string
+        canAutoApproveMovie:
+          description: Whether a movie request by this user auto-approves into a tracking
+          type: boolean
         email:
           description: Email from JWT claims
           type: string
         name:
           description: Username from JWT claims
           type: string
+        roles:
+          description: Role names assigned to the user
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         sub:
           description: User id (UUID string from JWT subject)
           type: string
       required:
         - sub
+        - roles
+        - canAutoApproveMovie
       type: object
     MediaFields:
       additionalProperties: false
@@ -4879,6 +4912,28 @@ components:
         - createdAt
         - updatedAt
       type: object
+    TrackingByTmdb:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/TrackingByTmdb.json
+          format: uri
+          readOnly: true
+          type: string
+        tracking:
+          $ref: "#/components/schemas/Tracking"
+        wants:
+          items:
+            $ref: "#/components/schemas/Want"
+          type:
+            - array
+            - "null"
+      required:
+        - tracking
+        - wants
+      type: object
     TrackingRequester:
       additionalProperties: false
       properties:
@@ -6570,6 +6625,24 @@ paths:
                         - data
                         - event
                       title: Event scan_started
+                      type: object
+                    - properties:
+                        data:
+                          $ref: "#/components/schemas/Want"
+                        event:
+                          const: want_updated
+                          description: The event name.
+                          type: string
+                        id:
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
+                        retry:
+                          description: The retry time in milliseconds.
+                          type: integer
+                      required:
+                        - data
+                        - event
+                      title: Event want_updated
                       type: object
                 title: Server Sent Events
                 type: array
@@ -10022,6 +10095,48 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Error
       summary: List trackings
+      tags:
+        - tracking
+  /api/v1/tracking/by-tmdb/{tmdbId}:
+    get:
+      description: Resolves a movie's acquisition state (tracking + wants) from its TMDB id. Returns 404 when the movie is not tracked.
+      operationId: tracking-by-tmdb
+      parameters:
+        - description: TMDB id of the movie
+          in: path
+          name: tmdbId
+          required: true
+          schema:
+            description: TMDB id of the movie
+            format: int64
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingByTmdb"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Get tracking by TMDB id
       tags:
         - tracking
   /api/v1/tracking/{id}:

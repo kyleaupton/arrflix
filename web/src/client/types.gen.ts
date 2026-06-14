@@ -246,6 +246,7 @@ export type DownloadJob = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
+    wantId: string;
 };
 
 export type DownloadJobBySeriesEntry = {
@@ -280,6 +281,7 @@ export type DownloadJobBySeriesEntry = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
+    wantId: string;
 };
 
 export type DownloadJobHistoryEntry = {
@@ -313,6 +315,7 @@ export type DownloadJobHistoryEntry = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
+    wantId: string;
 };
 
 export type DownloadJobTimelineEvent = {
@@ -375,6 +378,7 @@ export type DownloadJobWithSummary = {
     totalImportTasks: number;
     totalSize: number | null;
     updatedAt: string;
+    wantId: string;
 };
 
 export type Downloader = {
@@ -812,6 +816,7 @@ export type ImportTask = {
     sourcePath: string;
     status: string;
     updatedAt: string;
+    wantId: string;
 };
 
 export type ImportTaskCounts = {
@@ -859,6 +864,7 @@ export type ImportTaskHistoryEntry = {
     sourcePath: string;
     status: string;
     updatedAt: string;
+    wantId: string;
 };
 
 export type ImportTaskUpdatedPayload = {
@@ -904,6 +910,7 @@ export type ImportTaskWithDetails = {
     sourcePath: string;
     status: string;
     updatedAt: string;
+    wantId: string;
 };
 
 export type InboxItem = {
@@ -1209,6 +1216,10 @@ export type MeResponse = {
      */
     readonly $schema?: string;
     /**
+     * Whether a movie request by this user auto-approves into a tracking
+     */
+    canAutoApproveMovie: boolean;
+    /**
      * Email from JWT claims
      */
     email?: string;
@@ -1216,6 +1227,10 @@ export type MeResponse = {
      * Username from JWT claims
      */
     name?: string;
+    /**
+     * Role names assigned to the user
+     */
+    roles: Array<string> | null;
     /**
      * User id (UUID string from JWT subject)
      */
@@ -2085,6 +2100,15 @@ export type Tracking = {
     upgradeBehavior: string;
 };
 
+export type TrackingByTmdb = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    tracking: Tracking;
+    wants: Array<Want> | null;
+};
+
 export type TrackingRequester = {
     createdAt: string;
     tier: string;
@@ -2305,6 +2329,7 @@ export type DownloadJobWithSummaryWritable = {
     totalImportTasks: number;
     totalSize: number | null;
     updatedAt: string;
+    wantId: string;
 };
 
 export type DownloaderWritable = {
@@ -2481,6 +2506,7 @@ export type ImportTaskWritable = {
     sourcePath: string;
     status: string;
     updatedAt: string;
+    wantId: string;
 };
 
 export type ImportTaskCountsWritable = {
@@ -2526,6 +2552,7 @@ export type ImportTaskWithDetailsWritable = {
     sourcePath: string;
     status: string;
     updatedAt: string;
+    wantId: string;
 };
 
 export type InboxItemWritable = {
@@ -2733,6 +2760,10 @@ export type MatchDecisionsGetResponseWritable = {
 
 export type MeResponseWritable = {
     /**
+     * Whether a movie request by this user auto-approves into a tracking
+     */
+    canAutoApproveMovie: boolean;
+    /**
      * Email from JWT claims
      */
     email?: string;
@@ -2740,6 +2771,10 @@ export type MeResponseWritable = {
      * Username from JWT claims
      */
     name?: string;
+    /**
+     * Role names assigned to the user
+     */
+    roles: Array<string> | null;
     /**
      * User id (UUID string from JWT subject)
      */
@@ -3178,6 +3213,11 @@ export type TrackingWritable = {
     state: string;
     updatedAt: string;
     upgradeBehavior: string;
+};
+
+export type TrackingByTmdbWritable = {
+    tracking: TrackingWritable;
+    wants: Array<Want> | null;
 };
 
 export type UserWritable = {
@@ -4479,6 +4519,20 @@ export type EventsStreamResponses = {
          * The event name.
          */
         event: 'scan_started';
+        /**
+         * The event ID (sortable; used for Last-Event-ID resume).
+         */
+        id?: string;
+        /**
+         * The retry time in milliseconds.
+         */
+        retry?: number;
+    } | {
+        data: Want;
+        /**
+         * The event name.
+         */
+        event: 'want_updated';
         /**
          * The event ID (sortable; used for Last-Event-ID resume).
          */
@@ -7562,6 +7616,44 @@ export type TrackingListResponses = {
 };
 
 export type TrackingListResponse = TrackingListResponses[keyof TrackingListResponses];
+
+export type TrackingByTmdbData = {
+    body?: never;
+    path: {
+        /**
+         * TMDB id of the movie
+         */
+        tmdbId: number;
+    };
+    query?: never;
+    url: '/api/v1/tracking/by-tmdb/{tmdbId}';
+};
+
+export type TrackingByTmdbErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingByTmdbError = TrackingByTmdbErrors[keyof TrackingByTmdbErrors];
+
+export type TrackingByTmdbResponses = {
+    /**
+     * OK
+     */
+    200: TrackingByTmdb;
+};
+
+export type TrackingByTmdbResponse = TrackingByTmdbResponses[keyof TrackingByTmdbResponses];
 
 export type TrackingGetData = {
     body?: never;

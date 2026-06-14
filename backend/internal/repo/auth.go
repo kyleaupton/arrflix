@@ -85,15 +85,29 @@ func toModelRole(row dbgen.Role) model.Role {
 
 // rolesFromAggregate decodes the json_agg-produced "roles" column into a
 // []model.Role. The SQL emits role objects with id/name/description (no
-// built_in or created_at — those stay zero-valued in the slice). The column
-// arrives as either a []byte (raw JSONB) or nil; both are handled.
+// built_in or created_at — those stay zero-valued in the slice).
+//
+// The column's Go shape depends on pgx's codec: a `json` value scanned into
+// the generated `interface{}` field comes back already json.Unmarshal'd into
+// native Go values ([]interface{} of map[string]interface{}), NOT raw bytes.
+// We normalize every case (raw []byte/string, or pgx's native decode) back to
+// JSON bytes, then decode into the typed payload.
 func rolesFromAggregate(raw any) []model.Role {
 	if raw == nil {
 		return nil
 	}
-	b, ok := raw.([]byte)
-	if !ok {
-		return nil
+	var b []byte
+	switch v := raw.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
+		marshaled, err := json.Marshal(v)
+		if err != nil {
+			return nil
+		}
+		b = marshaled
 	}
 	if len(b) == 0 {
 		return nil

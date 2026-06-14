@@ -310,6 +310,7 @@ type DownloadJob struct {
 	EtaSeconds           *int64        `json:"eta_seconds"`
 	TotalSize            *int64        `json:"total_size"`
 	ErrorKind            NullErrorKind `json:"error_kind"`
+	WantID               pgtype.UUID   `json:"want_id"`
 }
 
 type DownloadJobEvent struct {
@@ -391,6 +392,7 @@ type ImportTask struct {
 	CreatedAt      time.Time     `json:"created_at"`
 	UpdatedAt      time.Time     `json:"updated_at"`
 	ErrorKind      NullErrorKind `json:"error_kind"`
+	WantID         pgtype.UUID   `json:"want_id"`
 }
 
 type ImportTaskEvent struct {

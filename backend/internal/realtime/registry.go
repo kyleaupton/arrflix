@@ -23,6 +23,7 @@ var Registry = []EventSchema{
 	{Name: NamePing, PayloadSample: PingPayload{}},
 	{Name: NameResumeGap, PayloadSample: ResumeGapPayload{}},
 	{Name: NameDownloadJobUpdated, PayloadSample: model.DownloadJobWithSummary{}},
+	{Name: NameWantUpdated, PayloadSample: model.Want{}},
 	{Name: NameImportTaskUpdated, PayloadSample: ImportTaskUpdatedPayload{}},
 	{Name: NameScanStarted, PayloadSample: ScanStartedPayload{}},
 	{Name: NameScanProgress, PayloadSample: ScanProgressPayload{}},

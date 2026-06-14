@@ -40,6 +40,13 @@ export function installRealtime(qc: QueryClient) {
     qc.invalidateQueries({ queryKey: [{ _id: 'downloadJobsListImportTasks' }] })
   })
 
+  // Want lifecycle delta. The payload is keyed by mediaItemId, not the tmdbId the
+  // by-tmdb query is keyed on, so partial-match every trackingByTmdb query — only
+  // a mounted movie page (the acquisition pill) refetches immediately.
+  on('want_updated', () => {
+    qc.invalidateQueries({ queryKey: [{ _id: 'trackingByTmdb' }] })
+  })
+
   // Recovery (reconnect-after-drop or replay-buffer gap): the cache may have
   // missed deltas, so refetch every active query.
   onResync(() => {

@@ -22,6 +22,7 @@ type ImportTask struct {
 	DownloadJobID  uuid.UUID       `json:"downloadJobId"`
 	SourcePath     string          `json:"sourcePath"`
 	PreviousTaskID uuid.UUID       `json:"previousTaskId"`
+	WantID         uuid.UUID       `json:"wantId"`
 	MediaType      string          `json:"mediaType"`
 	MediaItemID    uuid.UUID       `json:"mediaItemId"`
 	EpisodeID      uuid.UUID       `json:"episodeId"`

@@ -82,6 +82,16 @@ func (r *Repository) InitializeSystem(ctx context.Context, email, username, pass
 		return apperrors.FromPg(err, "assign admin role to user %s", uuidFromPgtype(user.ID))
 	}
 
+	// Seed the approval policy: admins auto-approve movie requests. Approval is
+	// policy-driven (RequestService reads user_policy); the admin role only
+	// seeds that policy here and in UsersService role-assignment.
+	if _, err := q.UpsertUserPolicy(ctx, dbgen.UpsertUserPolicyParams{
+		UserID:           user.ID,
+		AutoApproveMovie: true,
+	}); err != nil {
+		return apperrors.FromPg(err, "seed admin policy for user %s", uuidFromPgtype(user.ID))
+	}
+
 	if err := q.SetSystemInitialized(ctx); err != nil {
 		return apperrors.FromPg(err, "mark system initialized")
 	}

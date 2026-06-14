@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
@@ -91,6 +92,39 @@ func (r *Repository) SetWantStatus(ctx context.Context, id uuid.UUID, status str
 	})
 	if err != nil {
 		return model.Want{}, apperrors.FromPg(err, "set status for want %s", id)
+	}
+	return toModelWant(row), nil
+}
+
+// ScheduleWantRetryParams is the domain-shaped input for ScheduleWantRetry.
+// Mirrors the columns the AcquisitionWorker writes when scheduling a backoff
+// retry. Unlike ScheduleDownloadJobRetryParams there's no Kind — want has no
+// error_kind column.
+type ScheduleWantRetryParams struct {
+	ID        uuid.UUID
+	LastError string
+	NextRunAt time.Time
+}
+
+func (r *Repository) ScheduleWantRetry(ctx context.Context, params ScheduleWantRetryParams) (model.Want, error) {
+	row, err := r.Q.ScheduleWantRetry(ctx, dbgen.ScheduleWantRetryParams{
+		ID:        pgtypeFromUUID(params.ID),
+		LastError: &params.LastError,
+		NextRunAt: params.NextRunAt,
+	})
+	if err != nil {
+		return model.Want{}, apperrors.FromPg(err, "schedule retry for want %s", params.ID)
+	}
+	return toModelWant(row), nil
+}
+
+func (r *Repository) MarkWantFailed(ctx context.Context, id uuid.UUID, lastError string) (model.Want, error) {
+	row, err := r.Q.MarkWantFailed(ctx, dbgen.MarkWantFailedParams{
+		ID:        pgtypeFromUUID(id),
+		LastError: &lastError,
+	})
+	if err != nil {
+		return model.Want{}, apperrors.FromPg(err, "mark want %s failed", id)
 	}
 	return toModelWant(row), nil
 }

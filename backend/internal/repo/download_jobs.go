@@ -49,6 +49,7 @@ type CreateDownloadJobParams struct {
 	MediaItemID    uuid.UUID
 	SeasonID       uuid.UUID
 	EpisodeID      uuid.UUID
+	WantID         uuid.UUID
 	IndexerID      int64
 	Guid           string
 	CandidateTitle string
@@ -128,6 +129,7 @@ func toModelDownloadJob(row dbgen.DownloadJob) model.DownloadJob {
 		MediaItemID:          uuidFromPgtype(row.MediaItemID),
 		SeasonID:             uuidFromPgtype(row.SeasonID),
 		EpisodeID:            uuidFromPgtype(row.EpisodeID),
+		WantID:               uuidFromPgtype(row.WantID),
 		LibraryID:            uuidFromPgtype(row.LibraryID),
 		NameTemplateID:       uuidFromPgtype(row.NameTemplateID),
 		DownloaderID:         uuidFromPgtype(row.DownloaderID),
@@ -167,6 +169,7 @@ func toModelDownloadJobWithSummary(row dbgen.GetDownloadJobWithImportSummaryRow)
 			MediaItemID:          uuidFromPgtype(row.MediaItemID),
 			SeasonID:             uuidFromPgtype(row.SeasonID),
 			EpisodeID:            uuidFromPgtype(row.EpisodeID),
+			WantID:               uuidFromPgtype(row.WantID),
 			LibraryID:            uuidFromPgtype(row.LibraryID),
 			NameTemplateID:       uuidFromPgtype(row.NameTemplateID),
 			DownloaderID:         uuidFromPgtype(row.DownloaderID),
@@ -221,6 +224,7 @@ func toModelDownloadJobWithSummaryFromList(row dbgen.ListDownloadJobsWithImportS
 			MediaItemID:          uuidFromPgtype(row.MediaItemID),
 			SeasonID:             uuidFromPgtype(row.SeasonID),
 			EpisodeID:            uuidFromPgtype(row.EpisodeID),
+			WantID:               uuidFromPgtype(row.WantID),
 			LibraryID:            uuidFromPgtype(row.LibraryID),
 			NameTemplateID:       uuidFromPgtype(row.NameTemplateID),
 			DownloaderID:         uuidFromPgtype(row.DownloaderID),
@@ -275,6 +279,7 @@ func toModelDownloadJobBySeriesEntry(row dbgen.ListDownloadJobsByTmdbSeriesIDRow
 			MediaItemID:          uuidFromPgtype(row.MediaItemID),
 			SeasonID:             uuidFromPgtype(row.SeasonID),
 			EpisodeID:            uuidFromPgtype(row.EpisodeID),
+			WantID:               uuidFromPgtype(row.WantID),
 			LibraryID:            uuidFromPgtype(row.LibraryID),
 			NameTemplateID:       uuidFromPgtype(row.NameTemplateID),
 			DownloaderID:         uuidFromPgtype(row.DownloaderID),
@@ -315,6 +320,7 @@ func toModelDownloadJobHistoryEntry(row dbgen.GetDownloadJobHistoryRow) model.Do
 			MediaItemID:          uuidFromPgtype(row.MediaItemID),
 			SeasonID:             uuidFromPgtype(row.SeasonID),
 			EpisodeID:            uuidFromPgtype(row.EpisodeID),
+			WantID:               uuidFromPgtype(row.WantID),
 			LibraryID:            uuidFromPgtype(row.LibraryID),
 			NameTemplateID:       uuidFromPgtype(row.NameTemplateID),
 			DownloaderID:         uuidFromPgtype(row.DownloaderID),
@@ -376,6 +382,7 @@ func (r *Repository) CreateDownloadJob(ctx context.Context, params CreateDownloa
 		MediaItemID:    pgtypeFromUUID(params.MediaItemID),
 		SeasonID:       pgtypeFromUUIDOrNull(params.SeasonID),
 		EpisodeID:      pgtypeFromUUIDOrNull(params.EpisodeID),
+		WantID:         pgtypeFromUUIDOrNull(params.WantID),
 		IndexerID:      params.IndexerID,
 		Guid:           params.Guid,
 		CandidateTitle: params.CandidateTitle,

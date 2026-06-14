@@ -59,6 +59,8 @@ try {
   })
   if (res.data.user) {
     auth.setUserFromBootstrap(res.data.user)
+    // Bootstrap carries identity only; enrich roles + auto-approve policy.
+    await auth.fetchMe()
   } else if (auth.token) {
     // Token was present but server says invalid — clear it
     auth.logout()

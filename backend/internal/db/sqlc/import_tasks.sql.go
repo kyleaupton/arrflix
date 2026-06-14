@@ -18,7 +18,7 @@ SET status = 'cancelled',
     updated_at = now()
 WHERE id = $1
   AND status = 'pending'
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id
 `
 
 func (q *Queries) CancelImportTask(ctx context.Context, id pgtype.UUID) (ImportTask, error) {
@@ -45,6 +45,7 @@ func (q *Queries) CancelImportTask(ctx context.Context, id pgtype.UUID) (ImportT
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -78,7 +79,7 @@ SET status = 'in_progress',
     updated_at = now()
 FROM cte
 WHERE t.id = cte.id
-RETURNING t.id, t.status, t.download_job_id, t.source_path, t.previous_task_id, t.media_type, t.media_item_id, t.episode_id, t.library_id, t.name_template_id, t.dest_path, t.import_method, t.file_id, t.attempt_count, t.max_attempts, t.next_run_at, t.last_error, t.created_at, t.updated_at, t.error_kind
+RETURNING t.id, t.status, t.download_job_id, t.source_path, t.previous_task_id, t.media_type, t.media_item_id, t.episode_id, t.library_id, t.name_template_id, t.dest_path, t.import_method, t.file_id, t.attempt_count, t.max_attempts, t.next_run_at, t.last_error, t.created_at, t.updated_at, t.error_kind, t.want_id
 `
 
 // Claims tasks that are ready to be processed (pending only, not in_progress)
@@ -113,6 +114,7 @@ func (q *Queries) ClaimRunnableImportTasks(ctx context.Context, limit int32) ([]
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ErrorKind,
+			&i.WantID,
 		); err != nil {
 			return nil, err
 		}
@@ -162,6 +164,7 @@ INSERT INTO import_task (
   download_job_id,
   source_path,
   previous_task_id,
+  want_id,
   media_type,
   media_item_id,
   episode_id,
@@ -177,15 +180,17 @@ VALUES (
   $5,
   $6,
   $7,
-  $8
+  $8,
+  $9
 )
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id
 `
 
 type CreateImportTaskParams struct {
 	DownloadJobID  pgtype.UUID `json:"download_job_id"`
 	SourcePath     string      `json:"source_path"`
 	PreviousTaskID pgtype.UUID `json:"previous_task_id"`
+	WantID         pgtype.UUID `json:"want_id"`
 	MediaType      string      `json:"media_type"`
 	MediaItemID    pgtype.UUID `json:"media_item_id"`
 	EpisodeID      pgtype.UUID `json:"episode_id"`
@@ -199,6 +204,7 @@ func (q *Queries) CreateImportTask(ctx context.Context, arg CreateImportTaskPara
 		arg.DownloadJobID,
 		arg.SourcePath,
 		arg.PreviousTaskID,
+		arg.WantID,
 		arg.MediaType,
 		arg.MediaItemID,
 		arg.EpisodeID,
@@ -227,12 +233,13 @@ func (q *Queries) CreateImportTask(ctx context.Context, arg CreateImportTaskPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
 
 const getImportTask = `-- name: GetImportTask :one
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id FROM import_task
 WHERE id = $1
 `
 
@@ -260,6 +267,7 @@ func (q *Queries) GetImportTask(ctx context.Context, id pgtype.UUID) (ImportTask
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -267,19 +275,19 @@ func (q *Queries) GetImportTask(ctx context.Context, id pgtype.UUID) (ImportTask
 const getImportTaskHistory = `-- name: GetImportTaskHistory :many
 WITH RECURSIVE task_chain AS (
   -- Start with the given task
-  SELECT it.id, it.status, it.download_job_id, it.source_path, it.previous_task_id, it.media_type, it.media_item_id, it.episode_id, it.library_id, it.name_template_id, it.dest_path, it.import_method, it.file_id, it.attempt_count, it.max_attempts, it.next_run_at, it.last_error, it.created_at, it.updated_at, it.error_kind, 0 AS chain_depth
+  SELECT it.id, it.status, it.download_job_id, it.source_path, it.previous_task_id, it.media_type, it.media_item_id, it.episode_id, it.library_id, it.name_template_id, it.dest_path, it.import_method, it.file_id, it.attempt_count, it.max_attempts, it.next_run_at, it.last_error, it.created_at, it.updated_at, it.error_kind, it.want_id, 0 AS chain_depth
   FROM import_task it
   WHERE it.id = $1
 
   UNION ALL
 
   -- Follow previous_task_id links
-  SELECT prev.id, prev.status, prev.download_job_id, prev.source_path, prev.previous_task_id, prev.media_type, prev.media_item_id, prev.episode_id, prev.library_id, prev.name_template_id, prev.dest_path, prev.import_method, prev.file_id, prev.attempt_count, prev.max_attempts, prev.next_run_at, prev.last_error, prev.created_at, prev.updated_at, prev.error_kind, tc.chain_depth + 1
+  SELECT prev.id, prev.status, prev.download_job_id, prev.source_path, prev.previous_task_id, prev.media_type, prev.media_item_id, prev.episode_id, prev.library_id, prev.name_template_id, prev.dest_path, prev.import_method, prev.file_id, prev.attempt_count, prev.max_attempts, prev.next_run_at, prev.last_error, prev.created_at, prev.updated_at, prev.error_kind, prev.want_id, tc.chain_depth + 1
   FROM import_task prev
   JOIN task_chain tc ON tc.previous_task_id = prev.id
   WHERE tc.chain_depth < 50  -- Safety limit
 )
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, chain_depth FROM task_chain
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id, chain_depth FROM task_chain
 ORDER BY chain_depth ASC
 `
 
@@ -304,6 +312,7 @@ type GetImportTaskHistoryRow struct {
 	CreatedAt      time.Time     `json:"created_at"`
 	UpdatedAt      time.Time     `json:"updated_at"`
 	ErrorKind      NullErrorKind `json:"error_kind"`
+	WantID         pgtype.UUID   `json:"want_id"`
 	ChainDepth     int32         `json:"chain_depth"`
 }
 
@@ -338,6 +347,7 @@ func (q *Queries) GetImportTaskHistory(ctx context.Context, id pgtype.UUID) ([]G
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ErrorKind,
+			&i.WantID,
 			&i.ChainDepth,
 		); err != nil {
 			return nil, err
@@ -352,7 +362,7 @@ func (q *Queries) GetImportTaskHistory(ctx context.Context, id pgtype.UUID) ([]G
 
 const getImportTaskWithDetails = `-- name: GetImportTaskWithDetails :one
 SELECT
-  it.id, it.status, it.download_job_id, it.source_path, it.previous_task_id, it.media_type, it.media_item_id, it.episode_id, it.library_id, it.name_template_id, it.dest_path, it.import_method, it.file_id, it.attempt_count, it.max_attempts, it.next_run_at, it.last_error, it.created_at, it.updated_at, it.error_kind,
+  it.id, it.status, it.download_job_id, it.source_path, it.previous_task_id, it.media_type, it.media_item_id, it.episode_id, it.library_id, it.name_template_id, it.dest_path, it.import_method, it.file_id, it.attempt_count, it.max_attempts, it.next_run_at, it.last_error, it.created_at, it.updated_at, it.error_kind, it.want_id,
   mi.title AS media_title,
   mi.year AS media_year,
   mi.tmdb_id AS media_tmdb_id,
@@ -398,6 +408,7 @@ type GetImportTaskWithDetailsRow struct {
 	CreatedAt            time.Time     `json:"created_at"`
 	UpdatedAt            time.Time     `json:"updated_at"`
 	ErrorKind            NullErrorKind `json:"error_kind"`
+	WantID               pgtype.UUID   `json:"want_id"`
 	MediaTitle           string        `json:"media_title"`
 	MediaYear            *int32        `json:"media_year"`
 	MediaTmdbID          *int64        `json:"media_tmdb_id"`
@@ -439,6 +450,7 @@ func (q *Queries) GetImportTaskWithDetails(ctx context.Context, id pgtype.UUID) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ErrorKind,
+		&i.WantID,
 		&i.MediaTitle,
 		&i.MediaYear,
 		&i.MediaTmdbID,
@@ -458,7 +470,7 @@ func (q *Queries) GetImportTaskWithDetails(ctx context.Context, id pgtype.UUID) 
 }
 
 const listImportTasks = `-- name: ListImportTasks :many
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id FROM import_task
 ORDER BY created_at DESC
 LIMIT $2
 OFFSET $1
@@ -499,6 +511,7 @@ func (q *Queries) ListImportTasks(ctx context.Context, arg ListImportTasksParams
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ErrorKind,
+			&i.WantID,
 		); err != nil {
 			return nil, err
 		}
@@ -511,7 +524,7 @@ func (q *Queries) ListImportTasks(ctx context.Context, arg ListImportTasksParams
 }
 
 const listImportTasksByDownloadJob = `-- name: ListImportTasksByDownloadJob :many
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id FROM import_task
 WHERE download_job_id = $1
 ORDER BY created_at DESC
 `
@@ -546,6 +559,7 @@ func (q *Queries) ListImportTasksByDownloadJob(ctx context.Context, downloadJobI
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ErrorKind,
+			&i.WantID,
 		); err != nil {
 			return nil, err
 		}
@@ -558,7 +572,7 @@ func (q *Queries) ListImportTasksByDownloadJob(ctx context.Context, downloadJobI
 }
 
 const listImportTasksByEpisode = `-- name: ListImportTasksByEpisode :many
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id FROM import_task
 WHERE episode_id = $1
 ORDER BY created_at DESC
 `
@@ -593,6 +607,7 @@ func (q *Queries) ListImportTasksByEpisode(ctx context.Context, episodeID pgtype
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ErrorKind,
+			&i.WantID,
 		); err != nil {
 			return nil, err
 		}
@@ -605,7 +620,7 @@ func (q *Queries) ListImportTasksByEpisode(ctx context.Context, episodeID pgtype
 }
 
 const listImportTasksByMediaItem = `-- name: ListImportTasksByMediaItem :many
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id FROM import_task
 WHERE media_item_id = $1
 ORDER BY created_at DESC
 `
@@ -640,6 +655,7 @@ func (q *Queries) ListImportTasksByMediaItem(ctx context.Context, mediaItemID pg
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ErrorKind,
+			&i.WantID,
 		); err != nil {
 			return nil, err
 		}
@@ -652,7 +668,7 @@ func (q *Queries) ListImportTasksByMediaItem(ctx context.Context, mediaItemID pg
 }
 
 const listImportTasksByStatus = `-- name: ListImportTasksByStatus :many
-SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind FROM import_task
+SELECT id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id FROM import_task
 WHERE status = $1
 ORDER BY created_at DESC
 LIMIT $3
@@ -695,6 +711,7 @@ func (q *Queries) ListImportTasksByStatus(ctx context.Context, arg ListImportTas
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ErrorKind,
+			&i.WantID,
 		); err != nil {
 			return nil, err
 		}
@@ -714,7 +731,7 @@ SET attempt_count = attempt_count + 1,
     next_run_at = $3,
     updated_at = now()
 WHERE id = $4
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id
 `
 
 type ScheduleImportTaskRetryParams struct {
@@ -753,6 +770,7 @@ func (q *Queries) ScheduleImportTaskRetry(ctx context.Context, arg ScheduleImpor
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -765,7 +783,7 @@ SET status = 'completed',
     file_id = $3,
     updated_at = now()
 WHERE id = $4
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id
 `
 
 type SetImportTaskCompletedParams struct {
@@ -804,6 +822,7 @@ func (q *Queries) SetImportTaskCompleted(ctx context.Context, arg SetImportTaskC
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -815,7 +834,7 @@ SET status = 'failed',
     error_kind = $2,
     updated_at = now()
 WHERE id = $3
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id
 `
 
 type SetImportTaskFailedParams struct {
@@ -848,6 +867,7 @@ func (q *Queries) SetImportTaskFailed(ctx context.Context, arg SetImportTaskFail
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }
@@ -857,7 +877,7 @@ UPDATE import_task
 SET status = 'in_progress',
     updated_at = now()
 WHERE id = $1
-RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind
+RETURNING id, status, download_job_id, source_path, previous_task_id, media_type, media_item_id, episode_id, library_id, name_template_id, dest_path, import_method, file_id, attempt_count, max_attempts, next_run_at, last_error, created_at, updated_at, error_kind, want_id
 `
 
 func (q *Queries) SetImportTaskInProgress(ctx context.Context, id pgtype.UUID) (ImportTask, error) {
@@ -884,6 +904,7 @@ func (q *Queries) SetImportTaskInProgress(ctx context.Context, id pgtype.UUID) (
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ErrorKind,
+		&i.WantID,
 	)
 	return i, err
 }

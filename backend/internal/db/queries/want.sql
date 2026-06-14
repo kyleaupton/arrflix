@@ -45,3 +45,25 @@ SET status = sqlc.arg(status),
     updated_at = now()
 WHERE id = sqlc.arg(id)
 RETURNING *;
+
+-- ScheduleWantRetry returns a want to 'pending' with a backoff so the
+-- AcquisitionWorker can reclaim it; want has no error_kind column, only
+-- last_error. Mirrors ScheduleDownloadJobRetry.
+-- name: ScheduleWantRetry :one
+UPDATE want
+SET status = 'pending',
+    attempt_count = attempt_count + 1,
+    last_error = sqlc.arg(last_error),
+    next_run_at = sqlc.arg(next_run_at),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+RETURNING *;
+
+-- MarkWantFailed terminally fails a want. Mirrors MarkDownloadJobFailed.
+-- name: MarkWantFailed :one
+UPDATE want
+SET status = 'failed',
+    last_error = sqlc.arg(last_error),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+RETURNING *;

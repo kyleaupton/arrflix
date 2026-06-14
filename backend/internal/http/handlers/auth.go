@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kyleaupton/arrflix/internal/config"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
@@ -157,15 +158,21 @@ func (h *Auth) PlexExchange(ctx context.Context, input *PlexExchangeInput) (*Ple
 type AuthMeInput struct{}
 
 type MeResponse struct {
-	Sub   string  `json:"sub" doc:"User id (UUID string from JWT subject)"`
-	Email *string `json:"email,omitempty" doc:"Email from JWT claims"`
-	Name  *string `json:"name,omitempty" doc:"Username from JWT claims"`
+	Sub                 string   `json:"sub" doc:"User id (UUID string from JWT subject)"`
+	Email               *string  `json:"email,omitempty" doc:"Email from JWT claims"`
+	Name                *string  `json:"name,omitempty" doc:"Username from JWT claims"`
+	Roles               []string `json:"roles" doc:"Role names assigned to the user"`
+	CanAutoApproveMovie bool     `json:"canAutoApproveMovie" doc:"Whether a movie request by this user auto-approves into a tracking"`
 }
 
 type AuthMeOutput struct {
 	Body MeResponse
 }
 
+// Me returns the authenticated principal. Identity fields (email/name) come from
+// the JWT claims for free; roles and the auto-approve capability are loaded from
+// the DB so the frontend can gate admin-only controls and pick the
+// "Add to Library" vs "Request" face without a second round-trip.
 func (h *Auth) Me(ctx context.Context, _ *AuthMeInput) (*AuthMeOutput, error) {
 	claims, ok := middlewares.ClaimsFromContext(ctx)
 	if !ok {
@@ -177,13 +184,34 @@ func (h *Auth) Me(ctx context.Context, _ *AuthMeInput) (*AuthMeOutput, error) {
 		return nil, apperrors.Unauthenticatedf("invalid token subject").
 			Op("AuthHandler.Me")
 	}
-	resp := MeResponse{Sub: sub}
+	userID, err := uuid.Parse(sub)
+	if err != nil {
+		return nil, apperrors.Unauthenticatedf("invalid token subject").
+			Op("AuthHandler.Me")
+	}
+
+	resp := MeResponse{Sub: sub, Roles: []string{}}
 	if v, ok := claims["email"].(string); ok && v != "" {
 		resp.Email = &v
 	}
 	if v, ok := claims["name"].(string); ok && v != "" {
 		resp.Name = &v
 	}
+
+	user, err := h.svc.Users.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, role := range user.Roles {
+		resp.Roles = append(resp.Roles, role.Name)
+	}
+
+	policy, err := h.svc.Users.GetPolicy(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	resp.CanAutoApproveMovie = policy.AutoApproveMovie
+
 	return &AuthMeOutput{Body: resp}, nil
 }
 

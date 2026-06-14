@@ -567,3 +567,13 @@ func (s *QualityProfileService) Test(ctx context.Context, id uuid.UUID, title st
 	}
 	return sel.All[0], nil
 }
+
+// Pick gates, scores, and ranks the given subjects against the profile, returning
+// the winner (Selection.Picked, nil if all gated out) plus every release's verdict.
+func (s *QualityProfileService) Pick(ctx context.Context, profileID uuid.UUID, subjects []model.Subject) (qualityprofile.Selection, error) {
+	prof, err := s.Resolve(ctx, profileID)
+	if err != nil {
+		return qualityprofile.Selection{}, err
+	}
+	return prof.Pick(s.reg, subjects), nil
+}
