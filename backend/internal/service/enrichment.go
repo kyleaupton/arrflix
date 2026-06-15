@@ -180,19 +180,19 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 	// Sync the full season/episode tree (incl. unaired episodes) from the
 	// seasons TMDB already returned on `details`. Best-effort: never fails the
 	// enrich (item metadata is already committed above).
-	s.syncSeriesStructure(ctx, item, details)
+	s.SyncSeriesStructure(ctx, item, details)
 
 	return nil
 }
 
-// syncSeriesStructure upserts the full season/episode tree from TMDB,
+// SyncSeriesStructure upserts the full season/episode tree from TMDB,
 // including unaired episodes (air_date in the future or NULL). It is the
 // structural half of series sync — the data tracking and "coming soon" UI
 // operate on. Episodes are keyed on the stable TMDB episode id, so a renumber
 // updates rows in place rather than orphaning them. Best-effort: a season
 // fetch or upsert failing logs and continues so one bad season doesn't block
 // the rest of the tree.
-func (s *EnrichmentService) syncSeriesStructure(ctx context.Context, item model.MediaItem, details tmdb.TVDetails) {
+func (s *EnrichmentService) SyncSeriesStructure(ctx context.Context, item model.MediaItem, details tmdb.TVDetails) {
 	syncedIDs := make([]int64, 0, details.NumberOfEpisodes)
 
 	// Deprecation keys off the synced set, so a partial sync would read a

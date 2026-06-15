@@ -55,7 +55,7 @@ func (h *Requests) Get(ctx context.Context, input *RequestsGetInput) (*RequestOu
 
 type requestCreateBody struct {
 	TmdbID int64  `json:"tmdbId" required:"true" minimum:"1" doc:"TMDB id of the requested title"`
-	Type   string `json:"type" required:"true" enum:"movie,series" doc:"Media domain (movie-only in the PoC)"`
+	Type   string `json:"type" required:"true" enum:"movie,series" doc:"Media domain"`
 	Tier   string `json:"tier" required:"true" enum:"HD,4K" doc:"Requested quality tier"`
 }
 

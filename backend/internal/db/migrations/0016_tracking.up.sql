@@ -131,6 +131,15 @@ CREATE INDEX IF NOT EXISTS idx_want_next_run ON want(next_run_at)
   WHERE status IN ('pending', 'searching', 'grabbed', 'downloading', 'imported');
 CREATE INDEX IF NOT EXISTS idx_want_tracking ON want(tracking_id);
 
+-- Want idempotency: the series reconciler re-runs and must produce at most one
+-- want per (series tracking, episode), so CreateWantIfAbsent can ON CONFLICT DO
+-- NOTHING against this index. The movie counterpart caps a single-atom tracking
+-- at one want defensively — episode_id is always NULL there.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_want_tracking_episode ON want (tracking_id, episode_id)
+  WHERE episode_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_want_tracking_movie ON want (tracking_id)
+  WHERE episode_id IS NULL;
+
 -- want linkage: download_job and import_task carry the want they satisfy, so a
 -- transition can mirror back onto the want's lifecycle. Null for the
 -- interactive (manual-grab) path, which has no want. ON DELETE SET NULL keeps

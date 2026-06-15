@@ -55,6 +55,28 @@ func (r *Repository) CreateWant(ctx context.Context, params CreateWantParams) (m
 	return toModelWant(row), nil
 }
 
+// CreateWantIfAbsent is the idempotent want insert the series reconciler routes
+// through, one want per (tracking, episode). The bool reports whether THIS call
+// inserted the row: true → freshly created; false (a 0-row ON CONFLICT, surfaced
+// as pgx.ErrNoRows) → a concurrent reconcile already created it (benign).
+// Mirrors CreateTrackingIfAbsent's CAS-returns-bool convention.
+func (r *Repository) CreateWantIfAbsent(ctx context.Context, params CreateWantParams) (model.Want, bool, error) {
+	row, err := r.Q.CreateWantIfAbsent(ctx, dbgen.CreateWantIfAbsentParams{
+		TrackingID:       pgtypeFromUUID(params.TrackingID),
+		MediaItemID:      pgtypeFromUUID(params.MediaItemID),
+		EpisodeID:        pgtypeFromUUIDPtr(params.EpisodeID),
+		QualityProfileID: pgtypeFromUUIDOrNull(params.QualityProfileID),
+		Status:           params.Status,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "create want for tracking %s", params.TrackingID)
+	}
+	return toModelWant(row), true, nil
+}
+
 func (r *Repository) GetWant(ctx context.Context, id uuid.UUID) (model.Want, error) {
 	row, err := r.Q.GetWant(ctx, pgtypeFromUUID(id))
 	if err != nil {

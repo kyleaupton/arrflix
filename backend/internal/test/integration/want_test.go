@@ -126,8 +126,9 @@ func TestWant_Cancel(t *testing.T) {
 
 // TestWant_Cancel_Terminal proves the CAS guard at the service boundary: an
 // 'available' want can't be canceled (Conflict), while an already-'canceled'
-// want returns success idempotently. Both wants hang off the one seeded
-// tracking — the schema allows multiple wants per tracking.
+// want returns success idempotently. The two wants live on separate trackings —
+// the idx_want_tracking_movie partial unique index caps a movie tracking at one
+// want (single-atom), so the second want is seeded on its own tracking.
 func TestWant_Cancel_Terminal(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -145,10 +146,29 @@ func TestWant_Cancel_Terminal(t *testing.T) {
 		t.Fatalf("CancelWant on available want err = %v, want Conflict", err)
 	}
 
-	// A second want on the same tracking, already canceled: cancel is idempotent.
+	// A second want, on its own tracking, already canceled: cancel is idempotent.
+	year := int32(2010)
+	tmdbID := int64(27205)
+	media2, err := r.CreateMediaItem(ctx, repo.CreateMediaItemParams{
+		Type: "movie", Title: "Inception", Year: &year, TmdbID: &tmdbID,
+	})
+	if err != nil {
+		t.Fatalf("create second media item: %v", err)
+	}
+	tracking2, err := r.CreateTracking(ctx, repo.CreateTrackingParams{
+		MediaItemID:      media2.ID,
+		QualityProfileID: want.QualityProfileID,
+		State:            string(model.TrackingActive),
+		Scope:            "self",
+		UpgradeBehavior:  "none",
+		ScheduleStrategy: "smart",
+	})
+	if err != nil {
+		t.Fatalf("create second tracking: %v", err)
+	}
 	want2, err := r.CreateWant(ctx, repo.CreateWantParams{
-		TrackingID:       want.TrackingID,
-		MediaItemID:      want.MediaItemID,
+		TrackingID:       tracking2.ID,
+		MediaItemID:      media2.ID,
 		QualityProfileID: want.QualityProfileID,
 		Status:           string(model.WantCanceled),
 	})

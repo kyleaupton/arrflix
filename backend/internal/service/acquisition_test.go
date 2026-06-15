@@ -86,9 +86,43 @@ func TestRelevanceReason(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			parsed := parsing.Parse(tc.title, parsing.DomainMovie)
-			reason, ok := relevanceReason(tc.res, parsed, mi, tc.imdbID)
+			reason, ok := relevanceReason(tc.res, parsed, mi, tc.imdbID, nil)
 			if ok != tc.wantOK {
 				t.Fatalf("relevanceReason ok = %v, want %v (reason=%q)", ok, tc.wantOK, reason)
+			}
+		})
+	}
+}
+
+// TestEpisodeReason covers the single-episode numbering gate: a release must be
+// season_episode numbering, exactly the wanted season+episode, and not a
+// season/multi-episode pack. Anime absolute / daily numbering is rejected.
+func TestEpisodeReason(t *testing.T) {
+	t.Parallel()
+
+	ep := &episodeCtx{season: 3, episode: 5}
+
+	cases := []struct {
+		name   string
+		title  string
+		wantOK bool
+	}{
+		{name: "matching S03E05 accepts", title: "The Show S03E05 1080p WEB-DL", wantOK: true},
+		{name: "wrong episode rejects", title: "The Show S03E06 1080p WEB-DL", wantOK: false},
+		{name: "wrong season rejects", title: "The Show S02E05 1080p WEB-DL", wantOK: false},
+		{name: "multi-episode file rejects", title: "The Show S03E05-E06 1080p WEB-DL", wantOK: false},
+		{name: "full-season pack rejects", title: "The Show S03 1080p WEB-DL", wantOK: false},
+		{name: "absolute numbering rejects", title: "The Show - 125 1080p WEB-DL", wantOK: false},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			parsed := parsing.Parse(tc.title, parsing.DomainSeries)
+			reason, ok := episodeReason(parsed, ep)
+			if ok != tc.wantOK {
+				t.Fatalf("episodeReason ok = %v, want %v (reason=%q)", ok, tc.wantOK, reason)
 			}
 		})
 	}

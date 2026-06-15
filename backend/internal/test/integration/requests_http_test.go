@@ -102,10 +102,10 @@ func TestRequests_Validation(t *testing.T) {
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 
-	// Series is rejected by the enum (movie-only in the PoC).
+	// An out-of-domain type is rejected by the enum (movie/series only).
 	app.POST(t, "/api/v1/requests", map[string]any{
 		"tmdbId": spawnTmdbID,
-		"type":   "series",
+		"type":   "person",
 		"tier":   "HD",
 	}, nil, http.StatusUnprocessableEntity)
 

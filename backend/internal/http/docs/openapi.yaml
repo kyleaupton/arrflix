@@ -4094,7 +4094,7 @@ components:
           minimum: 1
           type: integer
         type:
-          description: Media domain (movie-only in the PoC)
+          description: Media domain
           enum:
             - movie
             - series

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/indexer"
 	"github.com/kyleaupton/arrflix/internal/logger"
@@ -63,13 +64,20 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 		return model.Want{}, false, err
 	}
 
-	results, err := s.source.Search(ctx, s.wantToQuery(mi))
+	// A want for an episode resolves to its season/episode coordinates; movie
+	// wants leave epCtx nil and follow the original path unchanged.
+	epCtx, err := s.resolveEpisodeCtx(ctx, want)
+	if err != nil {
+		return model.Want{}, false, err
+	}
+
+	results, err := s.source.Search(ctx, s.wantToQuery(mi, epCtx))
 	if err != nil {
 		return model.Want{}, false, apperrors.BadGatewayf("indexer search %q: %v", mi.Title, err).
 			Op("AcquisitionService.ProcessWant")
 	}
 
-	picked, err := s.pick(ctx, want, mi, imdbID, results)
+	picked, err := s.pick(ctx, want, mi, imdbID, epCtx, results)
 	if err != nil {
 		return model.Want{}, false, err
 	}
@@ -97,6 +105,16 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	// or a concurrent grab won — a benign no-op, not an error. grabbed is set
 	// only after the job insert, so an insert failure rolls back the whole tx
 	// (want stays 'searching') and the worker reschedules.
+	// A series want carries season/episode linkage onto the job; the existing
+	// import worker's series branch matches the imported file back to the episode.
+	mediaType := "movie"
+	var seasonID, episodeID uuid.UUID
+	if epCtx != nil {
+		mediaType = "series"
+		seasonID = epCtx.seasonID
+		episodeID = *want.EpisodeID
+	}
+
 	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
 		gw, ok, gerr := r.GrabWant(ctx, want.ID)
 		if gerr != nil {
@@ -107,8 +125,10 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 		}
 		if _, jerr := r.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
 			Protocol:       cand.Protocol,
-			MediaType:      "movie",
+			MediaType:      mediaType,
 			MediaItemID:    want.MediaItemID,
+			SeasonID:       seasonID,
+			EpisodeID:      episodeID,
 			WantID:         want.ID,
 			IndexerID:      cand.IndexerID,
 			Guid:           cand.GUID,
@@ -131,13 +151,69 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	return grabbedWant, grabbed, nil
 }
 
+// episodeCtx carries the coordinates a series want resolves to. It is nil for
+// movie wants. season/episode are the numbers that build the search query and
+// gate the parsed release; seasonID identifies the season row the download_job
+// links to; title/runtime come from the stored episode row — the Phase 3
+// structure sync already persisted them, so no per-episode TMDB call is needed
+// (unlike the manual path's GetEpisodeDetails) — and feed the Subject's series
+// info and the size-band runtime.
+type episodeCtx struct {
+	seasonID uuid.UUID
+	season   int
+	episode  int
+	title    *string
+	runtime  *int
+}
+
+// resolveEpisodeCtx loads the season/episode coordinates for an episode want,
+// returning nil for movie wants (EpisodeID unset). Repo errors pass through.
+func (s *AcquisitionService) resolveEpisodeCtx(ctx context.Context, want model.Want) (*episodeCtx, error) {
+	if want.EpisodeID == nil {
+		return nil, nil
+	}
+	ep, err := s.repo.GetEpisode(ctx, *want.EpisodeID)
+	if err != nil {
+		return nil, err
+	}
+	season, err := s.repo.GetSeason(ctx, ep.SeasonID)
+	if err != nil {
+		return nil, err
+	}
+	var runtime *int
+	if ep.Runtime != nil {
+		rt := int(*ep.Runtime)
+		runtime = &rt
+	}
+	return &episodeCtx{
+		seasonID: season.ID,
+		season:   int(season.SeasonNumber),
+		episode:  int(ep.EpisodeNumber),
+		title:    ep.Title,
+		runtime:  runtime,
+	}, nil
+}
+
 // wantToQuery builds the indexer query from the stored media_item (no TMDB
 // call — title+year are already persisted). The search is free-text across all
 // indexers; identity precision comes from the relevance gate matching on the
 // ids Prowlarr echoes per result, not from embedding ID tokens (which would
-// drop text-only indexers — see the prowlarr adapter). Movie-only; series adds
-// a branch here once it lands.
-func (s *AcquisitionService) wantToQuery(mi model.MediaItem) indexer.SearchQuery {
+// drop text-only indexers — see the prowlarr adapter). An episode want builds a
+// "<title> S%02dE%02d" tvsearch query (mirroring SearchSeriesDownloadCandidates);
+// the prowlarr adapter drives off the query string + type, so the Season/Episode
+// fields ride along unused, exactly as the manual path relies on today.
+func (s *AcquisitionService) wantToQuery(mi model.MediaItem, ep *episodeCtx) indexer.SearchQuery {
+	if ep != nil {
+		season, episode := ep.season, ep.episode
+		return indexer.SearchQuery{
+			Query:     fmt.Sprintf("%s S%02dE%02d", mi.Title, ep.season, ep.episode),
+			MediaType: indexer.MediaTypeSeries,
+			Season:    &season,
+			Episode:   &episode,
+			Limit:     100,
+		}
+	}
+
 	query := mi.Title
 	if mi.Year != nil {
 		query = fmt.Sprintf("%s %d", mi.Title, *mi.Year)
@@ -154,26 +230,41 @@ func (s *AcquisitionService) wantToQuery(mi model.MediaItem) indexer.SearchQuery
 // picked Evaluation (nil when every candidate was gated out) after logging the
 // per-release decisions. The picked Subject carries its Media fields, so the
 // caller can route it directly.
-func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model.MediaItem, imdbID *string, results []indexer.SearchResult) (*qualityprofile.Evaluation, error) {
+func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model.MediaItem, imdbID *string, ep *episodeCtx, results []indexer.SearchResult) (*qualityprofile.Evaluation, error) {
 	year, tmdbID, runtime := mediaFields(mi)
+	domain := parsing.DomainMovie
+	if ep != nil {
+		// Series releases parse under the Sonarr patterns; the per-episode
+		// runtime (not the series-level mi.Runtime) scales the size bands.
+		domain = parsing.DomainSeries
+		runtime = ep.runtime
+	}
+
 	subjects := make([]model.Subject, 0, len(results))
 	var relevanceRejects []relevanceReject
 	for _, res := range results {
 		cand := searchResultToCandidate(res)
-		parsed := parsing.Parse(cand.Title, parsing.DomainMovie)
+		parsed := parsing.Parse(cand.Title, domain)
 
-		// Relevance gate: drop releases that aren't the wanted movie before
+		// Relevance gate: drop releases that aren't the wanted media before
 		// quality even looks at them. This is the autonomous flow's only
 		// identity check — the download is filed onto the want by linkage with
 		// no import-time re-match — so a wrong release that slips through here
-		// would be filed as the movie.
-		if reason, ok := relevanceReason(res, parsed, mi, imdbID); !ok {
+		// would be filed as the movie/episode.
+		if reason, ok := relevanceReason(res, parsed, mi, imdbID, ep); !ok {
 			relevanceRejects = append(relevanceRejects, relevanceReject{title: cand.Title, reason: reason})
 			continue
 		}
 
-		subjects = append(subjects, model.NewSubject(cand, parsed).
-			WithMedia(model.MediaTypeMovie, mi.Title, year, tmdbID, runtime))
+		subject := model.NewSubject(cand, parsed)
+		if ep != nil {
+			subject = subject.
+				WithMedia(model.MediaTypeSeries, mi.Title, year, tmdbID, runtime).
+				WithSeriesInfo(&ep.season, &ep.episode, ep.title)
+		} else {
+			subject = subject.WithMedia(model.MediaTypeMovie, mi.Title, year, tmdbID, runtime)
+		}
+		subjects = append(subjects, subject)
 	}
 
 	sel, err := s.quality.Pick(ctx, want.QualityProfileID, subjects)
@@ -190,8 +281,46 @@ type relevanceReject struct {
 	reason string
 }
 
-// relevanceReason reports whether a search result refers to the same movie as
-// the wanted media item, returning a human reason when it does not. It is
+// relevanceReason reports whether a search result is the release the want is
+// after, returning a human reason when it is not. It composes the series/movie
+// identity match (always) with a single-episode numbering check (episode wants
+// only): a series result must be both the right show and the one wanted episode.
+func relevanceReason(res indexer.SearchResult, parsed parsing.ParsedRelease, mi model.MediaItem, imdbID *string, ep *episodeCtx) (reason string, ok bool) {
+	if reason, ok := identityReason(res, parsed, mi, imdbID); !ok {
+		return reason, false
+	}
+	if ep != nil {
+		if reason, ok := episodeReason(parsed, ep); !ok {
+			return reason, false
+		}
+	}
+	return "", true
+}
+
+// episodeReason gates an episode want to a single-episode release matching the
+// wanted season+episode. The thin-slice restriction rejects season/multi-season
+// packs, multi-episode files, and non-season_episode numbering (anime absolute /
+// daily) — a download_job ↔ want is 1:1, so "one pack satisfies N episode wants"
+// is the deferred season-pack M:N work.
+func episodeReason(parsed parsing.ParsedRelease, ep *episodeCtx) (reason string, ok bool) {
+	n := parsed.Identity.Numbering
+	if n.Kind != parsing.NumberingSeasonEpisode {
+		return fmt.Sprintf("numbering %q is not standard season/episode", n.Kind), false
+	}
+	if n.FullSeason.Value || len(n.EpisodeNumbers.Value) != 1 {
+		return "not a single-episode release", false
+	}
+	if n.Season.Value != ep.season {
+		return fmt.Sprintf("season %d≠%d", n.Season.Value, ep.season), false
+	}
+	if n.EpisodeNumbers.Value[0] != ep.episode {
+		return fmt.Sprintf("episode %d does not match %d", n.EpisodeNumbers.Value[0], ep.episode), false
+	}
+	return "", true
+}
+
+// identityReason reports whether a search result refers to the same work as the
+// wanted media item, returning a human reason when it does not. It is
 // ID-preferred, mirroring Radarr's ParsingService.FindMovie priority: a result
 // carrying a stable id is decided by that id alone (never falling through to the
 // fuzzier title check); only an id-less result — the text-only-indexer case —
@@ -202,8 +331,8 @@ type relevanceReject struct {
 //     (the want id's "tt" prefix stripped), accept on match, reject on mismatch.
 //   - else: parsed title (primary or AKA) must match the wanted title and the
 //     parsed year must agree — an absent parsed year (0) passes, since many
-//     release names omit it.
-func relevanceReason(res indexer.SearchResult, parsed parsing.ParsedRelease, mi model.MediaItem, imdbID *string) (reason string, ok bool) {
+//     release names omit it (series releases rarely carry a year).
+func identityReason(res indexer.SearchResult, parsed parsing.ParsedRelease, mi model.MediaItem, imdbID *string) (reason string, ok bool) {
 	// Only decide on tmdb id when the want actually has one to compare against.
 	// A want with no tmdb id (wantTmdb would be 0) must fall through to the imdb
 	// and title checks, not reject every id-carrying result as "does not match 0".

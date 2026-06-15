@@ -23,6 +23,19 @@ const (
 	WantCanceled    WantStatus = "canceled"
 )
 
+// IsTerminal reports whether a want has reached a terminal state
+// (available/failed/canceled) — one the acquisition pipeline won't advance out
+// of on its own. The series reconciler treats only non-terminal wants as live
+// when deciding what to create or cancel.
+func (s WantStatus) IsTerminal() bool {
+	switch s {
+	case WantAvailable, WantFailed, WantCanceled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Want is the domain shape for a want row — the work item, shaped as a durable
 // work-dispatch queue. MediaItemID and QualityProfileID are denormalized/
 // snapshotted at creation for claim convenience. EpisodeID is set for series

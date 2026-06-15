@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
@@ -15,18 +16,23 @@ import (
 )
 
 // RequestService owns request reads and the spawn orchestration that turns a
-// movie request into a tracking + want. It is the orchestration heart of the
+// request into a tracking. It is the orchestration heart of the
 // request → tracking → want flow: the frozen-request-vs-live-requester split,
-// one-tracking-per-media-item dedup, tier → profile resolution, and producing
-// the persisted want all live here.
+// one-tracking-per-media-item dedup, and tier → profile resolution all live
+// here. A movie spawn produces its single want inline; a series spawn defers
+// want production to the reconciler, which runs post-commit against the synced
+// episode tree.
 type RequestService struct {
-	repo    *repo.Repository
-	tmdb    *TmdbService
-	quality *QualityProfileService
+	repo       *repo.Repository
+	log        *logger.Logger
+	tmdb       *TmdbService
+	quality    *QualityProfileService
+	enrichment *EnrichmentService
+	reconcile  *ReconcileService
 }
 
-func NewRequestService(r *repo.Repository, tmdb *TmdbService, quality *QualityProfileService) *RequestService {
-	return &RequestService{repo: r, tmdb: tmdb, quality: quality}
+func NewRequestService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, quality *QualityProfileService, enrichment *EnrichmentService, reconcile *ReconcileService) *RequestService {
+	return &RequestService{repo: r, log: l, tmdb: tmdb, quality: quality, enrichment: enrichment, reconcile: reconcile}
 }
 
 // CreateRequestInput is the writeable shape for a new request. Tier is the
@@ -39,21 +45,21 @@ type CreateRequestInput struct {
 	Tier        string
 }
 
-// Create turns a movie request into a tracking + want. Reads and the TMDB fetch
-// happen outside the transaction; every write is inside one InTx so the spawn is
-// atomic. The flow stops at "want row exists in pending" — the row is the durable
-// acquisition signal; there is no event emission yet.
+// Create turns a request into a tracking. Validation and approval are shared
+// across domains; the spawn itself forks by domain. Approval gates the spawn: an
+// unapproved request is persisted as 'pending' with no tracking. An approved
+// request runs the full spawn, deduping onto an existing tracking when the media
+// is already tracked (a second requester joins).
 //
-// Approval gates the spawn: an unapproved request is persisted as 'pending' with
-// no tracking. An approved request runs the full spawn, deduping onto an existing
-// tracking when the movie is already tracked (a second requester joins; no second
-// want is created).
+// Movie spawn produces its single want inside the transaction. Series spawn
+// persists only the tracking in the transaction and defers want production to a
+// post-commit reconcile against the synced episode tree.
 func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (model.Request, error) {
 	const op = "RequestService.Create"
 
 	var fields []apperrors.FieldError
-	if in.Type != string(parsing.DomainMovie) {
-		fields = append(fields, apperrors.Field("body.type", "must be 'movie' (series is not supported in the PoC)"))
+	if in.Type != string(parsing.DomainMovie) && in.Type != string(parsing.DomainSeries) {
+		fields = append(fields, apperrors.Field("body.type", "must be 'movie' or 'series'"))
 	}
 	tier, tierOK := parseTier(in.Tier)
 	if !tierOK {
@@ -64,21 +70,6 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 	}
 	if len(fields) > 0 {
 		return model.Request{}, apperrors.Validation("invalid request", fields...).Op(op)
-	}
-
-	// Outside the tx: fetch movie details for the media_item title/year.
-	details, err := s.tmdb.GetMovieDetails(ctx, in.TmdbID)
-	if err != nil {
-		return model.Request{}, apperrors.BadGatewayf("fetch tmdb movie %d: %v", in.TmdbID, err).Op(op)
-	}
-	title := details.Title
-	year := parseYear(details.ReleaseDate)
-
-	// Resolve the tier → profile binding. A NotFound (tier/domain unbound)
-	// surfaces through unchanged.
-	profile, err := s.quality.ResolveByTier(ctx, tier, parsing.DomainMovie)
-	if err != nil {
-		return model.Request{}, err
 	}
 
 	// Read approval. A user with no policy row is not auto-approved (default-deny).
@@ -100,7 +91,34 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 		})
 	}
 
-	// Approved: spawn atomically.
+	if in.Type == string(parsing.DomainSeries) {
+		return s.spawnSeries(ctx, in, tier)
+	}
+	return s.spawnMovie(ctx, in, tier)
+}
+
+// spawnMovie spawns an approved movie request into a tracking + want. Reads and
+// the TMDB fetch happen outside the transaction; every write is inside one InTx
+// so the spawn is atomic. The flow stops at "want row exists in pending" — the
+// row is the durable acquisition signal.
+func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, tier qualityprofile.Tier) (model.Request, error) {
+	const op = "RequestService.spawnMovie"
+
+	// Outside the tx: fetch movie details for the media_item title/year.
+	details, err := s.tmdb.GetMovieDetails(ctx, in.TmdbID)
+	if err != nil {
+		return model.Request{}, apperrors.BadGatewayf("fetch tmdb movie %d: %v", in.TmdbID, err).Op(op)
+	}
+	title := details.Title
+	year := parseYear(details.ReleaseDate)
+
+	// Resolve the tier → profile binding. A NotFound (tier/domain unbound)
+	// surfaces through unchanged.
+	profile, err := s.quality.ResolveByTier(ctx, tier, parsing.DomainMovie)
+	if err != nil {
+		return model.Request{}, err
+	}
+
 	tmdbID := in.TmdbID
 	var spawned model.Request
 	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
@@ -135,13 +153,13 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 			}
 		}
 
-		// Dedup: at most one tracking per media item. ensureMovieTracking finds
+		// Dedup: at most one tracking per media item. ensureTracking finds
 		// the existing tracking (join path: a second requester for an
 		// already-tracked movie) or creates a fresh 'active' one. The profile
 		// is single-valued, set from this request's tier on creation; two
 		// requesters at different tiers (HD vs 4K) on one movie is real
 		// multi-tier reconciliation, deferred — the first spawn wins the profile.
-		tracking, trackingCreated, err := ensureMovieTracking(ctx, r, mediaItem.ID, profile.ID)
+		tracking, trackingCreated, err := ensureTracking(ctx, r, mediaItem.ID, profile.ID)
 		if err != nil {
 			return err
 		}
@@ -153,8 +171,7 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 			UserID:     in.RequestedBy,
 			Tier:       in.Tier,
 			// Movie tracking is single-atom: scope is inert, so the requester
-			// carries the 'all' default and never consults it. Series spawn
-			// seeds real scope in Phase 3.
+			// carries the 'all' default and never consults it.
 			ScopeRule: string(scope.RuleAll),
 		}); err != nil {
 			return err
@@ -187,7 +204,106 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 	return spawned, nil
 }
 
-// ensureMovieTracking gets-or-creates the tracking for a media item, returning
+// spawnSeries spawns an approved series request. The transaction persists only
+// the frozen request, the media_item, the imdb cross-ref, the tracking, and the
+// requester (scope 'all') — no want. Structure sync makes O(seasons) TMDB calls
+// and must not run inside a DB transaction, so it and the want-producing
+// reconcile happen post-commit. Both are best-effort: the reconciler is
+// re-runnable and idempotent, so a post-commit failure self-heals on a
+// re-request (or the enrichment trigger), and the tracking already exists, so the
+// request still returns spawned.
+func (s *RequestService) spawnSeries(ctx context.Context, in CreateRequestInput, tier qualityprofile.Tier) (model.Request, error) {
+	const op = "RequestService.spawnSeries"
+
+	// Outside the tx: fetch series details for the media_item title/year and the
+	// season list the post-commit structure sync consumes.
+	details, err := s.tmdb.GetSeriesDetailsForEnrichment(ctx, in.TmdbID)
+	if err != nil {
+		return model.Request{}, apperrors.BadGatewayf("fetch tmdb series %d: %v", in.TmdbID, err).Op(op)
+	}
+	title := details.Name
+	year := parseYear(details.FirstAirDate)
+
+	// Resolve the tier → series profile binding. A NotFound surfaces unchanged.
+	profile, err := s.quality.ResolveByTier(ctx, tier, parsing.DomainSeries)
+	if err != nil {
+		return model.Request{}, err
+	}
+
+	tmdbID := in.TmdbID
+	var spawned model.Request
+	var mediaItem model.MediaItem
+	var tracking model.Tracking
+	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
+		req, err := r.CreateRequest(ctx, repo.CreateRequestParams{
+			RequestedBy: in.RequestedBy,
+			TmdbID:      in.TmdbID,
+			Type:        in.Type,
+			Tier:        in.Tier,
+			Status:      string(model.RequestApproved),
+		})
+		if err != nil {
+			return err
+		}
+
+		mediaItem, err = r.UpsertMediaItem(ctx, repo.UpsertMediaItemParams{
+			Type:   string(parsing.DomainSeries),
+			Title:  title,
+			Year:   year,
+			TmdbID: &tmdbID,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Persist the imdb id now so acquisition can ID-match on the first search;
+		// the imdb id rides on the appended external_ids of the details fetch. The
+		// guard mirrors enrichSeries: IMDbID is promoted from a *TVExternalIDs that
+		// is nil unless the append actually came back.
+		if details.TVExternalIDsAppend != nil && details.TVExternalIDs != nil && details.IMDbID != "" {
+			if err := r.UpsertMediaItemExternalID(ctx, mediaItem.ID, string(metadata.SourceIMDB), details.IMDbID); err != nil {
+				return err
+			}
+		}
+
+		tracking, _, err = ensureTracking(ctx, r, mediaItem.ID, profile.ID)
+		if err != nil {
+			return err
+		}
+
+		// Seed the requester at scope 'all' — the only preset until a
+		// scope-selection API lands. The reconciler reads this to decide which
+		// episodes to want.
+		if _, err := r.AddRequester(ctx, repo.AddRequesterParams{
+			TrackingID: tracking.ID,
+			UserID:     in.RequestedBy,
+			Tier:       in.Tier,
+			ScopeRule:  string(scope.RuleAll),
+		}); err != nil {
+			return err
+		}
+
+		spawned, err = r.SetRequestSpawned(ctx, req.ID, tracking.ID)
+		return err
+	})
+	if err != nil {
+		return model.Request{}, err
+	}
+
+	// Post-commit, best-effort: sync the episode tree, then reconcile it into
+	// per-episode wants. A failure here leaves the tracking in place; the next
+	// reconcile (re-request or enrichment trigger) heals it.
+	s.enrichment.SyncSeriesStructure(ctx, mediaItem, details)
+	if err := s.reconcile.Reconcile(ctx, tracking.ID); err != nil {
+		s.log.Warn().Err(err).
+			Str("title", title).Str("tracking", tracking.ID.String()).
+			Msg("series spawn: post-commit reconcile failed, will heal on next reconcile")
+	}
+
+	return spawned, nil
+}
+
+// ensureTracking gets-or-creates the tracking for a media item, returning
 // (tracking, created, err). The dedup boundary is UNIQUE(media_item_id), and the
 // get-or-create is race-safe: CreateTrackingIfAbsent inserts on the winning
 // spawn (created=true) and no-ops on a concurrent or prior one, where the loser
@@ -196,7 +312,7 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 // profile. The helper is neutral — it never reactivates a terminal tracking;
 // re-arming a terminal want on the join path is the caller's concern
 // (rearmMovieWant here, GrabManualWant on the manual-grab path).
-func ensureMovieTracking(ctx context.Context, r *repo.Repository, mediaItemID, profileID uuid.UUID) (model.Tracking, bool, error) {
+func ensureTracking(ctx context.Context, r *repo.Repository, mediaItemID, profileID uuid.UUID) (model.Tracking, bool, error) {
 	tracking, created, err := r.CreateTrackingIfAbsent(ctx, repo.CreateTrackingParams{
 		MediaItemID:      mediaItemID,
 		QualityProfileID: profileID,

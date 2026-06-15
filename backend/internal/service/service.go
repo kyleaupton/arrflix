@@ -34,6 +34,7 @@ type Services struct {
 	Media              *MediaService
 	NameTemplates      *NameTemplatesService
 	QualityProfiles    *QualityProfileService
+	Reconcile          *ReconcileService
 	Requests           *RequestService
 	Routing            *RoutingService
 	Scanner            *ScannerService
@@ -88,6 +89,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	users := NewUsersService(r)
 	invites := NewInvitesService(r)
 	enrichment := NewEnrichmentService(r, l, tmdb)
+	reconcile := NewReconcileService(r, l)
 	downloadJobs := NewDownloadJobsService(r)
 
 	// Matcher: the v1 resolver catalog (path-embed + name-parse) wires
@@ -127,7 +129,8 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
 		QualityProfiles:    quality,
-		Requests:           NewRequestService(r, tmdb, quality),
+		Reconcile:          reconcile,
+		Requests:           NewRequestService(r, l, tmdb, quality, enrichment, reconcile),
 		Routing:            routingSvc,
 		Scanner:            NewScannerService(r, l, tmdb, broker, matcherSvc, enrichment),
 		Settings:           settings,

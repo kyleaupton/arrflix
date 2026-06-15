@@ -145,6 +145,56 @@ func (q *Queries) CreateWant(ctx context.Context, arg CreateWantParams) (Want, e
 	return i, err
 }
 
+const createWantIfAbsent = `-- name: CreateWantIfAbsent :one
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status)
+VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5
+)
+ON CONFLICT (tracking_id, episode_id) WHERE episode_id IS NOT NULL DO NOTHING
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type CreateWantIfAbsentParams struct {
+	TrackingID       pgtype.UUID `json:"tracking_id"`
+	MediaItemID      pgtype.UUID `json:"media_item_id"`
+	EpisodeID        pgtype.UUID `json:"episode_id"`
+	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
+	Status           string      `json:"status"`
+}
+
+// CreateWantIfAbsent is the idempotent want insert the series reconciler routes
+// through: it creates one want per (tracking, episode), no-opping (0-row ON
+// CONFLICT, surfaced as pgx.ErrNoRows) when a concurrent reconcile already made
+// it. Mirrors CreateTrackingIfAbsent's CAS-returns-bool contract.
+func (q *Queries) CreateWantIfAbsent(ctx context.Context, arg CreateWantIfAbsentParams) (Want, error) {
+	row := q.db.QueryRow(ctx, createWantIfAbsent,
+		arg.TrackingID,
+		arg.MediaItemID,
+		arg.EpisodeID,
+		arg.QualityProfileID,
+		arg.Status,
+	)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getWant = `-- name: GetWant :one
 SELECT id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
 WHERE id = $1

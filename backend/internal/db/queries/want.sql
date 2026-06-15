@@ -11,6 +11,22 @@ VALUES (
 )
 RETURNING *;
 
+-- CreateWantIfAbsent is the idempotent want insert the series reconciler routes
+-- through: it creates one want per (tracking, episode), no-opping (0-row ON
+-- CONFLICT, surfaced as pgx.ErrNoRows) when a concurrent reconcile already made
+-- it. Mirrors CreateTrackingIfAbsent's CAS-returns-bool contract.
+-- name: CreateWantIfAbsent :one
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status)
+VALUES (
+  sqlc.arg(tracking_id),
+  sqlc.arg(media_item_id),
+  sqlc.arg(episode_id),
+  sqlc.arg(quality_profile_id),
+  sqlc.arg(status)
+)
+ON CONFLICT (tracking_id, episode_id) WHERE episode_id IS NOT NULL DO NOTHING
+RETURNING *;
+
 -- name: GetWant :one
 SELECT * FROM want
 WHERE id = $1;

@@ -261,7 +261,7 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 		// and want are born with a NULL profile (uuid.Nil) — a manual grab holds
 		// no selection policy. The lifecycle mirror and cancel then apply
 		// uniformly to manual and autonomous grabs.
-		tracking, created, terr := ensureMovieTracking(ctx, r, mi.ID, uuid.Nil)
+		tracking, created, terr := ensureTracking(ctx, r, mi.ID, uuid.Nil)
 		if terr != nil {
 			return terr
 		}

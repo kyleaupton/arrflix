@@ -108,19 +108,24 @@ backend-sqlc: _ensure-up
 
 # Wipe the app DB, re-apply migrations, and load the dev seed. The seeded
 # downloader password comes from DOWNLOADER_PASSWORD in .env (kept out of git),
-# defaulting to 'admin'. Only touches the arrflix DB — Prowlarr's DBs are left
+# defaulting to 'admin'. The TMDB api key is seeded from TMDB_API_KEY when set
+# (omitted otherwise). Only touches the arrflix DB — Prowlarr's DBs are left
 # alone.
 [group('backend')]
 db-reseed: _ensure-up
     #!/usr/bin/env bash
     set -euo pipefail
     pw="${DOWNLOADER_PASSWORD:-admin}"
+    seed_vars=(-v downloader_password="$pw")
+    if [ -n "${TMDB_API_KEY:-}" ]; then
+      seed_vars+=(-v tmdb_api_key="$TMDB_API_KEY")
+    fi
     echo "→ resetting schema"
     {{backend-exec}} psql '{{db-url}}' -v ON_ERROR_STOP=1 -c 'drop schema public cascade; create schema public;'
     echo "→ applying migrations"
     {{backend-exec}} go run ./cmd/migrate
     echo "→ seeding"
-    {{backend-exec}} psql '{{db-url}}' -v ON_ERROR_STOP=1 -v downloader_password="$pw" -f internal/db/seed/seed_dev.sql
+    {{backend-exec}} psql '{{db-url}}' -v ON_ERROR_STOP=1 "${seed_vars[@]}" -f internal/db/seed/seed_dev.sql
     echo "✓ db reseeded"
 
 # --- frontend (in-container) -------------------------------------------------
