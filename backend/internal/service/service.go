@@ -88,8 +88,8 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	quality := NewQualityProfileService(r)
 	users := NewUsersService(r)
 	invites := NewInvitesService(r)
-	enrichment := NewEnrichmentService(r, l, tmdb)
 	reconcile := NewReconcileService(r, l)
+	enrichment := NewEnrichmentService(r, l, tmdb, reconcile)
 	downloadJobs := NewDownloadJobsService(r)
 
 	// Matcher: the v1 resolver catalog (path-embed + name-parse) wires

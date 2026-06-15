@@ -29,13 +29,14 @@ func genresFromTmdb(in []tmdb.Genre) []model.Genre {
 }
 
 type EnrichmentService struct {
-	repo   *repo.Repository
-	logger *logger.Logger
-	tmdb   *TmdbService
+	repo      *repo.Repository
+	logger    *logger.Logger
+	tmdb      *TmdbService
+	reconcile *ReconcileService
 }
 
-func NewEnrichmentService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService) *EnrichmentService {
-	return &EnrichmentService{repo: r, logger: l, tmdb: tmdb}
+func NewEnrichmentService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, reconcile *ReconcileService) *EnrichmentService {
+	return &EnrichmentService{repo: r, logger: l, tmdb: tmdb, reconcile: reconcile}
 }
 
 // EnrichMediaItem fetches metadata from TMDB and stores it on the media item.
@@ -182,6 +183,21 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 	// enrich (item metadata is already committed above).
 	s.SyncSeriesStructure(ctx, item, details)
 
+	// Newly-aired / newly-added in-scope episodes become wants on the next sync.
+	// Only tracked series reconcile; enrichment also runs for untracked items.
+	tracking, err := s.repo.FindTrackingByMediaItem(ctx, item.ID)
+	if apperrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if s.reconcile != nil {
+		if rerr := s.reconcile.Reconcile(ctx, tracking.ID); rerr != nil {
+			s.logger.Warn().Err(rerr).Str("title", item.Title).
+				Msg("series enrich: post-sync reconcile failed, will heal on next pass")
+		}
+	}
 	return nil
 }
 
