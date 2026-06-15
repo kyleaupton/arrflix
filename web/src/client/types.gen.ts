@@ -1694,7 +1694,7 @@ export type RequestCreateBody = {
      */
     tmdbId: number;
     /**
-     * Media domain (movie-only in the PoC)
+     * Media domain
      */
     type: 'movie' | 'series';
 };
@@ -2111,6 +2111,9 @@ export type TrackingByTmdb = {
 
 export type TrackingRequester = {
     createdAt: string;
+    scopeOverrides?: unknown;
+    scopeRule: string;
+    scopeSeason?: number;
     tier: string;
     trackingId: string;
     updatedAt: string;
@@ -2211,6 +2214,7 @@ export type Want = {
     readonly $schema?: string;
     attemptCount: number;
     createdAt: string;
+    episodeId?: string;
     id: string;
     lastError: string | null;
     mediaItemId: string;
@@ -3007,7 +3011,7 @@ export type RequestCreateBodyWritable = {
      */
     tmdbId: number;
     /**
-     * Media domain (movie-only in the PoC)
+     * Media domain
      */
     type: 'movie' | 'series';
 };
@@ -3277,6 +3281,7 @@ export type VersionInfoWritable = {
 export type WantWritable = {
     attemptCount: number;
     createdAt: string;
+    episodeId?: string;
     id: string;
     lastError: string | null;
     mediaItemId: string;

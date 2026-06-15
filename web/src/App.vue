@@ -61,9 +61,18 @@ const onPageAfterLeave = () => {
     <ImmersiveLayout v-else-if="authStore.isAuthenticated" :navbar-opaque="navbarOpaque">
       <router-view v-slot="{ Component, route: resolvedRoute }">
         <Transition name="page" mode="out-in" @after-leave="onPageAfterLeave">
+          <!--
+            Key by the top-level matched segment, not the full path, so the
+            transition only fires on genuine page swaps. Nested layouts (settings)
+            and param routes (movie→movie) keep the same depth-0 component, so
+            they no longer remount/flash — their own inner views handle the swap.
+          -->
           <div
-            :key="resolvedRoute.path"
-            :class="resolvedRoute.meta.layout !== 'immersive' && 'pt-20 px-4 pb-4'"
+            :key="resolvedRoute.matched[0]?.path ?? resolvedRoute.path"
+            :class="
+              !['immersive', 'sidebar'].includes(resolvedRoute.meta.layout as string) &&
+              'pt-20 px-4 pb-4'
+            "
           >
             <component :is="Component" />
           </div>
