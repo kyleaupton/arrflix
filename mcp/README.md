@@ -6,18 +6,23 @@ Project-specific MCP tools that complement the `justfile` task runner. Build/lin
 
 | Tool | Purpose |
 |---|---|
-| `arrflix_db_query` | Run a READ-ONLY Postgres query (SELECT/CTE only) against `ARRFLIX_DATABASE_URL`. Returns JSON rows. Parameterized via `params`, bounded by `maxRows` (default 200, cap 500). |
+| `arrflix_db_query` | Run a READ-ONLY Postgres query (SELECT/CTE only) against the dev database. Returns JSON rows. Bounded by `maxRows` (default 200, cap 500). |
 | `arrflix_docker_logs` | Tail recent docker compose logs for a service. Bounded by `lines` (default 200, cap 2000). |
 
 ## Configuration
 
-Create `mcp/.env` with at minimum:
+No configuration is required. The DB tool runs `psql` *inside* the compose
+service via `docker compose exec`, connecting over the container's local unix
+socket (trust auth) — so it needs no host, port, or password, and the `5432`
+line in `docker-compose.yml` stays commented out.
+
+The defaults match the dev seed; override in `mcp/.env` only if yours differ:
 
 ```
-ARRFLIX_DATABASE_URL=postgres://user:pass@host:port/dbname
+ARRFLIX_DB_SERVICE=arrflix-dev   # compose service to exec into
+ARRFLIX_DB_USER=arrflix          # psql role
+ARRFLIX_DB_NAME=arrflix          # database
 ```
-
-The DB tool refuses to start a query if `ARRFLIX_DATABASE_URL` is unset.
 
 ## Build & develop
 
