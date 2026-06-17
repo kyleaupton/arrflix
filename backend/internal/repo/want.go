@@ -234,6 +234,28 @@ func (r *Repository) ScheduleWantRetry(ctx context.Context, params ScheduleWantR
 	return toModelWant(row), true, nil
 }
 
+// RescheduleWantRecheck reschedules a still-'searching' want via
+// compare-and-swap for the "no eligible release yet" path, leaving attempt_count
+// untouched — the counter and its ceiling belong to genuine error retries
+// (ScheduleWantRetry) alone. Reuses ScheduleWantRetryParams; the bool reports
+// the same CAS-ownership contract: false (a 0-row CAS, surfaced as
+// pgx.ErrNoRows) means the want is no longer 'searching' (reaper reset, another
+// worker re-claimed), a benign no-op.
+func (r *Repository) RescheduleWantRecheck(ctx context.Context, params ScheduleWantRetryParams) (model.Want, bool, error) {
+	row, err := r.Q.RescheduleWantRecheck(ctx, dbgen.RescheduleWantRecheckParams{
+		ID:        pgtypeFromUUID(params.ID),
+		LastError: &params.LastError,
+		NextRunAt: params.NextRunAt,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "reschedule recheck for want %s", params.ID)
+	}
+	return toModelWant(row), true, nil
+}
+
 // RearmWant resumes a terminal want when its movie is re-requested, flipping a
 // 'failed'/'canceled' want back to 'pending' (attempt counter and backoff reset)
 // so the AcquisitionWorker re-claims it. The single-atom invariant means the one

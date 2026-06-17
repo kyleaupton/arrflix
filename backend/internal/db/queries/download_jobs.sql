@@ -99,6 +99,10 @@ SET status = 'enqueued',
 WHERE id = sqlc.arg(id)
 RETURNING *;
 
+-- SetDownloadJobDownloadSnapshot advances next_run_at on every poll so a polled
+-- in-flight download rotates to the back of ClaimRunnableDownloadJobs' queue
+-- (ORDER BY next_run_at ASC). This keeps older 'created' jobs claimable instead
+-- of being starved behind a pinned wall of 'downloading' jobs.
 -- name: SetDownloadJobDownloadSnapshot :one
 UPDATE download_job
 SET status = sqlc.arg(status),
@@ -109,6 +113,7 @@ SET status = sqlc.arg(status),
     download_speed = sqlc.arg(download_speed),
     eta_seconds = sqlc.arg(eta_seconds),
     total_size = sqlc.arg(total_size),
+    next_run_at = sqlc.arg(next_run_at),
     updated_at = now()
 WHERE id = sqlc.arg(id)
 RETURNING *;

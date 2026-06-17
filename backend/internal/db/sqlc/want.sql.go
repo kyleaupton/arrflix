@@ -492,6 +492,48 @@ func (q *Queries) ReclaimStaleSearchingWants(ctx context.Context, arg ReclaimSta
 	return items, nil
 }
 
+const rescheduleWantRecheck = `-- name: RescheduleWantRecheck :one
+UPDATE want
+SET status = 'pending',
+    last_error = $1,
+    next_run_at = $2,
+    updated_at = now()
+WHERE id = $3
+  AND status = 'searching'
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type RescheduleWantRecheckParams struct {
+	LastError *string     `json:"last_error"`
+	NextRunAt time.Time   `json:"next_run_at"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// RescheduleWantRecheck returns a still-'searching' want to 'pending' for the
+// "no eligible release yet" path — identical to ScheduleWantRetry minus the
+// attempt_count bump. attempt_count and its 3-attempt ceiling are reserved for
+// genuine error retries; a poll that found nothing must not inflate the counter
+// that gates transient-error failure. The 'searching' guard is the same CAS as
+// ScheduleWantRetry.
+func (q *Queries) RescheduleWantRecheck(ctx context.Context, arg RescheduleWantRecheckParams) (Want, error) {
+	row := q.db.QueryRow(ctx, rescheduleWantRecheck, arg.LastError, arg.NextRunAt, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const scheduleWantRetry = `-- name: ScheduleWantRetry :one
 UPDATE want
 SET status = 'pending',

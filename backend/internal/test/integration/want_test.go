@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"testing"
+	"time"
 
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -181,6 +182,64 @@ func TestWant_Cancel_Terminal(t *testing.T) {
 	}
 	if got.Status != string(model.WantCanceled) {
 		t.Errorf("idempotent cancel status = %q, want %q", got.Status, model.WantCanceled)
+	}
+}
+
+// TestWant_RescheduleRecheck_NoIncrement guards the attempt_count decoupling:
+// RescheduleWantRecheck (the "no eligible release yet" path) returns a searching
+// want to 'pending' WITHOUT bumping attempt_count, while ScheduleWantRetry (the
+// error-retry path) still increments. Both fire from the 'searching' CAS state.
+func TestWant_RescheduleRecheck_NoIncrement(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	want := seedPendingWant(t, ctx, r)
+	want = claimWant(t, ctx, r, want.ID)
+
+	// Recheck: pending, attempt_count untouched.
+	rechecked, ok, err := r.RescheduleWantRecheck(ctx, repo.ScheduleWantRetryParams{
+		ID:        want.ID,
+		LastError: "no eligible release",
+		NextRunAt: time.Now().Add(5 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("RescheduleWantRecheck: %v", err)
+	}
+	if !ok {
+		t.Fatalf("RescheduleWantRecheck ok = false, want true (want was 'searching')")
+	}
+	if rechecked.Status != string(model.WantPending) {
+		t.Errorf("rechecked status = %q, want %q", rechecked.Status, model.WantPending)
+	}
+	if rechecked.AttemptCount != want.AttemptCount {
+		t.Errorf("rechecked attemptCount = %d, want %d (recheck must not increment)", rechecked.AttemptCount, want.AttemptCount)
+	}
+	if rechecked.LastError == nil || *rechecked.LastError != "no eligible release" {
+		t.Errorf("rechecked lastError = %v, want %q", rechecked.LastError, "no eligible release")
+	}
+
+	// Re-flip to 'searching' so the error-retry CAS owns it (next_run_at is now
+	// in the future, so a claim wouldn't pick it).
+	if _, err := r.SetWantStatus(ctx, want.ID, string(model.WantSearching)); err != nil {
+		t.Fatalf("set want searching: %v", err)
+	}
+
+	// Error retry: still increments — the counter belongs to this path alone.
+	retried, ok, err := r.ScheduleWantRetry(ctx, repo.ScheduleWantRetryParams{
+		ID:        want.ID,
+		LastError: "transient blip",
+		NextRunAt: time.Now().Add(5 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("ScheduleWantRetry: %v", err)
+	}
+	if !ok {
+		t.Fatalf("ScheduleWantRetry ok = false, want true (want was 'searching')")
+	}
+	if retried.AttemptCount != want.AttemptCount+1 {
+		t.Errorf("retried attemptCount = %d, want %d (error retry must increment)", retried.AttemptCount, want.AttemptCount+1)
 	}
 }
 

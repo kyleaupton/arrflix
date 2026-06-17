@@ -1398,8 +1398,9 @@ SET status = $1,
     download_speed = $6,
     eta_seconds = $7,
     total_size = $8,
+    next_run_at = $9,
     updated_at = now()
-WHERE id = $9
+WHERE id = $10
 RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind, want_id
 `
 
@@ -1412,9 +1413,14 @@ type SetDownloadJobDownloadSnapshotParams struct {
 	DownloadSpeed    *int64      `json:"download_speed"`
 	EtaSeconds       *int64      `json:"eta_seconds"`
 	TotalSize        *int64      `json:"total_size"`
+	NextRunAt        time.Time   `json:"next_run_at"`
 	ID               pgtype.UUID `json:"id"`
 }
 
+// SetDownloadJobDownloadSnapshot advances next_run_at on every poll so a polled
+// in-flight download rotates to the back of ClaimRunnableDownloadJobs' queue
+// (ORDER BY next_run_at ASC). This keeps older 'created' jobs claimable instead
+// of being starved behind a pinned wall of 'downloading' jobs.
 func (q *Queries) SetDownloadJobDownloadSnapshot(ctx context.Context, arg SetDownloadJobDownloadSnapshotParams) (DownloadJob, error) {
 	row := q.db.QueryRow(ctx, setDownloadJobDownloadSnapshot,
 		arg.Status,
@@ -1425,6 +1431,7 @@ func (q *Queries) SetDownloadJobDownloadSnapshot(ctx context.Context, arg SetDow
 		arg.DownloadSpeed,
 		arg.EtaSeconds,
 		arg.TotalSize,
+		arg.NextRunAt,
 		arg.ID,
 	)
 	var i DownloadJob

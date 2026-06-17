@@ -28,10 +28,11 @@ type Worker struct {
 	log    *logger.Logger
 	broker *sse.Broker
 
-	pollInterval time.Duration
-	claimLimit   int32
-	maxAttempts  int
-	reapAfter    time.Duration
+	pollInterval    time.Duration
+	claimLimit      int32
+	maxAttempts     int
+	reapAfter       time.Duration
+	recheckInterval time.Duration
 }
 
 // Config holds worker configuration.
@@ -42,16 +43,23 @@ type Config struct {
 	// ReapAfter is how long a want may sit in 'searching' before the reaper
 	// resets it to 'pending' — the crash-window self-heal.
 	ReapAfter time.Duration
+	// RecheckInterval is the fixed cadence for re-searching a want that found no
+	// eligible release yet. A deliberate flat placeholder — the scheduler rock
+	// replaces it with air-date-aware cadence. It must not reuse jobutil.Backoff:
+	// with attempt_count now decoupled from this path, backoff would stay at its
+	// floor (~2s) and hammer Prowlarr.
+	RecheckInterval time.Duration
 }
 
 // DefaultConfig returns default worker configuration, matching the download
 // worker's cadence.
 func DefaultConfig() Config {
 	return Config{
-		PollInterval: 3 * time.Second,
-		ClaimLimit:   20,
-		MaxAttempts:  3,
-		ReapAfter:    5 * time.Minute,
+		PollInterval:    3 * time.Second,
+		ClaimLimit:      20,
+		MaxAttempts:     3,
+		ReapAfter:       5 * time.Minute,
+		RecheckInterval: 5 * time.Minute,
 	}
 }
 
@@ -59,14 +67,15 @@ func DefaultConfig() Config {
 func New(r *repo.Repository, svc *service.AcquisitionService, log *logger.Logger, broker *sse.Broker) *Worker {
 	cfg := DefaultConfig()
 	return &Worker{
-		repo:         r,
-		svc:          svc,
-		log:          log,
-		broker:       broker,
-		pollInterval: cfg.PollInterval,
-		claimLimit:   cfg.ClaimLimit,
-		maxAttempts:  cfg.MaxAttempts,
-		reapAfter:    cfg.ReapAfter,
+		repo:            r,
+		svc:             svc,
+		log:             log,
+		broker:          broker,
+		pollInterval:    cfg.PollInterval,
+		claimLimit:      cfg.ClaimLimit,
+		maxAttempts:     cfg.MaxAttempts,
+		reapAfter:       cfg.ReapAfter,
+		recheckInterval: cfg.RecheckInterval,
 	}
 }
 
@@ -134,10 +143,11 @@ func (w *Worker) handle(ctx context.Context, want model.Want) {
 	}
 
 	if !grabbed {
-		// No eligible release. Reschedule without a max-attempts ceiling — a
-		// movie may simply not be out yet. Phase 4 replaces this with smart
-		// scheduling and a real terminal.
-		w.reschedule(ctx, want, "no eligible release")
+		// No eligible release — the title may simply not be out yet. Recheck on a
+		// fixed gentle cadence without touching attempt_count, so this infinite
+		// poll never inflates the counter that gates error retries. The scheduler
+		// rock replaces the flat cadence with air-date-aware scheduling.
+		w.recheck(ctx, want, "no eligible release")
 		return
 	}
 
@@ -182,10 +192,29 @@ func (w *Worker) fail(ctx context.Context, wantID uuid.UUID, msg string) {
 	}
 }
 
-// reschedule returns the want to 'pending' with exponential backoff. A
+// recheck returns the want to 'pending' on the fixed recheck cadence without
+// touching attempt_count — the "no eligible release yet" path, which polls
+// indefinitely and must not inflate the error-retry counter. A superseded want
+// (ok=false — the reaper reset it and another worker re-claimed) is a no-op:
+// the want is no longer 'searching', so nothing changed and nothing is emitted.
+func (w *Worker) recheck(ctx context.Context, want model.Want, lastError string) {
+	nextRun := time.Now().Add(w.recheckInterval)
+
+	updated, ok, err := w.repo.RescheduleWantRecheck(ctx, repo.ScheduleWantRetryParams{
+		ID:        want.ID,
+		LastError: lastError,
+		NextRunAt: nextRun,
+	})
+	if err == nil && ok {
+		realtime.Emit(ctx, w.broker, realtime.WantUpdated(updated))
+	}
+}
+
+// reschedule returns the want to 'pending' with exponential backoff and bumps
+// attempt_count — the genuine error-retry path, ceilinged at maxAttempts. A
 // superseded want (ok=false — the reaper reset it and another worker
-// re-claimed, including the benign grabbed=false path) is a no-op: the want is
-// no longer 'searching', so nothing changed and nothing is emitted.
+// re-claimed) is a no-op: the want is no longer 'searching', so nothing changed
+// and nothing is emitted.
 func (w *Worker) reschedule(ctx context.Context, want model.Want, lastError string) {
 	attempt := int(want.AttemptCount) + 1
 	nextRun := time.Now().Add(jobutil.Backoff(attempt))

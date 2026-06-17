@@ -204,6 +204,9 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 		DownloadSpeed:    jobutil.Ptr(item.DownloadSpeed),
 		EtaSeconds:       jobutil.Ptr(item.ETA),
 		TotalSize:        jobutil.Ptr(item.TotalSize),
+		// Rotate to the back of the claim queue so polling this in-flight
+		// download doesn't pin a claim slot and starve newly-created jobs.
+		NextRunAt: time.Now().Add(w.pollInterval),
 	})
 	if err != nil {
 		return err

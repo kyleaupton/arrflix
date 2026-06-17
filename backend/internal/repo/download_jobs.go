@@ -62,7 +62,8 @@ type CreateDownloadJobParams struct {
 
 // SetDownloadJobDownloadSnapshotParams is the domain-shaped input for
 // SetDownloadJobDownloadSnapshot. Mirrors the columns the worker writes
-// while polling downloader state.
+// while polling downloader state. NextRunAt rotates the polled job to the back
+// of the claim queue so newly-created jobs aren't starved.
 type SetDownloadJobDownloadSnapshotParams struct {
 	ID               uuid.UUID
 	Status           string
@@ -73,6 +74,7 @@ type SetDownloadJobDownloadSnapshotParams struct {
 	DownloadSpeed    *int64
 	EtaSeconds       *int64
 	TotalSize        *int64
+	NextRunAt        time.Time
 }
 
 // ScheduleDownloadJobRetryParams is the domain-shaped input for
@@ -551,6 +553,7 @@ func (r *Repository) SetDownloadJobDownloadSnapshot(ctx context.Context, params 
 		DownloadSpeed:    params.DownloadSpeed,
 		EtaSeconds:       params.EtaSeconds,
 		TotalSize:        params.TotalSize,
+		NextRunAt:        params.NextRunAt,
 	})
 	if err != nil {
 		return model.DownloadJob{}, apperrors.FromPg(err, "update download job %s snapshot", params.ID)

@@ -149,6 +149,22 @@ WHERE id = sqlc.arg(id)
   AND status = 'searching'
 RETURNING *;
 
+-- RescheduleWantRecheck returns a still-'searching' want to 'pending' for the
+-- "no eligible release yet" path — identical to ScheduleWantRetry minus the
+-- attempt_count bump. attempt_count and its 3-attempt ceiling are reserved for
+-- genuine error retries; a poll that found nothing must not inflate the counter
+-- that gates transient-error failure. The 'searching' guard is the same CAS as
+-- ScheduleWantRetry.
+-- name: RescheduleWantRecheck :one
+UPDATE want
+SET status = 'pending',
+    last_error = sqlc.arg(last_error),
+    next_run_at = sqlc.arg(next_run_at),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND status = 'searching'
+RETURNING *;
+
 -- RearmWant resumes a terminal want when its movie is re-requested, flipping a
 -- 'failed'/'canceled' want back to 'pending' with the backoff reset so the
 -- AcquisitionWorker re-claims it. The single-atom invariant means a re-request
