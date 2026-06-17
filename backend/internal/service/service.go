@@ -91,6 +91,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	reconcile := NewReconcileService(r, l)
 	enrichment := NewEnrichmentService(r, l, tmdb, reconcile)
 	downloadJobs := NewDownloadJobsService(r)
+	wants := NewWantService(r, downloadJobs)
 
 	// Matcher: the v1 resolver catalog (path-embed + name-parse) wires
 	// up via DefaultRegistry. ScannerService.MatchBatch is the only
@@ -136,10 +137,10 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Settings:           settings,
 		Setup:              NewSetupService(r, users, settings, tmdb),
 		Tmdb:               tmdb,
-		Tracking:           NewTrackingService(r),
+		Tracking:           NewTrackingService(r, wants),
 		UnmatchedFiles:     NewUnmatchedFilesService(r, l, tmdb),
 		Users:              users,
-		Wants:              NewWantService(r, downloadJobs),
+		Wants:              wants,
 		Version:            NewVersionService(r, l),
 	}
 }

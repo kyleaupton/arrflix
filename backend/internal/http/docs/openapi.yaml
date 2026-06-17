@@ -1349,6 +1349,8 @@ components:
           type: string
         available:
           type: boolean
+        episodeId:
+          type: string
         episodeNumber:
           format: int32
           type: integer
@@ -1364,6 +1366,7 @@ components:
         title:
           type: string
       required:
+        - episodeId
         - seasonNumber
         - episodeNumber
         - available
@@ -10115,18 +10118,29 @@ paths:
         - tracking
   /api/v1/tracking/by-tmdb/{tmdbId}:
     get:
-      description: Resolves a movie's acquisition state (tracking + wants) from its TMDB id. Returns 404 when the movie is not tracked.
+      description: Resolves a media item's acquisition state (tracking + wants) from its TMDB id and type. Returns 404 when the item is not tracked.
       operationId: tracking-by-tmdb
       parameters:
-        - description: TMDB id of the movie
+        - description: TMDB id of the media item
           in: path
           name: tmdbId
           required: true
           schema:
-            description: TMDB id of the movie
+            description: TMDB id of the media item
             format: int64
             minimum: 1
             type: integer
+        - description: Media domain
+          explode: false
+          in: query
+          name: type
+          schema:
+            default: movie
+            description: Media domain
+            enum:
+              - movie
+              - series
+            type: string
       responses:
         "200":
           content:
@@ -10193,6 +10207,47 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: Get tracking
+      tags:
+        - tracking
+  /api/v1/tracking/{id}/cancel:
+    post:
+      description: Cancels in-flight wants (and their download jobs) and marks the tracking canceled. Already-available wants and their files are left intact.
+      operationId: tracking-cancel
+      parameters:
+        - description: Tracking ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Tracking ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tracking"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Stop tracking
       tags:
         - tracking
   /api/v1/tracking/{id}/requesters:

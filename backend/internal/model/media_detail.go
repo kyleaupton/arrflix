@@ -47,6 +47,10 @@ type MovieDetail struct {
 }
 
 type EpisodeAvailability struct {
+	// EpisodeID is the persisted episode-row UUID, empty when the series is not
+	// yet tracked (no local episode rows). The frontend keys per-episode wants on
+	// it, since wants reference episodeId while this wire shape keys on numbers.
+	EpisodeID     string    `json:"episodeId"`
 	SeasonNumber  int32     `json:"seasonNumber"`
 	EpisodeNumber int32     `json:"episodeNumber"`
 	Title         *string   `json:"title,omitempty"`

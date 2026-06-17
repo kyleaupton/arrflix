@@ -29,6 +29,13 @@
           <template v-if="data.voteAverage" #ratings>
             <RatingBadge source="tmdb" :score="data.voteAverage" :vote-count="data.voteCount" />
           </template>
+          <template #actions>
+            <SeriesAcquisitionControl
+              :tmdb-id="id"
+              :available-count="availableEpisodeCount"
+              :total-count="totalEpisodeCount"
+            />
+          </template>
         </MediaHero>
 
         <div :class="isImmersive ? 'px-6 space-y-6' : 'space-y-6'">
@@ -146,6 +153,19 @@
                               Available
                             </Badge>
                           </template>
+                          <!-- A live want drives this episode: surface its
+                               lifecycle state (with download progress) in place
+                               of the manual flow. -->
+                          <template v-else-if="getEpisodeWant(episode.episodeId)">
+                            <WantStatusPill
+                              :status="getEpisodeWant(episode.episodeId)!.status"
+                              :attempt-count="getEpisodeWant(episode.episodeId)!.attemptCount"
+                              :last-error="getEpisodeWant(episode.episodeId)!.lastError"
+                              :progress="
+                                getEpisodeWantProgress(season.seasonNumber, episode.episodeNumber)
+                              "
+                            />
+                          </template>
                           <!-- Episode is downloading individually -->
                           <template
                             v-else-if="getEpisodeJob(season.seasonNumber, episode.episodeNumber)"
@@ -214,8 +234,8 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { Download, Check } from 'lucide-vue-next'
-import { mediaGetSeriesOptions } from '@/client/@tanstack/vue-query.gen'
-import type { SeasonDetail } from '@/client/types.gen'
+import { mediaGetSeriesOptions, trackingByTmdbOptions } from '@/client/@tanstack/vue-query.gen'
+import type { SeasonDetail, Want } from '@/client/types.gen'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
@@ -236,6 +256,8 @@ import { buildMetadataSubtitle } from '@/lib/utils'
 import { statusLabel } from '@/lib/mediaStatus'
 import { useDownloadJobs, type DownloadJob } from '@/composables/useDownloadJobs'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
+import SeriesAcquisitionControl from '@/components/acquisition/SeriesAcquisitionControl.vue'
+import WantStatusPill from '@/components/acquisition/WantStatusPill.vue'
 
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
@@ -255,6 +277,54 @@ const id = computed(() => {
 
 const { isLoading, isError, data } = useQuery(
   computed(() => mediaGetSeriesOptions({ path: { id: id.value } })),
+)
+
+// Per-episode acquisition state. A 404 means untracked (no wants), read as an
+// empty map below — don't burn retries on it. The generic want_updated SSE
+// binding invalidates every trackingByTmdb query, keeping this live.
+const { data: tracking } = useQuery(
+  computed(() => ({
+    ...trackingByTmdbOptions({ path: { tmdbId: id.value }, query: { type: 'series' } }),
+    retry: false,
+  })),
+)
+
+// Wants keyed by episodeId — the join the grid needs, since wants reference
+// episodeId while the episode rows key on (season, episode) numbers.
+const wantByEpisode = computed(() => {
+  const map = new Map<string, Want>()
+  for (const w of tracking.value?.wants ?? []) {
+    if (w.episodeId) map.set(w.episodeId, w)
+  }
+  return map
+})
+
+// The want that should drive an episode's action area: a live one mid-flight or
+// failed. 'available' shows via the file indicator; 'canceled' falls through to
+// the manual Download so the episode can be re-grabbed.
+function getEpisodeWant(episodeId?: string): Want | undefined {
+  if (!episodeId) return undefined
+  const want = wantByEpisode.value.get(episodeId)
+  if (!want || want.status === 'available' || want.status === 'canceled') return undefined
+  return want
+}
+
+// Download progress (0-100) for a want-driven episode, from its live job.
+function getEpisodeWantProgress(seasonNumber: number, episodeNumber: number): number | null {
+  const job = getEpisodeJob(seasonNumber, episodeNumber)
+  if (!job) return null
+  return Math.round((job.progress ?? 0) * 100)
+}
+
+const availableEpisodeCount = computed(
+  () =>
+    data.value?.seasons?.reduce(
+      (sum, s) => sum + (s.episodes?.filter((e) => e.available).length ?? 0),
+      0,
+    ) ?? 0,
+)
+const totalEpisodeCount = computed(
+  () => data.value?.seasons?.reduce((sum, s) => sum + (s.episodes?.length ?? 0), 0) ?? 0,
 )
 
 const firstAirYear = computed(() =>

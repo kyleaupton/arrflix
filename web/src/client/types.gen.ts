@@ -526,6 +526,7 @@ export type EnumValue = {
 export type EpisodeAvailability = {
     airDate?: string;
     available: boolean;
+    episodeId: string;
     episodeNumber: number;
     file?: FileInfo;
     overview?: string;
@@ -1694,7 +1695,7 @@ export type RequestCreateBody = {
      */
     tmdbId: number;
     /**
-     * Media domain (movie-only in the PoC)
+     * Media domain
      */
     type: 'movie' | 'series';
 };
@@ -2111,6 +2112,9 @@ export type TrackingByTmdb = {
 
 export type TrackingRequester = {
     createdAt: string;
+    scopeOverrides?: unknown;
+    scopeRule: string;
+    scopeSeason?: number;
     tier: string;
     trackingId: string;
     updatedAt: string;
@@ -2211,6 +2215,7 @@ export type Want = {
     readonly $schema?: string;
     attemptCount: number;
     createdAt: string;
+    episodeId?: string;
     id: string;
     lastError: string | null;
     mediaItemId: string;
@@ -3007,7 +3012,7 @@ export type RequestCreateBodyWritable = {
      */
     tmdbId: number;
     /**
-     * Media domain (movie-only in the PoC)
+     * Media domain
      */
     type: 'movie' | 'series';
 };
@@ -3277,6 +3282,7 @@ export type VersionInfoWritable = {
 export type WantWritable = {
     attemptCount: number;
     createdAt: string;
+    episodeId?: string;
     id: string;
     lastError: string | null;
     mediaItemId: string;
@@ -7638,11 +7644,16 @@ export type TrackingByTmdbData = {
     body?: never;
     path: {
         /**
-         * TMDB id of the movie
+         * TMDB id of the media item
          */
         tmdbId: number;
     };
-    query?: never;
+    query?: {
+        /**
+         * Media domain
+         */
+        type?: 'movie' | 'series';
+    };
     url: '/api/v1/tracking/by-tmdb/{tmdbId}';
 };
 
@@ -7709,6 +7720,44 @@ export type TrackingGetResponses = {
 };
 
 export type TrackingGetResponse = TrackingGetResponses[keyof TrackingGetResponses];
+
+export type TrackingCancelData = {
+    body?: never;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}/cancel';
+};
+
+export type TrackingCancelErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingCancelError = TrackingCancelErrors[keyof TrackingCancelErrors];
+
+export type TrackingCancelResponses = {
+    /**
+     * OK
+     */
+    200: Tracking;
+};
+
+export type TrackingCancelResponse = TrackingCancelResponses[keyof TrackingCancelResponses];
 
 export type TrackingRequestersData = {
     body?: never;
