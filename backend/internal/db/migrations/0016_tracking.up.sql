@@ -140,16 +140,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_want_tracking_episode ON want (tracking_id
 CREATE UNIQUE INDEX IF NOT EXISTS idx_want_tracking_movie ON want (tracking_id)
   WHERE episode_id IS NULL;
 
--- want linkage: download_job and import_task carry the want they satisfy, so a
--- transition can mirror back onto the want's lifecycle. Null for the
--- interactive (manual-grab) path, which has no want. ON DELETE SET NULL keeps
--- the job/task row if its want is removed. The partial indexes back the pre-grab
--- dedup lookup ("does this want already have an in-flight job?").
-ALTER TABLE download_job
-  ADD COLUMN want_id UUID REFERENCES want(id) ON DELETE SET NULL;
-
+-- import_task carries the single want it satisfies, so an import transition can
+-- mirror back onto the want's lifecycle. Each file fulfils exactly one want, so
+-- this stays a single FK. Null for the interactive (manual-grab) path, which has
+-- no want. ON DELETE SET NULL keeps the task row if its want is removed.
 ALTER TABLE import_task
   ADD COLUMN want_id UUID REFERENCES want(id) ON DELETE SET NULL;
 
-CREATE INDEX IF NOT EXISTS idx_download_job_want ON download_job(want_id) WHERE want_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_import_task_want ON import_task(want_id) WHERE want_id IS NOT NULL;
+
+-- download_job_want: the M:N edge between a download_job and the wants it
+-- advances. One pick (a movie or single episode today; a season pack later)
+-- links every in-flight want it covers, and the import fan-out files each file
+-- back onto its own want. Both FKs cascade so deleting a job or a want drops the
+-- edge. The per-column indexes back the two lookups: wants-by-job (import
+-- fan-out, lifecycle mirror) and active-jobs-by-want (cancel cascade).
+CREATE TABLE IF NOT EXISTS download_job_want (
+  download_job_id UUID NOT NULL REFERENCES download_job(id) ON DELETE CASCADE,
+  want_id UUID NOT NULL REFERENCES want(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (download_job_id, want_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_djw_job ON download_job_want(download_job_id);
+CREATE INDEX IF NOT EXISTS idx_djw_want ON download_job_want(want_id);

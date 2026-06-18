@@ -100,13 +100,14 @@ func (q *Queries) ClaimRunnableWants(ctx context.Context, limit int32) ([]Want, 
 
 const createWant = `-- name: CreateWant :one
 
-INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status)
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at)
 VALUES (
   $1,
   $2,
   $3,
   $4,
-  $5
+  $5,
+  COALESCE($6, now())
 )
 RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
 `
@@ -117,6 +118,7 @@ type CreateWantParams struct {
 	EpisodeID        pgtype.UUID `json:"episode_id"`
 	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
 	Status           string      `json:"status"`
+	NextRunAt        interface{} `json:"next_run_at"`
 }
 
 // Wants: the work item, shaped as a durable work-dispatch queue.
@@ -127,6 +129,7 @@ func (q *Queries) CreateWant(ctx context.Context, arg CreateWantParams) (Want, e
 		arg.EpisodeID,
 		arg.QualityProfileID,
 		arg.Status,
+		arg.NextRunAt,
 	)
 	var i Want
 	err := row.Scan(
@@ -146,13 +149,14 @@ func (q *Queries) CreateWant(ctx context.Context, arg CreateWantParams) (Want, e
 }
 
 const createWantIfAbsent = `-- name: CreateWantIfAbsent :one
-INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status)
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at)
 VALUES (
   $1,
   $2,
   $3,
   $4,
-  $5
+  $5,
+  COALESCE($6, now())
 )
 ON CONFLICT (tracking_id, episode_id) WHERE episode_id IS NOT NULL DO NOTHING
 RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
@@ -164,6 +168,7 @@ type CreateWantIfAbsentParams struct {
 	EpisodeID        pgtype.UUID `json:"episode_id"`
 	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
 	Status           string      `json:"status"`
+	NextRunAt        interface{} `json:"next_run_at"`
 }
 
 // CreateWantIfAbsent is the idempotent want insert the series reconciler routes
@@ -177,6 +182,7 @@ func (q *Queries) CreateWantIfAbsent(ctx context.Context, arg CreateWantIfAbsent
 		arg.EpisodeID,
 		arg.QualityProfileID,
 		arg.Status,
+		arg.NextRunAt,
 	)
 	var i Want
 	err := row.Scan(
@@ -286,6 +292,146 @@ func (q *Queries) GrabWantManual(ctx context.Context, id pgtype.UUID) (Want, err
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const grabWantsForPack = `-- name: GrabWantsForPack :many
+UPDATE want
+SET status = 'grabbed',
+    updated_at = now()
+WHERE id = ANY($1::uuid[])
+  AND status IN ('pending', 'searching')
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+// GrabWantsForPack batch-claims the in-flight wants a season pack covers,
+// flipping each 'pending'/'searching' want to 'grabbed' in one statement. The
+// IN-guard makes it the multi-want analogue of GrabWant: a want already advanced
+// (or terminal) isn't in the set, so it's skipped silently and the RETURNING set
+// reports exactly which wants this grab claimed (the ones to link to the pack
+// job). Concurrent grabbers serialize on the row locks.
+func (q *Queries) GrabWantsForPack(ctx context.Context, ids []pgtype.UUID) ([]Want, error) {
+	rows, err := q.db.Query(ctx, grabWantsForPack, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.EpisodeID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInFlightWantsForTrackingSeason = `-- name: ListInFlightWantsForTrackingSeason :many
+SELECT w.id, w.tracking_id, w.media_item_id, w.episode_id, w.quality_profile_id, w.status, w.next_run_at, w.attempt_count, w.last_error, w.created_at, w.updated_at FROM want w
+JOIN media_episode me ON me.id = w.episode_id
+WHERE w.tracking_id = $1
+  AND me.season_id = $2
+  AND w.status IN ('pending', 'searching')
+ORDER BY w.created_at ASC
+`
+
+type ListInFlightWantsForTrackingSeasonParams struct {
+	TrackingID pgtype.UUID `json:"tracking_id"`
+	SeasonID   pgtype.UUID `json:"season_id"`
+}
+
+// ListInFlightWantsForTrackingSeason returns the still-acquirable episode wants
+// (pending/searching) of one tracking+season — the siblings a season pack can
+// cover. The join to media_episode scopes by season_id; the status filter drops
+// wants already grabbed/downloading/terminal (a pack only claims what's still
+// being hunted). Backs the front-half coverage computation.
+func (q *Queries) ListInFlightWantsForTrackingSeason(ctx context.Context, arg ListInFlightWantsForTrackingSeasonParams) ([]Want, error) {
+	rows, err := q.db.Query(ctx, listInFlightWantsForTrackingSeason, arg.TrackingID, arg.SeasonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.EpisodeID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWantsByDownloadJob = `-- name: ListWantsByDownloadJob :many
+SELECT w.id, w.tracking_id, w.media_item_id, w.episode_id, w.quality_profile_id, w.status, w.next_run_at, w.attempt_count, w.last_error, w.created_at, w.updated_at FROM want w
+JOIN download_job_want djw ON djw.want_id = w.id
+WHERE djw.download_job_id = $1
+ORDER BY w.created_at ASC
+`
+
+// ListWantsByDownloadJob returns the wants a download_job advances, joined
+// through download_job_want. Backs the download worker's lifecycle mirror and
+// the import fan-out (each spawned import_task is filed onto a covered want).
+func (q *Queries) ListWantsByDownloadJob(ctx context.Context, downloadJobID pgtype.UUID) ([]Want, error) {
+	rows, err := q.db.Query(ctx, listWantsByDownloadJob, downloadJobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.EpisodeID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listWantsByTracking = `-- name: ListWantsByTracking :many
@@ -492,9 +638,53 @@ func (q *Queries) ReclaimStaleSearchingWants(ctx context.Context, arg ReclaimSta
 	return items, nil
 }
 
+const releaseWantFromGrab = `-- name: ReleaseWantFromGrab :one
+UPDATE want
+SET status = 'pending',
+    attempt_count = 0,
+    last_error = $1,
+    next_run_at = now(),
+    updated_at = now()
+WHERE id = $2
+  AND status IN ('grabbed', 'downloading')
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type ReleaseWantFromGrabParams struct {
+	LastError *string     `json:"last_error"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// ReleaseWantFromGrab returns a want covered by a pack job that no file
+// satisfied (a COMPLETE pack missing a later-aired episode) to 'pending' so it
+// re-searches instead of wedging in 'grabbed'/'downloading'. The CAS guard fires
+// only from those two in-flight states, so it can't resurrect a canceled/terminal
+// want; attempt_count resets (this isn't a failure, the pack simply didn't carry
+// the file) and next_run_at is now (re-search immediately). A 0-row match
+// surfaces as pgx.ErrNoRows.
+func (q *Queries) ReleaseWantFromGrab(ctx context.Context, arg ReleaseWantFromGrabParams) (Want, error) {
+	row := q.db.QueryRow(ctx, releaseWantFromGrab, arg.LastError, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const rescheduleWantRecheck = `-- name: RescheduleWantRecheck :one
 UPDATE want
 SET status = 'pending',
+    attempt_count = 0,
     last_error = $1,
     next_run_at = $2,
     updated_at = now()
@@ -510,11 +700,13 @@ type RescheduleWantRecheckParams struct {
 }
 
 // RescheduleWantRecheck returns a still-'searching' want to 'pending' for the
-// "no eligible release yet" path — identical to ScheduleWantRetry minus the
-// attempt_count bump. attempt_count and its 3-attempt ceiling are reserved for
-// genuine error retries; a poll that found nothing must not inflate the counter
-// that gates transient-error failure. The 'searching' guard is the same CAS as
-// ScheduleWantRetry.
+// "no eligible release yet" path: a search that reached the indexer and simply
+// found nothing. It resets attempt_count to 0 — successfully reaching the indexer
+// clears the consecutive-error counter, so a later infra blip backs off from
+// scratch rather than inheriting a stale climb. attempt_count means "consecutive
+// retryable front-half errors since the last successful reach"; it drives only
+// the backoff ramp (ScheduleWantRetry), never a terminal transition. The
+// 'searching' guard is the same CAS as ScheduleWantRetry.
 func (q *Queries) RescheduleWantRecheck(ctx context.Context, arg RescheduleWantRecheckParams) (Want, error) {
 	row := q.db.QueryRow(ctx, rescheduleWantRecheck, arg.LastError, arg.NextRunAt, arg.ID)
 	var i Want

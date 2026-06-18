@@ -310,7 +310,6 @@ type DownloadJob struct {
 	EtaSeconds           *int64        `json:"eta_seconds"`
 	TotalSize            *int64        `json:"total_size"`
 	ErrorKind            NullErrorKind `json:"error_kind"`
-	WantID               pgtype.UUID   `json:"want_id"`
 }
 
 type DownloadJobEvent struct {
@@ -321,6 +320,12 @@ type DownloadJobEvent struct {
 	NewStatus     *string     `json:"new_status"`
 	Message       *string     `json:"message"`
 	Metadata      []byte      `json:"metadata"`
+	CreatedAt     time.Time   `json:"created_at"`
+}
+
+type DownloadJobWant struct {
+	DownloadJobID pgtype.UUID `json:"download_job_id"`
+	WantID        pgtype.UUID `json:"want_id"`
 	CreatedAt     time.Time   `json:"created_at"`
 }
 

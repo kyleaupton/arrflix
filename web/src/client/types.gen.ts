@@ -246,7 +246,6 @@ export type DownloadJob = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
-    wantId: string;
 };
 
 export type DownloadJobBySeriesEntry = {
@@ -281,7 +280,6 @@ export type DownloadJobBySeriesEntry = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
-    wantId: string;
 };
 
 export type DownloadJobHistoryEntry = {
@@ -315,7 +313,6 @@ export type DownloadJobHistoryEntry = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
-    wantId: string;
 };
 
 export type DownloadJobTimelineEvent = {
@@ -378,7 +375,6 @@ export type DownloadJobWithSummary = {
     totalImportTasks: number;
     totalSize: number | null;
     updatedAt: string;
-    wantId: string;
 };
 
 export type Downloader = {
@@ -2338,7 +2334,6 @@ export type DownloadJobWithSummaryWritable = {
     totalImportTasks: number;
     totalSize: number | null;
     updatedAt: string;
-    wantId: string;
 };
 
 export type DownloaderWritable = {

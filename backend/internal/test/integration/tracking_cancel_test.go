@@ -137,7 +137,6 @@ func TestTracking_Cancel(t *testing.T) {
 		Protocol:       "torrent",
 		MediaType:      "series",
 		MediaItemID:    item.ID,
-		WantID:         wDownloading.ID,
 		IndexerID:      1,
 		Guid:           "guid-downloading",
 		CandidateTitle: "Cancel Show S01E03 1080p WEB",
@@ -148,6 +147,9 @@ func TestTracking_Cancel(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("create download job: %v", err)
+	}
+	if err := app.Repo.LinkDownloadJobWant(ctx, job.ID, wDownloading.ID); err != nil {
+		t.Fatalf("link download job to want: %v", err)
 	}
 	if _, err := app.Repo.SetDownloadJobDownloadSnapshot(ctx, repo.SetDownloadJobDownloadSnapshotParams{
 		ID:     job.ID,

@@ -568,8 +568,6 @@ components:
         updatedAt:
           format: date-time
           type: string
-        wantId:
-          type: string
       required:
         - id
         - status
@@ -582,7 +580,6 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
-        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId
@@ -702,8 +699,6 @@ components:
         updatedAt:
           format: date-time
           type: string
-        wantId:
-          type: string
       required:
         - seasonNumber
         - episodeNumber
@@ -718,7 +713,6 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
-        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId
@@ -831,8 +825,6 @@ components:
         updatedAt:
           format: date-time
           type: string
-        wantId:
-          type: string
       required:
         - chainDepth
         - id
@@ -846,7 +838,6 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
-        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId
@@ -1055,8 +1046,6 @@ components:
         updatedAt:
           format: date-time
           type: string
-        wantId:
-          type: string
       required:
         - tmdbId
         - mediaPosterPath
@@ -1083,7 +1072,6 @@ components:
         - mediaItemId
         - seasonId
         - episodeId
-        - wantId
         - libraryId
         - nameTemplateId
         - downloaderId

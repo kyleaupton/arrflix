@@ -301,11 +301,15 @@ func TestEnqueueCandidate_UntrackedYieldsLinkedWant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnqueueCandidate: %v", err)
 	}
-	if job.WantID == uuid.Nil {
-		t.Fatalf("download job wantId = nil, want a linked want")
+	linkedWants, err := r.ListWantsByDownloadJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("list wants for download job: %v", err)
+	}
+	if len(linkedWants) != 1 {
+		t.Fatalf("download job linked wants = %d, want 1", len(linkedWants))
 	}
 
-	want, err := r.GetWant(ctx, job.WantID)
+	want, err := r.GetWant(ctx, linkedWants[0].ID)
 	if err != nil {
 		t.Fatalf("get want: %v", err)
 	}

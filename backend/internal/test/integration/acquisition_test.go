@@ -4,11 +4,13 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/kyleaupton/arrflix/internal/indexer"
+	acquisitionworker "github.com/kyleaupton/arrflix/internal/jobs/acquisition"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
@@ -296,8 +298,12 @@ func TestAcquisition_ProcessWant_HappyPath(t *testing.T) {
 		t.Fatalf("download jobs = %d, want 1", len(jobs))
 	}
 	job := jobs[0]
-	if job.WantID != want.ID {
-		t.Errorf("download job wantId = %s, want %s", job.WantID, want.ID)
+	linkedWants, err := r.ListWantsByDownloadJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("list wants for download job: %v", err)
+	}
+	if len(linkedWants) != 1 || linkedWants[0].ID != want.ID {
+		t.Errorf("download job linked wants = %v, want [%s]", linkedWants, want.ID)
 	}
 	if job.Status != "created" {
 		t.Errorf("download job status = %q, want %q", job.Status, "created")
@@ -368,8 +374,12 @@ func TestAcquisition_ProcessWant_PicksQualified(t *testing.T) {
 		t.Fatalf("download jobs = %d, want 1", len(jobs))
 	}
 	job := jobs[0]
-	if job.WantID != want.ID {
-		t.Errorf("download job wantId = %s, want %s", job.WantID, want.ID)
+	linkedWants, err := r.ListWantsByDownloadJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("list wants for download job: %v", err)
+	}
+	if len(linkedWants) != 1 || linkedWants[0].ID != want.ID {
+		t.Errorf("download job linked wants = %v, want [%s]", linkedWants, want.ID)
 	}
 	if job.Guid != "guid-1080" {
 		t.Errorf("download job guid = %q, want %q (the 720p should be gated out)", job.Guid, "guid-1080")
@@ -691,12 +701,11 @@ func TestAcquisition_WantLinkage(t *testing.T) {
 		t.Fatalf("create name template: %v", err)
 	}
 
-	// download_job links to the want.
+	// download_job links to the want through download_job_want (M:N).
 	job, err := r.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
 		Protocol:       "torrent",
 		MediaType:      "movie",
 		MediaItemID:    media.ID,
-		WantID:         want.ID,
 		IndexerID:      1,
 		Guid:           "guid-with-want",
 		CandidateTitle: "The Matrix 1999 1080p BluRay",
@@ -708,18 +717,40 @@ func TestAcquisition_WantLinkage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create download job: %v", err)
 	}
-	if job.WantID != want.ID {
-		t.Errorf("download job wantId = %s, want %s", job.WantID, want.ID)
-	}
-	gotJob, err := r.GetDownloadJob(ctx, job.ID)
-	if err != nil {
-		t.Fatalf("get download job: %v", err)
-	}
-	if gotJob.WantID != want.ID {
-		t.Errorf("round-tripped download job wantId = %s, want %s", gotJob.WantID, want.ID)
+	if err := r.LinkDownloadJobWant(ctx, job.ID, want.ID); err != nil {
+		t.Fatalf("link download job to want: %v", err)
 	}
 
-	// import_task links to the want.
+	// The edge resolves both directions: wants-by-job and active-jobs-by-want.
+	linkedWants, err := r.ListWantsByDownloadJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("list wants for download job: %v", err)
+	}
+	if len(linkedWants) != 1 || linkedWants[0].ID != want.ID {
+		t.Fatalf("linked wants = %v, want [%s]", linkedWants, want.ID)
+	}
+	activeJobs, err := r.ListActiveDownloadJobsByWant(ctx, want.ID)
+	if err != nil {
+		t.Fatalf("list active jobs for want: %v", err)
+	}
+	if len(activeJobs) != 1 || activeJobs[0].ID != job.ID {
+		t.Fatalf("active jobs for want = %v, want [%s]", activeJobs, job.ID)
+	}
+
+	// The link is idempotent — re-linking a covered want is a no-op, not a
+	// duplicate row (P2's converging grabs rely on this).
+	if err := r.LinkDownloadJobWant(ctx, job.ID, want.ID); err != nil {
+		t.Fatalf("re-link download job to want: %v", err)
+	}
+	linkedWants, err = r.ListWantsByDownloadJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("list wants for download job after re-link: %v", err)
+	}
+	if len(linkedWants) != 1 {
+		t.Fatalf("linked wants after re-link = %d, want 1 (idempotent)", len(linkedWants))
+	}
+
+	// import_task keeps its single want FK — each file fulfils exactly one want.
 	task, err := r.CreateImportTask(ctx, repo.CreateImportTaskParams{
 		DownloadJobID:  job.ID,
 		SourcePath:     "/downloads/the.matrix.mkv",
@@ -743,13 +774,12 @@ func TestAcquisition_WantLinkage(t *testing.T) {
 		t.Errorf("round-tripped import task wantId = %s, want %s", gotTask.WantID, want.ID)
 	}
 
-	// Nil case: a job with no want — the column is nullable and the mapper is
-	// nil-safe, so the returned WantID is uuid.Nil rather than an error.
-	nilJob, err := r.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
+	// No-link case: a job with no want link reports an empty want list rather
+	// than an error (the interactive series-grab path has no want).
+	unlinkedJob, err := r.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
 		Protocol:       "torrent",
 		MediaType:      "movie",
 		MediaItemID:    media.ID,
-		WantID:         uuid.Nil,
 		IndexerID:      2,
 		Guid:           "guid-no-want",
 		CandidateTitle: "The Matrix 1999 720p BluRay",
@@ -761,8 +791,12 @@ func TestAcquisition_WantLinkage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create download job without want: %v", err)
 	}
-	if nilJob.WantID != uuid.Nil {
-		t.Errorf("download job without want wantId = %s, want uuid.Nil", nilJob.WantID)
+	unlinkedWants, err := r.ListWantsByDownloadJob(ctx, unlinkedJob.ID)
+	if err != nil {
+		t.Fatalf("list wants for unlinked download job: %v", err)
+	}
+	if len(unlinkedWants) != 0 {
+		t.Errorf("unlinked download job wants = %d, want 0", len(unlinkedWants))
 	}
 }
 
@@ -829,8 +863,12 @@ func TestAcquisition_ProcessWant_SeriesHappyPath(t *testing.T) {
 	if job.EpisodeID != seeded.episodeID {
 		t.Errorf("download job episodeId = %s, want %s", job.EpisodeID, seeded.episodeID)
 	}
-	if job.WantID != want.ID {
-		t.Errorf("download job wantId = %s, want %s", job.WantID, want.ID)
+	linkedWants, err := r.ListWantsByDownloadJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("list wants for download job: %v", err)
+	}
+	if len(linkedWants) != 1 || linkedWants[0].ID != want.ID {
+		t.Errorf("download job linked wants = %v, want [%s]", linkedWants, want.ID)
 	}
 
 	got, err := r.GetWant(ctx, want.ID)
@@ -842,10 +880,11 @@ func TestAcquisition_ProcessWant_SeriesHappyPath(t *testing.T) {
 	}
 }
 
-// TestAcquisition_ProcessWant_SeriesGatesNonEpisode proves the single-episode
-// restriction: a season pack and a wrong-episode release both fail the episode
-// gate, so ProcessWant grabs nothing (grabbed=false), creates no download_job,
-// and the want is left for the worker to reschedule.
+// TestAcquisition_ProcessWant_SeriesGatesNonEpisode proves the still-rejected
+// shapes survive P2's pack acceptance: a multi-season pack and a wrong-episode
+// single both fail the classifier (multi-season and partial-season packs are never
+// accepted, and a single must land on the wanted episode), so with no full-season
+// or covering-range release present, ProcessWant grabs nothing.
 func TestAcquisition_ProcessWant_SeriesGatesNonEpisode(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -861,11 +900,11 @@ func TestAcquisition_ProcessWant_SeriesGatesNonEpisode(t *testing.T) {
 				{
 					IndexerID:   7,
 					IndexerName: "test-indexer",
-					GUID:        "guid-season-pack",
-					Title:       "Game of Thrones S03 1080p BluRay x264",
-					DownloadURL: "http://localhost/s03.torrent",
+					GUID:        "guid-multi-season",
+					Title:       "Game of Thrones S01-S03 1080p BluRay x264",
+					DownloadURL: "http://localhost/s01-s03.torrent",
 					Protocol:    "torrent",
-					Size:        30 << 30,
+					Size:        90 << 30,
 					Categories:  []string{"TV"},
 				},
 				{
@@ -888,7 +927,7 @@ func TestAcquisition_ProcessWant_SeriesGatesNonEpisode(t *testing.T) {
 		t.Fatalf("ProcessWant: %v", err)
 	}
 	if grabbed {
-		t.Fatalf("ProcessWant grabbed = true, want false (season pack + wrong episode must be gated out)")
+		t.Fatalf("ProcessWant grabbed = true, want false (multi-season pack + wrong episode must be gated out)")
 	}
 
 	jobs, err := r.ListDownloadJobsByMediaItem(ctx, want.MediaItemID)
@@ -1011,5 +1050,204 @@ func TestAcquisition_ProcessWant_DedupesSupersededGrab(t *testing.T) {
 	}
 	if got.Status != string(model.WantGrabbed) {
 		t.Errorf("want status = %q, want %q (unchanged by the superseded grab)", got.Status, model.WantGrabbed)
+	}
+}
+
+// retryTestConfig drives the worker on a hot cadence with the retry backoff
+// pinned to zero, so a rescheduled want is immediately due and the loop cycles
+// claim → error → reschedule in milliseconds. ReapAfter is parked far in the
+// future so reclamation rides the normal claim path, not the crash reaper.
+func retryTestConfig() acquisitionworker.Config {
+	return acquisitionworker.Config{
+		PollInterval:    10 * time.Millisecond,
+		ClaimLimit:      20,
+		MaxRetryBackoff: 0,
+		ReapAfter:       time.Hour,
+	}
+}
+
+// TestAcquisition_RetryableErrorNeverFails is the S3 guarantee (Issue B): a
+// retryable front-half error (an indexer briefly unreachable, surfaced as
+// BadGateway) never terminally fails an in-scope want. The worker backs off and
+// retries indefinitely — the want stays pending/searching and its attempt_count
+// climbs well past the old 3-attempt ceiling, never reaching 'failed'.
+func TestAcquisition_RetryableErrorNeverFails(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	want := seedPendingWant(t, ctx, r)
+
+	source := stubIndexerSource{
+		SearchFn: func(ctx context.Context, q indexer.SearchQuery) ([]indexer.SearchResult, error) {
+			return nil, errors.New("indexer unreachable")
+		},
+	}
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	w := acquisitionworker.NewWithConfig(r, svc, service.NewSchedulerService(r, logger.New(true)), logger.New(true), nil, retryTestConfig())
+
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go w.Run(workerCtx)
+
+	// Wait for attempt_count to climb past the old 3-attempt ceiling, asserting
+	// the want never trips to terminal 'failed' on the way.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		got, err := r.GetWant(ctx, want.ID)
+		if err != nil {
+			t.Fatalf("get want: %v", err)
+		}
+		if got.Status == string(model.WantFailed) {
+			t.Fatalf("want terminally failed on a retryable error (attemptCount=%d, lastError=%v); S3 must retry forever", got.AttemptCount, got.LastError)
+		}
+		if got.AttemptCount >= 6 {
+			break // proven: retried past the old ceiling without failing
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("attemptCount reached %d, want >= 6 within deadline (status %q)", got.AttemptCount, got.Status)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestAcquisition_NonRetryableErrorFails proves the other side of S3: a
+// non-retryable error (genuine bad state — here, no default downloader for
+// routing to resolve, a NotFound) still terminally fails the want. The release
+// passes the relevance and quality gates, so the failure originates at routing,
+// downstream of the search, exactly where a real misconfiguration would.
+func TestAcquisition_NonRetryableErrorFails(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	// Seed media → profile → tracking → want, deliberately omitting the
+	// downloader/library/name_template defaults so routing's GetDefaultDownloader
+	// misses and surfaces a NotFound.
+	year := int32(1999)
+	tmdbID := int64(603)
+	media, err := r.CreateMediaItem(ctx, repo.CreateMediaItemParams{
+		Type:   "movie",
+		Title:  "The Matrix",
+		Year:   &year,
+		TmdbID: &tmdbID,
+	})
+	if err != nil {
+		t.Fatalf("create media item: %v", err)
+	}
+	bluray1080 := parsing.BinKey{Source: parsing.SourceBluRay, Resolution: parsing.Res1080p, Modifier: parsing.ModNone}
+	profile, err := r.CreateQualityProfile(ctx, repo.CreateQualityProfileParams{
+		Name:       "HD",
+		Domain:     "movie",
+		Bins:       []parsing.BinKey{bluray1080},
+		Cutoff:     bluray1080,
+		MinSeeders: 0,
+	})
+	if err != nil {
+		t.Fatalf("create quality profile: %v", err)
+	}
+	tracking, err := r.CreateTracking(ctx, repo.CreateTrackingParams{
+		MediaItemID:      media.ID,
+		QualityProfileID: profile.ID,
+		State:            string(model.TrackingActive),
+		Scope:            "self",
+		UpgradeBehavior:  "none",
+		ScheduleStrategy: "smart",
+	})
+	if err != nil {
+		t.Fatalf("create tracking: %v", err)
+	}
+	want, err := r.CreateWant(ctx, repo.CreateWantParams{
+		TrackingID:       tracking.ID,
+		MediaItemID:      media.ID,
+		QualityProfileID: profile.ID,
+		Status:           string(model.WantPending),
+	})
+	if err != nil {
+		t.Fatalf("create want: %v", err)
+	}
+
+	source := stubIndexerSource{
+		SearchFn: func(ctx context.Context, q indexer.SearchQuery) ([]indexer.SearchResult, error) {
+			return []indexer.SearchResult{cannedResult()}, nil
+		},
+	}
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	w := acquisitionworker.NewWithConfig(r, svc, service.NewSchedulerService(r, logger.New(true)), logger.New(true), nil, retryTestConfig())
+
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go w.Run(workerCtx)
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		got, err := r.GetWant(ctx, want.ID)
+		if err != nil {
+			t.Fatalf("get want: %v", err)
+		}
+		if got.Status == string(model.WantFailed) {
+			break // the non-retryable routing error tripped the want terminal, as it should
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("want status = %q, want %q (a non-retryable error must fail terminally)", got.Status, model.WantFailed)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestAcquisition_RescheduleWantRecheckResetsAttempt proves the attempt_count
+// reset: a want that has accumulated retryable-error attempts has its counter
+// cleared by RescheduleWantRecheck (the successful-reach, no-release path), so a
+// later infra blip backs off from scratch rather than inheriting the climb.
+func TestAcquisition_RescheduleWantRecheckResetsAttempt(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	want := seedPendingWant(t, ctx, r)
+	want = claimWant(t, ctx, r, want.ID)
+
+	// Climb attempt_count via the error-retry path: each ScheduleWantRetry bumps
+	// the counter and returns the want to 'pending', so re-flip to 'searching'
+	// before the next bump (and before the recheck CAS, which guards on it).
+	for i := 0; i < 3; i++ {
+		retried, ok, err := r.ScheduleWantRetry(ctx, repo.ScheduleWantRetryParams{
+			ID:        want.ID,
+			LastError: "transient blip",
+			NextRunAt: time.Now().Add(time.Minute),
+		})
+		if err != nil {
+			t.Fatalf("schedule want retry: %v", err)
+		}
+		if !ok {
+			t.Fatalf("ScheduleWantRetry ok = false, want true (want was 'searching')")
+		}
+		if int(retried.AttemptCount) != i+1 {
+			t.Fatalf("attemptCount = %d, want %d after bump %d", retried.AttemptCount, i+1, i+1)
+		}
+		if _, err := r.SetWantStatus(ctx, want.ID, string(model.WantSearching)); err != nil {
+			t.Fatalf("set want searching: %v", err)
+		}
+	}
+
+	rechecked, ok, err := r.RescheduleWantRecheck(ctx, repo.ScheduleWantRetryParams{
+		ID:        want.ID,
+		LastError: "no eligible release",
+		NextRunAt: time.Now().Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("reschedule want recheck: %v", err)
+	}
+	if !ok {
+		t.Fatalf("RescheduleWantRecheck ok = false, want true (want was 'searching')")
+	}
+	if rechecked.AttemptCount != 0 {
+		t.Errorf("attemptCount after recheck = %d, want 0 (successful reach clears the counter)", rechecked.AttemptCount)
+	}
+	if rechecked.Status != string(model.WantPending) {
+		t.Errorf("status after recheck = %q, want %q", rechecked.Status, model.WantPending)
 	}
 }

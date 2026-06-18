@@ -36,6 +36,7 @@ type Services struct {
 	QualityProfiles    *QualityProfileService
 	Reconcile          *ReconcileService
 	Requests           *RequestService
+	Scheduler          *SchedulerService
 	Routing            *RoutingService
 	Scanner            *ScannerService
 	Tracking           *TrackingService
@@ -89,6 +90,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	users := NewUsersService(r)
 	invites := NewInvitesService(r)
 	reconcile := NewReconcileService(r, l)
+	scheduler := NewSchedulerService(r, l)
 	enrichment := NewEnrichmentService(r, l, tmdb, reconcile)
 	downloadJobs := NewDownloadJobsService(r)
 	wants := NewWantService(r, downloadJobs)
@@ -134,6 +136,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Requests:           NewRequestService(r, l, tmdb, quality, enrichment, reconcile),
 		Routing:            routingSvc,
 		Scanner:            NewScannerService(r, l, tmdb, broker, matcherSvc, enrichment),
+		Scheduler:          scheduler,
 		Settings:           settings,
 		Setup:              NewSetupService(r, users, settings, tmdb),
 		Tmdb:               tmdb,

@@ -276,7 +276,6 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 			MediaType:      "movie",
 			MediaItemID:    mi.ID,
 			EpisodeID:      uuid.Nil,
-			WantID:         want.ID,
 			IndexerID:      indexerID,
 			Guid:           guid,
 			CandidateTitle: candidate.Title,
@@ -285,7 +284,10 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 			LibraryID:      libraryID,
 			NameTemplateID: nameTemplateID,
 		})
-		return jerr
+		if jerr != nil {
+			return jerr
+		}
+		return r.LinkDownloadJobWant(ctx, job.ID, want.ID)
 	})
 	if err != nil {
 		return eval, model.DownloadJob{}, err
@@ -469,7 +471,6 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 			MediaItemID:    mi.ID,
 			SeasonID:       seasonID,
 			EpisodeID:      episodeID,
-			WantID:         uuid.Nil,
 			IndexerID:      indexerID,
 			Guid:           guid,
 			CandidateTitle: candidate.Title,

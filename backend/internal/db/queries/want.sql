@@ -1,13 +1,14 @@
 -- Wants: the work item, shaped as a durable work-dispatch queue.
 
 -- name: CreateWant :one
-INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status)
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at)
 VALUES (
   sqlc.arg(tracking_id),
   sqlc.arg(media_item_id),
   sqlc.arg(episode_id),
   sqlc.arg(quality_profile_id),
-  sqlc.arg(status)
+  sqlc.arg(status),
+  COALESCE(sqlc.narg(next_run_at), now())
 )
 RETURNING *;
 
@@ -16,13 +17,14 @@ RETURNING *;
 -- CONFLICT, surfaced as pgx.ErrNoRows) when a concurrent reconcile already made
 -- it. Mirrors CreateTrackingIfAbsent's CAS-returns-bool contract.
 -- name: CreateWantIfAbsent :one
-INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status)
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at)
 VALUES (
   sqlc.arg(tracking_id),
   sqlc.arg(media_item_id),
   sqlc.arg(episode_id),
   sqlc.arg(quality_profile_id),
-  sqlc.arg(status)
+  sqlc.arg(status),
+  COALESCE(sqlc.narg(next_run_at), now())
 )
 ON CONFLICT (tracking_id, episode_id) WHERE episode_id IS NOT NULL DO NOTHING
 RETURNING *;
@@ -35,6 +37,28 @@ WHERE id = $1;
 SELECT * FROM want
 WHERE tracking_id = $1
 ORDER BY created_at DESC;
+
+-- ListWantsByDownloadJob returns the wants a download_job advances, joined
+-- through download_job_want. Backs the download worker's lifecycle mirror and
+-- the import fan-out (each spawned import_task is filed onto a covered want).
+-- name: ListWantsByDownloadJob :many
+SELECT w.* FROM want w
+JOIN download_job_want djw ON djw.want_id = w.id
+WHERE djw.download_job_id = $1
+ORDER BY w.created_at ASC;
+
+-- ListInFlightWantsForTrackingSeason returns the still-acquirable episode wants
+-- (pending/searching) of one tracking+season — the siblings a season pack can
+-- cover. The join to media_episode scopes by season_id; the status filter drops
+-- wants already grabbed/downloading/terminal (a pack only claims what's still
+-- being hunted). Backs the front-half coverage computation.
+-- name: ListInFlightWantsForTrackingSeason :many
+SELECT w.* FROM want w
+JOIN media_episode me ON me.id = w.episode_id
+WHERE w.tracking_id = sqlc.arg(tracking_id)
+  AND me.season_id = sqlc.arg(season_id)
+  AND w.status IN ('pending', 'searching')
+ORDER BY w.created_at ASC;
 
 -- ClaimRunnableWants atomically claims pending wants that are due, flipping them
 -- to 'searching' so a concurrent claim skips them. FOR UPDATE SKIP LOCKED is the
@@ -104,6 +128,38 @@ WHERE id = sqlc.arg(id)
   AND status = 'searching'
 RETURNING *;
 
+-- GrabWantsForPack batch-claims the in-flight wants a season pack covers,
+-- flipping each 'pending'/'searching' want to 'grabbed' in one statement. The
+-- IN-guard makes it the multi-want analogue of GrabWant: a want already advanced
+-- (or terminal) isn't in the set, so it's skipped silently and the RETURNING set
+-- reports exactly which wants this grab claimed (the ones to link to the pack
+-- job). Concurrent grabbers serialize on the row locks.
+-- name: GrabWantsForPack :many
+UPDATE want
+SET status = 'grabbed',
+    updated_at = now()
+WHERE id = ANY(sqlc.arg(ids)::uuid[])
+  AND status IN ('pending', 'searching')
+RETURNING *;
+
+-- ReleaseWantFromGrab returns a want covered by a pack job that no file
+-- satisfied (a COMPLETE pack missing a later-aired episode) to 'pending' so it
+-- re-searches instead of wedging in 'grabbed'/'downloading'. The CAS guard fires
+-- only from those two in-flight states, so it can't resurrect a canceled/terminal
+-- want; attempt_count resets (this isn't a failure, the pack simply didn't carry
+-- the file) and next_run_at is now (re-search immediately). A 0-row match
+-- surfaces as pgx.ErrNoRows.
+-- name: ReleaseWantFromGrab :one
+UPDATE want
+SET status = 'pending',
+    attempt_count = 0,
+    last_error = sqlc.arg(last_error),
+    next_run_at = now(),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND status IN ('grabbed', 'downloading')
+RETURNING *;
+
 -- GrabWantManual flips a want to 'grabbed' for the manual-grab path via
 -- compare-and-swap. The IN (...) set is the race-safe gate: it fires only from
 -- the pre-grab/terminal states a manual grab may pre-empt or reactivate
@@ -150,14 +206,17 @@ WHERE id = sqlc.arg(id)
 RETURNING *;
 
 -- RescheduleWantRecheck returns a still-'searching' want to 'pending' for the
--- "no eligible release yet" path — identical to ScheduleWantRetry minus the
--- attempt_count bump. attempt_count and its 3-attempt ceiling are reserved for
--- genuine error retries; a poll that found nothing must not inflate the counter
--- that gates transient-error failure. The 'searching' guard is the same CAS as
--- ScheduleWantRetry.
+-- "no eligible release yet" path: a search that reached the indexer and simply
+-- found nothing. It resets attempt_count to 0 — successfully reaching the indexer
+-- clears the consecutive-error counter, so a later infra blip backs off from
+-- scratch rather than inheriting a stale climb. attempt_count means "consecutive
+-- retryable front-half errors since the last successful reach"; it drives only
+-- the backoff ramp (ScheduleWantRetry), never a terminal transition. The
+-- 'searching' guard is the same CAS as ScheduleWantRetry.
 -- name: RescheduleWantRecheck :one
 UPDATE want
 SET status = 'pending',
+    attempt_count = 0,
     last_error = sqlc.arg(last_error),
     next_run_at = sqlc.arg(next_run_at),
     updated_at = now()

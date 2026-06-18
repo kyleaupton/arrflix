@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"testing"
+	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 
@@ -171,8 +172,9 @@ const spawnSeriesTmdbID = int64(1396) // Breaking Bad
 
 // TestSpawn_Series drives the series spawn branch end-to-end through the service:
 // an approved series request spawns a tracking + requester (scope 'all'), then
-// the post-commit structure sync + reconcile produce a pending want for the
-// aired episode only — the unaired episode gets none.
+// the post-commit structure sync + reconcile produce a pending want for each
+// dated episode — the aired pilot due immediately (next_run_at in the past), the
+// future episode deferred to its air date (next_run_at in the future).
 func TestSpawn_Series(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -234,19 +236,32 @@ func TestSpawn_Series(t *testing.T) {
 		t.Errorf("requester scopeRule = %q, want all", requesters[0].ScopeRule)
 	}
 
-	// The reconciler produced one want — the aired pilot, not the future episode.
+	// The reconciler produced a want per dated episode: the aired pilot due now,
+	// the future episode deferred to its air date.
 	wants, err := app.Services.Tracking.ListWants(ctx, trackingID)
 	if err != nil {
 		t.Fatalf("list wants: %v", err)
 	}
-	if len(wants) != 1 {
-		t.Fatalf("want count = %d, want 1 (aired episode only)", len(wants))
+	if len(wants) != 2 {
+		t.Fatalf("want count = %d, want 2 (pilot + future episode)", len(wants))
 	}
-	if wants[0].Status != string(model.WantPending) {
-		t.Errorf("want status = %q, want pending", wants[0].Status)
+	now := time.Now()
+	var dueNow, deferred int
+	for _, w := range wants {
+		if w.Status != string(model.WantPending) {
+			t.Errorf("want status = %q, want pending", w.Status)
+		}
+		if w.EpisodeID == nil {
+			t.Errorf("series want has nil episodeId")
+		}
+		if w.NextRunAt.After(now) {
+			deferred++
+		} else {
+			dueNow++
+		}
 	}
-	if wants[0].EpisodeID == nil {
-		t.Errorf("series want has nil episodeId")
+	if dueNow != 1 || deferred != 1 {
+		t.Errorf("want scheduling = %d due-now / %d deferred, want 1 / 1 (pilot due, future deferred)", dueNow, deferred)
 	}
 }
 

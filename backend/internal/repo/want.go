@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -14,13 +15,17 @@ import (
 
 // CreateWantParams is the domain-shaped input for CreateWant. Mirrors the
 // writeable subset of model.Want (omits server-managed ID/timestamps and the
-// runtime-managed next_run_at/attempt_count/last_error fields).
+// runtime-managed attempt_count/last_error fields). NextRunAt is an optional
+// creation input: nil keeps the column's DEFAULT now() ("search immediately"),
+// while a value defers the first claim until that time — the series reconciler
+// stamps an episode's air date so a future episode's want sits pending until air.
 type CreateWantParams struct {
 	TrackingID       uuid.UUID
 	MediaItemID      uuid.UUID
 	EpisodeID        *uuid.UUID
 	QualityProfileID uuid.UUID
 	Status           string
+	NextRunAt        *time.Time
 }
 
 // toModelWant translates a persistence-shaped dbgen.Want into the
@@ -48,6 +53,7 @@ func (r *Repository) CreateWant(ctx context.Context, params CreateWantParams) (m
 		EpisodeID:        pgtypeFromUUIDPtr(params.EpisodeID),
 		QualityProfileID: pgtypeFromUUIDOrNull(params.QualityProfileID),
 		Status:           params.Status,
+		NextRunAt:        params.NextRunAt,
 	})
 	if err != nil {
 		return model.Want{}, apperrors.FromPg(err, "create want for tracking %s", params.TrackingID)
@@ -67,6 +73,7 @@ func (r *Repository) CreateWantIfAbsent(ctx context.Context, params CreateWantPa
 		EpisodeID:        pgtypeFromUUIDPtr(params.EpisodeID),
 		QualityProfileID: pgtypeFromUUIDOrNull(params.QualityProfileID),
 		Status:           params.Status,
+		NextRunAt:        params.NextRunAt,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -89,6 +96,40 @@ func (r *Repository) ListWantsByTracking(ctx context.Context, trackingID uuid.UU
 	rows, err := r.Q.ListWantsByTracking(ctx, pgtypeFromUUID(trackingID))
 	if err != nil {
 		return nil, apperrors.FromPg(err, "list wants for tracking %s", trackingID)
+	}
+	out := make([]model.Want, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelWant(row))
+	}
+	return out, nil
+}
+
+// ListWantsByDownloadJob returns the wants a download_job advances, joined
+// through download_job_want. Backs the download worker's lifecycle mirror and
+// the import fan-out. In P1 a job links exactly one want; the slice is the M:N
+// shape the season-pack work fans out over.
+func (r *Repository) ListWantsByDownloadJob(ctx context.Context, jobID uuid.UUID) ([]model.Want, error) {
+	rows, err := r.Q.ListWantsByDownloadJob(ctx, pgtypeFromUUID(jobID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list wants for download job %s", jobID)
+	}
+	out := make([]model.Want, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelWant(row))
+	}
+	return out, nil
+}
+
+// ListInFlightWantsForTrackingSeason returns the still-acquirable episode wants
+// (pending/searching) of one tracking+season — the siblings a season pack can
+// cover. Backs the front-half coverage computation.
+func (r *Repository) ListInFlightWantsForTrackingSeason(ctx context.Context, trackingID, seasonID uuid.UUID) ([]model.Want, error) {
+	rows, err := r.Q.ListInFlightWantsForTrackingSeason(ctx, dbgen.ListInFlightWantsForTrackingSeasonParams{
+		TrackingID: pgtypeFromUUID(trackingID),
+		SeasonID:   pgtypeFromUUID(seasonID),
+	})
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list in-flight wants for tracking %s season %s", trackingID, seasonID)
 	}
 	out := make([]model.Want, 0, len(rows))
 	for _, row := range rows {
@@ -172,6 +213,46 @@ func (r *Repository) GrabWant(ctx context.Context, id uuid.UUID) (model.Want, bo
 	return toModelWant(row), true, nil
 }
 
+// GrabWantsForPack batch-claims the in-flight wants a season pack covers, flipping
+// each 'pending'/'searching' want to 'grabbed'. It returns exactly the wants this
+// grab claimed (the RETURNING set) — a want already advanced or terminal is skipped
+// silently, so the caller links only the returned rows to the pack job. The
+// multi-want analogue of GrabWant.
+func (r *Repository) GrabWantsForPack(ctx context.Context, ids []uuid.UUID) ([]model.Want, error) {
+	pgIDs := make([]pgtype.UUID, len(ids))
+	for i, id := range ids {
+		pgIDs[i] = pgtypeFromUUID(id)
+	}
+	rows, err := r.Q.GrabWantsForPack(ctx, pgIDs)
+	if err != nil {
+		return nil, apperrors.FromPg(err, "grab wants for pack")
+	}
+	out := make([]model.Want, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelWant(row))
+	}
+	return out, nil
+}
+
+// ReleaseWantFromGrab returns an under-covered want (a pack carried no file for it)
+// to 'pending' via compare-and-swap so it re-searches. The bool reports whether the
+// release landed: false (a 0-row CAS, surfaced as pgx.ErrNoRows) means the want
+// wasn't in an in-flight ('grabbed'/'downloading') state — already terminal or
+// reset — so the release is a benign no-op, not an error.
+func (r *Repository) ReleaseWantFromGrab(ctx context.Context, id uuid.UUID, lastError string) (model.Want, bool, error) {
+	row, err := r.Q.ReleaseWantFromGrab(ctx, dbgen.ReleaseWantFromGrabParams{
+		ID:        pgtypeFromUUID(id),
+		LastError: &lastError,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "release want %s from grab", id)
+	}
+	return toModelWant(row), true, nil
+}
+
 // GrabWantManual flips a want to 'grabbed' for the manual-grab path via
 // compare-and-swap. The bool reports whether the flip landed: false (a 0-row
 // CAS, surfaced as pgx.ErrNoRows) means the want wasn't in a grabbable state
@@ -235,12 +316,12 @@ func (r *Repository) ScheduleWantRetry(ctx context.Context, params ScheduleWantR
 }
 
 // RescheduleWantRecheck reschedules a still-'searching' want via
-// compare-and-swap for the "no eligible release yet" path, leaving attempt_count
-// untouched — the counter and its ceiling belong to genuine error retries
-// (ScheduleWantRetry) alone. Reuses ScheduleWantRetryParams; the bool reports
-// the same CAS-ownership contract: false (a 0-row CAS, surfaced as
-// pgx.ErrNoRows) means the want is no longer 'searching' (reaper reset, another
-// worker re-claimed), a benign no-op.
+// compare-and-swap for the "no eligible release yet" path, resetting
+// attempt_count to 0 — successfully reaching the indexer clears the
+// consecutive-error counter that drives the retry backoff (ScheduleWantRetry).
+// Reuses ScheduleWantRetryParams; the bool reports the same CAS-ownership
+// contract: false (a 0-row CAS, surfaced as pgx.ErrNoRows) means the want is no
+// longer 'searching' (reaper reset, another worker re-claimed), a benign no-op.
 func (r *Repository) RescheduleWantRecheck(ctx context.Context, params ScheduleWantRetryParams) (model.Want, bool, error) {
 	row, err := r.Q.RescheduleWantRecheck(ctx, dbgen.RescheduleWantRecheckParams{
 		ID:        pgtypeFromUUID(params.ID),

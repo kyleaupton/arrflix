@@ -5,7 +5,6 @@ package integration
 import (
 	"context"
 	"testing"
-	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 
@@ -22,15 +21,16 @@ import (
 const selfHealSeriesTmdbID = int64(82856) // The Mandalorian
 
 // TestEnrichSeries_SelfHealReconcile is the Phase 5 self-heal loop: a tracked
-// series whose only episode is unaired gets no want from the spawn-time reconcile;
-// once that episode airs, the next enrichment re-syncs the tree and the post-sync
+// series whose only episode is undated (air_date TBA) gets no want from the
+// spawn-time reconcile — there's no anchor to schedule against; once TMDB
+// announces the air date, the next enrichment re-syncs the tree and the post-sync
 // reconcile trigger produces a pending want autonomously — closing the loop with
 // no second request.
 //
 // The episode tree is seeded directly (rather than via spawn) so enrichment's
 // season fetch — and the TMDB cache it populates — happens exactly once, with the
-// now-aired air_date. Production reaches the same state when the 7-day metadata
-// staleness window lets enrichment re-sync after the episode airs.
+// announced air_date. Production reaches the same state when the 7-day metadata
+// staleness window lets enrichment re-sync after TMDB fills the date in.
 func TestEnrichSeries_SelfHealReconcile(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -46,7 +46,7 @@ func TestEnrichSeries_SelfHealReconcile(t *testing.T) {
 		t.Fatalf("resolve HD series profile: %v", err)
 	}
 
-	// Tracked series with a single, unaired episode (air_date in the future).
+	// Tracked series with a single, undated episode (air_date TBA / NULL).
 	tmdbID := selfHealSeriesTmdbID
 	item, err := app.Repo.UpsertMediaItem(ctx, repo.UpsertMediaItemParams{
 		Type:   string(parsing.DomainSeries),
@@ -61,11 +61,10 @@ func TestEnrichSeries_SelfHealReconcile(t *testing.T) {
 		t.Fatalf("upsert season: %v", err)
 	}
 	episodeTmdbID := int64(900001)
-	future := time.Now().Add(48 * time.Hour)
 	if _, err := app.Repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
 		SeasonID:      season.ID,
 		EpisodeNumber: 1,
-		AirDate:       &future,
+		AirDate:       nil,
 		TmdbID:        &episodeTmdbID,
 	}); err != nil {
 		t.Fatalf("upsert episode: %v", err)
@@ -92,18 +91,18 @@ func TestEnrichSeries_SelfHealReconcile(t *testing.T) {
 		t.Fatalf("add requester: %v", err)
 	}
 
-	// First reconcile: the episode is unaired, so it gets no want yet.
+	// First reconcile: the episode is undated, so it gets no want yet.
 	if err := app.Services.Reconcile.Reconcile(ctx, tracking.ID); err != nil {
 		t.Fatalf("first reconcile: %v", err)
 	}
 	if wants, err := app.Services.Tracking.ListWants(ctx, tracking.ID); err != nil {
 		t.Fatalf("list wants after first reconcile: %v", err)
 	} else if len(wants) != 0 {
-		t.Fatalf("want count after first reconcile = %d, want 0 (episode unaired)", len(wants))
+		t.Fatalf("want count after first reconcile = %d, want 0 (episode undated)", len(wants))
 	}
 
-	// The episode airs. Enrichment re-syncs the tree from TMDB — the stub reports
-	// the same episode (same TMDB id → updated in place) with a past air_date —
+	// TMDB announces the air date. Enrichment re-syncs the tree — the stub reports
+	// the same episode (same TMDB id → updated in place) now carrying an air_date —
 	// then the post-sync reconcile trigger fires.
 	tmdbSrv.OnTVDetails(selfHealSeriesTmdbID, tmdb.TVDetails{
 		ID:           selfHealSeriesTmdbID,
@@ -119,13 +118,13 @@ func TestEnrichSeries_SelfHealReconcile(t *testing.T) {
 		t.Fatalf("re-enrich: %v", err)
 	}
 
-	// The post-sync reconcile produced the want the now-aired episode is owed.
+	// The post-sync reconcile produced the want the now-dated episode is owed.
 	wants, err := app.Services.Tracking.ListWants(ctx, tracking.ID)
 	if err != nil {
 		t.Fatalf("list wants after enrich: %v", err)
 	}
 	if len(wants) != 1 {
-		t.Fatalf("want count after enrich = %d, want 1 (episode now aired)", len(wants))
+		t.Fatalf("want count after enrich = %d, want 1 (episode now dated)", len(wants))
 	}
 	if wants[0].Status != string(model.WantPending) {
 		t.Errorf("self-healed want status = %q, want pending", wants[0].Status)

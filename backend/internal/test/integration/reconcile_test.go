@@ -35,10 +35,21 @@ func wantsByEpisode(t *testing.T, app *testapp.App, ctx context.Context, trackin
 	return out
 }
 
+// sameInstant asserts two times denote the same instant (timezone-insensitive) —
+// air dates round-trip through Postgres, so compare with Equal, not ==.
+func sameInstant(t *testing.T, label string, got, want time.Time) {
+	t.Helper()
+	if !got.Equal(want) {
+		t.Errorf("%s next_run_at = %v, want %v", label, got, want)
+	}
+}
+
 // TestReconcile_ProducesAndCancelsWants seeds a series episode tree directly and
-// drives the reconciler: wants appear only for aired, file-less, non-deprecated,
-// in-scope episodes; the pass is idempotent; and narrowing scope cancels the
-// now-out-of-scope want without disturbing the tracking state.
+// drives the reconciler: wants appear for every file-less, dated, non-deprecated,
+// in-scope episode — aired or future — with next_run_at stamped to the air date;
+// undated and file-backed episodes get none; the pass is idempotent; and
+// narrowing scope cancels the now-out-of-scope (future) want without disturbing
+// the tracking state.
 func TestReconcile_ProducesAndCancelsWants(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -75,12 +86,12 @@ func TestReconcile_ProducesAndCancelsWants(t *testing.T) {
 		t.Fatalf("upsert season 2: %v", err)
 	}
 
-	mkEpisode := func(season uuid.UUID, num int32, air time.Time, tmdb int64) model.MediaEpisode {
+	mkEpisode := func(season uuid.UUID, num int32, air *time.Time, tmdb int64) model.MediaEpisode {
 		t.Helper()
 		ep, err := app.Repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
 			SeasonID:      season,
 			EpisodeNumber: num,
-			AirDate:       &air,
+			AirDate:       air,
 			TmdbID:        &tmdb,
 		})
 		if err != nil {
@@ -89,11 +100,12 @@ func TestReconcile_ProducesAndCancelsWants(t *testing.T) {
 		return ep
 	}
 
-	e1 := mkEpisode(s1.ID, 1, past, 101) // aired, file-less → want
-	e2 := mkEpisode(s1.ID, 2, past, 102) // aired, has file  → no want
-	_ = mkEpisode(s1.ID, 3, future, 103) // unaired          → no want
-	e4 := mkEpisode(s1.ID, 4, past, 104) // aired, deprecated → no want
-	e5 := mkEpisode(s2.ID, 1, past, 201) // aired, file-less → want (season 2)
+	e1 := mkEpisode(s1.ID, 1, &past, 101)   // aired, file-less   → want (due now)
+	e2 := mkEpisode(s1.ID, 2, &past, 102)   // aired, has file    → no want
+	e3 := mkEpisode(s1.ID, 3, &future, 103) // future, file-less  → want (deferred to air)
+	e4 := mkEpisode(s1.ID, 4, &past, 104)   // aired, deprecated  → no want
+	e6 := mkEpisode(s1.ID, 5, nil, 105)     // undated (TBA)      → no want
+	e5 := mkEpisode(s2.ID, 1, &future, 201) // future, file-less  → want (season 2)
 
 	// Give e2 a file so it reads as already-acquired.
 	if _, err := app.Repo.CreateLibrary(ctx, repo.CreateLibraryParams{
@@ -116,7 +128,7 @@ func TestReconcile_ProducesAndCancelsWants(t *testing.T) {
 	}
 
 	// Deprecate e4 by omitting its tmdb id from the synced set.
-	if err := app.Repo.DeprecateRemovedEpisodes(ctx, item.ID, []int64{101, 102, 103, 201}); err != nil {
+	if err := app.Repo.DeprecateRemovedEpisodes(ctx, item.ID, []int64{101, 102, 103, 105, 201}); err != nil {
 		t.Fatalf("deprecate e4: %v", err)
 	}
 
@@ -142,15 +154,17 @@ func TestReconcile_ProducesAndCancelsWants(t *testing.T) {
 		t.Fatalf("add requester: %v", err)
 	}
 
-	// First reconcile: wants only for e1 and e5.
+	// First reconcile: wants for the file-less, dated, in-scope episodes —
+	// e1 (aired), e3 (future, season 1), e5 (future, season 2).
 	if err := app.Services.Reconcile.Reconcile(ctx, tracking.ID); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
+	now := time.Now()
 	got := wantsByEpisode(t, app, ctx, tracking.ID)
-	if len(got) != 2 {
-		t.Fatalf("want count = %d, want 2 (e1, e5)", len(got))
+	if len(got) != 3 {
+		t.Fatalf("want count = %d, want 3 (e1, e3, e5)", len(got))
 	}
-	for _, id := range []uuid.UUID{e1.ID, e5.ID} {
+	for _, id := range []uuid.UUID{e1.ID, e3.ID, e5.ID} {
 		w, ok := got[id]
 		if !ok {
 			t.Fatalf("missing want for episode %s", id)
@@ -162,9 +176,25 @@ func TestReconcile_ProducesAndCancelsWants(t *testing.T) {
 			t.Errorf("want for %s profile = %s, want %s", id, w.QualityProfileID, profile.ID)
 		}
 	}
-	for _, id := range []uuid.UUID{e2.ID, e4.ID} {
+
+	// (a) Aired episode: next_run_at stamped to its past air date, so the want is
+	// already due — ClaimRunnableWants (next_run_at <= now()) can pick it up.
+	// air_date is DATE-granular (midnight UTC), so assert against the stored value.
+	sameInstant(t, "e1 (aired)", got[e1.ID].NextRunAt, *e1.AirDate)
+	if !got[e1.ID].NextRunAt.Before(now) {
+		t.Errorf("e1 next_run_at = %v, want before now (immediately claimable)", got[e1.ID].NextRunAt)
+	}
+	// (b) Future episode: next_run_at = its future air date, so the want defers —
+	// not yet claimable until it airs.
+	sameInstant(t, "e3 (future)", got[e3.ID].NextRunAt, *e3.AirDate)
+	if !got[e3.ID].NextRunAt.After(now) {
+		t.Errorf("e3 next_run_at = %v, want after now (deferred to air)", got[e3.ID].NextRunAt)
+	}
+
+	// (c) undated and (d) file-backed / deprecated episodes get no want.
+	for _, id := range []uuid.UUID{e2.ID, e4.ID, e6.ID} {
 		if _, ok := got[id]; ok {
-			t.Errorf("unexpected want for episode %s (has-file/deprecated)", id)
+			t.Errorf("unexpected want for episode %s (has-file/deprecated/undated)", id)
 		}
 	}
 
@@ -172,12 +202,12 @@ func TestReconcile_ProducesAndCancelsWants(t *testing.T) {
 	if err := app.Services.Reconcile.Reconcile(ctx, tracking.ID); err != nil {
 		t.Fatalf("reconcile (2): %v", err)
 	}
-	if got := wantsByEpisode(t, app, ctx, tracking.ID); len(got) != 2 {
-		t.Fatalf("want count after re-run = %d, want 2 (no duplicates)", len(got))
+	if got := wantsByEpisode(t, app, ctx, tracking.ID); len(got) != 3 {
+		t.Fatalf("want count after re-run = %d, want 3 (no duplicates)", len(got))
 	}
 
-	// Narrow scope to season 1: e5's want (season 2) falls out of scope and is
-	// canceled; e1 stays pending; the tracking stays active.
+	// Narrow scope to season 1: e5's pre-created future want (season 2) falls out
+	// of scope and is canceled; e1 stays pending; the tracking stays active.
 	seasonOne := int32(1)
 	if _, err := app.Repo.AddRequester(ctx, repo.AddRequesterParams{
 		TrackingID:  tracking.ID,

@@ -3,9 +3,11 @@ package service
 import (
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/kyleaupton/arrflix/internal/indexer"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
+	"github.com/kyleaupton/arrflix/internal/qualityprofile"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -82,48 +84,97 @@ func TestRelevanceReason(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			parsed := parsing.Parse(tc.title, parsing.DomainMovie)
-			reason, ok := relevanceReason(tc.res, parsed, mi, tc.imdbID, nil)
-			if ok != tc.wantOK {
-				t.Fatalf("relevanceReason ok = %v, want %v (reason=%q)", ok, tc.wantOK, reason)
+			kind, reason := relevanceReason(tc.res, parsed, mi, tc.imdbID, nil)
+			if ok := kind != releaseReject; ok != tc.wantOK {
+				t.Fatalf("relevanceReason kind = %v, want ok=%v (reason=%q)", kind, tc.wantOK, reason)
 			}
 		})
 	}
 }
 
-// TestEpisodeReason covers the single-episode numbering gate: a release must be
-// season_episode numbering, exactly the wanted season+episode, and not a
-// season/multi-episode pack. Anime absolute / daily numbering is rejected.
-func TestEpisodeReason(t *testing.T) {
+// TestClassifyEpisodeRelease covers the front-half gate across the five title
+// shapes: a single for the wanted episode, a full-season pack, a multi-episode
+// range that covers it, and the rejects (wrong episode, wrong season,
+// multi-season, partial-season, a range that misses the want).
+func TestClassifyEpisodeRelease(t *testing.T) {
 	t.Parallel()
 
 	ep := &episodeCtx{season: 3, episode: 5}
-
 	cases := []struct {
-		name   string
-		title  string
-		wantOK bool
+		name  string
+		title string
+		want  releaseKind
 	}{
-		{name: "matching S03E05 accepts", title: "The Show S03E05 1080p WEB-DL", wantOK: true},
-		{name: "wrong episode rejects", title: "The Show S03E06 1080p WEB-DL", wantOK: false},
-		{name: "wrong season rejects", title: "The Show S02E05 1080p WEB-DL", wantOK: false},
-		{name: "multi-episode file rejects", title: "The Show S03E05-E06 1080p WEB-DL", wantOK: false},
-		{name: "full-season pack rejects", title: "The Show S03 1080p WEB-DL", wantOK: false},
-		{name: "absolute numbering rejects", title: "The Show - 125 1080p WEB-DL", wantOK: false},
+		{"single wanted episode", "Show.S03E05.1080p.BluRay.x264", releaseSingle},
+		{"single wrong episode", "Show.S03E06.1080p.BluRay.x264", releaseReject},
+		{"full season pack", "Show.S03.COMPLETE.1080p.BluRay.x264", releasePack},
+		{"range covering wanted", "Show.S03E01-E06.1080p.BluRay.x264", releasePack},
+		{"range missing wanted", "Show.S03E01-E04.1080p.BluRay.x264", releaseReject},
+		{"wrong season", "Show.S02E05.1080p.BluRay.x264", releaseReject},
+		{"multi-season pack", "Show.S01-S03.1080p.BluRay.x264", releaseReject},
+		{"partial-season pack", "Show.S03.Part.2.1080p.BluRay.x264", releaseReject},
 	}
-
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			parsed := parsing.Parse(tc.title, parsing.DomainSeries)
-			reason, ok := episodeReason(parsed, ep)
-			if ok != tc.wantOK {
-				t.Fatalf("episodeReason ok = %v, want %v (reason=%q)", ok, tc.wantOK, reason)
+			got, reason := classifyEpisodeRelease(parsed, ep)
+			if got != tc.want {
+				t.Errorf("classifyEpisodeRelease(%q) = %v (%q), want %v", tc.title, got, reason, tc.want)
 			}
 		})
 	}
+}
+
+// TestChoosePick_CoverageGuard proves the coverage-first ≥2 guard: a single beats
+// a pack that covers only one want, a pack covering two wants beats the single, a
+// lone-coverage pack is the fallback when no single qualifies, and an empty field
+// yields no pick.
+func TestChoosePick_CoverageGuard(t *testing.T) {
+	t.Parallel()
+
+	wantID := uuid.New()
+	single := &qualityprofile.Evaluation{}
+	pack := &qualityprofile.Evaluation{}
+
+	t.Run("single beats 1-coverage pack", func(t *testing.T) {
+		t.Parallel()
+		out := choosePick(wantID, single, pack, []uuid.UUID{wantID})
+		if out == nil || out.isPack {
+			t.Fatalf("choosePick = %+v, want the single (pack covers only 1)", out)
+		}
+		if len(out.coveredWantIDs) != 1 || out.coveredWantIDs[0] != wantID {
+			t.Errorf("single coveredWantIDs = %v, want [%s]", out.coveredWantIDs, wantID)
+		}
+	})
+
+	t.Run("pack at coverage 2 beats single", func(t *testing.T) {
+		t.Parallel()
+		covered := []uuid.UUID{wantID, uuid.New()}
+		out := choosePick(wantID, single, pack, covered)
+		if out == nil || !out.isPack {
+			t.Fatalf("choosePick = %+v, want the pack (covers 2)", out)
+		}
+		if len(out.coveredWantIDs) != 2 {
+			t.Errorf("pack coveredWantIDs = %v, want 2", out.coveredWantIDs)
+		}
+	})
+
+	t.Run("lone-coverage pack is the fallback when no single", func(t *testing.T) {
+		t.Parallel()
+		out := choosePick(wantID, nil, pack, []uuid.UUID{wantID})
+		if out == nil || !out.isPack {
+			t.Fatalf("choosePick = %+v, want the lone-coverage pack fallback", out)
+		}
+	})
+
+	t.Run("no winner in either group", func(t *testing.T) {
+		t.Parallel()
+		if out := choosePick(wantID, nil, nil, nil); out != nil {
+			t.Errorf("choosePick = %+v, want nil", out)
+		}
+	})
 }

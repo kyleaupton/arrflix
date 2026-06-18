@@ -8,7 +8,6 @@ INSERT INTO download_job (
   media_item_id,
   season_id,
   episode_id,
-  want_id,
   indexer_id,
   guid,
   candidate_title,
@@ -24,7 +23,6 @@ VALUES (
   sqlc.arg(media_item_id),
   sqlc.arg(season_id),
   sqlc.arg(episode_id),
-  sqlc.arg(want_id),
   sqlc.arg(indexer_id),
   sqlc.arg(guid),
   sqlc.arg(candidate_title),
@@ -45,20 +43,63 @@ WHERE id = $1;
 SELECT * FROM download_job
 WHERE indexer_id = $1 AND guid = $2;
 
+-- FindActiveDownloadJobByGuid returns the in-flight download_job for a candidate
+-- (indexer_id, guid), if one exists — the find half of the season-pack grab's
+-- find-or-create. "In-flight" is the same active set the partial UNIQUE(indexer_id,
+-- guid) WHERE status NOT IN ('failed','cancelled') key guards, narrowed to the
+-- pre-completion states a converging sibling grab can still join: a completed pack
+-- is deliberately NOT reused (a late-aired episode re-grabs its own release). A
+-- 0-row match surfaces as pgx.ErrNoRows.
+-- name: FindActiveDownloadJobByGuid :one
+SELECT * FROM download_job
+WHERE indexer_id = $1 AND guid = $2
+  AND status IN ('created', 'enqueued', 'downloading')
+ORDER BY created_at DESC
+LIMIT 1;
+
 -- name: ListDownloadJobsByMediaItem :many
 SELECT * FROM download_job
 WHERE media_item_id = $1
 ORDER BY created_at DESC;
 
 -- ListActiveDownloadJobsByWant returns the non-terminal download jobs linked to
--- a want, backing the want-cancel cascade. At most one row in practice (the #2a
--- pre-grab CAS prevents a want from having two in-flight jobs), but a slice is
--- safe. Uses idx_download_job_want.
+-- a want via download_job_want, backing the want-cancel cascade. A want may map
+-- to more than one job over its life (a retry successor), and a job may cover
+-- many wants (a season pack), so the M:N join replaces the old single FK.
 -- name: ListActiveDownloadJobsByWant :many
-SELECT * FROM download_job
-WHERE want_id = $1
-  AND status NOT IN ('completed', 'failed', 'cancelled')
-ORDER BY created_at DESC;
+SELECT dj.* FROM download_job dj
+JOIN download_job_want djw ON djw.download_job_id = dj.id
+WHERE djw.want_id = $1
+  AND dj.status NOT IN ('completed', 'failed', 'cancelled')
+ORDER BY dj.created_at DESC;
+
+-- LinkDownloadJobWant records that a download_job advances a want, the M:N edge
+-- the grab tx writes after creating (or finding) the job. Idempotent via ON
+-- CONFLICT DO NOTHING so a converging grab that re-links a want it already
+-- covers is a no-op.
+-- name: LinkDownloadJobWant :exec
+INSERT INTO download_job_want (download_job_id, want_id)
+VALUES (sqlc.arg(download_job_id), sqlc.arg(want_id))
+ON CONFLICT (download_job_id, want_id) DO NOTHING;
+
+-- UnlinkDownloadJobWant removes one download_job↔want edge, the inverse of
+-- LinkDownloadJobWant. The back-half calls it when releasing an under-covered want
+-- (a pack carried no file for it) so the released want detaches from the pack job,
+-- keeping mirrorWants and the cancel cascade scoped to the wants the pack actually
+-- advances.
+-- name: UnlinkDownloadJobWant :exec
+DELETE FROM download_job_want
+WHERE download_job_id = sqlc.arg(download_job_id) AND want_id = sqlc.arg(want_id);
+
+-- CopyDownloadJobWants copies every want link from one download_job onto another,
+-- so a retry successor inherits the wants its predecessor advanced. Idempotent
+-- via ON CONFLICT DO NOTHING.
+-- name: CopyDownloadJobWants :exec
+INSERT INTO download_job_want (download_job_id, want_id)
+SELECT sqlc.arg(to_job_id), src.want_id
+FROM download_job_want src
+WHERE src.download_job_id = sqlc.arg(from_job_id)
+ON CONFLICT (download_job_id, want_id) DO NOTHING;
 
 -- name: ListDownloadJobs :many
 SELECT * FROM download_job

@@ -59,7 +59,6 @@ func TestWant_Cancel(t *testing.T) {
 		Protocol:       "torrent",
 		MediaType:      "movie",
 		MediaItemID:    want.MediaItemID,
-		WantID:         want.ID,
 		IndexerID:      1,
 		Guid:           "guid-cancel",
 		CandidateTitle: "The Matrix 1999 1080p BluRay",
@@ -70,6 +69,9 @@ func TestWant_Cancel(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("create download job: %v", err)
+	}
+	if err := r.LinkDownloadJobWant(ctx, job.ID, want.ID); err != nil {
+		t.Fatalf("link download job to want: %v", err)
 	}
 	if _, err := r.SetDownloadJobDownloadSnapshot(ctx, repo.SetDownloadJobDownloadSnapshotParams{
 		ID:     job.ID,

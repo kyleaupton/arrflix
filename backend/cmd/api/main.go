@@ -91,7 +91,7 @@ func main() {
 	dlWorker := downloadworker.New(repo, downloaderManager, logg, broker)
 	impWorker := importworker.New(repo, downloaderManager, logg, broker)
 	enrichWorker := enrichmentworker.New(services.Enrichment, logg)
-	acqWorker := acquisitionworker.New(repo, services.Acquisition, logg, broker)
+	acqWorker := acquisitionworker.New(repo, services.Acquisition, services.Scheduler, logg, broker)
 	go dlWorker.Run(workerCtx)
 	go impWorker.Run(workerCtx)
 	go enrichWorker.Run(workerCtx)

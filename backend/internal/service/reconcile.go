@@ -16,7 +16,7 @@ import (
 
 // ReconcileService is the per-episode want producer for series tracking. Where a
 // movie spawn creates one want for its single-atom tracking, a series tracking
-// must produce one want per in-scope, aired, file-less episode and cancel wants
+// must produce one want per in-scope, dated, file-less episode and cancel wants
 // whose episode has fallen out of scope. The reconciler reads the effective
 // scope (unioned across requesters) against the synced episode tree and the
 // existing wants, then writes the difference — re-runnably and idempotently, so
@@ -35,10 +35,14 @@ func NewReconcileService(r *repo.Repository, l *logger.Logger) *ReconcileService
 // runs in one transaction so the create/cancel set is applied atomically against
 // the snapshot it was computed from.
 //
-// Aired-only gate: wants are created only for in-scope episodes that have aired
-// (air_date <= now) and lack a file. Unaired or unknown-air-date episodes get no
-// want yet; a later reconcile picks them up once they air. "Lacks a file" is
-// file_id IS NULL (quality-cutoff upgrades are deferred).
+// Want existence tracks the known episode tree: a want is created for every
+// in-scope, file-less episode that has a known air date — aired or future —
+// with next_run_at stamped to that air_date. A future episode's want sits
+// pending until its air date (the claim query's next_run_at <= now() defers it);
+// a past air_date is overdue, so the want is due immediately. Undated episodes
+// (air_date IS NULL, TBA) are skipped — there's no anchor to schedule against;
+// a later reconcile picks them up once enrichment fills the date. "Lacks a file"
+// is file_id IS NULL (quality-cutoff upgrades are deferred).
 func (s *ReconcileService) Reconcile(ctx context.Context, trackingID uuid.UUID) error {
 	const op = "ReconcileService.Reconcile"
 	now := time.Now()
@@ -72,14 +76,14 @@ func (s *ReconcileService) Reconcile(ctx context.Context, trackingID uuid.UUID) 
 		}
 
 		// Episode tree: drop deprecated rows (episodes TMDB removed), build the
-		// scope input plus the per-episode hasFile/aired facts the gate needs.
+		// scope input plus the per-episode hasFile/airDate facts the gate needs.
 		avail, err := r.ListEpisodeAvailabilityForSeries(ctx, item.ID)
 		if err != nil {
 			return err
 		}
 		episodes := make([]scope.Episode, 0, len(avail))
 		hasFile := make(map[uuid.UUID]bool, len(avail))
-		aired := make(map[uuid.UUID]bool, len(avail))
+		airDate := make(map[uuid.UUID]*time.Time, len(avail))
 		for _, ep := range avail {
 			if ep.Deprecated {
 				continue
@@ -91,7 +95,7 @@ func (s *ReconcileService) Reconcile(ctx context.Context, trackingID uuid.UUID) 
 				AirDate: ep.AirDate,
 			})
 			hasFile[ep.EpisodeID] = ep.FileID != nil
-			aired[ep.EpisodeID] = ep.AirDate != nil && !ep.AirDate.After(now)
+			airDate[ep.EpisodeID] = ep.AirDate
 		}
 
 		inScope := make(map[uuid.UUID]bool)
@@ -113,10 +117,11 @@ func (s *ReconcileService) Reconcile(ctx context.Context, trackingID uuid.UUID) 
 			existing[*w.EpisodeID] = w
 		}
 
-		// Create: an in-scope, aired, file-less episode with no live want gets a
-		// fresh pending one. CreateWantIfAbsent absorbs a concurrent reconcile.
+		// Create: an in-scope, dated, file-less episode with no live want gets a
+		// fresh pending one, next_run_at stamped to its air date (future → deferred
+		// to air; past → due now). CreateWantIfAbsent absorbs a concurrent reconcile.
 		for _, ep := range episodes {
-			if !inScope[ep.ID] || !aired[ep.ID] || hasFile[ep.ID] {
+			if !inScope[ep.ID] || hasFile[ep.ID] || airDate[ep.ID] == nil {
 				continue
 			}
 			if _, ok := existing[ep.ID]; ok {
@@ -129,6 +134,7 @@ func (s *ReconcileService) Reconcile(ctx context.Context, trackingID uuid.UUID) 
 				EpisodeID:        &epID,
 				QualityProfileID: tracking.QualityProfileID,
 				Status:           string(model.WantPending),
+				NextRunAt:        airDate[ep.ID],
 			}); err != nil {
 				return err
 			}
