@@ -168,6 +168,17 @@ func TestPick(t *testing.T) {
 		}
 	})
 
+	t.Run("seeders break a tie ahead of size", func(t *testing.T) {
+		// Same bin, same score. The healthier swarm wins even though it is the
+		// larger release — seeders outrank the size tiebreak.
+		healthy := subj("BluRay", "1080p", "", 50, 2000, "healthy")
+		stalled := subj("BluRay", "1080p", "", 8, 1000, "stalled")
+		sel := p.Pick(reg, []model.Subject{stalled, healthy})
+		if sel.Picked == nil || sel.Picked.Subject.Release.Candidate.GUID != "healthy" {
+			t.Errorf("picked = %+v, want the higher-seeder release", sel.Picked)
+		}
+	})
+
 	t.Run("size then guid is the deterministic final tiebreak", func(t *testing.T) {
 		big := subj("BluRay", "1080p", "", 10, 2000, "big")
 		small := subj("BluRay", "1080p", "", 10, 1000, "small")
@@ -377,6 +388,19 @@ func TestDefaultProfiles(t *testing.T) {
 		}
 		if p.rank(p.Cutoff) >= len(p.Bins) {
 			t.Errorf("%s/%s cutoff %+v not in bins", p.Name, p.Domain, p.Cutoff)
+		}
+	}
+
+	// Series presets ship without remux (parity with Sonarr's stock profiles);
+	// a per-season remux is far larger for a small fidelity gain.
+	for _, p := range profiles {
+		if p.Domain != parsing.DomainSeries {
+			continue
+		}
+		for _, b := range p.Bins {
+			if b.Modifier == parsing.ModRemux {
+				t.Errorf("%s/%s ships a remux bin %+v; series defaults must omit remux", p.Name, p.Domain, b)
+			}
 		}
 	}
 

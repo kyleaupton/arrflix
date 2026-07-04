@@ -197,8 +197,10 @@ func (p Profile) Pick(reg *rules.Registry, subjects []model.Subject) Selection {
 }
 
 // better reports whether candidate a should be preferred over the current best b
-// (both already known to pass). Bin rank dominates; score breaks a bin tie; size
-// then guid make the order total and deterministic.
+// (both already known to pass). Bin rank dominates; score breaks a bin tie; then
+// seeders (more is healthier) before size then guid make the order total and
+// deterministic. Seeders stays below bin and score so it only ever reorders
+// otherwise-equal releases — it never promotes a lower bin or lower-scored release.
 func (p Profile) better(a, b Evaluation) bool {
 	ra, rb := p.rank(a.Bin), p.rank(b.Bin)
 	if ra != rb {
@@ -206,6 +208,9 @@ func (p Profile) better(a, b Evaluation) bool {
 	}
 	if a.Score != b.Score {
 		return a.Score > b.Score
+	}
+	if sa, sb := a.Subject.Release.Candidate.Seeders, b.Subject.Release.Candidate.Seeders; sa != sb {
+		return sa > sb
 	}
 	// Within a bin, prefer the size closest to the band's scaled preferred when a
 	// band and a runtime are available (ra==rb means a.Bin==b.Bin — a bin holds

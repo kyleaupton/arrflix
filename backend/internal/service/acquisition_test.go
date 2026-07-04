@@ -116,6 +116,8 @@ func TestClassifyEpisodeRelease(t *testing.T) {
 		{"wrong season", "Show.S02E05.1080p.BluRay.x264", releaseReject},
 		{"multi-season pack", "Show.S01-S03.1080p.BluRay.x264", releaseReject},
 		{"partial-season pack", "Show.S03.Part.2.1080p.BluRay.x264", releaseReject},
+		{"season extras", "Show.S03.Extras.Behind.the.Scenes.1080p.BluRay-NTb", releaseReject},
+		{"season subpack", "Show.S03.SUBPACK.1080p.BluRay-NTb", releaseReject},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -175,6 +177,95 @@ func TestChoosePick_CoverageGuard(t *testing.T) {
 		t.Parallel()
 		if out := choosePick(wantID, nil, nil, nil); out != nil {
 			t.Errorf("choosePick = %+v, want nil", out)
+		}
+	})
+}
+
+// TestPackRuntimeMinutes proves a pack sizes against its covered episodes' summed
+// runtime: a full-season pack sums the whole season, a range sums only its
+// numbers, an episode's missing runtime falls back to the series runtime (then
+// 45), and a season with no episode rows yields nil (caller keeps single-episode
+// runtime).
+func TestPackRuntimeMinutes(t *testing.T) {
+	t.Parallel()
+
+	seriesRT := ptr(30)
+	eps := []model.MediaEpisode{
+		{EpisodeNumber: 1, Runtime: ptr(int32(22))},
+		{EpisodeNumber: 2, Runtime: ptr(int32(24))},
+		{EpisodeNumber: 3, Runtime: nil}, // falls back to series runtime (30)
+	}
+
+	parse := func(title string) parsing.ParsedRelease {
+		return parsing.Parse(title, parsing.DomainSeries)
+	}
+
+	t.Run("full season sums every episode, series-runtime fallback for missing", func(t *testing.T) {
+		t.Parallel()
+		got := packRuntimeMinutes(parse("Show.S03.COMPLETE.1080p.BluRay.x264"), eps, seriesRT)
+		if got == nil || *got != 22+24+30 {
+			t.Fatalf("packRuntimeMinutes = %v, want %d", got, 22+24+30)
+		}
+	})
+
+	t.Run("range sums only covered numbers", func(t *testing.T) {
+		t.Parallel()
+		got := packRuntimeMinutes(parse("Show.S03E01-E02.1080p.BluRay.x264"), eps, seriesRT)
+		if got == nil || *got != 22+24 {
+			t.Fatalf("packRuntimeMinutes = %v, want %d", got, 22+24)
+		}
+	})
+
+	t.Run("no episode rows yields nil", func(t *testing.T) {
+		t.Parallel()
+		got := packRuntimeMinutes(parse("Show.S03.COMPLETE.1080p.BluRay.x264"), nil, seriesRT)
+		if got != nil {
+			t.Fatalf("packRuntimeMinutes = %v, want nil", got)
+		}
+	})
+
+	t.Run("45-minute fallback when neither episode nor series runtime known", func(t *testing.T) {
+		t.Parallel()
+		bare := []model.MediaEpisode{{EpisodeNumber: 1}, {EpisodeNumber: 2}}
+		got := packRuntimeMinutes(parse("Show.S03.COMPLETE.1080p.BluRay.x264"), bare, nil)
+		if got == nil || *got != 45+45 {
+			t.Fatalf("packRuntimeMinutes = %v, want %d", got, 90)
+		}
+	})
+}
+
+// TestWantToQuery covers the season-scoped broadening: an episode want with ≥2
+// in-flight siblings drops the episode token so season packs enter the pool,
+// while a lone episode keeps the precise S%02dE%02d query.
+func TestWantToQuery(t *testing.T) {
+	t.Parallel()
+
+	s := &AcquisitionService{}
+	mi := model.MediaItem{Title: "Rick and Morty"}
+	ep := &episodeCtx{season: 5, episode: 1}
+
+	t.Run("episode-scoped keeps the episode token and sets Episode", func(t *testing.T) {
+		t.Parallel()
+		q := s.wantToQuery(mi, ep, false)
+		if q.Query != "Rick and Morty S05E01" {
+			t.Errorf("query = %q, want %q", q.Query, "Rick and Morty S05E01")
+		}
+		if q.Episode == nil || *q.Episode != 1 {
+			t.Errorf("Episode = %v, want 1", q.Episode)
+		}
+	})
+
+	t.Run("season-scoped drops the episode token and leaves Episode nil", func(t *testing.T) {
+		t.Parallel()
+		q := s.wantToQuery(mi, ep, true)
+		if q.Query != "Rick and Morty S05" {
+			t.Errorf("query = %q, want %q", q.Query, "Rick and Morty S05")
+		}
+		if q.Episode != nil {
+			t.Errorf("Episode = %v, want nil (season-scoped omits the episode)", *q.Episode)
+		}
+		if q.Season == nil || *q.Season != 5 {
+			t.Errorf("Season = %v, want 5", q.Season)
 		}
 	})
 }

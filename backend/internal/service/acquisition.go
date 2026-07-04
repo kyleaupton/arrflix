@@ -93,7 +93,12 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 		}
 	}
 
-	results, err := s.source.Search(ctx, s.wantToQuery(mi, epCtx))
+	// A season pack is a per-season release, but search is per-want. When the want
+	// has ≥2 in-flight season siblings, broaden its query to season scope so packs
+	// enter the pool; the first sibling processed grabs the pack and the
+	// alreadyCoveredByPack early-skip spares the rest a redundant search.
+	seasonScoped := len(siblings) >= 2
+	results, err := s.source.Search(ctx, s.wantToQuery(mi, epCtx, seasonScoped))
 	if err != nil {
 		return model.Want{}, false, apperrors.BadGatewayf("indexer search %q: %v", mi.Title, err).
 			Op("AcquisitionService.ProcessWant")
@@ -312,20 +317,30 @@ func (s *AcquisitionService) resolveEpisodeCtx(ctx context.Context, want model.W
 // call — title+year are already persisted). The search is free-text across all
 // indexers; identity precision comes from the relevance gate matching on the
 // ids Prowlarr echoes per result, not from embedding ID tokens (which would
-// drop text-only indexers — see the prowlarr adapter). An episode want builds a
-// "<title> S%02dE%02d" tvsearch query (mirroring SearchSeriesDownloadCandidates);
-// the prowlarr adapter drives off the query string + type, so the Season/Episode
-// fields ride along unused, exactly as the manual path relies on today.
-func (s *AcquisitionService) wantToQuery(mi model.MediaItem, ep *episodeCtx) indexer.SearchQuery {
+// drop text-only indexers — see the prowlarr adapter).
+//
+// An episode want queries "<title> S%02dE%02d" by default. When seasonScoped,
+// it drops the episode token and queries "<title> S%02d" instead: because the
+// prowlarr adapter searches by text, a season query is a superset that returns
+// both season packs and the season's individual episodes, so a pack can be
+// discovered and grabbed while a single episode still resolves from the same
+// pool. The Season/Episode fields ride along unused — the adapter drives off the
+// query string + type — kept set to mirror the manual path.
+func (s *AcquisitionService) wantToQuery(mi model.MediaItem, ep *episodeCtx, seasonScoped bool) indexer.SearchQuery {
 	if ep != nil {
 		season, episode := ep.season, ep.episode
-		return indexer.SearchQuery{
-			Query:     fmt.Sprintf("%s S%02dE%02d", mi.Title, ep.season, ep.episode),
+		q := indexer.SearchQuery{
 			MediaType: indexer.MediaTypeSeries,
 			Season:    &season,
-			Episode:   &episode,
 			Limit:     100,
 		}
+		if seasonScoped {
+			q.Query = fmt.Sprintf("%s S%02d", mi.Title, ep.season)
+		} else {
+			q.Query = fmt.Sprintf("%s S%02dE%02d", mi.Title, ep.season, ep.episode)
+			q.Episode = &episode
+		}
+		return q
 	}
 
 	query := mi.Title
@@ -362,13 +377,21 @@ type pickOutcome struct {
 // coverage-first policy (choosePick). Returns nil when every candidate was gated
 // out. The picked Subject carries its Media fields, so the caller can route it.
 func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model.MediaItem, imdbID *string, ep *episodeCtx, siblings []seasonSibling, results []indexer.SearchResult) (*pickOutcome, error) {
-	year, tmdbID, runtime := mediaFields(mi)
+	year, tmdbID, seriesRuntime := mediaFields(mi)
 	domain := parsing.DomainMovie
+	// runtime scales the size bands. A single episode uses its own runtime; a
+	// season pack sizes against the summed runtime of every episode it covers
+	// (packRuntimeMinutes), so the band isn't applied per-episode to a whole-season
+	// file.
+	runtime := seriesRuntime
+	var seasonEps []model.MediaEpisode
 	if ep != nil {
-		// Series releases parse under the Sonarr patterns; the per-episode
-		// runtime (not the series-level mi.Runtime) scales the size bands.
 		domain = parsing.DomainSeries
 		runtime = ep.runtime
+		var lerr error
+		if seasonEps, lerr = s.repo.ListEpisodesForSeason(ctx, ep.seasonID); lerr != nil {
+			return nil, lerr
+		}
 	}
 
 	var singleSubjects, packSubjects []model.Subject
@@ -390,8 +413,16 @@ func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model
 
 		subject := model.NewSubject(cand, parsed)
 		if ep != nil {
+			// A pack sizes against its covered episodes' summed runtime; a single
+			// keeps the wanted episode's runtime.
+			subjectRuntime := runtime
+			if kind == releasePack {
+				if pr := packRuntimeMinutes(parsed, seasonEps, seriesRuntime); pr != nil {
+					subjectRuntime = pr
+				}
+			}
 			subject = subject.
-				WithMedia(model.MediaTypeSeries, mi.Title, year, tmdbID, runtime).
+				WithMedia(model.MediaTypeSeries, mi.Title, year, tmdbID, subjectRuntime).
 				WithSeriesInfo(&ep.season, &ep.episode, ep.title)
 		} else {
 			subject = subject.WithMedia(model.MediaTypeMovie, mi.Title, year, tmdbID, runtime)
@@ -432,6 +463,36 @@ func (s *AcquisitionService) pickGroup(ctx context.Context, profileID uuid.UUID,
 		return nil, qualityprofile.Selection{}, err
 	}
 	return sel.Picked, sel, nil
+}
+
+// packRuntimeMinutes sums the runtimes of the episodes a pack covers, so the size
+// band scales to the whole file rather than a single episode. Each covered episode
+// contributes its own runtime, falling back to the series runtime, then to 45 minutes
+// when neither is known. A full-season pack covers every episode of the season; a range
+// covers its listed numbers. Returns nil when nothing summable is found (e.g. the season has no
+// episode rows yet), leaving the caller on the single-episode runtime.
+func packRuntimeMinutes(parsed parsing.ParsedRelease, seasonEps []model.MediaEpisode, seriesRuntime *int) *int {
+	base := 45
+	if seriesRuntime != nil && *seriesRuntime > 0 {
+		base = *seriesRuntime
+	}
+	epMinutes := func(e model.MediaEpisode) int {
+		if e.Runtime != nil && *e.Runtime > 0 {
+			return int(*e.Runtime)
+		}
+		return base
+	}
+	n := parsed.Identity.Numbering
+	total := 0
+	for _, e := range seasonEps {
+		if n.FullSeason.Value || containsInt(n.EpisodeNumbers.Value, int(e.EpisodeNumber)) {
+			total += epMinutes(e)
+		}
+	}
+	if total == 0 {
+		return nil
+	}
+	return &total
 }
 
 // coveredWantIDs is the subset of in-flight siblings a pack's grab claims: every
@@ -511,6 +572,12 @@ func classifyEpisodeRelease(parsed parsing.ParsedRelease, ep *episodeCtx) (kind 
 	n := parsed.Identity.Numbering
 	if n.Kind != parsing.NumberingSeasonEpisode {
 		return releaseReject, fmt.Sprintf("numbering %q is not standard season/episode", n.Kind)
+	}
+	// A season-extras/subpack release (e.g. "S01 Extras", "S01 SUBPACK") parses as
+	// a full season but carries behind-the-scenes/subtitle content, not the
+	// episodes — reject before the FullSeason check treats it as a pack.
+	if n.IsSeasonExtra.Value {
+		return releaseReject, "season extras/subpack, not episode content"
 	}
 	if n.IsMultiSeason.Value {
 		return releaseReject, "multi-season pack"
