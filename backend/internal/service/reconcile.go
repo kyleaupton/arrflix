@@ -128,12 +128,19 @@ func (s *ReconcileService) Reconcile(ctx context.Context, trackingID uuid.UUID) 
 				continue
 			}
 			epID := ep.ID
+			// Segment and hold are stamped from the episode's air date against the
+			// tracking's creation time. Reconcile re-runs after autonomy changes, so
+			// a newly-dated episode on a manual segment is born held — the manual
+			// gate applies uniformly to episodes that appear (or get dated) later.
+			seg := model.SegmentFor(airDate[ep.ID], tracking.CreatedAt)
 			if _, _, err := r.CreateWantIfAbsent(ctx, repo.CreateWantParams{
 				TrackingID:       trackingID,
 				MediaItemID:      item.ID,
 				EpisodeID:        &epID,
 				QualityProfileID: tracking.QualityProfileID,
 				Status:           string(model.WantPending),
+				Segment:          string(seg),
+				Hold:             model.HoldForNewWant(tracking, seg),
 				NextRunAt:        airDate[ep.ID],
 			}); err != nil {
 				return err

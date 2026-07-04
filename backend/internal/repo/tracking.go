@@ -20,6 +20,8 @@ type CreateTrackingParams struct {
 	Scope            string
 	UpgradeBehavior  string
 	ScheduleStrategy string
+	AutonomyBackfill string
+	AutonomyOngoing  string
 }
 
 // toModelTracking translates a persistence-shaped dbgen.Tracking into the
@@ -33,6 +35,8 @@ func toModelTracking(row dbgen.Tracking) model.Tracking {
 		Scope:            row.Scope,
 		UpgradeBehavior:  row.UpgradeBehavior,
 		ScheduleStrategy: row.ScheduleStrategy,
+		AutonomyBackfill: row.AutonomyBackfill,
+		AutonomyOngoing:  row.AutonomyOngoing,
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
 	}
@@ -46,6 +50,8 @@ func (r *Repository) CreateTracking(ctx context.Context, params CreateTrackingPa
 		Scope:            params.Scope,
 		UpgradeBehavior:  params.UpgradeBehavior,
 		ScheduleStrategy: params.ScheduleStrategy,
+		AutonomyBackfill: params.AutonomyBackfill,
+		AutonomyOngoing:  params.AutonomyOngoing,
 	})
 	if err != nil {
 		return model.Tracking{}, apperrors.FromPg(err, "create tracking for media item %s", params.MediaItemID)
@@ -67,6 +73,8 @@ func (r *Repository) CreateTrackingIfAbsent(ctx context.Context, params CreateTr
 		Scope:            params.Scope,
 		UpgradeBehavior:  params.UpgradeBehavior,
 		ScheduleStrategy: params.ScheduleStrategy,
+		AutonomyBackfill: params.AutonomyBackfill,
+		AutonomyOngoing:  params.AutonomyOngoing,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -115,6 +123,20 @@ func (r *Repository) SetTrackingState(ctx context.Context, id uuid.UUID, state s
 	})
 	if err != nil {
 		return model.Tracking{}, apperrors.FromPg(err, "set state for tracking %s", id)
+	}
+	return toModelTracking(row), nil
+}
+
+// SetTrackingAutonomy sets both per-segment autonomy dials. The hold/release of
+// affected wants is the service's concern, applied in the same transaction.
+func (r *Repository) SetTrackingAutonomy(ctx context.Context, id uuid.UUID, backfill, ongoing string) (model.Tracking, error) {
+	row, err := r.Q.SetTrackingAutonomy(ctx, dbgen.SetTrackingAutonomyParams{
+		ID:               pgtypeFromUUID(id),
+		AutonomyBackfill: backfill,
+		AutonomyOngoing:  ongoing,
+	})
+	if err != nil {
+		return model.Tracking{}, apperrors.FromPg(err, "set autonomy for tracking %s", id)
 	}
 	return toModelTracking(row), nil
 }

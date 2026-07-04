@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -24,6 +25,81 @@ func NewTrackingService(r *repo.Repository, wants *WantService) *TrackingService
 
 func (s *TrackingService) Get(ctx context.Context, id uuid.UUID) (model.Tracking, error) {
 	return s.repo.GetTracking(ctx, id)
+}
+
+// SetAutonomy dials a tracking's per-segment acquisition autonomy and reconciles
+// its live wants to match. Both segments must be 'auto' or 'manual' — 'propose'
+// is rejected until the phase that implements it, though the DB CHECK admits it.
+//
+// The whole change runs in one transaction: set both dials, then for each
+// segment that actually changed, hold its wants (→manual) or release them
+// (→auto). Only pending/searching wants are affected. Searching wants are held
+// too, not just pending ones: the reschedule/reclaim queries return a searcher
+// to pending without touching hold, so holding only pending would let a
+// perpetual searcher slip past the manual gate. Grabbed/downloading/imported and
+// terminal wants are left alone — a grab already in flight when its segment goes
+// manual completes normally (an acceptable race; the file lands and the want
+// advances). No SSE is emitted: the acting client invalidates via the mutation;
+// other clients stay stale until the next want event.
+func (s *TrackingService) SetAutonomy(ctx context.Context, trackingID uuid.UUID, backfill, ongoing string) (model.Tracking, error) {
+	const op = "TrackingService.SetAutonomy"
+
+	var fields []apperrors.FieldError
+	if !isSettableAutonomy(backfill) {
+		fields = append(fields, apperrors.Field("body.backfill", "must be 'auto' or 'manual'"))
+	}
+	if !isSettableAutonomy(ongoing) {
+		fields = append(fields, apperrors.Field("body.ongoing", "must be 'auto' or 'manual'"))
+	}
+	if len(fields) > 0 {
+		return model.Tracking{}, apperrors.Validation("invalid autonomy", fields...).Op(op)
+	}
+
+	var updated model.Tracking
+	err := s.repo.InTx(ctx, func(r *repo.Repository) error {
+		old, err := r.GetTracking(ctx, trackingID)
+		if err != nil {
+			return err
+		}
+		updated, err = r.SetTrackingAutonomy(ctx, trackingID, backfill, ongoing)
+		if err != nil {
+			return err
+		}
+		if backfill != old.AutonomyBackfill {
+			if err := applyAutonomyToSegment(ctx, r, trackingID, model.WantSegmentBackfill, backfill); err != nil {
+				return err
+			}
+		}
+		if ongoing != old.AutonomyOngoing {
+			if err := applyAutonomyToSegment(ctx, r, trackingID, model.WantSegmentOngoing, ongoing); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return model.Tracking{}, err
+	}
+	return updated, nil
+}
+
+// isSettableAutonomy reports whether an autonomy value is one the API accepts
+// today: 'auto' or 'manual'. 'propose' is a valid DB value but a later phase, so
+// it's rejected at this boundary.
+func isSettableAutonomy(a string) bool {
+	return a == string(model.AutonomyAuto) || a == string(model.AutonomyManual)
+}
+
+// applyAutonomyToSegment reconciles one segment's live wants to a new autonomy:
+// manual holds them (barring the worker), auto releases the held ones (re-arming
+// the worker). Called inside the SetAutonomy transaction.
+func applyAutonomyToSegment(ctx context.Context, r *repo.Repository, trackingID uuid.UUID, seg model.WantSegment, autonomy string) error {
+	if autonomy == string(model.AutonomyManual) {
+		_, err := r.HoldWantsForSegment(ctx, trackingID, string(seg))
+		return err
+	}
+	_, err := r.ReleaseHeldWantsForSegment(ctx, trackingID, string(seg))
+	return err
 }
 
 func (s *TrackingService) List(ctx context.Context) ([]model.Tracking, error) {

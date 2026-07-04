@@ -15,6 +15,34 @@
         <X class="mr-2 size-4" />
         {{ cancelTracking.isPending.value ? 'Stopping…' : 'Stop tracking' }}
       </Button>
+
+      <!-- Acquisition autonomy, dialed per segment: back-catalog (episodes aired
+           before tracking began) and new episodes (aired after). 'I'll pick'
+           holds that segment's wants for manual download instead of auto-search. -->
+      <label class="flex items-center gap-1.5 text-sm text-muted-foreground">
+        Back-catalog
+        <Select v-model="autonomyBackfill" :disabled="setAutonomy.isPending.value">
+          <SelectTrigger class="w-32" aria-label="Back-catalog autonomy">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">Automatic</SelectItem>
+            <SelectItem value="manual">I'll pick</SelectItem>
+          </SelectContent>
+        </Select>
+      </label>
+      <label class="flex items-center gap-1.5 text-sm text-muted-foreground">
+        New episodes
+        <Select v-model="autonomyOngoing" :disabled="setAutonomy.isPending.value">
+          <SelectTrigger class="w-32" aria-label="New episodes autonomy">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">Automatic</SelectItem>
+            <SelectItem value="manual">I'll pick</SelectItem>
+          </SelectContent>
+        </Select>
+      </label>
     </template>
 
     <!-- A genuine (non-404) load failure: 404 is the untracked signal, anything
@@ -53,6 +81,7 @@ import {
   trackingByTmdbQueryKey,
   requestsCreateMutation,
   trackingCancelMutation,
+  trackingSetAutonomyMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -135,6 +164,36 @@ const cancelTracking = useMutation({
   onError: (err) => {
     toast.error(problemMessage(err, 'Failed to stop tracking'))
   },
+})
+
+// Autonomy dials are writable computeds over the server value: reading returns
+// the tracking's current setting; setting one fires the mutation with BOTH
+// fields (the endpoint takes both segments), so the other keeps its current
+// value. The server holds/releases the segment's wants; we invalidate to refetch.
+const setAutonomy = useMutation({
+  ...trackingSetAutonomyMutation(),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: trackingKey.value })
+  },
+  onError: (err) => {
+    toast.error(problemMessage(err, 'Failed to update autonomy'))
+  },
+})
+
+function submitAutonomy(backfill: 'auto' | 'manual', ongoing: 'auto' | 'manual') {
+  const id = tracking.value?.tracking?.id
+  if (!id) return
+  setAutonomy.mutate({ path: { id }, body: { backfill, ongoing } })
+}
+
+const autonomyBackfill = computed<'auto' | 'manual'>({
+  get: () => (tracking.value?.tracking?.autonomyBackfill as 'auto' | 'manual') ?? 'auto',
+  set: (val) => submitAutonomy(val, autonomyOngoing.value),
+})
+
+const autonomyOngoing = computed<'auto' | 'manual'>({
+  get: () => (tracking.value?.tracking?.autonomyOngoing as 'auto' | 'manual') ?? 'auto',
+  set: (val) => submitAutonomy(autonomyBackfill.value, val),
 })
 
 async function handleStop() {

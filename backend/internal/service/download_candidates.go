@@ -350,7 +350,47 @@ func GrabManualWant(ctx context.Context, r *repo.Repository, trackingID, mediaIt
 		MediaItemID:      mediaItemID,
 		QualityProfileID: uuid.Nil,
 		Status:           string(model.WantGrabbed),
+		// A hand-grabbed want is born 'grabbed' and never enters the search queue,
+		// so the segment never gates it — 'ongoing' is the inert default. No hold:
+		// the user already picked the release.
+		Segment: string(model.WantSegmentOngoing),
 	})
+}
+
+// linkSeriesManualWant is the series manual-grab join onto the want spine. It's
+// best-effort: an untracked series (no tracking), an episode with no live want,
+// or a want the worker advanced between the read and the grab CAS all resolve to
+// a benign skip, so the manual download proceeds exactly as it did before the
+// spine existed. When a live want is found and grabbed, the job is linked so the
+// download worker's mirror/import fan-out advances it grabbed→…→available.
+func linkSeriesManualWant(ctx context.Context, r *repo.Repository, mediaItemID, episodeID, jobID uuid.UUID) error {
+	tracking, err := r.FindTrackingByMediaItem(ctx, mediaItemID)
+	if apperrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	want, err := r.FindLiveWantForEpisode(ctx, tracking.ID, episodeID)
+	if apperrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	// GrabWantManual clears the hold and CAS-flips the want to 'grabbed'. ok=false
+	// means the worker advanced it first — skip the link, the autonomous flow owns
+	// it now.
+	_, ok, err := r.GrabWantManual(ctx, want.ID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	return r.LinkDownloadJobWant(ctx, jobID, want.ID)
 }
 
 // EnqueueSeriesCandidate creates a durable download job for a series candidate.
@@ -479,7 +519,23 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 			LibraryID:      libraryID,
 			NameTemplateID: nameTemplateID,
 		})
-		return jerr
+		if jerr != nil {
+			return jerr
+		}
+
+		// Join the want spine, mirroring the movie manual path: if this series is
+		// tracked and the episode has a live want, grab it (clearing any hold) and
+		// link it to the job so the download worker's import fan-out advances the
+		// want grabbed→…→available. Best-effort and episode-level only — an
+		// untracked series, or a want that's absent/already in flight, is a benign
+		// skip that leaves the manual download behaving as it did before the spine
+		// existed. Season-pack linkage is a noted follow-up.
+		if episodeID != uuid.Nil {
+			if werr := linkSeriesManualWant(ctx, r, mi.ID, episodeID, job.ID); werr != nil {
+				return werr
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return eval, model.DownloadJob{}, err

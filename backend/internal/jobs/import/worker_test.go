@@ -94,6 +94,8 @@ func seedImportTask(t *testing.T, ctx context.Context, r *repo.Repository, withW
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -107,6 +109,7 @@ func seedImportTask(t *testing.T, ctx context.Context, r *repo.Repository, withW
 			MediaItemID:      media.ID,
 			QualityProfileID: profile.ID,
 			Status:           string(model.WantDownloading),
+			Segment:          string(model.WantSegmentOngoing),
 		})
 		if err != nil {
 			t.Fatalf("create want: %v", err)
@@ -286,6 +289,8 @@ func seedSeriesImportTask(t *testing.T, ctx context.Context, r *repo.Repository)
 		Scope:            "all",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -297,6 +302,7 @@ func seedSeriesImportTask(t *testing.T, ctx context.Context, r *repo.Repository)
 		EpisodeID:        &episode.ID,
 		QualityProfileID: profile.ID,
 		Status:           string(model.WantDownloading),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create want: %v", err)

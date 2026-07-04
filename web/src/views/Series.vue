@@ -157,14 +157,35 @@
                                lifecycle state (with download progress) in place
                                of the manual flow. -->
                           <template v-else-if="getEpisodeWant(episode.episodeId)">
-                            <WantStatusPill
-                              :status="getEpisodeWant(episode.episodeId)!.status"
-                              :attempt-count="getEpisodeWant(episode.episodeId)!.attemptCount"
-                              :last-error="getEpisodeWant(episode.episodeId)!.lastError"
-                              :progress="
-                                getEpisodeWantProgress(season.seasonNumber, episode.episodeNumber)
-                              "
-                            />
+                            <div class="flex items-center gap-2">
+                              <WantStatusPill
+                                :status="getEpisodeWant(episode.episodeId)!.status"
+                                :attempt-count="getEpisodeWant(episode.episodeId)!.attemptCount"
+                                :last-error="getEpisodeWant(episode.episodeId)!.lastError"
+                                :progress="
+                                  getEpisodeWantProgress(season.seasonNumber, episode.episodeNumber)
+                                "
+                                :hold="getEpisodeWant(episode.episodeId)!.hold"
+                              />
+                              <!-- A held want is never auto-searched; offer the same
+                                   manual Download flow as an untracked episode so the
+                                   user can fulfill it themselves. -->
+                              <Button
+                                v-if="getEpisodeWant(episode.episodeId)!.hold === 'needs_pick'"
+                                size="sm"
+                                variant="outline"
+                                class="h-7 text-xs"
+                                @click="
+                                  searchForEpisodeCandidates(
+                                    season.seasonNumber,
+                                    episode.episodeNumber,
+                                  )
+                                "
+                              >
+                                <Download class="size-3 mr-1.5" />
+                                Download
+                              </Button>
+                            </div>
                           </template>
                           <!-- Episode is downloading individually -->
                           <template

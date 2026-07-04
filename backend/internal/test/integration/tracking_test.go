@@ -91,6 +91,8 @@ func TestTracking_RoundTrip(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -221,6 +223,7 @@ func TestTracking_RoundTrip(t *testing.T) {
 		MediaItemID:      media.ID,
 		QualityProfileID: profile.ID,
 		Status:           string(model.WantPending),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create want: %v", err)
@@ -279,6 +282,8 @@ func TestTracking_RoundTrip(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	}); !apperrors.IsConflict(err) {
 		t.Errorf("duplicate tracking for media item = %v, want Conflict", err)
 	}

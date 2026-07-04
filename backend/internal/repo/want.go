@@ -25,6 +25,8 @@ type CreateWantParams struct {
 	EpisodeID        *uuid.UUID
 	QualityProfileID uuid.UUID
 	Status           string
+	Segment          string
+	Hold             *string
 	NextRunAt        *time.Time
 }
 
@@ -38,6 +40,8 @@ func toModelWant(row dbgen.Want) model.Want {
 		EpisodeID:        uuidPtrFromPgtype(row.EpisodeID),
 		QualityProfileID: uuidFromPgtype(row.QualityProfileID),
 		Status:           row.Status,
+		Segment:          row.Segment,
+		Hold:             row.Hold,
 		NextRunAt:        row.NextRunAt,
 		AttemptCount:     row.AttemptCount,
 		LastError:        row.LastError,
@@ -53,6 +57,8 @@ func (r *Repository) CreateWant(ctx context.Context, params CreateWantParams) (m
 		EpisodeID:        pgtypeFromUUIDPtr(params.EpisodeID),
 		QualityProfileID: pgtypeFromUUIDOrNull(params.QualityProfileID),
 		Status:           params.Status,
+		Segment:          params.Segment,
+		Hold:             params.Hold,
 		NextRunAt:        params.NextRunAt,
 	})
 	if err != nil {
@@ -73,6 +79,8 @@ func (r *Repository) CreateWantIfAbsent(ctx context.Context, params CreateWantPa
 		EpisodeID:        pgtypeFromUUIDPtr(params.EpisodeID),
 		QualityProfileID: pgtypeFromUUIDOrNull(params.QualityProfileID),
 		Status:           params.Status,
+		Segment:          params.Segment,
+		Hold:             params.Hold,
 		NextRunAt:        params.NextRunAt,
 	})
 	if err != nil {
@@ -370,4 +378,69 @@ func (r *Repository) MarkWantFailed(ctx context.Context, id uuid.UUID, lastError
 		return model.Want{}, false, apperrors.FromPg(err, "mark want %s failed", id)
 	}
 	return toModelWant(row), true, nil
+}
+
+// HoldWantsForSegment stamps hold='needs_pick' on a tracking's still-acquirable
+// wants in one segment when that segment flips to manual, returning the wants it
+// held (searching wants included — see the query comment). Called inside the
+// SetAutonomy transaction.
+func (r *Repository) HoldWantsForSegment(ctx context.Context, trackingID uuid.UUID, segment string) ([]model.Want, error) {
+	rows, err := r.Q.HoldWantsForSegment(ctx, dbgen.HoldWantsForSegmentParams{
+		TrackingID: pgtypeFromUUID(trackingID),
+		Segment:    segment,
+	})
+	if err != nil {
+		return nil, apperrors.FromPg(err, "hold %s wants for tracking %s", segment, trackingID)
+	}
+	out := make([]model.Want, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelWant(row))
+	}
+	return out, nil
+}
+
+// ReleaseHeldWantsForSegment clears the needs_pick hold on a tracking's wants in
+// one segment when it flips back to auto and re-arms next_run_at, returning the
+// wants it released. Called inside the SetAutonomy transaction.
+func (r *Repository) ReleaseHeldWantsForSegment(ctx context.Context, trackingID uuid.UUID, segment string) ([]model.Want, error) {
+	rows, err := r.Q.ReleaseHeldWantsForSegment(ctx, dbgen.ReleaseHeldWantsForSegmentParams{
+		TrackingID: pgtypeFromUUID(trackingID),
+		Segment:    segment,
+	})
+	if err != nil {
+		return nil, apperrors.FromPg(err, "release %s wants for tracking %s", segment, trackingID)
+	}
+	out := make([]model.Want, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelWant(row))
+	}
+	return out, nil
+}
+
+// SetWantHold sets (nil clears) the hold on a single want. Backs the movie-rearm
+// edge — a grab clears hold, so a re-request onto a manual segment re-stamps it —
+// and test seeding.
+func (r *Repository) SetWantHold(ctx context.Context, id uuid.UUID, hold *string) (model.Want, error) {
+	row, err := r.Q.SetWantHold(ctx, dbgen.SetWantHoldParams{
+		ID:   pgtypeFromUUID(id),
+		Hold: hold,
+	})
+	if err != nil {
+		return model.Want{}, apperrors.FromPg(err, "set hold for want %s", id)
+	}
+	return toModelWant(row), nil
+}
+
+// FindLiveWantForEpisode returns the still-acquirable (pending/searching) want a
+// tracking holds for one episode. A pgx.ErrNoRows flows through FromPg as
+// NotFound — the series manual-grab path reads that as "no live want to join."
+func (r *Repository) FindLiveWantForEpisode(ctx context.Context, trackingID, episodeID uuid.UUID) (model.Want, error) {
+	row, err := r.Q.FindLiveWantForEpisode(ctx, dbgen.FindLiveWantForEpisodeParams{
+		TrackingID: pgtypeFromUUID(trackingID),
+		EpisodeID:  pgtypeFromUUID(episodeID),
+	})
+	if err != nil {
+		return model.Want{}, apperrors.FromPg(err, "live want for tracking %s episode %s not found", trackingID, episodeID)
+	}
+	return toModelWant(row), nil
 }

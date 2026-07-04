@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -183,15 +184,22 @@ func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, 
 		// re-arms the existing want if a prior attempt left it terminal, so a
 		// re-request resumes acquisition rather than silently dead-ending.
 		if trackingCreated {
+			// Segment the movie against its own tracking's creation: a released
+			// movie is backfill, an unreleased one ongoing (an unparseable date
+			// falls to ongoing). Hold is nil in practice — a fresh tracking is
+			// born auto/auto — but the helper keeps the born-held rule uniform.
+			seg := model.SegmentFor(parseReleaseDate(details.ReleaseDate), tracking.CreatedAt)
 			if _, err := r.CreateWant(ctx, repo.CreateWantParams{
 				TrackingID:       tracking.ID,
 				MediaItemID:      mediaItem.ID,
 				QualityProfileID: profile.ID,
 				Status:           string(model.WantPending),
+				Segment:          string(seg),
+				Hold:             model.HoldForNewWant(tracking, seg),
 			}); err != nil {
 				return err
 			}
-		} else if err := rearmMovieWant(ctx, r, tracking.ID, mediaItem.ID, profile.ID); err != nil {
+		} else if err := rearmMovieWant(ctx, r, tracking, mediaItem.ID, profile.ID, parseReleaseDate(details.ReleaseDate)); err != nil {
 			return err
 		}
 
@@ -320,6 +328,11 @@ func ensureTracking(ctx context.Context, r *repo.Repository, mediaItemID, profil
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		// A new tracking is born fully autonomous on both segments. Settings-backed
+		// defaults (per-user auto/propose/manual) are deferred; the user dials
+		// autonomy per tracking via SetAutonomy after the fact.
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		return model.Tracking{}, false, err
@@ -341,22 +354,30 @@ func ensureTracking(ctx context.Context, r *repo.Repository, mediaItemID, profil
 // CAS no-ops). A tracking that somehow has no want gets a fresh pending one. A
 // re-armed want that was 'canceled' also flips its tracking — which CancelWant
 // parked in 'canceled' — back to 'active'.
-func rearmMovieWant(ctx context.Context, r *repo.Repository, trackingID, mediaItemID, profileID uuid.UUID) error {
-	wants, err := r.ListWantsByTracking(ctx, trackingID)
+//
+// RearmWant clears any hold as part of the reset, so if the want's segment is on
+// a manual dial the hold is re-stamped here — a re-request must land back under
+// the manual gate, not slip through auto.
+func rearmMovieWant(ctx context.Context, r *repo.Repository, tracking model.Tracking, mediaItemID, profileID uuid.UUID, releaseDate *time.Time) error {
+	wants, err := r.ListWantsByTracking(ctx, tracking.ID)
 	if err != nil {
 		return err
 	}
 	if len(wants) == 0 {
+		seg := model.SegmentFor(releaseDate, tracking.CreatedAt)
 		_, err := r.CreateWant(ctx, repo.CreateWantParams{
-			TrackingID:       trackingID,
+			TrackingID:       tracking.ID,
 			MediaItemID:      mediaItemID,
 			QualityProfileID: profileID,
 			Status:           string(model.WantPending),
+			Segment:          string(seg),
+			Hold:             model.HoldForNewWant(tracking, seg),
 		})
 		return err
 	}
 
-	_, ok, err := r.RearmWant(ctx, wants[0].ID)
+	want := wants[0]
+	_, ok, err := r.RearmWant(ctx, want.ID)
 	if err != nil {
 		return err
 	}
@@ -366,8 +387,16 @@ func rearmMovieWant(ctx context.Context, r *repo.Repository, trackingID, mediaIt
 	}
 	// The re-armed want was terminal; restore a tracking CancelWant left
 	// 'canceled'. A no-op for a still-active tracking (the failed-want case).
-	_, err = r.SetTrackingState(ctx, trackingID, string(model.TrackingActive))
-	return err
+	if _, err := r.SetTrackingState(ctx, tracking.ID, string(model.TrackingActive)); err != nil {
+		return err
+	}
+	// Re-stamp the hold the rearm cleared when the want's segment is manual.
+	if hold := model.HoldForNewWant(tracking, model.WantSegment(want.Segment)); hold != nil {
+		if _, err := r.SetWantHold(ctx, want.ID, hold); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *RequestService) Get(ctx context.Context, id uuid.UUID) (model.Request, error) {
@@ -383,6 +412,20 @@ func (s *RequestService) List(ctx context.Context) ([]model.Request, error) {
 // full per-tier/per-type policy matrix fatten this function later.
 func evaluateApproval(p model.UserPolicy) bool {
 	return p.AutoApproveMovie
+}
+
+// parseReleaseDate parses a TMDB "2006-01-02" date into a *time.Time, returning
+// nil for an empty or malformed value — which SegmentFor reads as "undated →
+// ongoing." Feeds the movie want's segment classification.
+func parseReleaseDate(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return nil
+	}
+	return &t
 }
 
 // parseTier maps a tier string to a known qualityprofile.Tier. The PoC accepts

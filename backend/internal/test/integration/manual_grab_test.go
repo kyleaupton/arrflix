@@ -103,6 +103,8 @@ func TestManualGrab_Untracked(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -148,6 +150,8 @@ func TestManualGrab_PreemptsPendingOrSearching(t *testing.T) {
 				Scope:            "self",
 				UpgradeBehavior:  "none",
 				ScheduleStrategy: "smart",
+				AutonomyBackfill: string(model.AutonomyAuto),
+				AutonomyOngoing:  string(model.AutonomyAuto),
 			})
 			if err != nil {
 				t.Fatalf("create tracking: %v", err)
@@ -157,6 +161,7 @@ func TestManualGrab_PreemptsPendingOrSearching(t *testing.T) {
 				MediaItemID:      media.ID,
 				QualityProfileID: profile.ID,
 				Status:           string(prior),
+				Segment:          string(model.WantSegmentOngoing),
 			})
 			if err != nil {
 				t.Fatalf("create want: %v", err)
@@ -193,6 +198,8 @@ func TestManualGrab_ReactivatesCanceled(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -202,6 +209,7 @@ func TestManualGrab_ReactivatesCanceled(t *testing.T) {
 		MediaItemID:      media.ID,
 		QualityProfileID: profile.ID,
 		Status:           string(model.WantCanceled),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create want: %v", err)
@@ -246,6 +254,8 @@ func TestManualGrab_ConflictWhenInFlight(t *testing.T) {
 				Scope:            "self",
 				UpgradeBehavior:  "none",
 				ScheduleStrategy: "smart",
+				AutonomyBackfill: string(model.AutonomyAuto),
+				AutonomyOngoing:  string(model.AutonomyAuto),
 			})
 			if err != nil {
 				t.Fatalf("create tracking: %v", err)
@@ -255,6 +265,7 @@ func TestManualGrab_ConflictWhenInFlight(t *testing.T) {
 				MediaItemID:      media.ID,
 				QualityProfileID: profile.ID,
 				Status:           string(prior),
+				Segment:          string(model.WantSegmentOngoing),
 			}); err != nil {
 				t.Fatalf("create want: %v", err)
 			}
@@ -263,6 +274,57 @@ func TestManualGrab_ConflictWhenInFlight(t *testing.T) {
 				t.Errorf("GrabManualWant on %q want err = %v, want Conflict", prior, err)
 			}
 		})
+	}
+}
+
+// TestWant_ManualGrabClearsHold proves a hand grab clears a needs_pick hold: a
+// held pending want (its segment on a manual dial) is CAS-flipped to 'grabbed' in
+// place with hold cleared, so an advancing want never carries a stale hold.
+func TestWant_ManualGrabClearsHold(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	media, profile := seedMovieProfile(t, ctx, r)
+	tracking, err := r.CreateTracking(ctx, repo.CreateTrackingParams{
+		MediaItemID:      media.ID,
+		QualityProfileID: profile.ID,
+		State:            string(model.TrackingActive),
+		Scope:            "self",
+		UpgradeBehavior:  "none",
+		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyManual),
+		AutonomyOngoing:  string(model.AutonomyManual),
+	})
+	if err != nil {
+		t.Fatalf("create tracking: %v", err)
+	}
+	hold := model.WantHoldNeedsPick
+	seed, err := r.CreateWant(ctx, repo.CreateWantParams{
+		TrackingID:       tracking.ID,
+		MediaItemID:      media.ID,
+		QualityProfileID: profile.ID,
+		Status:           string(model.WantPending),
+		Segment:          string(model.WantSegmentOngoing),
+		Hold:             &hold,
+	})
+	if err != nil {
+		t.Fatalf("create held want: %v", err)
+	}
+
+	grabbed, err := service.GrabManualWant(ctx, r, tracking.ID, media.ID, false)
+	if err != nil {
+		t.Fatalf("GrabManualWant: %v", err)
+	}
+	if grabbed.ID != seed.ID {
+		t.Errorf("grabbed want id = %s, want the held %s (flip in place)", grabbed.ID, seed.ID)
+	}
+	if grabbed.Status != string(model.WantGrabbed) {
+		t.Errorf("want status = %q, want %q", grabbed.Status, model.WantGrabbed)
+	}
+	if grabbed.Hold != nil {
+		t.Errorf("want hold = %q, want nil (grab clears hold)", *grabbed.Hold)
 	}
 }
 

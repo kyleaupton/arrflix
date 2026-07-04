@@ -1,13 +1,15 @@
 -- Wants: the work item, shaped as a durable work-dispatch queue.
 
 -- name: CreateWant :one
-INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at)
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at)
 VALUES (
   sqlc.arg(tracking_id),
   sqlc.arg(media_item_id),
   sqlc.arg(episode_id),
   sqlc.arg(quality_profile_id),
   sqlc.arg(status),
+  sqlc.arg(segment),
+  sqlc.narg(hold),
   COALESCE(sqlc.narg(next_run_at), now())
 )
 RETURNING *;
@@ -17,13 +19,15 @@ RETURNING *;
 -- CONFLICT, surfaced as pgx.ErrNoRows) when a concurrent reconcile already made
 -- it. Mirrors CreateTrackingIfAbsent's CAS-returns-bool contract.
 -- name: CreateWantIfAbsent :one
-INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status, next_run_at)
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at)
 VALUES (
   sqlc.arg(tracking_id),
   sqlc.arg(media_item_id),
   sqlc.arg(episode_id),
   sqlc.arg(quality_profile_id),
   sqlc.arg(status),
+  sqlc.arg(segment),
+  sqlc.narg(hold),
   COALESCE(sqlc.narg(next_run_at), now())
 )
 ON CONFLICT (tracking_id, episode_id) WHERE episode_id IS NOT NULL DO NOTHING
@@ -68,6 +72,7 @@ WITH cte AS (
   SELECT id
   FROM want
   WHERE status = 'pending'
+    AND hold IS NULL
     AND next_run_at <= now()
   ORDER BY next_run_at ASC
   FOR UPDATE SKIP LOCKED
@@ -123,6 +128,7 @@ RETURNING *;
 -- name: GrabWant :one
 UPDATE want
 SET status = 'grabbed',
+    hold = NULL,
     updated_at = now()
 WHERE id = sqlc.arg(id)
   AND status = 'searching'
@@ -137,6 +143,7 @@ RETURNING *;
 -- name: GrabWantsForPack :many
 UPDATE want
 SET status = 'grabbed',
+    hold = NULL,
     updated_at = now()
 WHERE id = ANY(sqlc.arg(ids)::uuid[])
   AND status IN ('pending', 'searching')
@@ -170,6 +177,7 @@ RETURNING *;
 -- name: GrabWantManual :one
 UPDATE want
 SET status = 'grabbed',
+    hold = NULL,
     updated_at = now()
 WHERE id = sqlc.arg(id)
   AND status IN ('pending', 'searching', 'failed', 'canceled')
@@ -252,3 +260,56 @@ SET status = 'failed',
 WHERE id = sqlc.arg(id)
   AND status = 'searching'
 RETURNING *;
+
+-- HoldWantsForSegment stamps hold='needs_pick' on a tracking's still-acquirable
+-- (pending/searching) wants in one segment when that segment flips to manual.
+-- Searching wants are held too: the reschedule/reclaim queries return them to
+-- pending without touching hold, so stamping only pending would leak perpetual
+-- searchers past the manual gate. The hold IS NULL guard makes it idempotent and
+-- keeps it from overwriting a future 'proposed' hold. Returns the wants it held.
+-- name: HoldWantsForSegment :many
+UPDATE want
+SET hold = 'needs_pick',
+    updated_at = now()
+WHERE tracking_id = sqlc.arg(tracking_id)
+  AND segment = sqlc.arg(segment)
+  AND status IN ('pending', 'searching')
+  AND hold IS NULL
+RETURNING *;
+
+-- ReleaseHeldWantsForSegment clears the needs_pick hold on a tracking's
+-- pending/searching wants in one segment when it flips back to auto, and re-arms
+-- next_run_at so the worker claims them on its next poll. Scoped to
+-- hold='needs_pick' so a future 'proposed' hold stays outside its blast radius.
+-- Returns the wants it released.
+-- name: ReleaseHeldWantsForSegment :many
+UPDATE want
+SET hold = NULL,
+    next_run_at = now(),
+    updated_at = now()
+WHERE tracking_id = sqlc.arg(tracking_id)
+  AND segment = sqlc.arg(segment)
+  AND status IN ('pending', 'searching')
+  AND hold = 'needs_pick'
+RETURNING *;
+
+-- SetWantHold sets (or clears, with a NULL arg) the hold on a single want. Backs
+-- the movie-rearm edge — a grab clears hold, so a re-request onto a manual
+-- segment must re-stamp it — and test seeding.
+-- name: SetWantHold :one
+UPDATE want
+SET hold = sqlc.narg(hold),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+RETURNING *;
+
+-- FindLiveWantForEpisode returns the still-acquirable (pending/searching) want a
+-- tracking holds for one episode, if any. Backs the series manual-grab path's
+-- join onto the want spine. No-row (surfaced as pgx.ErrNoRows) means the episode
+-- has no live want — the manual grab proceeds without touching the spine.
+-- name: FindLiveWantForEpisode :one
+SELECT * FROM want
+WHERE tracking_id = sqlc.arg(tracking_id)
+  AND episode_id = sqlc.arg(episode_id)
+  AND status IN ('pending', 'searching')
+LIMIT 1;

@@ -70,6 +70,8 @@ func seedPendingSeasonWants(t *testing.T, ctx context.Context, r *repo.Repositor
 		Scope:            "all",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -102,6 +104,7 @@ func seedPendingSeasonWants(t *testing.T, ctx context.Context, r *repo.Repositor
 			EpisodeID:        &episode.ID,
 			QualityProfileID: profile.ID,
 			Status:           string(model.WantPending),
+			Segment:          string(model.WantSegmentOngoing),
 		})
 		if err != nil {
 			t.Fatalf("create want for episode %d: %v", epNum, err)

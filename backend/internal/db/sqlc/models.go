@@ -620,6 +620,8 @@ type Tracking struct {
 	Scope            string      `json:"scope"`
 	UpgradeBehavior  string      `json:"upgrade_behavior"`
 	ScheduleStrategy string      `json:"schedule_strategy"`
+	AutonomyBackfill string      `json:"autonomy_backfill"`
+	AutonomyOngoing  string      `json:"autonomy_ongoing"`
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
 }
@@ -676,6 +678,8 @@ type Want struct {
 	EpisodeID        pgtype.UUID `json:"episode_id"`
 	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
 	Status           string      `json:"status"`
+	Segment          string      `json:"segment"`
+	Hold             *string     `json:"hold"`
 	NextRunAt        time.Time   `json:"next_run_at"`
 	AttemptCount     int32       `json:"attempt_count"`
 	LastError        *string     `json:"last_error"`

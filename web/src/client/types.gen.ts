@@ -2086,6 +2086,8 @@ export type Tracking = {
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    autonomyBackfill: string;
+    autonomyOngoing: string;
     createdAt: string;
     id: string;
     mediaItemId: string;
@@ -2115,6 +2117,21 @@ export type TrackingRequester = {
     trackingId: string;
     updatedAt: string;
     userId: string;
+};
+
+export type TrackingSetAutonomyInputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Autonomy for backfill wants (atoms dated before the tracking was created)
+     */
+    backfill: 'auto' | 'manual';
+    /**
+     * Autonomy for ongoing wants (atoms dated after the tracking was created)
+     */
+    ongoing: 'auto' | 'manual';
 };
 
 export type UpdateDetails = {
@@ -2212,11 +2229,13 @@ export type Want = {
     attemptCount: number;
     createdAt: string;
     episodeId?: string;
+    hold?: string;
     id: string;
     lastError: string | null;
     mediaItemId: string;
     nextRunAt: string;
     qualityProfileId: string;
+    segment: string;
     status: string;
     trackingId: string;
     updatedAt: string;
@@ -3208,6 +3227,8 @@ export type TierBindingWritable = {
 };
 
 export type TrackingWritable = {
+    autonomyBackfill: string;
+    autonomyOngoing: string;
     createdAt: string;
     id: string;
     mediaItemId: string;
@@ -3222,6 +3243,17 @@ export type TrackingWritable = {
 export type TrackingByTmdbWritable = {
     tracking: TrackingWritable;
     wants: Array<WantWritable> | null;
+};
+
+export type TrackingSetAutonomyInputBodyWritable = {
+    /**
+     * Autonomy for backfill wants (atoms dated before the tracking was created)
+     */
+    backfill: 'auto' | 'manual';
+    /**
+     * Autonomy for ongoing wants (atoms dated after the tracking was created)
+     */
+    ongoing: 'auto' | 'manual';
 };
 
 export type UserWritable = {
@@ -3278,11 +3310,13 @@ export type WantWritable = {
     attemptCount: number;
     createdAt: string;
     episodeId?: string;
+    hold?: string;
     id: string;
     lastError: string | null;
     mediaItemId: string;
     nextRunAt: string;
     qualityProfileId: string;
+    segment: string;
     status: string;
     trackingId: string;
     updatedAt: string;
@@ -7715,6 +7749,52 @@ export type TrackingGetResponses = {
 };
 
 export type TrackingGetResponse = TrackingGetResponses[keyof TrackingGetResponses];
+
+export type TrackingSetAutonomyData = {
+    body: TrackingSetAutonomyInputBodyWritable;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}/autonomy';
+};
+
+export type TrackingSetAutonomyErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingSetAutonomyError = TrackingSetAutonomyErrors[keyof TrackingSetAutonomyErrors];
+
+export type TrackingSetAutonomyResponses = {
+    /**
+     * OK
+     */
+    200: Tracking;
+};
+
+export type TrackingSetAutonomyResponse = TrackingSetAutonomyResponses[keyof TrackingSetAutonomyResponses];
 
 export type TrackingCancelData = {
     body?: never;

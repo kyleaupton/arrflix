@@ -113,6 +113,24 @@ func (h *Tracking) Cancel(ctx context.Context, input *TrackingCancelInput) (*Tra
 	return &TrackingOutput{Body: out}, nil
 }
 
+// ----- Set autonomy -----
+
+type TrackingSetAutonomyInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"Tracking ID"`
+	Body struct {
+		Backfill string `json:"backfill" required:"true" enum:"auto,manual" doc:"Autonomy for backfill wants (atoms dated before the tracking was created)"`
+		Ongoing  string `json:"ongoing" required:"true" enum:"auto,manual" doc:"Autonomy for ongoing wants (atoms dated after the tracking was created)"`
+	}
+}
+
+func (h *Tracking) SetAutonomy(ctx context.Context, input *TrackingSetAutonomyInput) (*TrackingOutput, error) {
+	out, err := h.svc.Tracking.SetAutonomy(ctx, input.ID, input.Body.Backfill, input.Body.Ongoing)
+	if err != nil {
+		return nil, err
+	}
+	return &TrackingOutput{Body: out}, nil
+}
+
 // ----- List requesters -----
 
 type TrackingRequestersInput struct {
@@ -179,6 +197,16 @@ func (h *Tracking) RegisterHumachi(api huma.API) {
 		Tags:        []string{"tracking"},
 		Errors:      errsRead,
 	}, h.Cancel)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "tracking-set-autonomy",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/tracking/{id}/autonomy",
+		Summary:     "Set tracking autonomy",
+		Description: "Sets per-segment acquisition autonomy (backfill and ongoing) to 'auto' or 'manual', holding or releasing the segment's live wants to match. 'propose' is not yet accepted.",
+		Tags:        []string{"tracking"},
+		Errors:      errsUpsert,
+	}, h.SetAutonomy)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "tracking-requesters",

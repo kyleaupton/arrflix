@@ -73,6 +73,8 @@ func seedPendingWant(t *testing.T, ctx context.Context, r *repo.Repository) mode
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -83,6 +85,7 @@ func seedPendingWant(t *testing.T, ctx context.Context, r *repo.Repository) mode
 		MediaItemID:      media.ID,
 		QualityProfileID: profile.ID,
 		Status:           string(model.WantPending),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create want: %v", err)
@@ -183,6 +186,8 @@ func seedPendingEpisodeWant(t *testing.T, ctx context.Context, r *repo.Repositor
 		Scope:            "all",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -194,6 +199,7 @@ func seedPendingEpisodeWant(t *testing.T, ctx context.Context, r *repo.Repositor
 		EpisodeID:        &episode.ID,
 		QualityProfileID: profile.ID,
 		Status:           string(model.WantPending),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create want: %v", err)
@@ -658,6 +664,8 @@ func TestAcquisition_WantLinkage(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -668,6 +676,7 @@ func TestAcquisition_WantLinkage(t *testing.T) {
 		MediaItemID:      media.ID,
 		QualityProfileID: profile.ID,
 		Status:           string(model.WantPending),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create want: %v", err)
@@ -1155,6 +1164,8 @@ func TestAcquisition_NonRetryableErrorFails(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -1164,6 +1175,7 @@ func TestAcquisition_NonRetryableErrorFails(t *testing.T) {
 		MediaItemID:      media.ID,
 		QualityProfileID: profile.ID,
 		Status:           string(model.WantPending),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create want: %v", err)

@@ -101,6 +101,8 @@ func TestScheduler_NextSearchAt(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create series tracking: %v", err)
@@ -112,6 +114,7 @@ func TestScheduler_NextSearchAt(t *testing.T) {
 		EpisodeID:        &episode.ID,
 		QualityProfileID: seriesProfile.ID,
 		Status:           string(model.WantPending),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create series want: %v", err)
@@ -130,6 +133,7 @@ func TestScheduler_NextSearchAt(t *testing.T) {
 		EpisodeID:        &undatedEp.ID,
 		QualityProfileID: seriesProfile.ID,
 		Status:           string(model.WantPending),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create undated want: %v", err)
@@ -166,6 +170,8 @@ func TestScheduler_NextSearchAt(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create movie tracking: %v", err)
@@ -176,6 +182,7 @@ func TestScheduler_NextSearchAt(t *testing.T) {
 		EpisodeID:        nil,
 		QualityProfileID: movieProfile.ID,
 		Status:           string(model.WantPending),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create movie want: %v", err)

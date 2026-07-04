@@ -44,6 +44,106 @@ func sameInstant(t *testing.T, label string, got, want time.Time) {
 	}
 }
 
+// TestReconcile_StampsSegmentAndHold proves the reconciler classifies each want's
+// segment against the tracking's creation time and applies the segment's autonomy:
+// on a backfill-manual / ongoing-auto tracking, a past-aired episode's want is
+// born 'backfill' + held ('needs_pick'), while a future-dated episode's want is
+// 'ongoing' + unheld.
+func TestReconcile_StampsSegmentAndHold(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	app := testapp.New(t, pool)
+	ctx := context.Background()
+
+	if err := app.Services.QualityProfiles.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seed defaults: %v", err)
+	}
+	profile, err := app.Services.QualityProfiles.ResolveByTier(ctx, qualityprofile.TierHD, parsing.DomainSeries)
+	if err != nil {
+		t.Fatalf("resolve HD series profile: %v", err)
+	}
+
+	past := time.Now().Add(-48 * time.Hour)
+	future := time.Now().Add(48 * time.Hour)
+
+	tmdbID := int64(1401)
+	item, err := app.Repo.UpsertMediaItem(ctx, repo.UpsertMediaItemParams{
+		Type:   string(parsing.DomainSeries),
+		Title:  "Segment Show",
+		TmdbID: &tmdbID,
+	})
+	if err != nil {
+		t.Fatalf("upsert media item: %v", err)
+	}
+	s1, err := app.Repo.UpsertSeason(ctx, repo.UpsertSeasonParams{MediaItemID: item.ID, SeasonNumber: 1})
+	if err != nil {
+		t.Fatalf("upsert season: %v", err)
+	}
+	pastEp, err := app.Repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{SeasonID: s1.ID, EpisodeNumber: 1, AirDate: &past, TmdbID: ptrInt64(301)})
+	if err != nil {
+		t.Fatalf("upsert past episode: %v", err)
+	}
+	futureEp, err := app.Repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{SeasonID: s1.ID, EpisodeNumber: 2, AirDate: &future, TmdbID: ptrInt64(302)})
+	if err != nil {
+		t.Fatalf("upsert future episode: %v", err)
+	}
+
+	// Tracking with backfill on manual, ongoing on auto.
+	tracking, err := app.Repo.CreateTracking(ctx, repo.CreateTrackingParams{
+		MediaItemID:      item.ID,
+		QualityProfileID: profile.ID,
+		State:            string(model.TrackingActive),
+		Scope:            "self",
+		UpgradeBehavior:  "none",
+		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyManual),
+		AutonomyOngoing:  string(model.AutonomyAuto),
+	})
+	if err != nil {
+		t.Fatalf("create tracking: %v", err)
+	}
+	admin := adminUser(t, app, ctx)
+	if _, err := app.Repo.AddRequester(ctx, repo.AddRequesterParams{
+		TrackingID: tracking.ID,
+		UserID:     admin.ID,
+		Tier:       "HD",
+		ScopeRule:  string(scope.RuleAll),
+	}); err != nil {
+		t.Fatalf("add requester: %v", err)
+	}
+
+	if err := app.Services.Reconcile.Reconcile(ctx, tracking.ID); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	got := wantsByEpisode(t, app, ctx, tracking.ID)
+	back, ok := got[pastEp.ID]
+	if !ok {
+		t.Fatalf("missing want for past episode")
+	}
+	if back.Segment != string(model.WantSegmentBackfill) {
+		t.Errorf("past-aired want segment = %q, want backfill", back.Segment)
+	}
+	if back.Hold == nil || *back.Hold != model.WantHoldNeedsPick {
+		t.Errorf("past-aired want hold = %v, want %q (backfill is manual)", back.Hold, model.WantHoldNeedsPick)
+	}
+
+	fwd, ok := got[futureEp.ID]
+	if !ok {
+		t.Fatalf("missing want for future episode")
+	}
+	if fwd.Segment != string(model.WantSegmentOngoing) {
+		t.Errorf("future-dated want segment = %q, want ongoing", fwd.Segment)
+	}
+	if fwd.Hold != nil {
+		t.Errorf("future-dated want hold = %q, want nil (ongoing is auto)", *fwd.Hold)
+	}
+}
+
+// ptrInt64 returns a pointer to its argument — the episode tmdb-id seeds need an
+// addressable value.
+func ptrInt64(v int64) *int64 { return &v }
+
 // TestReconcile_ProducesAndCancelsWants seeds a series episode tree directly and
 // drives the reconciler: wants appear for every file-less, dated, non-deprecated,
 // in-scope episode — aired or future — with next_run_at stamped to the air date;
@@ -140,6 +240,8 @@ func TestReconcile_ProducesAndCancelsWants(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)

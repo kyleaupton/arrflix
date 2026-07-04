@@ -42,6 +42,15 @@ CREATE TABLE IF NOT EXISTS tracking (
   scope TEXT NOT NULL DEFAULT 'self',
   upgrade_behavior TEXT NOT NULL DEFAULT 'none' CHECK (upgrade_behavior IN ('auto', 'propose', 'none')),
   schedule_strategy TEXT NOT NULL DEFAULT 'smart' CHECK (schedule_strategy IN ('smart', 'fixed')),
+  -- Acquisition autonomy — who picks the release — dialed per want segment:
+  -- backfill (atoms dated before the tracking's creation) and ongoing (dated
+  -- after, or undated). 'auto' = the worker searches and grabs; 'manual' = wants
+  -- exist and stay visible but are never auto-searched (the user fulfills them
+  -- via the manual download flow); 'propose' is the future middle ground (the
+  -- worker searches and surfaces a pick for confirmation). The CHECK admits
+  -- 'propose' so the schema is stable, but the API/UI reject it until that phase.
+  autonomy_backfill TEXT NOT NULL DEFAULT 'auto' CHECK (autonomy_backfill IN ('auto', 'propose', 'manual')),
+  autonomy_ongoing TEXT NOT NULL DEFAULT 'auto' CHECK (autonomy_ongoing IN ('auto', 'propose', 'manual')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (media_item_id)
@@ -119,6 +128,18 @@ CREATE TABLE IF NOT EXISTS want (
     'failed',       -- permanent failure (terminal)
     'canceled'      -- user/system canceled (terminal)
   )),
+  -- segment classifies the want against the tracking's autonomy dial: 'backfill'
+  -- for an atom whose air/release date precedes the tracking's created_at,
+  -- 'ongoing' for one dated after (or undated). Immutable — stamped once at
+  -- creation as a pure function of atom date vs tracking.created_at; a later
+  -- reconcile never reclassifies it.
+  segment TEXT NOT NULL DEFAULT 'ongoing' CHECK (segment IN ('backfill', 'ongoing')),
+  -- hold is the annotation axis: a non-NULL value keeps the want at its current
+  -- status (pending/searching) and visible everywhere, but bars the acquisition
+  -- worker from claiming it (ClaimRunnableWants requires hold IS NULL). NULL = no
+  -- hold. 'needs_pick' means a manual segment owns this want — the user picks the
+  -- release. A grab clears the hold; a reschedule preserves it.
+  hold TEXT CHECK (hold IN ('needs_pick')),
   next_run_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   attempt_count INT NOT NULL DEFAULT 0,
   last_error TEXT,

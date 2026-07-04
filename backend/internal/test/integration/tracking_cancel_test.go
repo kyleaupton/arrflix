@@ -74,6 +74,8 @@ func TestTracking_Cancel(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -87,6 +89,7 @@ func TestTracking_Cancel(t *testing.T) {
 			EpisodeID:        &episodeID,
 			QualityProfileID: profile.ID,
 			Status:           string(status),
+			Segment:          string(model.WantSegmentOngoing),
 		})
 		if err != nil {
 			t.Fatalf("create want (%s): %v", status, err)
@@ -245,6 +248,8 @@ func TestTracking_GetByTmdbID_Series(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create tracking: %v", err)
@@ -255,6 +260,7 @@ func TestTracking_GetByTmdbID_Series(t *testing.T) {
 		EpisodeID:        &episode.ID,
 		QualityProfileID: profile.ID,
 		Status:           string(model.WantPending),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create want: %v", err)

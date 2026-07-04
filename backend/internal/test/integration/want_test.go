@@ -165,6 +165,8 @@ func TestWant_Cancel_Terminal(t *testing.T) {
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
 	})
 	if err != nil {
 		t.Fatalf("create second tracking: %v", err)
@@ -174,6 +176,7 @@ func TestWant_Cancel_Terminal(t *testing.T) {
 		MediaItemID:      media2.ID,
 		QualityProfileID: want.QualityProfileID,
 		Status:           string(model.WantCanceled),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create canceled want: %v", err)

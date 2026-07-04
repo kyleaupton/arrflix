@@ -4872,6 +4872,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        autonomyBackfill:
+          type: string
+        autonomyOngoing:
+          type: string
         createdAt:
           format: date-time
           type: string
@@ -4900,6 +4904,8 @@ components:
         - scope
         - upgradeBehavior
         - scheduleStrategy
+        - autonomyBackfill
+        - autonomyOngoing
         - createdAt
         - updatedAt
       type: object
@@ -4953,6 +4959,32 @@ components:
         - scopeRule
         - createdAt
         - updatedAt
+      type: object
+    TrackingSetAutonomyInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/TrackingSetAutonomyInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        backfill:
+          description: Autonomy for backfill wants (atoms dated before the tracking was created)
+          enum:
+            - auto
+            - manual
+          type: string
+        ongoing:
+          description: Autonomy for ongoing wants (atoms dated after the tracking was created)
+          enum:
+            - auto
+            - manual
+          type: string
+      required:
+        - backfill
+        - ongoing
       type: object
     UpdateDetails:
       additionalProperties: false
@@ -5142,6 +5174,8 @@ components:
           type: string
         episodeId:
           type: string
+        hold:
+          type: string
         id:
           type: string
         lastError:
@@ -5154,6 +5188,8 @@ components:
           format: date-time
           type: string
         qualityProfileId:
+          type: string
+        segment:
           type: string
         status:
           type: string
@@ -5168,6 +5204,7 @@ components:
         - mediaItemId
         - qualityProfileId
         - status
+        - segment
         - nextRunAt
         - attemptCount
         - lastError
@@ -10195,6 +10232,65 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: Get tracking
+      tags:
+        - tracking
+  /api/v1/tracking/{id}/autonomy:
+    post:
+      description: Sets per-segment acquisition autonomy (backfill and ongoing) to 'auto' or 'manual', holding or releasing the segment's live wants to match. 'propose' is not yet accepted.
+      operationId: tracking-set-autonomy
+      parameters:
+        - description: Tracking ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Tracking ID
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrackingSetAutonomyInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tracking"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Set tracking autonomy
       tags:
         - tracking
   /api/v1/tracking/{id}/cancel:

@@ -7,7 +7,7 @@
 
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
-import { Check, CircleAlert, Download, Loader, Search } from 'lucide-vue-next'
+import { Check, CircleAlert, Download, Hand, Loader, Search } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
 import type { BadgeVariants } from '@/components/ui/badge'
 
@@ -19,9 +19,19 @@ const props = defineProps<{
   attemptCount?: number
   lastError?: string | null
   progress?: number | null
+  hold?: string | null
 }>()
 
+// A held want (segment on a manual autonomy dial) stays pending/searching but is
+// never auto-searched — the user picks the release. That annotation overrides the
+// lifecycle face while the want is still pre-grab; once it advances (grabbed and
+// beyond) the hold is cleared, so the normal face resumes.
+const isHeld = computed(
+  () => props.hold === 'needs_pick' && (props.status === 'pending' || props.status === 'searching'),
+)
+
 const label = computed(() => {
+  if (isHeld.value) return 'Needs your pick'
   switch (props.status) {
     case 'pending':
       return 'Queued'
@@ -47,6 +57,7 @@ const label = computed(() => {
 })
 
 const variant = computed<BadgeVariants['variant']>(() => {
+  if (isHeld.value) return 'outline'
   switch (props.status) {
     case 'available':
       return 'default'
@@ -62,6 +73,7 @@ const variant = computed<BadgeVariants['variant']>(() => {
 })
 
 const icon = computed<Component | null>(() => {
+  if (isHeld.value) return Hand
   switch (props.status) {
     case 'searching':
       return Search
