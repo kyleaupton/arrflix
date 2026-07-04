@@ -686,3 +686,12 @@ type Want struct {
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
 }
+
+type WantReleaseExclusion struct {
+	WantID    pgtype.UUID `json:"want_id"`
+	IndexerID int64       `json:"indexer_id"`
+	Guid      string      `json:"guid"`
+	Reason    string      `json:"reason"`
+	Detail    *string     `json:"detail"`
+	CreatedAt time.Time   `json:"created_at"`
+}

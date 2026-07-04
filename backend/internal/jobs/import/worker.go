@@ -449,6 +449,13 @@ func (w *Worker) handleError(ctx context.Context, task model.ImportTask, err err
 		"attempt_count": task.AttemptCount + 1,
 	})
 
+	// Import failures terminally fail the want (both sites below), deliberately
+	// unlike download-worker recovery (failJobAndRecoverWants): a filesystem/import
+	// error isn't fixed by re-searching a different release, so excluding-and-
+	// re-searching here would just re-download into the same broken import. The
+	// re-gate phase revisits these (its exclusion reason 'regate_failed' is already
+	// reserved in the schema).
+	//
 	// Non-retryable errors fail immediately.
 	if !apperrors.IsRetryable(err) {
 		_, _ = w.repo.SetImportTaskFailed(ctx, task.ID, msg, kind)

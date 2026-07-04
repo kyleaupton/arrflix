@@ -36,11 +36,7 @@
       <div v-for="i in 2" :key="i" class="space-y-4">
         <Skeleton class="h-7 w-48" />
         <div class="flex gap-3 overflow-hidden">
-          <Skeleton
-            v-for="j in 6"
-            :key="j"
-            class="aspect-[2/3] w-36 shrink-0 rounded-lg md:w-44"
-          />
+          <Skeleton v-for="j in 6" :key="j" class="aspect-[2/3] w-36 shrink-0 rounded-lg md:w-44" />
         </div>
       </div>
     </div>

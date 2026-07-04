@@ -238,8 +238,7 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 	// Handle terminal downloader error
 	if newStatus == "failed" {
 		w.logEvent(ctx, job.ID, "error", "downloader reported failed status", nil)
-		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID, "downloader reported failed status", apperrors.KindBadGateway)
-		w.mirrorWants(ctx, job.ID, model.WantFailed)
+		w.failJobAndRecoverWants(ctx, job, "downloader reported failed status", apperrors.KindBadGateway)
 		return nil
 	}
 
@@ -504,6 +503,85 @@ func (w *Worker) releaseUncoveredWants(ctx context.Context, jobID uuid.UUID, wan
 	}
 }
 
+// failJobAndRecoverWants terminally fails a download job and recovers its linked
+// wants instead of dead-ending them. For each want it excludes the failed release
+// (so the re-search can't re-pick it) and returns the want to 'pending' to be
+// searched again — replacing the pre-A2 "mark the want failed", which required a
+// manual re-request. The recovery loop is bounded precisely because the exclusion
+// bars re-picking the same release: ProcessWant re-searches once and, on no other
+// winner, falls back to the scheduler's recheck cadence.
+//
+// Best-effort per want (log-and-continue), the same contract as
+// releaseUncoveredWants: one want's recovery failure must not block the others or
+// the job-fail. It shares the precedent's exclusion-before-release ordering — see
+// the inline note.
+func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJob, lastError string, kind apperrors.Kind) {
+	if _, err := w.repo.MarkDownloadJobFailed(ctx, job.ID, lastError, kind); err != nil {
+		w.log.Warn().Err(err).Str("job_id", job.ID.String()).Msg("failed to mark download job failed")
+	}
+	w.publishJobUpdated(ctx, job.ID)
+
+	wants, err := w.repo.ListWantsByDownloadJob(ctx, job.ID)
+	if err != nil {
+		w.log.Warn().Err(err).Str("job_id", job.ID.String()).Msg("failed to list wants for recovery")
+		return
+	}
+
+	detail := fmt.Sprintf("%s: %s", job.CandidateTitle, lastError)
+	for _, want := range wants {
+		// Exclude the failed release BEFORE releasing the want: the release makes
+		// the want claimable immediately, so if the exclusion isn't already in
+		// place the very next search could re-pick the release that just failed.
+		if err := w.repo.AddWantReleaseExclusion(ctx, repo.AddWantReleaseExclusionParams{
+			WantID:    want.ID,
+			IndexerID: job.IndexerID,
+			GUID:      job.Guid,
+			Reason:    model.ExclusionDownloadFailed,
+			Detail:    &detail,
+		}); err != nil {
+			// Releasing without the exclusion would loop on the same release. Fall
+			// back to the pre-A2 terminal-fail so the want doesn't wedge.
+			w.log.Warn().Err(err).Str("want_id", want.ID.String()).Msg("failed to exclude release; failing want")
+			jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, want.ID, model.WantFailed)
+			continue
+		}
+
+		released, ok, err := w.repo.ReleaseWantFromGrab(ctx, want.ID,
+			fmt.Sprintf("download failed (%s); release excluded, re-searching", lastError))
+		if err != nil {
+			w.log.Warn().Err(err).Str("want_id", want.ID.String()).Msg("failed to release want after download failure")
+			continue
+		}
+		if !ok {
+			// Canceled or already released — benign, nothing to re-arm.
+			continue
+		}
+		realtime.Emit(ctx, w.broker, realtime.WantUpdated(released))
+		w.restampManualHold(ctx, released)
+	}
+}
+
+// restampManualHold re-stamps the 'needs_pick' hold on a just-released want whose
+// tracking segment is manual. The grab cleared the hold, and ReleaseWantFromGrab
+// leaves it cleared; without this a want owned by a manual segment would fall into
+// the auto-search pool rather than waiting for the user to pick again. Mirrors
+// rearmMovieWant's re-stamp. One extra query per recovered want — failures are
+// rare.
+func (w *Worker) restampManualHold(ctx context.Context, released model.Want) {
+	tracking, err := w.repo.GetTracking(ctx, released.TrackingID)
+	if err != nil {
+		w.log.Warn().Err(err).Str("want_id", released.ID.String()).Msg("failed to load tracking for manual-hold restamp")
+		return
+	}
+	hold := model.HoldForNewWant(tracking, model.WantSegment(released.Segment))
+	if hold == nil {
+		return
+	}
+	if _, err := w.repo.SetWantHold(ctx, released.ID, hold); err != nil {
+		w.log.Warn().Err(err).Str("want_id", released.ID.String()).Msg("failed to restamp manual hold")
+	}
+}
+
 func (w *Worker) resolveEpisodeID(ctx context.Context, mediaItemID uuid.UUID, targetSeason *int, epNum int) (uuid.UUID, error) {
 	seasonNum := 1
 	if targetSeason != nil {
@@ -590,18 +668,18 @@ func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err err
 
 	// Non-retryable errors fail immediately.
 	if !apperrors.IsRetryable(err) {
-		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID, msg, kind)
-		w.mirrorWants(ctx, job.ID, model.WantFailed)
+		w.failJobAndRecoverWants(ctx, job, msg, kind)
 		return
 	}
 
-	// Retryable errors: respect the max-attempts ceiling.
+	// Retryable errors: respect the max-attempts ceiling. A retryable failure that
+	// exhausts its attempts still recovers its wants — the release is excluded and
+	// re-searched. Indexer-wide outages (which would burn attempts across many
+	// jobs) are indexer-health-gating's concern, deferred.
 	attempt := int(job.AttemptCount) + 1
 	if attempt >= w.maxAttempts {
-		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID,
-			fmt.Sprintf("max attempts (%d) exceeded: %s", w.maxAttempts, msg),
-			kind)
-		w.mirrorWants(ctx, job.ID, model.WantFailed)
+		w.failJobAndRecoverWants(ctx, job,
+			fmt.Sprintf("max attempts (%d) exceeded: %s", w.maxAttempts, msg), kind)
 		return
 	}
 

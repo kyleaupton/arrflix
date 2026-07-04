@@ -163,11 +163,16 @@ func packResult(guid, title string, sizeGiB int64) indexer.SearchResult {
 	}
 }
 
-// fakeDownloaderClient is a hand-rolled downloader.Client whose Get reports an
-// instantly-completed download and whose ListFiles returns a scripted file list —
-// the seam the download→import flow drives over without a real qBittorrent.
+// fakeDownloaderClient is a hand-rolled downloader.Client whose Get reports a
+// scripted download status and whose ListFiles returns a scripted file list — the
+// seam the download→import flow drives over without a real qBittorrent. The zero
+// value reports an instantly-completed download (the happy path most tests want);
+// status overrides that terminal status (e.g. StatusErrored for failure recovery),
+// and getErr makes every Get fail (driving the retry→max-attempts path).
 type fakeDownloaderClient struct {
-	files []downloader.File
+	files  []downloader.File
+	status downloader.JobStatus
+	getErr error
 }
 
 func (f *fakeDownloaderClient) Type() downloader.Type             { return downloader.TypeQbittorrent }
@@ -179,9 +184,16 @@ func (f *fakeDownloaderClient) Add(ctx context.Context, req downloader.AddReques
 	return downloader.AddResult{ExternalID: "ext-1", Name: "pack"}, nil
 }
 func (f *fakeDownloaderClient) Get(ctx context.Context, externalID string) (downloader.Item, error) {
+	if f.getErr != nil {
+		return downloader.Item{}, f.getErr
+	}
+	status := f.status
+	if status == "" {
+		status = downloader.StatusCompleted
+	}
 	return downloader.Item{
 		ExternalID:  externalID,
-		Status:      downloader.StatusCompleted,
+		Status:      status,
 		Progress:    1,
 		SavePath:    "/downloads",
 		ContentPath: "/downloads/pack",
@@ -205,9 +217,17 @@ func (f *fakeDownloaderClient) Remove(ctx context.Context, externalID string, de
 // cycles in milliseconds.
 func newDownloadWorker(t *testing.T, ctx context.Context, r *repo.Repository, files []downloader.File) *downloadworker.Worker {
 	t.Helper()
+	return newDownloadWorkerWithClient(t, ctx, r, &fakeDownloaderClient{files: files})
+}
+
+// newDownloadWorkerWithClient wires a download worker around a caller-built fake
+// client, so a test can script a failure status or a Get error the happy-path
+// newDownloadWorker doesn't expose.
+func newDownloadWorkerWithClient(t *testing.T, ctx context.Context, r *repo.Repository, client *fakeDownloaderClient) *downloadworker.Worker {
+	t.Helper()
 	reg := downloader.NewRegistry()
 	reg.Register(downloader.TypeQbittorrent, func(rec downloader.ConfigRecord) (downloader.Client, error) {
-		return &fakeDownloaderClient{files: files}, nil
+		return client, nil
 	})
 	dm := downloader.NewManager(reg, r, logger.New(false))
 	if err := dm.Initialize(ctx); err != nil {
@@ -449,4 +469,114 @@ func TestPack_BackHalf_UnderCoverage(t *testing.T) {
 	if len(activeJobs) != 0 {
 		t.Errorf("E3 active jobs = %d, want 0 (detached from the pack job)", len(activeJobs))
 	}
+}
+
+// addExclusion records that a want has blocklisted a release, the substrate the
+// front-half's exclusion-aware coverage shrink reads.
+func addExclusion(t *testing.T, ctx context.Context, r *repo.Repository, wantID uuid.UUID, indexerID int64, guid string) {
+	t.Helper()
+	if err := r.AddWantReleaseExclusion(ctx, repo.AddWantReleaseExclusionParams{
+		WantID:    wantID,
+		IndexerID: indexerID,
+		GUID:      guid,
+		Reason:    model.ExclusionDownloadFailed,
+	}); err != nil {
+		t.Fatalf("add exclusion for want %s: %v", wantID, err)
+	}
+}
+
+// TestPack_ExcludedSiblingShrinksCoverage proves the sibling half of the exclusion
+// asymmetry: a sibling that has excluded the pack release is carved out of its
+// coverage. When enough siblings exclude it, coverage drops below the ≥2 guard and
+// the single wins; when one sibling still remains covered alongside the processed
+// want, the pack wins linking exactly those two.
+func TestPack_ExcludedSiblingShrinksCoverage(t *testing.T) {
+	t.Parallel()
+
+	const packGUID = "guid-s03-complete"
+
+	// E2 and E3 both exclude the pack → only E1 remains covered → the ≥2 guard is
+	// not met → the covering single wins.
+	t.Run("shrinks below guard, single wins", func(t *testing.T) {
+		t.Parallel()
+		pool := dbtest.New(t)
+		r := repo.New(pool)
+		ctx := context.Background()
+
+		seeded := seedPendingSeasonWants(t, ctx, r, 3, 1, 2, 3)
+		addExclusion(t, ctx, r, seeded.wants[2].ID, 7, packGUID)
+		addExclusion(t, ctx, r, seeded.wants[3].ID, 7, packGUID)
+
+		job := grabPackForSeason(t, ctx, r, seeded, 1, []indexer.SearchResult{
+			packResult(packGUID, "Game of Thrones S03 COMPLETE 1080p BluRay x264", 3),
+			packResult("guid-s03e01", "Game of Thrones S03E01 1080p BluRay x264", 3),
+		})
+
+		if job.Guid != "guid-s03e01" {
+			t.Errorf("job guid = %q, want guid-s03e01 (pack coverage shrank below the guard)", job.Guid)
+		}
+		if job.EpisodeID != seeded.episodeIDs[1] {
+			t.Errorf("job episodeId = %s, want %s (single carries the episode id)", job.EpisodeID, seeded.episodeIDs[1])
+		}
+		linked, err := r.ListWantsByDownloadJob(ctx, job.ID)
+		if err != nil {
+			t.Fatalf("list wants for download job: %v", err)
+		}
+		if len(linked) != 1 || linked[0].ID != seeded.wants[1].ID {
+			t.Errorf("linked wants = %v, want just [%s]", linked, seeded.wants[1].ID)
+		}
+	})
+
+	// Only E3 excludes the pack → E1 (processed) + E2 remain covered → the pack
+	// wins, linking exactly those two; E3 stays pending.
+	t.Run("one sibling excluded, pack wins remaining two", func(t *testing.T) {
+		t.Parallel()
+		pool := dbtest.New(t)
+		r := repo.New(pool)
+		ctx := context.Background()
+
+		seeded := seedPendingSeasonWants(t, ctx, r, 3, 1, 2, 3)
+		addExclusion(t, ctx, r, seeded.wants[3].ID, 7, packGUID)
+
+		job := grabPackForSeason(t, ctx, r, seeded, 1, []indexer.SearchResult{
+			packResult(packGUID, "Game of Thrones S03 COMPLETE 1080p BluRay x264", 3),
+		})
+
+		if job.Guid != packGUID {
+			t.Errorf("job guid = %q, want %s (pack still covers ≥2)", job.Guid, packGUID)
+		}
+		if job.EpisodeID != uuid.Nil {
+			t.Errorf("pack job episodeId = %s, want nil", job.EpisodeID)
+		}
+		linked, err := r.ListWantsByDownloadJob(ctx, job.ID)
+		if err != nil {
+			t.Fatalf("list wants for download job: %v", err)
+		}
+		if len(linked) != 2 {
+			t.Fatalf("linked wants = %d, want 2 (E1+E2; E3 excluded)", len(linked))
+		}
+		linkedIDs := map[uuid.UUID]struct{}{}
+		for _, w := range linked {
+			linkedIDs[w.ID] = struct{}{}
+		}
+		if _, ok := linkedIDs[seeded.wants[1].ID]; !ok {
+			t.Errorf("E1 want not linked to pack job")
+		}
+		if _, ok := linkedIDs[seeded.wants[2].ID]; !ok {
+			t.Errorf("E2 want not linked to pack job")
+		}
+		if _, ok := linkedIDs[seeded.wants[3].ID]; ok {
+			t.Errorf("E3 want linked to pack job, want excluded from coverage")
+		}
+		// claimWant flipped all three siblings to 'searching'; the pack grabbed E1
+		// and E2 but left E3 (excluded from coverage) untouched — so it's neither
+		// grabbed nor linked, just still searching.
+		e3, err := r.GetWant(ctx, seeded.wants[3].ID)
+		if err != nil {
+			t.Fatalf("get E3 want: %v", err)
+		}
+		if e3.Status == string(model.WantGrabbed) {
+			t.Errorf("E3 want status = grabbed, want it left uncovered by the pack")
+		}
+	})
 }

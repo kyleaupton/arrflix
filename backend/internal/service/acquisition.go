@@ -93,6 +93,15 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 		}
 	}
 
+	// Load the release blocklist for the processed want and its in-flight season
+	// siblings in one batch, so pick can drop any candidate a want has already
+	// excluded (a download that failed on it, today). Movie wants have no
+	// siblings — the set is just the one want.
+	excl, err := s.loadExclusions(ctx, want, siblings)
+	if err != nil {
+		return model.Want{}, false, err
+	}
+
 	// A season pack is a per-season release, but search is per-want. When the want
 	// has ≥2 in-flight season siblings, broaden its query to season scope so packs
 	// enter the pool; the first sibling processed grabs the pack and the
@@ -104,7 +113,7 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 			Op("AcquisitionService.ProcessWant")
 	}
 
-	outcome, err := s.pick(ctx, want, mi, imdbID, epCtx, siblings, results)
+	outcome, err := s.pick(ctx, want, mi, imdbID, epCtx, siblings, results, excl)
 	if err != nil {
 		return model.Want{}, false, err
 	}
@@ -362,6 +371,63 @@ type seasonSibling struct {
 	episode int
 }
 
+// releaseKey identifies a release by the canonical (indexer_id, guid) pair — the
+// key a per-want exclusion is stored and looked up under (infohash doesn't exist
+// pre-download, so this is the only stable handle).
+type releaseKey struct {
+	indexerID int64
+	guid      string
+}
+
+// exclusionIndex is the in-memory form of the wants' release blocklist for one
+// ProcessWant tick: releaseKey → the set of want IDs that have excluded it. Built
+// once from a single batched load (processed want + season siblings) and consulted
+// per candidate in pick.
+type exclusionIndex map[releaseKey]map[uuid.UUID]struct{}
+
+// buildExclusionIndex folds loaded exclusion rows into the lookup index.
+func buildExclusionIndex(rows []model.WantReleaseExclusion) exclusionIndex {
+	idx := make(exclusionIndex)
+	for _, row := range rows {
+		key := releaseKey{indexerID: row.IndexerID, guid: row.GUID}
+		set, ok := idx[key]
+		if !ok {
+			set = make(map[uuid.UUID]struct{})
+			idx[key] = set
+		}
+		set[row.WantID] = struct{}{}
+	}
+	return idx
+}
+
+// excludes reports whether the given want has excluded the release (indexerID,
+// guid). A nil index (no exclusions loaded) reports false for every lookup.
+func (x exclusionIndex) excludes(wantID uuid.UUID, indexerID int64, guid string) bool {
+	set, ok := x[releaseKey{indexerID: indexerID, guid: guid}]
+	if !ok {
+		return false
+	}
+	_, ok = set[wantID]
+	return ok
+}
+
+// loadExclusions batch-loads the release blocklist for the processed want and its
+// in-flight season siblings, returning the built lookup index. One round trip
+// covers the whole coverage set, mirroring GrabWantsForPack's id-array pattern.
+func (s *AcquisitionService) loadExclusions(ctx context.Context, want model.Want, siblings []seasonSibling) (exclusionIndex, error) {
+	ids := []uuid.UUID{want.ID}
+	for _, sib := range siblings {
+		if sib.want.ID != want.ID {
+			ids = append(ids, sib.want.ID)
+		}
+	}
+	rows, err := s.repo.ListWantReleaseExclusionsForWants(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	return buildExclusionIndex(rows), nil
+}
+
 // pickOutcome is the front-half's selection result: the chosen Evaluation plus
 // whether it's a pack and which in-flight wants its grab claims (just the processed
 // want for a single; the covered siblings for a pack).
@@ -376,7 +442,7 @@ type pickOutcome struct {
 // gate → score → rank → pick a winner in each group, then resolves the two with a
 // coverage-first policy (choosePick). Returns nil when every candidate was gated
 // out. The picked Subject carries its Media fields, so the caller can route it.
-func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model.MediaItem, imdbID *string, ep *episodeCtx, siblings []seasonSibling, results []indexer.SearchResult) (*pickOutcome, error) {
+func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model.MediaItem, imdbID *string, ep *episodeCtx, siblings []seasonSibling, results []indexer.SearchResult, excl exclusionIndex) (*pickOutcome, error) {
 	year, tmdbID, seriesRuntime := mediaFields(mi)
 	domain := parsing.DomainMovie
 	// runtime scales the size bands. A single episode uses its own runtime; a
@@ -398,6 +464,18 @@ func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model
 	var relevanceRejects []relevanceReject
 	for _, res := range results {
 		cand := searchResultToCandidate(res)
+
+		// Exclusion gate: a release the processed want has blocklisted (its
+		// download already failed, today) is dropped before anything else looks
+		// at it. This drops the candidate from the pool entirely — the
+		// processed-want half of the exclusion asymmetry. A *sibling's* exclusion
+		// is not consulted here; it only carves that sibling out of pack coverage
+		// (see coveredWantIDs).
+		if excl.excludes(want.ID, cand.IndexerID, cand.GUID) {
+			relevanceRejects = append(relevanceRejects, relevanceReject{title: cand.Title, gate: "exclusion", reason: "release excluded for this want"})
+			continue
+		}
+
 		parsed := parsing.Parse(cand.Title, domain)
 
 		// Relevance gate: drop releases that aren't the wanted media before
@@ -407,7 +485,7 @@ func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model
 		// would be filed as the movie/episode.
 		kind, reason := relevanceReason(res, parsed, mi, imdbID, ep)
 		if kind == releaseReject {
-			relevanceRejects = append(relevanceRejects, relevanceReject{title: cand.Title, reason: reason})
+			relevanceRejects = append(relevanceRejects, relevanceReject{title: cand.Title, gate: "relevance", reason: reason})
 			continue
 		}
 
@@ -446,7 +524,7 @@ func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model
 
 	var packCovered []uuid.UUID
 	if bestPack != nil {
-		packCovered = coveredWantIDs(bestPack, siblings)
+		packCovered = coveredWantIDs(bestPack, siblings, excl)
 	}
 	return choosePick(want.ID, bestSingle, bestPack, packCovered), nil
 }
@@ -498,14 +576,25 @@ func packRuntimeMinutes(parsed parsing.ParsedRelease, seasonEps []model.MediaEpi
 // coveredWantIDs is the subset of in-flight siblings a pack's grab claims: every
 // sibling for a full-season pack, or those whose episode falls in the pack's range.
 // The processed want is itself a sibling, so it's included whenever the pack covers
-// it.
-func coveredWantIDs(pack *qualityprofile.Evaluation, siblings []seasonSibling) []uuid.UUID {
+// it. A sibling that has excluded this exact pack release is carved out of the
+// coverage — the pack is neither linked to nor CAS-grabs that want. This is the
+// sibling half of the exclusion asymmetry: the processed want's own exclusion
+// drops the pack candidate entirely (in pick), while a sibling's exclusion only
+// shrinks coverage. Known limitation: the best pack per group is chosen before
+// this shrink, so a second-best pack no sibling excludes isn't reconsidered —
+// consistent with the single-winner-per-group architecture.
+func coveredWantIDs(pack *qualityprofile.Evaluation, siblings []seasonSibling, excl exclusionIndex) []uuid.UUID {
 	id := pack.Subject.Release.Identity
+	cand := pack.Subject.Release.Candidate
 	var ids []uuid.UUID
 	for _, sib := range siblings {
-		if id.FullSeason.Value || containsInt(id.EpisodeNumbers.Value, sib.episode) {
-			ids = append(ids, sib.want.ID)
+		if !id.FullSeason.Value && !containsInt(id.EpisodeNumbers.Value, sib.episode) {
+			continue
 		}
+		if excl.excludes(sib.want.ID, cand.IndexerID, cand.GUID) {
+			continue
+		}
+		ids = append(ids, sib.want.ID)
 	}
 	return ids
 }
@@ -528,9 +617,11 @@ func choosePick(wantID uuid.UUID, bestSingle, bestPack *qualityprofile.Evaluatio
 	return nil
 }
 
-// relevanceReject records a release dropped by the identity gate, for logging.
+// relevanceReject records a release dropped before quality scoring, for logging.
+// gate names which pre-quality gate dropped it ("exclusion" or "relevance").
 type relevanceReject struct {
 	title  string
+	gate   string
 	reason string
 }
 
@@ -714,7 +805,7 @@ func (s *AcquisitionService) logDecisions(want model.Want, singleSel, packSel qu
 		s.log.Debug().
 			Str("want_id", want.ID.String()).
 			Str("title", rr.title).
-			Str("gate", "relevance").
+			Str("gate", rr.gate).
 			Str("reason", rr.reason).
 			Msg("acquisition rejected candidate")
 	}

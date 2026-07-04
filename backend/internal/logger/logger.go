@@ -2,12 +2,18 @@ package logger
 
 import (
 	"os"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
 )
 
 type Logger = zerolog.Logger
+
+// devTimeFormatOnce guards the one-time write to the process-global
+// zerolog.TimeFieldFormat. Without it, concurrent New(true) callers (the test
+// suites build many loggers in parallel) race on the same assignment.
+var devTimeFormatOnce sync.Once
 
 func New(dev bool) *Logger {
 	if dev {
@@ -23,7 +29,9 @@ func New(dev bool) *Logger {
 			Logger()
 
 		// Prefer a readable time in dev
-		zerolog.TimeFieldFormat = time.RFC3339Nano
+		devTimeFormatOnce.Do(func() {
+			zerolog.TimeFieldFormat = time.RFC3339Nano
+		})
 		return &l
 	}
 

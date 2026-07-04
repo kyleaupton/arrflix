@@ -269,3 +269,116 @@ func TestWantToQuery(t *testing.T) {
 		}
 	})
 }
+
+// TestCoveredWantIDs_ExclusionShrinks proves a sibling that has excluded the pack
+// release is carved out of its coverage, across full-season and range packs. An
+// exclusion keyed on a different release leaves coverage untouched.
+func TestCoveredWantIDs_ExclusionShrinks(t *testing.T) {
+	t.Parallel()
+
+	const indexerID = int64(7)
+	const packGUID = "pack-guid"
+
+	e1, e2, e3 := uuid.New(), uuid.New(), uuid.New()
+	siblings := []seasonSibling{
+		{want: model.Want{ID: e1}, episode: 1},
+		{want: model.Want{ID: e2}, episode: 2},
+		{want: model.Want{ID: e3}, episode: 3},
+	}
+	packEval := func(title string) *qualityprofile.Evaluation {
+		cand := model.DownloadCandidate{IndexerID: indexerID, GUID: packGUID, Title: title}
+		return &qualityprofile.Evaluation{Subject: model.NewSubject(cand, parsing.Parse(title, parsing.DomainSeries))}
+	}
+	fullSeason := packEval("Show.S03.COMPLETE.1080p.BluRay.x264")
+	rangePack := packEval("Show.S03E01-E02.1080p.BluRay.x264")
+
+	// excludeFor builds an index where each listed want excludes the pack release.
+	excludeFor := func(wantIDs ...uuid.UUID) exclusionIndex {
+		rows := make([]model.WantReleaseExclusion, 0, len(wantIDs))
+		for _, id := range wantIDs {
+			rows = append(rows, model.WantReleaseExclusion{WantID: id, IndexerID: indexerID, GUID: packGUID})
+		}
+		return buildExclusionIndex(rows)
+	}
+
+	cases := []struct {
+		name string
+		pack *qualityprofile.Evaluation
+		excl exclusionIndex
+		want []uuid.UUID
+	}{
+		{"full season, no exclusions", fullSeason, nil, []uuid.UUID{e1, e2, e3}},
+		{"full season, e2 excludes", fullSeason, excludeFor(e2), []uuid.UUID{e1, e3}},
+		{"full season, all exclude → none covered", fullSeason, excludeFor(e1, e2, e3), nil},
+		{"range covers only e1,e2", rangePack, nil, []uuid.UUID{e1, e2}},
+		{"range, e1 excludes → only e2", rangePack, excludeFor(e1), []uuid.UUID{e2}},
+		{
+			"exclusion on a different release is ignored",
+			fullSeason,
+			buildExclusionIndex([]model.WantReleaseExclusion{{WantID: e1, IndexerID: 99, GUID: "other"}}),
+			[]uuid.UUID{e1, e2, e3},
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := coveredWantIDs(tc.pack, siblings, tc.excl)
+			if !uuidSliceEqual(got, tc.want) {
+				t.Errorf("coveredWantIDs = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// uuidSliceEqual reports order-sensitive slice equality (coveredWantIDs preserves
+// sibling order), treating nil and empty as equal.
+func uuidSliceEqual(a, b []uuid.UUID) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestExclusionIndex covers buildExclusionIndex + excludes: a present (want,
+// release) pair matches, the same release under a different want does not, an
+// absent release key does not, and a nil index reports false for everything.
+func TestExclusionIndex(t *testing.T) {
+	t.Parallel()
+
+	w1, w2 := uuid.New(), uuid.New()
+	idx := buildExclusionIndex([]model.WantReleaseExclusion{
+		{WantID: w1, IndexerID: 7, GUID: "a"},
+		{WantID: w2, IndexerID: 7, GUID: "a"},
+		{WantID: w1, IndexerID: 7, GUID: "b"},
+	})
+
+	if !idx.excludes(w1, 7, "a") {
+		t.Errorf("w1 should exclude (7, a)")
+	}
+	if !idx.excludes(w2, 7, "a") {
+		t.Errorf("w2 should exclude (7, a)")
+	}
+	if !idx.excludes(w1, 7, "b") {
+		t.Errorf("w1 should exclude (7, b)")
+	}
+	if idx.excludes(w2, 7, "b") {
+		t.Errorf("w2 should NOT exclude (7, b) — only w1 did")
+	}
+	if idx.excludes(w1, 7, "zzz") {
+		t.Errorf("absent guid should not match")
+	}
+	if idx.excludes(w1, 99, "a") {
+		t.Errorf("absent indexer should not match")
+	}
+
+	var nilIdx exclusionIndex
+	if nilIdx.excludes(w1, 7, "a") {
+		t.Errorf("nil index should exclude nothing")
+	}
+}
