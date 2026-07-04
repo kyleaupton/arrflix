@@ -150,14 +150,20 @@
   opacity: 0;
 }
 
-/* Route page fade */
-.page-enter-active,
-.page-leave-active {
-  transition: opacity 150ms ease;
+/* Route page reveal — enter-only. The leaving page is removed instantly (no
+   leave transition defined), and the incoming page fades and rises into place,
+   so navigation reads as content arriving rather than a page swapping out. */
+.page-enter-active {
+  /* Short hold before the fade starts, so the router's scroll restoration
+     (which lands within a couple of frames) happens while the page is still
+     invisible — no flash of the page top before it jumps to a saved offset. */
+  transition:
+    opacity 120ms ease 50ms,
+    transform 120ms ease 50ms;
 }
-.page-enter-from,
-.page-leave-to {
+.page-enter-from {
   opacity: 0;
+  transform: translateY(8px);
 }
 
 /* Staggered reveal */

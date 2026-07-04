@@ -1,9 +1,7 @@
 <template>
   <div class="flex flex-col gap-6">
     <Transition name="fade" mode="out-in">
-      <div v-if="isLoading" key="loading" class="space-y-4">
-        <Skeleton class="h-96 w-full rounded-lg" />
-      </div>
+      <MediaHeroSkeleton v-if="isLoading" key="loading" />
       <div
         v-else-if="isError"
         key="error"
@@ -258,7 +256,6 @@ import { Download, Check } from 'lucide-vue-next'
 import { mediaGetSeriesOptions, trackingByTmdbOptions } from '@/client/@tanstack/vue-query.gen'
 import type { SeasonDetail, Want } from '@/client/types.gen'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
@@ -266,6 +263,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import CircularProgress from '@/components/ui/progress/CircularProgress.vue'
 import type { CircularProgressState } from '@/components/ui/progress/CircularProgress.vue'
 import MediaHero from '@/components/media/MediaHero.vue'
+import MediaHeroSkeleton from '@/components/media/MediaHeroSkeleton.vue'
 import RatingBadge from '@/components/media/RatingBadge.vue'
 import Poster from '@/components/poster/Poster.vue'
 import RailCast from '@/components/rails/RailCast.vue'
