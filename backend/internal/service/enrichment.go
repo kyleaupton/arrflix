@@ -29,13 +29,14 @@ func genresFromTmdb(in []tmdb.Genre) []model.Genre {
 }
 
 type EnrichmentService struct {
-	repo   *repo.Repository
-	logger *logger.Logger
-	tmdb   *TmdbService
+	repo      *repo.Repository
+	logger    *logger.Logger
+	tmdb      *TmdbService
+	reconcile *ReconcileService
 }
 
-func NewEnrichmentService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService) *EnrichmentService {
-	return &EnrichmentService{repo: r, logger: l, tmdb: tmdb}
+func NewEnrichmentService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, reconcile *ReconcileService) *EnrichmentService {
+	return &EnrichmentService{repo: r, logger: l, tmdb: tmdb, reconcile: reconcile}
 }
 
 // EnrichMediaItem fetches metadata from TMDB and stores it on the media item.
@@ -180,19 +181,34 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 	// Sync the full season/episode tree (incl. unaired episodes) from the
 	// seasons TMDB already returned on `details`. Best-effort: never fails the
 	// enrich (item metadata is already committed above).
-	s.syncSeriesStructure(ctx, item, details)
+	s.SyncSeriesStructure(ctx, item, details)
 
+	// Newly-aired / newly-added in-scope episodes become wants on the next sync.
+	// Only tracked series reconcile; enrichment also runs for untracked items.
+	tracking, err := s.repo.FindTrackingByMediaItem(ctx, item.ID)
+	if apperrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if s.reconcile != nil {
+		if rerr := s.reconcile.Reconcile(ctx, tracking.ID); rerr != nil {
+			s.logger.Warn().Err(rerr).Str("title", item.Title).
+				Msg("series enrich: post-sync reconcile failed, will heal on next pass")
+		}
+	}
 	return nil
 }
 
-// syncSeriesStructure upserts the full season/episode tree from TMDB,
+// SyncSeriesStructure upserts the full season/episode tree from TMDB,
 // including unaired episodes (air_date in the future or NULL). It is the
 // structural half of series sync — the data tracking and "coming soon" UI
 // operate on. Episodes are keyed on the stable TMDB episode id, so a renumber
 // updates rows in place rather than orphaning them. Best-effort: a season
 // fetch or upsert failing logs and continues so one bad season doesn't block
 // the rest of the tree.
-func (s *EnrichmentService) syncSeriesStructure(ctx context.Context, item model.MediaItem, details tmdb.TVDetails) {
+func (s *EnrichmentService) SyncSeriesStructure(ctx context.Context, item model.MediaItem, details tmdb.TVDetails) {
 	syncedIDs := make([]int64, 0, details.NumberOfEpisodes)
 
 	// Deprecation keys off the synced set, so a partial sync would read a

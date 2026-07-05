@@ -1,0 +1,187 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+
+	"github.com/google/uuid"
+
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/scope"
+)
+
+// ReconcileService is the per-episode want producer for series tracking. Where a
+// movie spawn creates one want for its single-atom tracking, a series tracking
+// must produce one want per in-scope, dated, file-less episode and cancel wants
+// whose episode has fallen out of scope. The reconciler reads the effective
+// scope (unioned across requesters) against the synced episode tree and the
+// existing wants, then writes the difference — re-runnably and idempotently, so
+// the structure-sync/enrichment triggers can call it freely.
+type ReconcileService struct {
+	repo *repo.Repository
+	log  *logger.Logger
+}
+
+func NewReconcileService(r *repo.Repository, l *logger.Logger) *ReconcileService {
+	return &ReconcileService{repo: r, log: l}
+}
+
+// Reconcile brings a series tracking's wants in line with its effective scope.
+// Movies are a no-op — their spawn path owns their single want. The whole pass
+// runs in one transaction so the create/cancel set is applied atomically against
+// the snapshot it was computed from.
+//
+// Want existence tracks the known episode tree: a want is created for every
+// in-scope, file-less episode that has a known air date — aired or future —
+// with next_run_at stamped to that air_date. A future episode's want sits
+// pending until its air date (the claim query's next_run_at <= now() defers it);
+// a past air_date is overdue, so the want is due immediately. Undated episodes
+// (air_date IS NULL, TBA) are skipped — there's no anchor to schedule against;
+// a later reconcile picks them up once enrichment fills the date. "Lacks a file"
+// is file_id IS NULL (quality-cutoff upgrades are deferred).
+func (s *ReconcileService) Reconcile(ctx context.Context, trackingID uuid.UUID) error {
+	const op = "ReconcileService.Reconcile"
+	now := time.Now()
+
+	return s.repo.InTx(ctx, func(r *repo.Repository) error {
+		tracking, err := r.GetTracking(ctx, trackingID)
+		if err != nil {
+			return err
+		}
+		item, err := r.GetMediaItem(ctx, tracking.MediaItemID)
+		if err != nil {
+			return err
+		}
+		if item.Type != string(model.MediaTypeSeries) {
+			// Movies don't reconcile; their spawn path owns their single want.
+			return nil
+		}
+
+		// Effective scope: decode each requester's stored scope, then union.
+		requesters, err := r.ListRequestersByTracking(ctx, trackingID)
+		if err != nil {
+			return err
+		}
+		scopes := make([]scope.RequesterScope, 0, len(requesters))
+		for _, req := range requesters {
+			rs, err := decodeRequesterScope(req)
+			if err != nil {
+				return err.Op(op)
+			}
+			scopes = append(scopes, rs)
+		}
+
+		// Episode tree: drop deprecated rows (episodes TMDB removed), build the
+		// scope input plus the per-episode hasFile/airDate facts the gate needs.
+		avail, err := r.ListEpisodeAvailabilityForSeries(ctx, item.ID)
+		if err != nil {
+			return err
+		}
+		episodes := make([]scope.Episode, 0, len(avail))
+		hasFile := make(map[uuid.UUID]bool, len(avail))
+		airDate := make(map[uuid.UUID]*time.Time, len(avail))
+		for _, ep := range avail {
+			if ep.Deprecated {
+				continue
+			}
+			episodes = append(episodes, scope.Episode{
+				ID:      ep.EpisodeID,
+				Season:  int(ep.SeasonNumber),
+				Number:  int(ep.EpisodeNumber),
+				AirDate: ep.AirDate,
+			})
+			hasFile[ep.EpisodeID] = ep.FileID != nil
+			airDate[ep.EpisodeID] = ep.AirDate
+		}
+
+		inScope := make(map[uuid.UUID]bool)
+		for _, id := range scope.EffectiveInScope(scopes, episodes, now) {
+			inScope[id] = true
+		}
+
+		// Existing live wants, keyed by episode. Terminal wants are ignored —
+		// they're settled and shouldn't block a re-create or be re-canceled.
+		wants, err := r.ListWantsByTracking(ctx, trackingID)
+		if err != nil {
+			return err
+		}
+		existing := make(map[uuid.UUID]model.Want, len(wants))
+		for _, w := range wants {
+			if w.EpisodeID == nil || model.WantStatus(w.Status).IsTerminal() {
+				continue
+			}
+			existing[*w.EpisodeID] = w
+		}
+
+		// Create: an in-scope, dated, file-less episode with no live want gets a
+		// fresh pending one, next_run_at stamped to its air date (future → deferred
+		// to air; past → due now). CreateWantIfAbsent absorbs a concurrent reconcile.
+		for _, ep := range episodes {
+			if !inScope[ep.ID] || hasFile[ep.ID] || airDate[ep.ID] == nil {
+				continue
+			}
+			if _, ok := existing[ep.ID]; ok {
+				continue
+			}
+			epID := ep.ID
+			// Segment and hold are stamped from the episode's air date against the
+			// tracking's creation time. Reconcile re-runs after autonomy changes, so
+			// a newly-dated episode on a manual segment is born held — the manual
+			// gate applies uniformly to episodes that appear (or get dated) later.
+			seg := model.SegmentFor(airDate[ep.ID], tracking.CreatedAt)
+			if _, _, err := r.CreateWantIfAbsent(ctx, repo.CreateWantParams{
+				TrackingID:       trackingID,
+				MediaItemID:      item.ID,
+				EpisodeID:        &epID,
+				QualityProfileID: tracking.QualityProfileID,
+				Status:           string(model.WantPending),
+				Segment:          string(seg),
+				Hold:             model.HoldForNewWant(tracking, seg),
+				NextRunAt:        airDate[ep.ID],
+			}); err != nil {
+				return err
+			}
+		}
+
+		// Cancel: a live want whose episode is no longer in scope is canceled via
+		// the CAS primitive directly. Not WantService.CancelWant — its movie-shaped
+		// cascade would flip the whole tracking to 'canceled', but a series tracking
+		// must stay active when one episode leaves scope.
+		for epID, w := range existing {
+			if inScope[epID] {
+				continue
+			}
+			if _, _, err := r.CancelWant(ctx, w.ID); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+// decodeRequesterScope turns a stored tracking_requester row into the pure
+// scope.RequesterScope the resolver consumes. A malformed scope_overrides blob
+// is an invariant violation (we wrote it), so it surfaces as a non-retryable
+// Internal, mirroring quality.go's gate decode.
+func decodeRequesterScope(req model.TrackingRequester) (scope.RequesterScope, *apperrors.Error) {
+	rs := scope.RequesterScope{
+		Rule:   scope.Rule{Kind: scope.RuleKind(req.ScopeRule)},
+		Anchor: req.CreatedAt,
+	}
+	if req.ScopeSeason != nil {
+		rs.Rule.Season = int(*req.ScopeSeason)
+	}
+	if len(req.ScopeOverrides) > 0 {
+		if err := json.Unmarshal(req.ScopeOverrides, &rs.Overrides); err != nil {
+			return scope.RequesterScope{}, apperrors.Internalf(
+				"tracking %s requester %s has undecodable scope_overrides: %v",
+				req.TrackingID, req.UserID, err).NotRetryable()
+		}
+	}
+	return rs, nil
+}

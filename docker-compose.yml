@@ -7,6 +7,7 @@ services:
     container_name: arrflix-dev
     environment:
       APP_ENV: dev
+      TMDB_API_KEY: ${TMDB_API_KEY}
     ports:
       - "8484:8484" # Application (required)
       # - "9696:9696" # Prowlarr (for debugging)

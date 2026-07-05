@@ -10,7 +10,6 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { z } from "zod";
-import { Client as PgClient } from "pg";
 import { spawn } from "node:child_process";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -38,28 +37,26 @@ const repoRoot = getGitRepoRoot();
 
 dotenv.config({ path: resolve(repoRoot, "mcp", ".env") });
 
+// The DB tool execs `psql` inside the compose service and connects over the
+// container's local unix socket (trust auth), so it needs no host/port/password
+// — only the role and database, which default to the dev seed values. All three
+// have defaults, so mcp/.env is optional.
 const Env = z
   .object({
-    // Optional: enable DB tool if set
-    ARRFLIX_DATABASE_URL: z.string().optional(),
+    ARRFLIX_DB_SERVICE: z.string().default("arrflix-dev"),
+    ARRFLIX_DB_USER: z.string().default("arrflix"),
+    ARRFLIX_DB_NAME: z.string().default("arrflix"),
   })
   .parse(process.env);
 
-async function dockerComposeLogs(
-  service: string,
-  lines = 200
-): Promise<string> {
-  const args = [
-    "compose",
-    "logs",
-    "--no-color",
-    "--tail",
-    String(lines),
-    service,
-  ];
-
+// Run `docker compose <args>` from the repo root so compose finds the project's
+// docker-compose.yml regardless of where the client launched us.
+async function dockerCompose(args: string[]): Promise<string> {
   return await new Promise<string>((resolvePromise, rejectPromise) => {
-    const child = spawn("docker", args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("docker", ["compose", ...args], {
+      cwd: repoRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
 
     let out = "";
     let err = "";
@@ -70,10 +67,23 @@ async function dockerComposeLogs(
     child.on("close", (code) => {
       if (code === 0) return resolvePromise(out);
       rejectPromise(
-        new Error(`docker compose logs failed (code ${code}): ${err}`)
+        new Error(`docker compose ${args[0]} failed (code ${code}): ${err}`)
       );
     });
   });
+}
+
+async function dockerComposeLogs(
+  service: string,
+  lines = 200
+): Promise<string> {
+  return await dockerCompose([
+    "logs",
+    "--no-color",
+    "--tail",
+    String(lines),
+    service,
+  ]);
 }
 
 function isReadOnlySql(sql: string): boolean {
@@ -81,23 +91,35 @@ function isReadOnlySql(sql: string): boolean {
   return s.startsWith("select") || s.startsWith("with");
 }
 
-async function pgQuery(sql: string, params: unknown[] = []) {
-  if (!Env.ARRFLIX_DATABASE_URL) {
-    throw new Error("ARRFLIX_DATABASE_URL is not set.");
-  }
+// Execute a read-only query by running psql *inside* the DB container via
+// `docker compose exec`, connecting over the container's local unix socket — no
+// host port mapping needed. Wrapping the query in json_agg yields a single JSON
+// document we can parse directly out of psql's tuples-only output.
+async function pgQuery(sql: string): Promise<unknown[]> {
   if (!isReadOnlySql(sql)) {
     throw new Error(
       "Only read-only queries are allowed (SELECT / WITH ... SELECT)."
     );
   }
 
-  const client = new PgClient({ connectionString: Env.ARRFLIX_DATABASE_URL });
-  await client.connect();
-  try {
-    return await client.query(sql, params);
-  } finally {
-    await client.end();
-  }
+  const wrapped = `select coalesce(json_agg(t), '[]') from (${sql}) t`;
+  const out = await dockerCompose([
+    "exec",
+    "-T", // no TTY: we're spawned without one
+    Env.ARRFLIX_DB_SERVICE,
+    "psql",
+    "-U",
+    Env.ARRFLIX_DB_USER,
+    "-d",
+    Env.ARRFLIX_DB_NAME,
+    "-tA", // tuples only, unaligned — clean JSON, no headers/padding
+    "-c",
+    wrapped,
+  ]);
+
+  const text = out.trim();
+  if (!text) return [];
+  return JSON.parse(text) as unknown[];
 }
 
 const server = new Server(
@@ -131,11 +153,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           type: "object",
           properties: {
             sql: { type: "string", description: "SQL query (SELECT/CTE only)" },
-            params: {
-              type: "array",
-              items: {},
-              description: "Optional parameter array for $1, $2, ...",
-            },
             maxRows: {
               type: "number",
               description: "Max rows to return (1-500). Default 200.",
@@ -170,7 +187,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "arrflix_db_query": {
         const sql = z.string().min(1).parse(args.sql);
-        const params = z.array(z.any()).optional().parse(args.params) ?? [];
         const maxRows = z
           .number()
           .int()
@@ -179,14 +195,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           .optional()
           .parse(args.maxRows);
 
-        const res = await pgQuery(sql, params);
-        const rows = res.rows.slice(0, maxRows ?? 200);
+        const allRows = await pgQuery(sql);
+        const rows = allRows.slice(0, maxRows ?? 200);
 
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify({ rowCount: res.rowCount, rows }, null, 2),
+              text: JSON.stringify({ rowCount: rows.length, rows }, null, 2),
             },
           ],
         };

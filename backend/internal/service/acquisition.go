@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/indexer"
 	"github.com/kyleaupton/arrflix/internal/logger"
@@ -24,35 +25,71 @@ import (
 // autonomous flow searches and enqueues in one pass, so caching the chosen
 // SearchResult between calls buys nothing.
 type AcquisitionService struct {
-	repo    *repo.Repository
-	log     *logger.Logger
-	source  indexer.IndexerSource
-	routing *RoutingService
-	quality *QualityProfileService
+	repo      *repo.Repository
+	log       *logger.Logger
+	source    indexer.IndexerSource
+	routing   *RoutingService
+	quality   *QualityProfileService
+	proposals *ProposalService
 }
 
 // NewAcquisitionService creates a new acquisition service. source and routingSvc
 // are the same instances DownloadCandidatesService holds; qualitySvc supplies the
-// gate→score→pick engine keyed off the want's quality_profile_id.
-func NewAcquisitionService(r *repo.Repository, l *logger.Logger, source indexer.IndexerSource, routingSvc *RoutingService, qualitySvc *QualityProfileService) *AcquisitionService {
+// gate→score→pick engine keyed off the want's quality_profile_id; proposalsSvc is
+// where a propose-segment want's pick is parked instead of grabbed.
+func NewAcquisitionService(r *repo.Repository, l *logger.Logger, source indexer.IndexerSource, routingSvc *RoutingService, qualitySvc *QualityProfileService, proposalsSvc *ProposalService) *AcquisitionService {
 	return &AcquisitionService{
-		repo:    r,
-		log:     l,
-		source:  source,
-		routing: routingSvc,
-		quality: qualitySvc,
+		repo:      r,
+		log:       l,
+		source:    source,
+		routing:   routingSvc,
+		quality:   qualitySvc,
+		proposals: proposalsSvc,
 	}
 }
 
+// ProcessOutcome is the terminal disposition of one ProcessWant tick, replacing
+// the old grabbed bool so the worker can distinguish a parked proposal (which the
+// ProposalService already emitted and must NOT be un-parked by a recheck) from a
+// real grab and from a genuine no-release reschedule.
+type ProcessOutcome int
+
+const (
+	// OutcomeNoRelease: no eligible release this tick (no results, all gated out,
+	// or a benign grab-CAS dedup no-op). The worker reschedules a recheck.
+	OutcomeNoRelease ProcessOutcome = iota
+	// OutcomeGrabbed: the want (or its pack siblings) was flipped to 'grabbed' and
+	// a download_job created. The worker emits the transition.
+	OutcomeGrabbed
+	// OutcomeProposed: a propose-segment want's pick was written as a proposal and
+	// the want parked at hold='proposed'. The ProposalService already emitted the
+	// events; the worker does nothing — critically, it does NOT recheck, which
+	// would return the still-'searching' want to 'pending' and un-park it.
+	OutcomeProposed
+)
+
 // ProcessWant runs the happy path for one claimed want: search → pick → route →
-// enqueue, flipping the want to 'grabbed' in a single transaction. On success it
-// returns the grabbed want (grabbed=true) so the worker can emit the transition
-// without re-reading. It returns grabbed=false (with nil error) when the search
-// yields no eligible release, so the worker can reschedule rather than fail.
-func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (grabbedWant model.Want, grabbed bool, err error) {
+// enqueue, flipping the want to 'grabbed' in a single transaction. It returns
+// OutcomeGrabbed with the grabbed want so the worker can emit the transition
+// without re-reading, OutcomeNoRelease (nil error) when the search yields no
+// eligible release so the worker can reschedule, or OutcomeProposed when the
+// want's segment autonomy is 'propose' — the pick was parked as a proposal
+// instead of grabbed, and the worker must leave it alone (no recheck).
+func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (model.Want, ProcessOutcome, error) {
+	// Early skip: a sibling want processed earlier this sequential tick may have
+	// grabbed a season pack that already covers this want (GrabWantsForPack flips
+	// every covered sibling to 'grabbed' and links it to the one pack job). Re-read
+	// it; if it's already grabbed and attached to a live job, the pack has it — no
+	// redundant search, no second job.
+	if skip, cur, serr := s.alreadyCoveredByPack(ctx, want); serr != nil {
+		return model.Want{}, OutcomeNoRelease, serr
+	} else if skip {
+		return cur, OutcomeGrabbed, nil
+	}
+
 	mi, err := s.repo.GetMediaItem(ctx, want.MediaItemID)
 	if err != nil {
-		return model.Want{}, false, err
+		return model.Want{}, OutcomeNoRelease, err
 	}
 
 	// IMDb id is best-effort: capable indexers (e.g. IPTorrents) accept it for
@@ -60,84 +97,325 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	// which case the query and gate fall back to title+year.
 	imdbID, err := s.repo.GetMediaItemExternalID(ctx, mi.ID, string(metadata.SourceIMDB))
 	if err != nil {
-		return model.Want{}, false, err
+		return model.Want{}, OutcomeNoRelease, err
 	}
 
-	results, err := s.source.Search(ctx, s.wantToQuery(mi))
+	// A want for an episode resolves to its season/episode coordinates; movie
+	// wants leave epCtx nil and follow the original path unchanged.
+	epCtx, err := s.resolveEpisodeCtx(ctx, want)
 	if err != nil {
-		return model.Want{}, false, apperrors.BadGatewayf("indexer search %q: %v", mi.Title, err).
+		return model.Want{}, OutcomeNoRelease, err
+	}
+
+	// An episode want loads its in-flight season siblings up front: a season pack
+	// is chosen and grabbed against the set of wants it covers. Movie wants have no
+	// siblings and skip this.
+	var siblings []seasonSibling
+	if epCtx != nil {
+		siblings, err = s.loadSeasonSiblings(ctx, want, epCtx)
+		if err != nil {
+			return model.Want{}, OutcomeNoRelease, err
+		}
+	}
+
+	// Load the release blocklist for the processed want and its in-flight season
+	// siblings in one batch, so pick can drop any candidate a want has already
+	// excluded (a download that failed on it, or one a proposal declined). Movie
+	// wants have no siblings — the set is just the one want.
+	excl, err := s.loadExclusions(ctx, want, siblings)
+	if err != nil {
+		return model.Want{}, OutcomeNoRelease, err
+	}
+
+	// A season pack is a per-season release, but search is per-want. When the want
+	// has ≥2 in-flight season siblings, broaden its query to season scope so packs
+	// enter the pool; the first sibling processed grabs the pack and the
+	// alreadyCoveredByPack early-skip spares the rest a redundant search.
+	seasonScoped := len(siblings) >= 2
+	results, err := s.source.Search(ctx, s.wantToQuery(mi, epCtx, seasonScoped))
+	if err != nil {
+		return model.Want{}, OutcomeNoRelease, apperrors.BadGatewayf("indexer search %q: %v", mi.Title, err).
 			Op("AcquisitionService.ProcessWant")
 	}
 
-	picked, err := s.pick(ctx, want, mi, imdbID, results)
+	outcome, err := s.pick(ctx, want, mi, imdbID, epCtx, siblings, results, excl)
 	if err != nil {
-		return model.Want{}, false, err
+		return model.Want{}, OutcomeNoRelease, err
 	}
-	if picked == nil {
+	if outcome == nil {
 		// Every candidate was gated out — behaviorally identical to no results.
 		// The worker reschedules with backoff.
-		return model.Want{}, false, nil
+		return model.Want{}, OutcomeNoRelease, nil
 	}
-	cand := picked.Subject.Release.Candidate
+	cand := outcome.eval.Subject.Release.Candidate
 
 	// Dispatch at grab: every action slot is resolved (rule-set or default). The
 	// picked Subject already carries its Media fields from pick.
-	actions, _, err := s.routing.Dispatch(ctx, picked.Subject)
+	actions, _, err := s.routing.Dispatch(ctx, outcome.eval.Subject)
 	if err != nil {
-		return model.Want{}, false, err
+		return model.Want{}, OutcomeNoRelease, err
 	}
-	downloaderID := *actions.DownloaderID
-	libraryID := *actions.LibraryID
-	nameTemplateID := *actions.NameTemplateID
+	job := repo.CreateDownloadJobParams{
+		Protocol:       cand.Protocol,
+		MediaType:      "movie",
+		MediaItemID:    want.MediaItemID,
+		IndexerID:      cand.IndexerID,
+		Guid:           cand.GUID,
+		CandidateTitle: cand.Title,
+		CandidateLink:  cand.Link,
+		DownloaderID:   *actions.DownloaderID,
+		LibraryID:      *actions.LibraryID,
+		NameTemplateID: *actions.NameTemplateID,
+	}
+	// A series want carries season linkage onto the job. A single also carries the
+	// episode_id (the import worker's series branch files the one file back to it);
+	// a pack leaves episode_id nil and links N wants, fanning out at import time.
+	if epCtx != nil {
+		job.MediaType = "series"
+		job.SeasonID = epCtx.seasonID
+		if !outcome.isPack {
+			job.EpisodeID = *want.EpisodeID
+		}
+	}
 
-	// CAS first, job second: GrabWant flips 'searching → grabbed' only while the
-	// worker still owns the want, and its UPDATE holds the row lock through
-	// commit so concurrent grabbers serialize. A 0-row CAS (ok=false) means the
-	// want was superseded — the reaper reset it and another worker re-claimed,
-	// or a concurrent grab won — a benign no-op, not an error. grabbed is set
-	// only after the job insert, so an insert failure rolls back the whole tx
-	// (want stays 'searching') and the worker reschedules.
-	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
-		gw, ok, gerr := r.GrabWant(ctx, want.ID)
-		if gerr != nil {
+	// Propose branch: when this want's segment autonomy is 'propose', the pick is
+	// parked as a proposal instead of grabbed. The job (fully resolved above) is
+	// what the proposal stores, so approve is a pure DB replay. This sits after
+	// both the single and pack linkage paths, so it covers either. loaded once,
+	// only on the grab path (a no-release tick never reaches here).
+	tracking, err := s.repo.GetTracking(ctx, want.TrackingID)
+	if err != nil {
+		return model.Want{}, OutcomeNoRelease, err
+	}
+	if tracking.AutonomyFor(model.WantSegment(want.Segment)) == model.AutonomyPropose {
+		if err := s.proposals.ProposeOrSupersede(ctx, want, job, outcome.isPack, outcome.coveredWantIDs, outcome.eval.Bin, outcome.eval.Score, cand.Size, cand.Seeders); err != nil {
+			return model.Want{}, OutcomeNoRelease, err
+		}
+		return want, OutcomeProposed, nil
+	}
+
+	if outcome.isPack {
+		var claimed []model.Want
+		if err := s.repo.InTx(ctx, func(r *repo.Repository) error {
+			var gerr error
+			claimed, gerr = grabPack(ctx, r, job, outcome.coveredWantIDs)
 			return gerr
+		}); err != nil {
+			return model.Want{}, OutcomeNoRelease, err
 		}
-		if !ok {
-			return nil
+		// Emit the transition for the processed want only; sibling coverage is
+		// picked up when each sibling's tick hits alreadyCoveredByPack.
+		for _, cw := range claimed {
+			if cw.ID == want.ID {
+				return cw, OutcomeGrabbed, nil
+			}
 		}
-		if _, jerr := r.CreateDownloadJob(ctx, repo.CreateDownloadJobParams{
-			Protocol:       cand.Protocol,
-			MediaType:      "movie",
-			MediaItemID:    want.MediaItemID,
-			WantID:         want.ID,
-			IndexerID:      cand.IndexerID,
-			Guid:           cand.GUID,
-			CandidateTitle: cand.Title,
-			CandidateLink:  cand.Link,
-			DownloaderID:   downloaderID,
-			LibraryID:      libraryID,
-			NameTemplateID: nameTemplateID,
-		}); jerr != nil {
-			return jerr
-		}
-		grabbedWant = gw
-		grabbed = true
-		return nil
-	})
+		// The processed want wasn't claimed — a concurrent grab won it. Benign
+		// dedup no-op, behaviorally a no-release.
+		return model.Want{}, OutcomeNoRelease, nil
+	}
+
+	var grabbedWant model.Want
+	var grabbed bool
+	if err := s.repo.InTx(ctx, func(r *repo.Repository) error {
+		var gerr error
+		grabbedWant, grabbed, gerr = grabSingle(ctx, r, want, job)
+		return gerr
+	}); err != nil {
+		return model.Want{}, OutcomeNoRelease, err
+	}
+	if !grabbed {
+		// A benign dedup no-op (the CAS matched 0 rows — a concurrent grab won, or
+		// the reaper reset and re-claimed). Behaviorally a no-release, exactly as
+		// before the outcome enum.
+		return model.Want{}, OutcomeNoRelease, nil
+	}
+	return grabbedWant, OutcomeGrabbed, nil
+}
+
+// grabSingle grabs one want and creates the download_job linked to it. CAS first,
+// job second: GrabWant flips 'searching → grabbed' only while the worker still
+// owns the want, holding the row lock through commit so concurrent grabbers
+// serialize. A 0-row CAS (ok=false) means the want was superseded (a concurrent
+// grab won) — a benign no-op, and no job is created. grabbed is set only after
+// the job insert, so an insert failure fails the whole tx (want stays 'searching').
+//
+// It runs on the caller's tx-bound repo r — it does NOT open its own transaction,
+// so the caller MUST wrap it in InTx. Package-level (not a method) so ProcessWant's
+// auto branch and ProposalService.Approve converge on ONE grab path without a
+// service cycle: both pass the tx repo they hold.
+func grabSingle(ctx context.Context, r *repo.Repository, want model.Want, jobParams repo.CreateDownloadJobParams) (model.Want, bool, error) {
+	gw, ok, err := r.GrabWant(ctx, want.ID)
 	if err != nil {
 		return model.Want{}, false, err
 	}
+	if !ok {
+		return model.Want{}, false, nil
+	}
+	job, err := r.CreateDownloadJob(ctx, jobParams)
+	if err != nil {
+		return model.Want{}, false, err
+	}
+	if err := r.LinkDownloadJobWant(ctx, job.ID, want.ID); err != nil {
+		return model.Want{}, false, err
+	}
+	return gw, true, nil
+}
 
-	return grabbedWant, grabbed, nil
+// grabPack grabs a release covering several in-flight wants in one transaction:
+// find-or-create the job by (indexer_id, guid) over in-flight jobs (so converging
+// sibling grabs reuse one job, made idempotent by the partial UNIQUE(indexer_id,
+// guid) key), batch-grab the covered wants (GrabWantsForPack CASes each from
+// pending/searching, clearing any hold), and link only the wants the CAS actually
+// claimed. Returns the full claimed set — the caller derives what it needs (the
+// auto branch finds the processed want; approve emits all). An empty return means
+// every covered want was already advanced or terminal (a concurrent grab or a
+// stale pack approval). It runs on the caller's tx-bound repo r — it does NOT
+// open its own transaction, so the caller MUST wrap it in InTx. Package-level so
+// the auto pack path and ProposalService converge on one grab path.
+func grabPack(ctx context.Context, r *repo.Repository, jobParams repo.CreateDownloadJobParams, coveredWantIDs []uuid.UUID) ([]model.Want, error) {
+	job, found, err := r.FindActiveDownloadJobByGuid(ctx, jobParams.IndexerID, jobParams.Guid)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		job, err = r.CreateDownloadJob(ctx, jobParams)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	claimed, err := r.GrabWantsForPack(ctx, coveredWantIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, cw := range claimed {
+		if lerr := r.LinkDownloadJobWant(ctx, job.ID, cw.ID); lerr != nil {
+			return nil, lerr
+		}
+	}
+	return claimed, nil
+}
+
+// alreadyCoveredByPack reports whether this want was already grabbed by a sibling's
+// season-pack grab earlier in the tick: it re-reads the want and confirms it's
+// 'grabbed' with a live linked job. Returns the current want row so the caller can
+// emit the (already-)grabbed transition without re-reading. Only episode wants can
+// be pack-covered; a movie is single-atom (no sibling pack), so its supersession is
+// left to the grab CAS — the dedup contract the movie path relies on.
+func (s *AcquisitionService) alreadyCoveredByPack(ctx context.Context, want model.Want) (bool, model.Want, error) {
+	if want.EpisodeID == nil {
+		return false, model.Want{}, nil
+	}
+	cur, err := s.repo.GetWant(ctx, want.ID)
+	if err != nil {
+		return false, model.Want{}, err
+	}
+	if cur.Status != string(model.WantGrabbed) {
+		return false, model.Want{}, nil
+	}
+	jobs, err := s.repo.ListActiveDownloadJobsByWant(ctx, cur.ID)
+	if err != nil {
+		return false, model.Want{}, err
+	}
+	return len(jobs) > 0, cur, nil
+}
+
+// loadSeasonSiblings resolves the in-flight episode wants of the processed want's
+// tracking+season into (want, episode-number) pairs — the candidate set a season
+// pack's coverage is computed against. The processed want is itself one of them.
+func (s *AcquisitionService) loadSeasonSiblings(ctx context.Context, want model.Want, epCtx *episodeCtx) ([]seasonSibling, error) {
+	wants, err := s.repo.ListInFlightWantsForTrackingSeason(ctx, want.TrackingID, epCtx.seasonID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]seasonSibling, 0, len(wants))
+	for _, w := range wants {
+		if w.EpisodeID == nil {
+			continue
+		}
+		ep, err := s.repo.GetEpisode(ctx, *w.EpisodeID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, seasonSibling{want: w, episode: int(ep.EpisodeNumber)})
+	}
+	return out, nil
+}
+
+// episodeCtx carries the coordinates a series want resolves to. It is nil for
+// movie wants. season/episode are the numbers that build the search query and
+// gate the parsed release; seasonID identifies the season row the download_job
+// links to; title/runtime come from the stored episode row — the Phase 3
+// structure sync already persisted them, so no per-episode TMDB call is needed
+// (unlike the manual path's GetEpisodeDetails) — and feed the Subject's series
+// info and the size-band runtime.
+type episodeCtx struct {
+	seasonID uuid.UUID
+	season   int
+	episode  int
+	title    *string
+	runtime  *int
+}
+
+// resolveEpisodeCtx loads the season/episode coordinates for an episode want,
+// returning nil for movie wants (EpisodeID unset). Repo errors pass through.
+func (s *AcquisitionService) resolveEpisodeCtx(ctx context.Context, want model.Want) (*episodeCtx, error) {
+	if want.EpisodeID == nil {
+		return nil, nil
+	}
+	ep, err := s.repo.GetEpisode(ctx, *want.EpisodeID)
+	if err != nil {
+		return nil, err
+	}
+	season, err := s.repo.GetSeason(ctx, ep.SeasonID)
+	if err != nil {
+		return nil, err
+	}
+	var runtime *int
+	if ep.Runtime != nil {
+		rt := int(*ep.Runtime)
+		runtime = &rt
+	}
+	return &episodeCtx{
+		seasonID: season.ID,
+		season:   int(season.SeasonNumber),
+		episode:  int(ep.EpisodeNumber),
+		title:    ep.Title,
+		runtime:  runtime,
+	}, nil
 }
 
 // wantToQuery builds the indexer query from the stored media_item (no TMDB
 // call — title+year are already persisted). The search is free-text across all
 // indexers; identity precision comes from the relevance gate matching on the
 // ids Prowlarr echoes per result, not from embedding ID tokens (which would
-// drop text-only indexers — see the prowlarr adapter). Movie-only; series adds
-// a branch here once it lands.
-func (s *AcquisitionService) wantToQuery(mi model.MediaItem) indexer.SearchQuery {
+// drop text-only indexers — see the prowlarr adapter).
+//
+// An episode want queries "<title> S%02dE%02d" by default. When seasonScoped,
+// it drops the episode token and queries "<title> S%02d" instead: because the
+// prowlarr adapter searches by text, a season query is a superset that returns
+// both season packs and the season's individual episodes, so a pack can be
+// discovered and grabbed while a single episode still resolves from the same
+// pool. The Season/Episode fields ride along unused — the adapter drives off the
+// query string + type — kept set to mirror the manual path.
+func (s *AcquisitionService) wantToQuery(mi model.MediaItem, ep *episodeCtx, seasonScoped bool) indexer.SearchQuery {
+	if ep != nil {
+		season, episode := ep.season, ep.episode
+		q := indexer.SearchQuery{
+			MediaType: indexer.MediaTypeSeries,
+			Season:    &season,
+			Limit:     100,
+		}
+		if seasonScoped {
+			q.Query = fmt.Sprintf("%s S%02d", mi.Title, ep.season)
+		} else {
+			q.Query = fmt.Sprintf("%s S%02dE%02d", mi.Title, ep.season, ep.episode)
+			q.Episode = &episode
+		}
+		return q
+	}
+
 	query := mi.Title
 	if mi.Year != nil {
 		query = fmt.Sprintf("%s %d", mi.Title, *mi.Year)
@@ -149,49 +427,347 @@ func (s *AcquisitionService) wantToQuery(mi model.MediaItem) indexer.SearchQuery
 	}
 }
 
-// pick runs the real selection: build one Subject per search result, then let the
-// want's quality profile gate → score → rank → pick the winner. It returns the
-// picked Evaluation (nil when every candidate was gated out) after logging the
-// per-release decisions. The picked Subject carries its Media fields, so the
-// caller can route it directly.
-func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model.MediaItem, imdbID *string, results []indexer.SearchResult) (*qualityprofile.Evaluation, error) {
-	year, tmdbID, runtime := mediaFields(mi)
-	subjects := make([]model.Subject, 0, len(results))
-	var relevanceRejects []relevanceReject
-	for _, res := range results {
-		cand := searchResultToCandidate(res)
-		parsed := parsing.Parse(cand.Title, parsing.DomainMovie)
+// seasonSibling pairs an in-flight episode want with its episode number, the unit
+// the coverage computation works over: a pack's covered want set is the subset of
+// siblings whose episode the pack carries.
+type seasonSibling struct {
+	want    model.Want
+	episode int
+}
 
-		// Relevance gate: drop releases that aren't the wanted movie before
-		// quality even looks at them. This is the autonomous flow's only
-		// identity check — the download is filed onto the want by linkage with
-		// no import-time re-match — so a wrong release that slips through here
-		// would be filed as the movie.
-		if reason, ok := relevanceReason(res, parsed, mi, imdbID); !ok {
-			relevanceRejects = append(relevanceRejects, relevanceReject{title: cand.Title, reason: reason})
-			continue
+// releaseKey identifies a release by the canonical (indexer_id, guid) pair — the
+// key a per-want exclusion is stored and looked up under (infohash doesn't exist
+// pre-download, so this is the only stable handle).
+type releaseKey struct {
+	indexerID int64
+	guid      string
+}
+
+// exclusionIndex is the in-memory form of the wants' release blocklist for one
+// ProcessWant tick: releaseKey → the set of want IDs that have excluded it. Built
+// once from a single batched load (processed want + season siblings) and consulted
+// per candidate in pick.
+type exclusionIndex map[releaseKey]map[uuid.UUID]struct{}
+
+// buildExclusionIndex folds loaded exclusion rows into the lookup index.
+func buildExclusionIndex(rows []model.WantReleaseExclusion) exclusionIndex {
+	idx := make(exclusionIndex)
+	for _, row := range rows {
+		key := releaseKey{indexerID: row.IndexerID, guid: row.GUID}
+		set, ok := idx[key]
+		if !ok {
+			set = make(map[uuid.UUID]struct{})
+			idx[key] = set
 		}
-
-		subjects = append(subjects, model.NewSubject(cand, parsed).
-			WithMedia(model.MediaTypeMovie, mi.Title, year, tmdbID, runtime))
+		set[row.WantID] = struct{}{}
 	}
+	return idx
+}
 
-	sel, err := s.quality.Pick(ctx, want.QualityProfileID, subjects)
+// excludes reports whether the given want has excluded the release (indexerID,
+// guid). A nil index (no exclusions loaded) reports false for every lookup.
+func (x exclusionIndex) excludes(wantID uuid.UUID, indexerID int64, guid string) bool {
+	set, ok := x[releaseKey{indexerID: indexerID, guid: guid}]
+	if !ok {
+		return false
+	}
+	_, ok = set[wantID]
+	return ok
+}
+
+// loadExclusions batch-loads the release blocklist for the processed want and its
+// in-flight season siblings, returning the built lookup index. One round trip
+// covers the whole coverage set, mirroring GrabWantsForPack's id-array pattern.
+func (s *AcquisitionService) loadExclusions(ctx context.Context, want model.Want, siblings []seasonSibling) (exclusionIndex, error) {
+	ids := []uuid.UUID{want.ID}
+	for _, sib := range siblings {
+		if sib.want.ID != want.ID {
+			ids = append(ids, sib.want.ID)
+		}
+	}
+	rows, err := s.repo.ListWantReleaseExclusionsForWants(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
-	s.logDecisions(want, sel, relevanceRejects)
-	return sel.Picked, nil
+	return buildExclusionIndex(rows), nil
 }
 
-// relevanceReject records a release dropped by the identity gate, for logging.
+// pickOutcome is the front-half's selection result: the chosen Evaluation plus
+// whether it's a pack and which in-flight wants its grab claims (just the processed
+// want for a single; the covered siblings for a pack).
+type pickOutcome struct {
+	eval           *qualityprofile.Evaluation
+	isPack         bool
+	coveredWantIDs []uuid.UUID
+}
+
+// pick runs the real selection. It builds one Subject per relevance-passing search
+// result, partitions them into singles and packs, lets the want's quality profile
+// gate → score → rank → pick a winner in each group, then resolves the two with a
+// coverage-first policy (choosePick). Returns nil when every candidate was gated
+// out. The picked Subject carries its Media fields, so the caller can route it.
+func (s *AcquisitionService) pick(ctx context.Context, want model.Want, mi model.MediaItem, imdbID *string, ep *episodeCtx, siblings []seasonSibling, results []indexer.SearchResult, excl exclusionIndex) (*pickOutcome, error) {
+	year, tmdbID, seriesRuntime := mediaFields(mi)
+	domain := parsing.DomainMovie
+	// runtime scales the size bands. A single episode uses its own runtime; a
+	// season pack sizes against the summed runtime of every episode it covers
+	// (packRuntimeMinutes), so the band isn't applied per-episode to a whole-season
+	// file.
+	runtime := seriesRuntime
+	var seasonEps []model.MediaEpisode
+	if ep != nil {
+		domain = parsing.DomainSeries
+		runtime = ep.runtime
+		var lerr error
+		if seasonEps, lerr = s.repo.ListEpisodesForSeason(ctx, ep.seasonID); lerr != nil {
+			return nil, lerr
+		}
+	}
+
+	var singleSubjects, packSubjects []model.Subject
+	var relevanceRejects []relevanceReject
+	for _, res := range results {
+		cand := searchResultToCandidate(res)
+
+		// Exclusion gate: a release the processed want has blocklisted (its
+		// download already failed, today) is dropped before anything else looks
+		// at it. This drops the candidate from the pool entirely — the
+		// processed-want half of the exclusion asymmetry. A *sibling's* exclusion
+		// is not consulted here; it only carves that sibling out of pack coverage
+		// (see coveredWantIDs).
+		if excl.excludes(want.ID, cand.IndexerID, cand.GUID) {
+			relevanceRejects = append(relevanceRejects, relevanceReject{title: cand.Title, gate: "exclusion", reason: "release excluded for this want"})
+			continue
+		}
+
+		parsed := parsing.Parse(cand.Title, domain)
+
+		// Relevance gate: drop releases that aren't the wanted media before
+		// quality even looks at them. This is the autonomous flow's only
+		// identity check — the download is filed onto the want by linkage with
+		// no import-time re-match — so a wrong release that slips through here
+		// would be filed as the movie/episode.
+		kind, reason := relevanceReason(res, parsed, mi, imdbID, ep)
+		if kind == releaseReject {
+			relevanceRejects = append(relevanceRejects, relevanceReject{title: cand.Title, gate: "relevance", reason: reason})
+			continue
+		}
+
+		subject := model.NewSubject(cand, parsed)
+		if ep != nil {
+			// A pack sizes against its covered episodes' summed runtime; a single
+			// keeps the wanted episode's runtime.
+			subjectRuntime := runtime
+			if kind == releasePack {
+				if pr := packRuntimeMinutes(parsed, seasonEps, seriesRuntime); pr != nil {
+					subjectRuntime = pr
+				}
+			}
+			subject = subject.
+				WithMedia(model.MediaTypeSeries, mi.Title, year, tmdbID, subjectRuntime).
+				WithSeriesInfo(&ep.season, &ep.episode, ep.title)
+		} else {
+			subject = subject.WithMedia(model.MediaTypeMovie, mi.Title, year, tmdbID, runtime)
+		}
+		if kind == releasePack {
+			packSubjects = append(packSubjects, subject)
+		} else {
+			singleSubjects = append(singleSubjects, subject)
+		}
+	}
+
+	bestSingle, singleSel, err := s.pickGroup(ctx, want.QualityProfileID, singleSubjects)
+	if err != nil {
+		return nil, err
+	}
+	bestPack, packSel, err := s.pickGroup(ctx, want.QualityProfileID, packSubjects)
+	if err != nil {
+		return nil, err
+	}
+	s.logDecisions(want, singleSel, packSel, relevanceRejects)
+
+	var packCovered []uuid.UUID
+	if bestPack != nil {
+		packCovered = coveredWantIDs(bestPack, siblings, excl)
+	}
+	return choosePick(want.ID, bestSingle, bestPack, packCovered), nil
+}
+
+// pickGroup runs the gate→score→pick engine over one group of subjects (singles or
+// packs), returning the winner (nil when the group is empty or fully gated out)
+// alongside the full Selection for logging.
+func (s *AcquisitionService) pickGroup(ctx context.Context, profileID uuid.UUID, subjects []model.Subject) (*qualityprofile.Evaluation, qualityprofile.Selection, error) {
+	if len(subjects) == 0 {
+		return nil, qualityprofile.Selection{}, nil
+	}
+	sel, err := s.quality.Pick(ctx, profileID, subjects)
+	if err != nil {
+		return nil, qualityprofile.Selection{}, err
+	}
+	return sel.Picked, sel, nil
+}
+
+// packRuntimeMinutes sums the runtimes of the episodes a pack covers, so the size
+// band scales to the whole file rather than a single episode. Each covered episode
+// contributes its own runtime, falling back to the series runtime, then to 45 minutes
+// when neither is known. A full-season pack covers every episode of the season; a range
+// covers its listed numbers. Returns nil when nothing summable is found (e.g. the season has no
+// episode rows yet), leaving the caller on the single-episode runtime.
+func packRuntimeMinutes(parsed parsing.ParsedRelease, seasonEps []model.MediaEpisode, seriesRuntime *int) *int {
+	base := 45
+	if seriesRuntime != nil && *seriesRuntime > 0 {
+		base = *seriesRuntime
+	}
+	epMinutes := func(e model.MediaEpisode) int {
+		if e.Runtime != nil && *e.Runtime > 0 {
+			return int(*e.Runtime)
+		}
+		return base
+	}
+	n := parsed.Identity.Numbering
+	total := 0
+	for _, e := range seasonEps {
+		if n.FullSeason.Value || containsInt(n.EpisodeNumbers.Value, int(e.EpisodeNumber)) {
+			total += epMinutes(e)
+		}
+	}
+	if total == 0 {
+		return nil
+	}
+	return &total
+}
+
+// coveredWantIDs is the subset of in-flight siblings a pack's grab claims: every
+// sibling for a full-season pack, or those whose episode falls in the pack's range.
+// The processed want is itself a sibling, so it's included whenever the pack covers
+// it. A sibling that has excluded this exact pack release is carved out of the
+// coverage — the pack is neither linked to nor CAS-grabs that want. This is the
+// sibling half of the exclusion asymmetry: the processed want's own exclusion
+// drops the pack candidate entirely (in pick), while a sibling's exclusion only
+// shrinks coverage. Known limitation: the best pack per group is chosen before
+// this shrink, so a second-best pack no sibling excludes isn't reconsidered —
+// consistent with the single-winner-per-group architecture.
+func coveredWantIDs(pack *qualityprofile.Evaluation, siblings []seasonSibling, excl exclusionIndex) []uuid.UUID {
+	id := pack.Subject.Release.Identity
+	cand := pack.Subject.Release.Candidate
+	var ids []uuid.UUID
+	for _, sib := range siblings {
+		if !id.FullSeason.Value && !containsInt(id.EpisodeNumbers.Value, sib.episode) {
+			continue
+		}
+		if excl.excludes(sib.want.ID, cand.IndexerID, cand.GUID) {
+			continue
+		}
+		ids = append(ids, sib.want.ID)
+	}
+	return ids
+}
+
+// choosePick resolves the single and pack winners with the coverage-first, ≥2-guard
+// policy: a pack is chosen only when it covers at least two in-flight wants (one
+// grab standing in for ≥2 single grabs); otherwise the single wins; a lone-coverage
+// pack is the fallback when no single qualifies. Returns nil when neither group
+// produced a winner. Pure — exercised directly by the guard unit test.
+func choosePick(wantID uuid.UUID, bestSingle, bestPack *qualityprofile.Evaluation, packCovered []uuid.UUID) *pickOutcome {
+	if bestPack != nil && len(packCovered) >= 2 {
+		return &pickOutcome{eval: bestPack, isPack: true, coveredWantIDs: packCovered}
+	}
+	if bestSingle != nil {
+		return &pickOutcome{eval: bestSingle, isPack: false, coveredWantIDs: []uuid.UUID{wantID}}
+	}
+	if bestPack != nil {
+		return &pickOutcome{eval: bestPack, isPack: true, coveredWantIDs: packCovered}
+	}
+	return nil
+}
+
+// relevanceReject records a release dropped before quality scoring, for logging.
+// gate names which pre-quality gate dropped it ("exclusion" or "relevance").
 type relevanceReject struct {
 	title  string
+	gate   string
 	reason string
 }
 
-// relevanceReason reports whether a search result refers to the same movie as
-// the wanted media item, returning a human reason when it does not. It is
+// releaseKind classifies a relevance-passing release by how it satisfies an
+// episode want: a single covers exactly the wanted episode, a pack (full-season or
+// a multi-episode range covering it) covers several in-flight siblings at once.
+// releaseReject means the release isn't the want's at all.
+type releaseKind int
+
+const (
+	releaseReject releaseKind = iota
+	releaseSingle
+	releasePack
+)
+
+// relevanceReason classifies a search result against the want, returning its kind
+// and a human reason when rejected. It composes the series/movie identity match
+// (always) with the episode classifier (episode wants only): a movie that passes
+// identity is always a single; a series result must be the right show and then
+// classifies as single/pack/reject by its numbering.
+func relevanceReason(res indexer.SearchResult, parsed parsing.ParsedRelease, mi model.MediaItem, imdbID *string, ep *episodeCtx) (kind releaseKind, reason string) {
+	if reason, ok := identityReason(res, parsed, mi, imdbID); !ok {
+		return releaseReject, reason
+	}
+	if ep == nil {
+		return releaseSingle, ""
+	}
+	return classifyEpisodeRelease(parsed, ep)
+}
+
+// classifyEpisodeRelease decides whether a series release covers the wanted
+// episode as a single or as a pack. It accepts full-season packs and
+// multi-episode ranges that include the wanted episode (the coverage-first season
+// catch-up), and rejects multi-season packs, partial-season packs, non-standard
+// numbering (anime absolute / daily), the wrong season, and any single/range that
+// doesn't land on the wanted episode. Pure and total — drives the front-half gate
+// and is exercised directly by the unit table test.
+func classifyEpisodeRelease(parsed parsing.ParsedRelease, ep *episodeCtx) (kind releaseKind, reason string) {
+	n := parsed.Identity.Numbering
+	if n.Kind != parsing.NumberingSeasonEpisode {
+		return releaseReject, fmt.Sprintf("numbering %q is not standard season/episode", n.Kind)
+	}
+	// A season-extras/subpack release (e.g. "S01 Extras", "S01 SUBPACK") parses as
+	// a full season but carries behind-the-scenes/subtitle content, not the
+	// episodes — reject before the FullSeason check treats it as a pack.
+	if n.IsSeasonExtra.Value {
+		return releaseReject, "season extras/subpack, not episode content"
+	}
+	if n.IsMultiSeason.Value {
+		return releaseReject, "multi-season pack"
+	}
+	if n.IsPartialSeason.Value {
+		return releaseReject, "partial-season pack"
+	}
+	if n.Season.Value != ep.season {
+		return releaseReject, fmt.Sprintf("season %d≠%d", n.Season.Value, ep.season)
+	}
+	eps := n.EpisodeNumbers.Value
+	if n.FullSeason.Value {
+		return releasePack, ""
+	}
+	if len(eps) == 1 && eps[0] == ep.episode {
+		return releaseSingle, ""
+	}
+	if len(eps) > 1 && containsInt(eps, ep.episode) {
+		return releasePack, ""
+	}
+	return releaseReject, fmt.Sprintf("release does not cover wanted episode %d", ep.episode)
+}
+
+// containsInt reports whether n is in xs.
+func containsInt(xs []int, n int) bool {
+	for _, x := range xs {
+		if x == n {
+			return true
+		}
+	}
+	return false
+}
+
+// identityReason reports whether a search result refers to the same work as the
+// wanted media item, returning a human reason when it does not. It is
 // ID-preferred, mirroring Radarr's ParsingService.FindMovie priority: a result
 // carrying a stable id is decided by that id alone (never falling through to the
 // fuzzier title check); only an id-less result — the text-only-indexer case —
@@ -202,8 +778,8 @@ type relevanceReject struct {
 //     (the want id's "tt" prefix stripped), accept on match, reject on mismatch.
 //   - else: parsed title (primary or AKA) must match the wanted title and the
 //     parsed year must agree — an absent parsed year (0) passes, since many
-//     release names omit it.
-func relevanceReason(res indexer.SearchResult, parsed parsing.ParsedRelease, mi model.MediaItem, imdbID *string) (reason string, ok bool) {
+//     release names omit it (series releases rarely carry a year).
+func identityReason(res indexer.SearchResult, parsed parsing.ParsedRelease, mi model.MediaItem, imdbID *string) (reason string, ok bool) {
 	// Only decide on tmdb id when the want actually has one to compare against.
 	// A want with no tmdb id (wantTmdb would be 0) must fall through to the imdb
 	// and title checks, not reject every id-carrying result as "does not match 0".
@@ -279,44 +855,52 @@ func binLabel(b parsing.BinKey) string {
 	return fmt.Sprintf("%s/%s/%s", b.Source, b.Resolution, b.Modifier)
 }
 
-// logDecisions records the selection outcome: the considered count (including
-// releases dropped by the relevance gate before quality saw them), the pick (bin
-// + score), and the rejection reason for each gated-out candidate. Decisions are
-// logged, not persisted — the audit table is a deferred add.
-func (s *AcquisitionService) logDecisions(want model.Want, sel qualityprofile.Selection, relevanceRejects []relevanceReject) {
-	considered := len(sel.All) + len(relevanceRejects)
-	if sel.Picked != nil {
-		s.log.Info().
-			Str("want_id", want.ID.String()).
-			Int("considered", considered).
-			Int("relevance_rejected", len(relevanceRejects)).
-			Str("title", sel.Picked.Subject.Release.Candidate.Title).
-			Str("bin", binLabel(sel.Picked.Bin)).
-			Int("score", sel.Picked.Score).
-			Msg("acquisition picked release")
-	} else {
-		s.log.Info().
-			Str("want_id", want.ID.String()).
-			Int("considered", considered).
-			Int("relevance_rejected", len(relevanceRejects)).
-			Msg("acquisition picked no release: all candidates gated out")
-	}
+// logDecisions records the selection outcome across both groups: the considered
+// count (including releases dropped by the relevance gate before quality saw them),
+// each group's pick (bin + score), and the rejection reason for every gated-out
+// candidate. Decisions are logged, not persisted — the audit table is a deferred
+// add.
+func (s *AcquisitionService) logDecisions(want model.Want, singleSel, packSel qualityprofile.Selection, relevanceRejects []relevanceReject) {
+	considered := len(singleSel.All) + len(packSel.All) + len(relevanceRejects)
+	s.logGroupPick(want, "single", singleSel.Picked, considered, len(relevanceRejects))
+	s.logGroupPick(want, "pack", packSel.Picked, considered, len(relevanceRejects))
+
 	for _, rr := range relevanceRejects {
 		s.log.Debug().
 			Str("want_id", want.ID.String()).
 			Str("title", rr.title).
-			Str("gate", "relevance").
+			Str("gate", rr.gate).
 			Str("reason", rr.reason).
 			Msg("acquisition rejected candidate")
 	}
-	for _, e := range sel.All {
-		if e.Disposition == qualityprofile.DispositionRejected {
-			s.log.Debug().
-				Str("want_id", want.ID.String()).
-				Str("title", e.Subject.Release.Candidate.Title).
-				Str("gate", e.RejectReason.Gate).
-				Str("reason", e.RejectReason.Detail).
-				Msg("acquisition rejected candidate")
+	for _, sel := range []qualityprofile.Selection{singleSel, packSel} {
+		for _, e := range sel.All {
+			if e.Disposition == qualityprofile.DispositionRejected {
+				s.log.Debug().
+					Str("want_id", want.ID.String()).
+					Str("title", e.Subject.Release.Candidate.Title).
+					Str("gate", e.RejectReason.Gate).
+					Str("reason", e.RejectReason.Detail).
+					Msg("acquisition rejected candidate")
+			}
 		}
 	}
+}
+
+// logGroupPick logs the winner of one group (single or pack), or nothing when the
+// group produced no pick — the chosen-between-groups decision is implicit in the
+// grab that follows.
+func (s *AcquisitionService) logGroupPick(want model.Want, group string, picked *qualityprofile.Evaluation, considered, relevanceRejected int) {
+	if picked == nil {
+		return
+	}
+	s.log.Info().
+		Str("want_id", want.ID.String()).
+		Str("group", group).
+		Int("considered", considered).
+		Int("relevance_rejected", relevanceRejected).
+		Str("title", picked.Subject.Release.Candidate.Title).
+		Str("bin", binLabel(picked.Bin)).
+		Int("score", picked.Score).
+		Msg("acquisition picked release")
 }

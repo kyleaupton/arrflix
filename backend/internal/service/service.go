@@ -33,8 +33,11 @@ type Services struct {
 	MatchDecisions     *MatchDecisionsService
 	Media              *MediaService
 	NameTemplates      *NameTemplatesService
+	Proposals          *ProposalService
 	QualityProfiles    *QualityProfileService
+	Reconcile          *ReconcileService
 	Requests           *RequestService
+	Scheduler          *SchedulerService
 	Routing            *RoutingService
 	Scanner            *ScannerService
 	Tracking           *TrackingService
@@ -87,8 +90,14 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	quality := NewQualityProfileService(r)
 	users := NewUsersService(r)
 	invites := NewInvitesService(r)
-	enrichment := NewEnrichmentService(r, l, tmdb)
+	reconcile := NewReconcileService(r, l)
+	scheduler := NewSchedulerService(r, l)
+	enrichment := NewEnrichmentService(r, l, tmdb, reconcile)
 	downloadJobs := NewDownloadJobsService(r)
+	wants := NewWantService(r, downloadJobs)
+	// Proposals is constructed before Acquisition, which depends on it for the
+	// propose branch. broker is in scope from New's params.
+	proposals := NewProposalService(r, quality, broker, l)
 
 	// Matcher: the v1 resolver catalog (path-embed + name-parse) wires
 	// up via DefaultRegistry. ScannerService.MatchBatch is the only
@@ -109,7 +118,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	matchDecisionsSvc := NewMatchDecisionsService(r, l, tmdb, enrichment, metadataProvider, settings)
 
 	return &Services{
-		Acquisition:        NewAcquisitionService(r, l, indexerSource, routingSvc, quality),
+		Acquisition:        NewAcquisitionService(r, l, indexerSource, routingSvc, quality, proposals),
 		Auth:               NewAuthService(r, cfg, settings, invites),
 		Downloaders:        NewDownloadersService(r),
 		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, routingSvc),
@@ -126,17 +135,20 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		MatchDecisions:     matchDecisionsSvc,
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
+		Proposals:          proposals,
 		QualityProfiles:    quality,
-		Requests:           NewRequestService(r, tmdb, quality),
+		Reconcile:          reconcile,
+		Requests:           NewRequestService(r, l, tmdb, quality, enrichment, reconcile),
 		Routing:            routingSvc,
 		Scanner:            NewScannerService(r, l, tmdb, broker, matcherSvc, enrichment),
+		Scheduler:          scheduler,
 		Settings:           settings,
 		Setup:              NewSetupService(r, users, settings, tmdb),
 		Tmdb:               tmdb,
-		Tracking:           NewTrackingService(r),
+		Tracking:           NewTrackingService(r, wants),
 		UnmatchedFiles:     NewUnmatchedFilesService(r, l, tmdb),
 		Users:              users,
-		Wants:              NewWantService(r, downloadJobs),
+		Wants:              wants,
 		Version:            NewVersionService(r, l),
 	}
 }

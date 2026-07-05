@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"testing"
+	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/qualityprofile"
 	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/scope"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/test/dbtest"
 	"github.com/kyleaupton/arrflix/internal/test/testapp"
@@ -166,6 +168,103 @@ func TestSpawn_HappyPathAndDedup(t *testing.T) {
 	}
 }
 
+const spawnSeriesTmdbID = int64(1396) // Breaking Bad
+
+// TestSpawn_Series drives the series spawn branch end-to-end through the service:
+// an approved series request spawns a tracking + requester (scope 'all'), then
+// the post-commit structure sync + reconcile produce a pending want for each
+// dated episode — the aired pilot due immediately (next_run_at in the past), the
+// future episode deferred to its air date (next_run_at in the future).
+func TestSpawn_Series(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	tmdbSrv, tmdbClient := tmdbtest.New(t)
+	tmdbSrv.OnTVDetails(spawnSeriesTmdbID, tmdb.TVDetails{
+		ID:           spawnSeriesTmdbID,
+		Name:         "Breaking Bad",
+		FirstAirDate: "2008-01-20",
+		Seasons:      []tmdb.Season{{SeasonNumber: 1}},
+	})
+	tmdbSrv.OnTVSeasonDetails(spawnSeriesTmdbID, 1,
+		tmdbtest.SeasonEpisode{ID: 62085, EpisodeNumber: 1, Name: "Pilot", AirDate: "2008-01-20"},
+		tmdbtest.SeasonEpisode{ID: 62086, EpisodeNumber: 2, Name: "Future", AirDate: "2099-01-20"},
+	)
+	app := testapp.New(t, pool, testapp.WithTMDB(tmdbClient))
+	ctx := context.Background()
+
+	if err := app.Services.QualityProfiles.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seed defaults: %v", err)
+	}
+	admin := adminUser(t, app, ctx)
+	if _, err := app.Repo.UpsertUserPolicy(ctx, admin.ID, true); err != nil {
+		t.Fatalf("upsert admin policy: %v", err)
+	}
+
+	req, err := app.Services.Requests.Create(ctx, service.CreateRequestInput{
+		RequestedBy: admin.ID,
+		TmdbID:      spawnSeriesTmdbID,
+		Type:        "series",
+		Tier:        "HD",
+	})
+	if err != nil {
+		t.Fatalf("create series request: %v", err)
+	}
+	if req.Status != string(model.RequestSpawned) {
+		t.Errorf("request status = %q, want spawned", req.Status)
+	}
+	if req.SpawnedTrackingID == nil {
+		t.Fatalf("spawned series request has nil spawnedTrackingId")
+	}
+	trackingID := *req.SpawnedTrackingID
+
+	tracking, err := app.Services.Tracking.Get(ctx, trackingID)
+	if err != nil {
+		t.Fatalf("get tracking: %v", err)
+	}
+	if tracking.State != string(model.TrackingActive) {
+		t.Errorf("tracking state = %q, want active", tracking.State)
+	}
+
+	requesters, err := app.Services.Tracking.ListRequesters(ctx, trackingID)
+	if err != nil {
+		t.Fatalf("list requesters: %v", err)
+	}
+	if len(requesters) != 1 {
+		t.Fatalf("requester count = %d, want 1", len(requesters))
+	}
+	if requesters[0].ScopeRule != string(scope.RuleAll) {
+		t.Errorf("requester scopeRule = %q, want all", requesters[0].ScopeRule)
+	}
+
+	// The reconciler produced a want per dated episode: the aired pilot due now,
+	// the future episode deferred to its air date.
+	wants, err := app.Services.Tracking.ListWants(ctx, trackingID)
+	if err != nil {
+		t.Fatalf("list wants: %v", err)
+	}
+	if len(wants) != 2 {
+		t.Fatalf("want count = %d, want 2 (pilot + future episode)", len(wants))
+	}
+	now := time.Now()
+	var dueNow, deferred int
+	for _, w := range wants {
+		if w.Status != string(model.WantPending) {
+			t.Errorf("want status = %q, want pending", w.Status)
+		}
+		if w.EpisodeID == nil {
+			t.Errorf("series want has nil episodeId")
+		}
+		if w.NextRunAt.After(now) {
+			deferred++
+		} else {
+			dueNow++
+		}
+	}
+	if dueNow != 1 || deferred != 1 {
+		t.Errorf("want scheduling = %d due-now / %d deferred, want 1 / 1 (pilot due, future deferred)", dueNow, deferred)
+	}
+}
+
 // TestSpawn_NotAutoApproved proves the default-deny branch: a requester without
 // auto-approval gets a pending request and no spawn.
 func TestSpawn_NotAutoApproved(t *testing.T) {
@@ -240,26 +339,5 @@ func TestSpawn_UnboundTier(t *testing.T) {
 	})
 	if !apperrors.IsNotFound(err) {
 		t.Errorf("create with unbound tier = %v, want NotFound", err)
-	}
-}
-
-// TestSpawn_RejectsSeries proves the PoC validation rejects a series request
-// before any TMDB or DB work.
-func TestSpawn_RejectsSeries(t *testing.T) {
-	t.Parallel()
-	pool := dbtest.New(t)
-	app := testapp.New(t, pool)
-	ctx := context.Background()
-
-	admin := adminUser(t, app, ctx)
-
-	_, err := app.Services.Requests.Create(ctx, service.CreateRequestInput{
-		RequestedBy: admin.ID,
-		TmdbID:      spawnTmdbID,
-		Type:        "series",
-		Tier:        "HD",
-	})
-	if !apperrors.IsValidation(err) {
-		t.Errorf("create series request = %v, want Validation", err)
 	}
 }

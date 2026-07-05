@@ -28,7 +28,6 @@ type DownloadJob struct {
 	MediaItemID          uuid.UUID       `json:"mediaItemId"`
 	SeasonID             uuid.UUID       `json:"seasonId"`
 	EpisodeID            uuid.UUID       `json:"episodeId"`
-	WantID               uuid.UUID       `json:"wantId"`
 	LibraryID            uuid.UUID       `json:"libraryId"`
 	NameTemplateID       uuid.UUID       `json:"nameTemplateId"`
 	DownloaderID         uuid.UUID       `json:"downloaderId"`

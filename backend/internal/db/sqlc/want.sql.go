@@ -18,7 +18,7 @@ SET status = 'canceled',
     updated_at = now()
 WHERE id = $1
   AND status NOT IN ('available', 'failed', 'canceled')
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 // CancelWant terminally cancels a want via compare-and-swap: it succeeds only
@@ -33,8 +33,11 @@ func (q *Queries) CancelWant(ctx context.Context, id pgtype.UUID) (Want, error) 
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
+		&i.Segment,
+		&i.Hold,
 		&i.NextRunAt,
 		&i.AttemptCount,
 		&i.LastError,
@@ -49,6 +52,7 @@ WITH cte AS (
   SELECT id
   FROM want
   WHERE status = 'pending'
+    AND hold IS NULL
     AND next_run_at <= now()
   ORDER BY next_run_at ASC
   FOR UPDATE SKIP LOCKED
@@ -59,7 +63,7 @@ SET status = 'searching',
     updated_at = now()
 FROM cte
 WHERE w.id = cte.id
-RETURNING w.id, w.tracking_id, w.media_item_id, w.quality_profile_id, w.status, w.next_run_at, w.attempt_count, w.last_error, w.created_at, w.updated_at
+RETURNING w.id, w.tracking_id, w.media_item_id, w.episode_id, w.quality_profile_id, w.status, w.segment, w.hold, w.next_run_at, w.attempt_count, w.last_error, w.created_at, w.updated_at
 `
 
 // ClaimRunnableWants atomically claims pending wants that are due, flipping them
@@ -78,8 +82,11 @@ func (q *Queries) ClaimRunnableWants(ctx context.Context, limit int32) ([]Want, 
 			&i.ID,
 			&i.TrackingID,
 			&i.MediaItemID,
+			&i.EpisodeID,
 			&i.QualityProfileID,
 			&i.Status,
+			&i.Segment,
+			&i.Hold,
 			&i.NextRunAt,
 			&i.AttemptCount,
 			&i.LastError,
@@ -98,21 +105,29 @@ func (q *Queries) ClaimRunnableWants(ctx context.Context, limit int32) ([]Want, 
 
 const createWant = `-- name: CreateWant :one
 
-INSERT INTO want (tracking_id, media_item_id, quality_profile_id, status)
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at)
 VALUES (
   $1,
   $2,
   $3,
-  $4
+  $4,
+  $5,
+  $6,
+  $7,
+  COALESCE($8, now())
 )
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type CreateWantParams struct {
 	TrackingID       pgtype.UUID `json:"tracking_id"`
 	MediaItemID      pgtype.UUID `json:"media_item_id"`
+	EpisodeID        pgtype.UUID `json:"episode_id"`
 	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
 	Status           string      `json:"status"`
+	Segment          string      `json:"segment"`
+	Hold             *string     `json:"hold"`
+	NextRunAt        interface{} `json:"next_run_at"`
 }
 
 // Wants: the work item, shaped as a durable work-dispatch queue.
@@ -120,16 +135,122 @@ func (q *Queries) CreateWant(ctx context.Context, arg CreateWantParams) (Want, e
 	row := q.db.QueryRow(ctx, createWant,
 		arg.TrackingID,
 		arg.MediaItemID,
+		arg.EpisodeID,
 		arg.QualityProfileID,
 		arg.Status,
+		arg.Segment,
+		arg.Hold,
+		arg.NextRunAt,
 	)
 	var i Want
 	err := row.Scan(
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
+		&i.Segment,
+		&i.Hold,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createWantIfAbsent = `-- name: CreateWantIfAbsent :one
+INSERT INTO want (tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at)
+VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6,
+  $7,
+  COALESCE($8, now())
+)
+ON CONFLICT (tracking_id, episode_id) WHERE episode_id IS NOT NULL DO NOTHING
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type CreateWantIfAbsentParams struct {
+	TrackingID       pgtype.UUID `json:"tracking_id"`
+	MediaItemID      pgtype.UUID `json:"media_item_id"`
+	EpisodeID        pgtype.UUID `json:"episode_id"`
+	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
+	Status           string      `json:"status"`
+	Segment          string      `json:"segment"`
+	Hold             *string     `json:"hold"`
+	NextRunAt        interface{} `json:"next_run_at"`
+}
+
+// CreateWantIfAbsent is the idempotent want insert the series reconciler routes
+// through: it creates one want per (tracking, episode), no-opping (0-row ON
+// CONFLICT, surfaced as pgx.ErrNoRows) when a concurrent reconcile already made
+// it. Mirrors CreateTrackingIfAbsent's CAS-returns-bool contract.
+func (q *Queries) CreateWantIfAbsent(ctx context.Context, arg CreateWantIfAbsentParams) (Want, error) {
+	row := q.db.QueryRow(ctx, createWantIfAbsent,
+		arg.TrackingID,
+		arg.MediaItemID,
+		arg.EpisodeID,
+		arg.QualityProfileID,
+		arg.Status,
+		arg.Segment,
+		arg.Hold,
+		arg.NextRunAt,
+	)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.Segment,
+		&i.Hold,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const findLiveWantForEpisode = `-- name: FindLiveWantForEpisode :one
+SELECT id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
+WHERE tracking_id = $1
+  AND episode_id = $2
+  AND status IN ('pending', 'searching')
+LIMIT 1
+`
+
+type FindLiveWantForEpisodeParams struct {
+	TrackingID pgtype.UUID `json:"tracking_id"`
+	EpisodeID  pgtype.UUID `json:"episode_id"`
+}
+
+// FindLiveWantForEpisode returns the still-acquirable (pending/searching) want a
+// tracking holds for one episode, if any. Backs the series manual-grab path's
+// join onto the want spine. No-row (surfaced as pgx.ErrNoRows) means the episode
+// has no live want — the manual grab proceeds without touching the spine.
+func (q *Queries) FindLiveWantForEpisode(ctx context.Context, arg FindLiveWantForEpisodeParams) (Want, error) {
+	row := q.db.QueryRow(ctx, findLiveWantForEpisode, arg.TrackingID, arg.EpisodeID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.Segment,
+		&i.Hold,
 		&i.NextRunAt,
 		&i.AttemptCount,
 		&i.LastError,
@@ -140,7 +261,7 @@ func (q *Queries) CreateWant(ctx context.Context, arg CreateWantParams) (Want, e
 }
 
 const getWant = `-- name: GetWant :one
-SELECT id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
+SELECT id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
 WHERE id = $1
 `
 
@@ -151,8 +272,11 @@ func (q *Queries) GetWant(ctx context.Context, id pgtype.UUID) (Want, error) {
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
+		&i.Segment,
+		&i.Hold,
 		&i.NextRunAt,
 		&i.AttemptCount,
 		&i.LastError,
@@ -165,10 +289,11 @@ func (q *Queries) GetWant(ctx context.Context, id pgtype.UUID) (Want, error) {
 const grabWant = `-- name: GrabWant :one
 UPDATE want
 SET status = 'grabbed',
+    hold = NULL,
     updated_at = now()
 WHERE id = $1
   AND status = 'searching'
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 // GrabWant claims a searching want for grab via compare-and-swap: it succeeds
@@ -184,8 +309,11 @@ func (q *Queries) GrabWant(ctx context.Context, id pgtype.UUID) (Want, error) {
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
+		&i.Segment,
+		&i.Hold,
 		&i.NextRunAt,
 		&i.AttemptCount,
 		&i.LastError,
@@ -198,10 +326,11 @@ func (q *Queries) GrabWant(ctx context.Context, id pgtype.UUID) (Want, error) {
 const grabWantManual = `-- name: GrabWantManual :one
 UPDATE want
 SET status = 'grabbed',
+    hold = NULL,
     updated_at = now()
 WHERE id = $1
   AND status IN ('pending', 'searching', 'failed', 'canceled')
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 // GrabWantManual flips a want to 'grabbed' for the manual-grab path via
@@ -218,8 +347,11 @@ func (q *Queries) GrabWantManual(ctx context.Context, id pgtype.UUID) (Want, err
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
+		&i.Segment,
+		&i.Hold,
 		&i.NextRunAt,
 		&i.AttemptCount,
 		&i.LastError,
@@ -229,8 +361,262 @@ func (q *Queries) GrabWantManual(ctx context.Context, id pgtype.UUID) (Want, err
 	return i, err
 }
 
+const grabWantsForPack = `-- name: GrabWantsForPack :many
+UPDATE want
+SET status = 'grabbed',
+    hold = NULL,
+    updated_at = now()
+WHERE id = ANY($1::uuid[])
+  AND status IN ('pending', 'searching')
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+// GrabWantsForPack batch-claims the in-flight wants a season pack covers,
+// flipping each 'pending'/'searching' want to 'grabbed' in one statement. The
+// IN-guard makes it the multi-want analogue of GrabWant: a want already advanced
+// (or terminal) isn't in the set, so it's skipped silently and the RETURNING set
+// reports exactly which wants this grab claimed (the ones to link to the pack
+// job). Concurrent grabbers serialize on the row locks.
+func (q *Queries) GrabWantsForPack(ctx context.Context, ids []pgtype.UUID) ([]Want, error) {
+	rows, err := q.db.Query(ctx, grabWantsForPack, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.EpisodeID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.Segment,
+			&i.Hold,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const holdProposedWants = `-- name: HoldProposedWants :many
+UPDATE want
+SET hold = 'proposed',
+    updated_at = now()
+WHERE id = ANY($1::uuid[])
+  AND status IN ('pending', 'searching')
+  AND hold IS NULL
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+// HoldProposedWants stamps hold='proposed' on the wants a proposal covers,
+// parking them so the acquisition worker won't re-claim them while the operator
+// decides. It's the propose-time analogue of GrabWantsForPack: the IN-guard
+// claims only still-claimable (pending/searching) wants with no existing hold, so
+// a want already advanced, terminal, or held is skipped silently and the RETURNING
+// set reports exactly which wants this call parked. The hold IS NULL guard keeps
+// it from clobbering a needs_pick hold. Concurrent callers serialize on row locks.
+func (q *Queries) HoldProposedWants(ctx context.Context, ids []pgtype.UUID) ([]Want, error) {
+	rows, err := q.db.Query(ctx, holdProposedWants, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.EpisodeID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.Segment,
+			&i.Hold,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const holdWantsForSegment = `-- name: HoldWantsForSegment :many
+UPDATE want
+SET hold = 'needs_pick',
+    updated_at = now()
+WHERE tracking_id = $1
+  AND segment = $2
+  AND status IN ('pending', 'searching')
+  AND hold IS NULL
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type HoldWantsForSegmentParams struct {
+	TrackingID pgtype.UUID `json:"tracking_id"`
+	Segment    string      `json:"segment"`
+}
+
+// HoldWantsForSegment stamps hold='needs_pick' on a tracking's still-acquirable
+// (pending/searching) wants in one segment when that segment flips to manual.
+// Searching wants are held too: the reschedule/reclaim queries return them to
+// pending without touching hold, so stamping only pending would leak perpetual
+// searchers past the manual gate. The hold IS NULL guard makes it idempotent and
+// keeps it from overwriting a future 'proposed' hold. Returns the wants it held.
+func (q *Queries) HoldWantsForSegment(ctx context.Context, arg HoldWantsForSegmentParams) ([]Want, error) {
+	rows, err := q.db.Query(ctx, holdWantsForSegment, arg.TrackingID, arg.Segment)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.EpisodeID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.Segment,
+			&i.Hold,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInFlightWantsForTrackingSeason = `-- name: ListInFlightWantsForTrackingSeason :many
+SELECT w.id, w.tracking_id, w.media_item_id, w.episode_id, w.quality_profile_id, w.status, w.segment, w.hold, w.next_run_at, w.attempt_count, w.last_error, w.created_at, w.updated_at FROM want w
+JOIN media_episode me ON me.id = w.episode_id
+WHERE w.tracking_id = $1
+  AND me.season_id = $2
+  AND w.status IN ('pending', 'searching')
+ORDER BY w.created_at ASC
+`
+
+type ListInFlightWantsForTrackingSeasonParams struct {
+	TrackingID pgtype.UUID `json:"tracking_id"`
+	SeasonID   pgtype.UUID `json:"season_id"`
+}
+
+// ListInFlightWantsForTrackingSeason returns the still-acquirable episode wants
+// (pending/searching) of one tracking+season — the siblings a season pack can
+// cover. The join to media_episode scopes by season_id; the status filter drops
+// wants already grabbed/downloading/terminal (a pack only claims what's still
+// being hunted). Backs the front-half coverage computation.
+func (q *Queries) ListInFlightWantsForTrackingSeason(ctx context.Context, arg ListInFlightWantsForTrackingSeasonParams) ([]Want, error) {
+	rows, err := q.db.Query(ctx, listInFlightWantsForTrackingSeason, arg.TrackingID, arg.SeasonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.EpisodeID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.Segment,
+			&i.Hold,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWantsByDownloadJob = `-- name: ListWantsByDownloadJob :many
+SELECT w.id, w.tracking_id, w.media_item_id, w.episode_id, w.quality_profile_id, w.status, w.segment, w.hold, w.next_run_at, w.attempt_count, w.last_error, w.created_at, w.updated_at FROM want w
+JOIN download_job_want djw ON djw.want_id = w.id
+WHERE djw.download_job_id = $1
+ORDER BY w.created_at ASC
+`
+
+// ListWantsByDownloadJob returns the wants a download_job advances, joined
+// through download_job_want. Backs the download worker's lifecycle mirror and
+// the import fan-out (each spawned import_task is filed onto a covered want).
+func (q *Queries) ListWantsByDownloadJob(ctx context.Context, downloadJobID pgtype.UUID) ([]Want, error) {
+	rows, err := q.db.Query(ctx, listWantsByDownloadJob, downloadJobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.EpisodeID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.Segment,
+			&i.Hold,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWantsByTracking = `-- name: ListWantsByTracking :many
-SELECT id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
+SELECT id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
 WHERE tracking_id = $1
 ORDER BY created_at DESC
 `
@@ -248,8 +634,11 @@ func (q *Queries) ListWantsByTracking(ctx context.Context, trackingID pgtype.UUI
 			&i.ID,
 			&i.TrackingID,
 			&i.MediaItemID,
+			&i.EpisodeID,
 			&i.QualityProfileID,
 			&i.Status,
+			&i.Segment,
+			&i.Hold,
 			&i.NextRunAt,
 			&i.AttemptCount,
 			&i.LastError,
@@ -273,7 +662,7 @@ SET status = 'failed',
     updated_at = now()
 WHERE id = $2
   AND status = 'searching'
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type MarkWantFailedParams struct {
@@ -291,8 +680,11 @@ func (q *Queries) MarkWantFailed(ctx context.Context, arg MarkWantFailedParams) 
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
+		&i.Segment,
+		&i.Hold,
 		&i.NextRunAt,
 		&i.AttemptCount,
 		&i.LastError,
@@ -308,7 +700,7 @@ SET status = $1,
     updated_at = now()
 WHERE id = $2
   AND status NOT IN ('available', 'failed', 'canceled')
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type MirrorWantStatusParams struct {
@@ -329,8 +721,56 @@ func (q *Queries) MirrorWantStatus(ctx context.Context, arg MirrorWantStatusPara
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
+		&i.Segment,
+		&i.Hold,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const rearmProposedWant = `-- name: RearmProposedWant :one
+UPDATE want
+SET status = 'pending',
+    hold = NULL,
+    attempt_count = 0,
+    last_error = $1,
+    next_run_at = now(),
+    updated_at = now()
+WHERE id = $2
+  AND hold = 'proposed'
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type RearmProposedWantParams struct {
+	LastError *string     `json:"last_error"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// RearmProposedWant returns a proposed want to the pool via compare-and-swap: it
+// fires only while the want still carries hold='proposed', clearing the hold and
+// re-arming it for immediate search. Backs decline (search a different release)
+// and supersede's coverage-shrink (a want dropped from the newer pick re-searches).
+// attempt_count resets — a decline isn't a retryable error. A 0-row match
+// (the want was grabbed or already re-armed) surfaces as pgx.ErrNoRows.
+func (q *Queries) RearmProposedWant(ctx context.Context, arg RearmProposedWantParams) (Want, error) {
+	row := q.db.QueryRow(ctx, rearmProposedWant, arg.LastError, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.Segment,
+		&i.Hold,
 		&i.NextRunAt,
 		&i.AttemptCount,
 		&i.LastError,
@@ -349,7 +789,7 @@ SET status = 'pending',
     updated_at = now()
 WHERE id = $1
   AND status IN ('failed', 'canceled')
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 // RearmWant resumes a terminal want when its movie is re-requested, flipping a
@@ -365,8 +805,11 @@ func (q *Queries) RearmWant(ctx context.Context, id pgtype.UUID) (Want, error) {
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
+		&i.Segment,
+		&i.Hold,
 		&i.NextRunAt,
 		&i.AttemptCount,
 		&i.LastError,
@@ -383,8 +826,9 @@ SET status = 'pending',
     next_run_at = now(),
     updated_at = now()
 WHERE status = 'searching'
+  AND hold IS NULL
   AND updated_at < $2
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type ReclaimStaleSearchingWantsParams struct {
@@ -397,6 +841,11 @@ type ReclaimStaleSearchingWantsParams struct {
 // crash between ClaimRunnableWants' flip and a terminal transition. Reset-only:
 // attempt_count is untouched and no want is failed (mirrors the "no release yet"
 // reschedule). The cutoff is passed from Go for testability.
+//
+// A held want (hold IS NOT NULL) is intentionally parked, not crashed — a
+// 'proposed' want sits in 'searching' awaiting operator approval, and reaping it
+// to 'pending' would break approve's grab-from-searching CAS. The hold IS NULL
+// guard keeps the reaper to genuinely-wedged wants.
 func (q *Queries) ReclaimStaleSearchingWants(ctx context.Context, arg ReclaimStaleSearchingWantsParams) ([]Want, error) {
 	rows, err := q.db.Query(ctx, reclaimStaleSearchingWants, arg.LastError, arg.StaleBefore)
 	if err != nil {
@@ -410,8 +859,11 @@ func (q *Queries) ReclaimStaleSearchingWants(ctx context.Context, arg ReclaimSta
 			&i.ID,
 			&i.TrackingID,
 			&i.MediaItemID,
+			&i.EpisodeID,
 			&i.QualityProfileID,
 			&i.Status,
+			&i.Segment,
+			&i.Hold,
 			&i.NextRunAt,
 			&i.AttemptCount,
 			&i.LastError,
@@ -428,6 +880,154 @@ func (q *Queries) ReclaimStaleSearchingWants(ctx context.Context, arg ReclaimSta
 	return items, nil
 }
 
+const releaseHeldWantsForSegment = `-- name: ReleaseHeldWantsForSegment :many
+UPDATE want
+SET hold = NULL,
+    next_run_at = now(),
+    updated_at = now()
+WHERE tracking_id = $1
+  AND segment = $2
+  AND status IN ('pending', 'searching')
+  AND hold = 'needs_pick'
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type ReleaseHeldWantsForSegmentParams struct {
+	TrackingID pgtype.UUID `json:"tracking_id"`
+	Segment    string      `json:"segment"`
+}
+
+// ReleaseHeldWantsForSegment clears the needs_pick hold on a tracking's
+// pending/searching wants in one segment when it flips back to auto, and re-arms
+// next_run_at so the worker claims them on its next poll. Scoped to
+// hold='needs_pick' so a future 'proposed' hold stays outside its blast radius.
+// Returns the wants it released.
+func (q *Queries) ReleaseHeldWantsForSegment(ctx context.Context, arg ReleaseHeldWantsForSegmentParams) ([]Want, error) {
+	rows, err := q.db.Query(ctx, releaseHeldWantsForSegment, arg.TrackingID, arg.Segment)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.EpisodeID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.Segment,
+			&i.Hold,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const releaseWantFromGrab = `-- name: ReleaseWantFromGrab :one
+UPDATE want
+SET status = 'pending',
+    attempt_count = 0,
+    last_error = $1,
+    next_run_at = now(),
+    updated_at = now()
+WHERE id = $2
+  AND status IN ('grabbed', 'downloading')
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type ReleaseWantFromGrabParams struct {
+	LastError *string     `json:"last_error"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// ReleaseWantFromGrab returns a want covered by a pack job that no file
+// satisfied (a COMPLETE pack missing a later-aired episode) to 'pending' so it
+// re-searches instead of wedging in 'grabbed'/'downloading'. The CAS guard fires
+// only from those two in-flight states, so it can't resurrect a canceled/terminal
+// want; attempt_count resets (this isn't a failure, the pack simply didn't carry
+// the file) and next_run_at is now (re-search immediately). A 0-row match
+// surfaces as pgx.ErrNoRows.
+func (q *Queries) ReleaseWantFromGrab(ctx context.Context, arg ReleaseWantFromGrabParams) (Want, error) {
+	row := q.db.QueryRow(ctx, releaseWantFromGrab, arg.LastError, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.Segment,
+		&i.Hold,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const rescheduleWantRecheck = `-- name: RescheduleWantRecheck :one
+UPDATE want
+SET status = 'pending',
+    attempt_count = 0,
+    last_error = $1,
+    next_run_at = $2,
+    updated_at = now()
+WHERE id = $3
+  AND status = 'searching'
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type RescheduleWantRecheckParams struct {
+	LastError *string     `json:"last_error"`
+	NextRunAt time.Time   `json:"next_run_at"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// RescheduleWantRecheck returns a still-'searching' want to 'pending' for the
+// "no eligible release yet" path: a search that reached the indexer and simply
+// found nothing. It resets attempt_count to 0 — successfully reaching the indexer
+// clears the consecutive-error counter, so a later infra blip backs off from
+// scratch rather than inheriting a stale climb. attempt_count means "consecutive
+// retryable front-half errors since the last successful reach"; it drives only
+// the backoff ramp (ScheduleWantRetry), never a terminal transition. The
+// 'searching' guard is the same CAS as ScheduleWantRetry.
+func (q *Queries) RescheduleWantRecheck(ctx context.Context, arg RescheduleWantRecheckParams) (Want, error) {
+	row := q.db.QueryRow(ctx, rescheduleWantRecheck, arg.LastError, arg.NextRunAt, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.Segment,
+		&i.Hold,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const scheduleWantRetry = `-- name: ScheduleWantRetry :one
 UPDATE want
 SET status = 'pending',
@@ -437,7 +1037,7 @@ SET status = 'pending',
     updated_at = now()
 WHERE id = $3
   AND status = 'searching'
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type ScheduleWantRetryParams struct {
@@ -457,8 +1057,48 @@ func (q *Queries) ScheduleWantRetry(ctx context.Context, arg ScheduleWantRetryPa
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
+		&i.Segment,
+		&i.Hold,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setWantHold = `-- name: SetWantHold :one
+UPDATE want
+SET hold = $1,
+    updated_at = now()
+WHERE id = $2
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type SetWantHoldParams struct {
+	Hold *string     `json:"hold"`
+	ID   pgtype.UUID `json:"id"`
+}
+
+// SetWantHold sets (or clears, with a NULL arg) the hold on a single want. Backs
+// the movie-rearm edge — a grab clears hold, so a re-request onto a manual
+// segment must re-stamp it — and test seeding.
+func (q *Queries) SetWantHold(ctx context.Context, arg SetWantHoldParams) (Want, error) {
+	row := q.db.QueryRow(ctx, setWantHold, arg.Hold, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.Segment,
+		&i.Hold,
 		&i.NextRunAt,
 		&i.AttemptCount,
 		&i.LastError,
@@ -473,7 +1113,7 @@ UPDATE want
 SET status = $1,
     updated_at = now()
 WHERE id = $2
-RETURNING id, tracking_id, media_item_id, quality_profile_id, status, next_run_at, attempt_count, last_error, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
 `
 
 type SetWantStatusParams struct {
@@ -488,8 +1128,11 @@ func (q *Queries) SetWantStatus(ctx context.Context, arg SetWantStatusParams) (W
 		&i.ID,
 		&i.TrackingID,
 		&i.MediaItemID,
+		&i.EpisodeID,
 		&i.QualityProfileID,
 		&i.Status,
+		&i.Segment,
+		&i.Hold,
 		&i.NextRunAt,
 		&i.AttemptCount,
 		&i.LastError,

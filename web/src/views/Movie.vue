@@ -1,9 +1,7 @@
 <template>
   <div class="flex flex-col gap-6">
     <Transition name="fade" mode="out-in">
-      <div v-if="isLoading" key="loading" class="space-y-4">
-        <Skeleton class="h-96 w-full rounded-lg" />
-      </div>
+      <MediaHeroSkeleton v-if="isLoading" key="loading" />
       <div
         v-else-if="isError"
         key="error"
@@ -91,8 +89,8 @@ import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { File } from 'lucide-vue-next'
 import { mediaGetMovieOptions } from '@/client/@tanstack/vue-query.gen'
-import { Skeleton } from '@/components/ui/skeleton'
 import MediaHero from '@/components/media/MediaHero.vue'
+import MediaHeroSkeleton from '@/components/media/MediaHeroSkeleton.vue'
 import RatingBadge from '@/components/media/RatingBadge.vue'
 import Poster from '@/components/poster/Poster.vue'
 import RailCast from '@/components/rails/RailCast.vue'

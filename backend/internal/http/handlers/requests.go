@@ -55,8 +55,16 @@ func (h *Requests) Get(ctx context.Context, input *RequestsGetInput) (*RequestOu
 
 type requestCreateBody struct {
 	TmdbID int64  `json:"tmdbId" required:"true" minimum:"1" doc:"TMDB id of the requested title"`
-	Type   string `json:"type" required:"true" enum:"movie,series" doc:"Media domain (movie-only in the PoC)"`
-	Tier   string `json:"tier" required:"true" enum:"HD,4K" doc:"Requested quality tier"`
+	Type   string `json:"type" required:"true" enum:"movie,series" doc:"Media domain"`
+	// Everything below is optional intent. Tier and ScopeRule are part of the
+	// frozen request (persisted through the pending state); the autonomy pair is
+	// operator tracking config, applied only when the request auto-approves and
+	// creates a fresh tracking. ScopeRule is series-only and inert for movies; a
+	// requester joining an existing tracking never changes autonomy.
+	Tier             *string `json:"tier,omitempty" enum:"HD,4K" doc:"Requested quality tier (defaults to 'HD'; operator-picked, requesters omit it)"`
+	ScopeRule        *string `json:"scopeRule,omitempty" enum:"all,future_only" doc:"Series scope preset (series only; defaults to 'all')"`
+	BackfillAutonomy *string `json:"backfillAutonomy,omitempty" enum:"auto,propose,manual" doc:"Who picks releases for atoms dated before tracking began (defaults to 'auto')"`
+	OngoingAutonomy  *string `json:"ongoingAutonomy,omitempty" enum:"auto,propose,manual" doc:"Who picks releases for atoms dated after tracking began (defaults to 'auto')"`
 }
 
 type RequestsCreateInput struct {
@@ -69,15 +77,27 @@ func (h *Requests) Create(ctx context.Context, input *RequestsCreateInput) (*Req
 		return nil, err
 	}
 	out, err := h.svc.Requests.Create(ctx, service.CreateRequestInput{
-		RequestedBy: userID,
-		TmdbID:      input.Body.TmdbID,
-		Type:        input.Body.Type,
-		Tier:        input.Body.Tier,
+		RequestedBy:      userID,
+		TmdbID:           input.Body.TmdbID,
+		Type:             input.Body.Type,
+		Tier:             derefOr(input.Body.Tier, ""),
+		ScopeRule:        derefOr(input.Body.ScopeRule, ""),
+		BackfillAutonomy: derefOr(input.Body.BackfillAutonomy, ""),
+		OngoingAutonomy:  derefOr(input.Body.OngoingAutonomy, ""),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &RequestOutput{Body: out}, nil
+}
+
+// derefOr returns *p, or def when p is nil — collapsing an omitted optional body
+// field to the empty sentinel the service normalizes to its born default.
+func derefOr(p *string, def string) string {
+	if p == nil {
+		return def
+	}
+	return *p
 }
 
 // ----- Register -----

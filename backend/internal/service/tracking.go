@@ -5,25 +5,107 @@ import (
 
 	"github.com/google/uuid"
 
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
-	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
-// TrackingService exposes thin reads over the tracking primitive and its wants
-// and requesters — enough for observability and tests. State transitions
-// (pause/cancel/archive) are out of PoC scope; the spawn write surface lives on
-// RequestService.
+// TrackingService exposes reads over the tracking primitive and its wants and
+// requesters, plus the cancel (stop-tracking) write. The spawn write surface
+// lives on RequestService; pause/resume/archive remain out of scope. It holds
+// WantService so cancel reuses the tested want-cancel + download-job cascade.
 type TrackingService struct {
-	repo *repo.Repository
+	repo  *repo.Repository
+	wants *WantService
 }
 
-func NewTrackingService(r *repo.Repository) *TrackingService {
-	return &TrackingService{repo: r}
+func NewTrackingService(r *repo.Repository, wants *WantService) *TrackingService {
+	return &TrackingService{repo: r, wants: wants}
 }
 
 func (s *TrackingService) Get(ctx context.Context, id uuid.UUID) (model.Tracking, error) {
 	return s.repo.GetTracking(ctx, id)
+}
+
+// SetAutonomy dials a tracking's per-segment acquisition autonomy and reconciles
+// its live wants to match. Each segment must be 'auto', 'propose', or 'manual'.
+//
+// The whole change runs in one transaction: set both dials, then for each
+// segment that actually changed, reconcile its wants. manual holds them
+// (needs_pick); auto releases held ones. propose is a pure dial change — no want
+// mutation: pending wants stay claimable and are each proposed on their next tick.
+// Only pending/searching wants are ever affected. Searching wants are held too,
+// not just pending ones: the reschedule/reclaim queries return a searcher to
+// pending without touching hold, so holding only pending would let a perpetual
+// searcher slip past the manual gate. Grabbed/downloading/imported and terminal
+// wants are left alone — a grab already in flight when its segment goes manual
+// completes normally (an acceptable race; the file lands and the want advances).
+// No SSE is emitted: the acting client invalidates via the mutation; other
+// clients stay stale until the next want event.
+func (s *TrackingService) SetAutonomy(ctx context.Context, trackingID uuid.UUID, backfill, ongoing string) (model.Tracking, error) {
+	const op = "TrackingService.SetAutonomy"
+
+	var fields []apperrors.FieldError
+	if !isSettableAutonomy(backfill) {
+		fields = append(fields, apperrors.Field("body.backfill", "must be 'auto', 'propose', or 'manual'"))
+	}
+	if !isSettableAutonomy(ongoing) {
+		fields = append(fields, apperrors.Field("body.ongoing", "must be 'auto', 'propose', or 'manual'"))
+	}
+	if len(fields) > 0 {
+		return model.Tracking{}, apperrors.Validation("invalid autonomy", fields...).Op(op)
+	}
+
+	var updated model.Tracking
+	err := s.repo.InTx(ctx, func(r *repo.Repository) error {
+		old, err := r.GetTracking(ctx, trackingID)
+		if err != nil {
+			return err
+		}
+		updated, err = r.SetTrackingAutonomy(ctx, trackingID, backfill, ongoing)
+		if err != nil {
+			return err
+		}
+		if backfill != old.AutonomyBackfill {
+			if err := applyAutonomyToSegment(ctx, r, trackingID, model.WantSegmentBackfill, backfill); err != nil {
+				return err
+			}
+		}
+		if ongoing != old.AutonomyOngoing {
+			if err := applyAutonomyToSegment(ctx, r, trackingID, model.WantSegmentOngoing, ongoing); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return model.Tracking{}, err
+	}
+	return updated, nil
+}
+
+// isSettableAutonomy reports whether an autonomy value is one the API accepts:
+// 'auto', 'propose', or 'manual' — the full DB vocabulary.
+func isSettableAutonomy(a string) bool {
+	return a == string(model.AutonomyAuto) ||
+		a == string(model.AutonomyPropose) ||
+		a == string(model.AutonomyManual)
+}
+
+// applyAutonomyToSegment reconciles one segment's live wants to a new autonomy.
+// manual holds them (needs_pick, barring the worker). auto and propose both want
+// the segment's wants claimable — they differ only at ProcessWant time (auto
+// grabs, propose parks a proposal), not in pre-claim gating — so both release any
+// needs_pick hold and re-arm. Releasing is scoped to hold='needs_pick', so an
+// open proposal's hold='proposed' is never disturbed. Called inside the
+// SetAutonomy transaction.
+func applyAutonomyToSegment(ctx context.Context, r *repo.Repository, trackingID uuid.UUID, seg model.WantSegment, autonomy string) error {
+	if autonomy == string(model.AutonomyManual) {
+		_, err := r.HoldWantsForSegment(ctx, trackingID, string(seg))
+		return err
+	}
+	_, err := r.ReleaseHeldWantsForSegment(ctx, trackingID, string(seg))
+	return err
 }
 
 func (s *TrackingService) List(ctx context.Context) ([]model.Tracking, error) {
@@ -38,13 +120,14 @@ func (s *TrackingService) ListRequesters(ctx context.Context, trackingID uuid.UU
 	return s.repo.ListRequestersByTracking(ctx, trackingID)
 }
 
-// GetByTmdbID resolves the acquisition state for a movie the frontend knows
-// only by TMDB id: the media item, its tracking, and that tracking's wants.
-// Movie-only in the PoC, so the domain is fixed. A NotFound at either the media
-// item (never requested) or the tracking (media item exists but untracked) step
-// surfaces unchanged as 404 — the "this movie is not tracked" signal.
-func (s *TrackingService) GetByTmdbID(ctx context.Context, tmdbID int64) (model.Tracking, []model.Want, error) {
-	mediaItem, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, string(parsing.DomainMovie))
+// GetByTmdbID resolves the acquisition state for a media item the frontend
+// knows only by TMDB id and type: the media item, its tracking, and that
+// tracking's wants. A NotFound at either the media item (never requested) or the
+// tracking (media item exists but untracked) step surfaces unchanged as 404 —
+// the "this item is not tracked" signal. A series carries one want per in-scope
+// episode (each tagged with its episodeId); a movie carries one.
+func (s *TrackingService) GetByTmdbID(ctx context.Context, tmdbID int64, typ string) (model.Tracking, []model.Want, error) {
+	mediaItem, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, typ)
 	if err != nil {
 		return model.Tracking{}, nil, err
 	}
@@ -57,4 +140,37 @@ func (s *TrackingService) GetByTmdbID(ctx context.Context, tmdbID int64) (model.
 		return model.Tracking{}, nil, err
 	}
 	return tracking, wants, nil
+}
+
+// Cancel stops tracking a media item: it cancels every non-terminal want (and
+// its in-flight download job, via the tested WantService cascade), then
+// normalizes the tracking to 'canceled' to cover the all-terminal case where no
+// want needed canceling. 'available' wants and their files are deliberately left
+// intact — stop means "stop future acquisition + cancel in-flight", not delete.
+func (s *TrackingService) Cancel(ctx context.Context, trackingID uuid.UUID) (model.Tracking, error) {
+	tracking, err := s.repo.GetTracking(ctx, trackingID) // 404 flows through
+	if err != nil {
+		return model.Tracking{}, err
+	}
+
+	wants, err := s.repo.ListWantsByTracking(ctx, trackingID)
+	if err != nil {
+		return model.Tracking{}, err
+	}
+	for _, w := range wants {
+		if model.WantStatus(w.Status).IsTerminal() {
+			continue
+		}
+		if _, err := s.wants.CancelWant(ctx, w.ID); err != nil {
+			return model.Tracking{}, err
+		}
+	}
+
+	// CancelWant already flips the tracking to 'canceled' for each want it
+	// cancels, but an all-terminal tracking has no such want — set it here so the
+	// state is normalized regardless.
+	if tracking.State != string(model.TrackingCanceled) {
+		return s.repo.SetTrackingState(ctx, trackingID, string(model.TrackingCanceled))
+	}
+	return tracking, nil
 }

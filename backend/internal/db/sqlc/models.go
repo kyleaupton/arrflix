@@ -310,7 +310,6 @@ type DownloadJob struct {
 	EtaSeconds           *int64        `json:"eta_seconds"`
 	TotalSize            *int64        `json:"total_size"`
 	ErrorKind            NullErrorKind `json:"error_kind"`
-	WantID               pgtype.UUID   `json:"want_id"`
 }
 
 type DownloadJobEvent struct {
@@ -321,6 +320,12 @@ type DownloadJobEvent struct {
 	NewStatus     *string     `json:"new_status"`
 	Message       *string     `json:"message"`
 	Metadata      []byte      `json:"metadata"`
+	CreatedAt     time.Time   `json:"created_at"`
+}
+
+type DownloadJobWant struct {
+	DownloadJobID pgtype.UUID `json:"download_job_id"`
+	WantID        pgtype.UUID `json:"want_id"`
 	CreatedAt     time.Time   `json:"created_at"`
 }
 
@@ -536,6 +541,38 @@ type PermissionGrant struct {
 	CreatedAt     time.Time    `json:"created_at"`
 }
 
+type Proposal struct {
+	ID             pgtype.UUID `json:"id"`
+	TrackingID     pgtype.UUID `json:"tracking_id"`
+	MediaItemID    pgtype.UUID `json:"media_item_id"`
+	IsPack         bool        `json:"is_pack"`
+	Protocol       string      `json:"protocol"`
+	MediaType      string      `json:"media_type"`
+	SeasonID       pgtype.UUID `json:"season_id"`
+	EpisodeID      pgtype.UUID `json:"episode_id"`
+	IndexerID      int64       `json:"indexer_id"`
+	Guid           string      `json:"guid"`
+	CandidateTitle string      `json:"candidate_title"`
+	CandidateLink  string      `json:"candidate_link"`
+	DownloaderID   pgtype.UUID `json:"downloader_id"`
+	LibraryID      pgtype.UUID `json:"library_id"`
+	NameTemplateID pgtype.UUID `json:"name_template_id"`
+	Size           int64       `json:"size"`
+	Seeders        int32       `json:"seeders"`
+	BinSource      string      `json:"bin_source"`
+	BinResolution  string      `json:"bin_resolution"`
+	BinModifier    string      `json:"bin_modifier"`
+	Score          int32       `json:"score"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
+}
+
+type ProposalWant struct {
+	ProposalID pgtype.UUID `json:"proposal_id"`
+	WantID     pgtype.UUID `json:"want_id"`
+	CreatedAt  time.Time   `json:"created_at"`
+}
+
 type QualityProfile struct {
 	ID            pgtype.UUID `json:"id"`
 	Name          string      `json:"name"`
@@ -577,6 +614,7 @@ type Request struct {
 	DeniedReason      *string     `json:"denied_reason"`
 	CreatedAt         time.Time   `json:"created_at"`
 	UpdatedAt         time.Time   `json:"updated_at"`
+	ScopeRule         string      `json:"scope_rule"`
 }
 
 type Role struct {
@@ -615,16 +653,21 @@ type Tracking struct {
 	Scope            string      `json:"scope"`
 	UpgradeBehavior  string      `json:"upgrade_behavior"`
 	ScheduleStrategy string      `json:"schedule_strategy"`
+	AutonomyBackfill string      `json:"autonomy_backfill"`
+	AutonomyOngoing  string      `json:"autonomy_ongoing"`
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
 }
 
 type TrackingRequester struct {
-	TrackingID pgtype.UUID `json:"tracking_id"`
-	UserID     pgtype.UUID `json:"user_id"`
-	Tier       string      `json:"tier"`
-	CreatedAt  time.Time   `json:"created_at"`
-	UpdatedAt  time.Time   `json:"updated_at"`
+	TrackingID     pgtype.UUID `json:"tracking_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	Tier           string      `json:"tier"`
+	ScopeRule      string      `json:"scope_rule"`
+	ScopeSeason    *int32      `json:"scope_season"`
+	ScopeOverrides []byte      `json:"scope_overrides"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
 }
 
 type UserIdentity struct {
@@ -665,11 +708,23 @@ type Want struct {
 	ID               pgtype.UUID `json:"id"`
 	TrackingID       pgtype.UUID `json:"tracking_id"`
 	MediaItemID      pgtype.UUID `json:"media_item_id"`
+	EpisodeID        pgtype.UUID `json:"episode_id"`
 	QualityProfileID pgtype.UUID `json:"quality_profile_id"`
 	Status           string      `json:"status"`
+	Segment          string      `json:"segment"`
+	Hold             *string     `json:"hold"`
 	NextRunAt        time.Time   `json:"next_run_at"`
 	AttemptCount     int32       `json:"attempt_count"`
 	LastError        *string     `json:"last_error"`
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
+}
+
+type WantReleaseExclusion struct {
+	WantID    pgtype.UUID `json:"want_id"`
+	IndexerID int64       `json:"indexer_id"`
+	Guid      string      `json:"guid"`
+	Reason    string      `json:"reason"`
+	Detail    *string     `json:"detail"`
+	CreatedAt time.Time   `json:"created_at"`
 }

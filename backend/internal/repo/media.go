@@ -770,6 +770,7 @@ func toModelSeriesEpisodeAvailability(row dbgen.ListEpisodeAvailabilityForSeries
 		EpisodeNumber: row.EpisodeNumber,
 		EpisodeID:     uuidFromPgtype(row.EpisodeID),
 		Title:         row.Title,
+		Deprecated:    row.Deprecated,
 		FileExists:    row.Exists,
 	}
 	if row.AirDate.Valid {

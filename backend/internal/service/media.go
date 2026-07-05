@@ -547,8 +547,21 @@ func (s *MediaService) GetSeriesDetail(ctx context.Context, tmdbID int64) (model
 	}
 
 	var files []model.FileWithState
+	// episodeIDByNum maps (season, episode) → the persisted episode-row UUID, so
+	// the wire EpisodeAvailability can carry an episodeId the frontend joins wants
+	// on. Empty for an untracked series (no local episode rows) — which is fine,
+	// since an untracked series has no wants to join.
+	episodeIDByNum := make(map[int32]map[int32]string)
 	if local {
 		files, _ = s.repo.ListFilesForItem(ctx, mediaItem.ID)
+		if avail, err := s.repo.ListEpisodeAvailabilityForSeries(ctx, mediaItem.ID); err == nil {
+			for _, a := range avail {
+				if _, ok := episodeIDByNum[a.SeasonNumber]; !ok {
+					episodeIDByNum[a.SeasonNumber] = make(map[int32]string)
+				}
+				episodeIDByNum[a.SeasonNumber][a.EpisodeNumber] = a.EpisodeID.String()
+			}
+		}
 	}
 
 	fileInfos, availability := buildFileInfoAndAvailability(files)
@@ -602,6 +615,7 @@ func (s *MediaService) GetSeriesDetail(ctx context.Context, tmdbID int64) (model
 		eps := make([]model.EpisodeAvailability, 0, len(fullSeason.Episodes))
 		for _, eInfo := range fullSeason.Episodes {
 			ep := model.EpisodeAvailability{
+				EpisodeID:     episodeIDByNum[int32(eInfo.SeasonNumber)][int32(eInfo.EpisodeNumber)],
 				SeasonNumber:  int32(eInfo.SeasonNumber),
 				EpisodeNumber: int32(eInfo.EpisodeNumber),
 				Title:         &eInfo.Name,

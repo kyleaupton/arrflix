@@ -103,16 +103,17 @@ const {
 const want = computed(() => tracking.value?.wants?.[0] ?? null)
 
 // Download jobs for this movie, to correlate download progress onto the want.
-// wantId links a job to its want — including a manual grab, which now always
-// produces a want, so there is no orphan-job split-brain to reconcile.
+// A movie tracking is single-atom (one want, one in-flight job), and the list is
+// scoped to this movie and ordered newest-first, so the most recent job is the
+// one advancing the current want. The job↔want edge now lives in download_job_want
+// (M:N), so the job no longer carries a wantId to match on directly.
 const { data: jobs } = useQuery(
   computed(() => downloadJobsListForMovieOptions({ path: { id: props.tmdbId } })),
 )
 
 const wantProgress = computed(() => {
   if (!want.value) return null
-  const job = jobs.value?.find((j) => j.wantId === want.value!.id)
-  return job?.progress ?? null
+  return jobs.value?.[0]?.progress ?? null
 })
 
 const primaryLabel = computed(() => (auth.canAutoApproveMovie ? 'Add to Library' : 'Request'))

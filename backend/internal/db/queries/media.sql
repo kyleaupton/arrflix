@@ -263,6 +263,7 @@ select
   me.id as episode_id,
   me.title,
   me.air_date,
+  me.deprecated,
   f.id as file_id,
   f.library_id,
   fs.exists

@@ -1,9 +1,7 @@
 <template>
   <div class="flex flex-col gap-6">
     <Transition name="fade" mode="out-in">
-      <div v-if="isLoading" key="loading" class="space-y-4">
-        <Skeleton class="h-96 w-full rounded-lg" />
-      </div>
+      <MediaHeroSkeleton v-if="isLoading" key="loading" />
       <div
         v-else-if="isError"
         key="error"
@@ -28,6 +26,17 @@
           </template>
           <template v-if="data.voteAverage" #ratings>
             <RatingBadge source="tmdb" :score="data.voteAverage" :vote-count="data.voteCount" />
+          </template>
+          <template #actions>
+            <SeriesAcquisitionControl
+              :tmdb-id="id"
+              :title="data.title"
+              :available-count="availableEpisodeCount"
+              :total-count="totalEpisodeCount"
+              :aired-episode-count="airedEpisodeCount"
+              :season-count="seasonCount"
+              :has-ongoing="hasOngoing"
+            />
           </template>
         </MediaHero>
 
@@ -146,6 +155,104 @@
                               Available
                             </Badge>
                           </template>
+                          <!-- A live want drives this episode: surface its
+                               lifecycle state (with download progress) in place
+                               of the manual flow. -->
+                          <template v-else-if="getEpisodeWant(episode.episodeId)">
+                            <div class="flex flex-col items-end gap-1.5">
+                              <div class="flex items-center gap-2">
+                                <WantStatusPill
+                                  :status="getEpisodeWant(episode.episodeId)!.status"
+                                  :attempt-count="getEpisodeWant(episode.episodeId)!.attemptCount"
+                                  :last-error="getEpisodeWant(episode.episodeId)!.lastError"
+                                  :progress="
+                                    getEpisodeWantProgress(
+                                      season.seasonNumber,
+                                      episode.episodeNumber,
+                                    )
+                                  "
+                                  :hold="getEpisodeWant(episode.episodeId)!.hold"
+                                />
+                                <!-- A held want is never auto-searched; offer the same
+                                     manual Download flow as an untracked episode so the
+                                     user can fulfill it themselves. -->
+                                <Button
+                                  v-if="getEpisodeWant(episode.episodeId)!.hold === 'needs_pick'"
+                                  size="sm"
+                                  variant="outline"
+                                  class="h-7 text-xs"
+                                  @click="
+                                    searchForEpisodeCandidates(
+                                      season.seasonNumber,
+                                      episode.episodeNumber,
+                                    )
+                                  "
+                                >
+                                  <Download class="size-3 mr-1.5" />
+                                  Download
+                                </Button>
+                              </div>
+                              <!-- Proposed: a release was picked and parked for
+                                   confirmation. Approve grabs it; Decline excludes it
+                                   and re-searches. Both act on the one proposal.id, so
+                                   acting from any episode a pack covers resolves it. -->
+                              <div
+                                v-if="
+                                  getEpisodeWant(episode.episodeId)!.hold === 'proposed' &&
+                                  getEpisodeProposal(episode.episodeId)
+                                "
+                                class="flex flex-col items-end gap-1"
+                              >
+                                <p
+                                  class="max-w-[16rem] truncate text-xs text-muted-foreground"
+                                  :title="getEpisodeProposal(episode.episodeId)!.candidateTitle"
+                                >
+                                  {{ getEpisodeProposal(episode.episodeId)!.candidateTitle }}
+                                </p>
+                                <p class="text-[11px] text-muted-foreground">
+                                  {{ formatBytes(getEpisodeProposal(episode.episodeId)!.size) }} ·
+                                  {{ getEpisodeProposal(episode.episodeId)!.seeders }} seeders
+                                  <span v-if="getEpisodeProposal(episode.episodeId)!.isPack">
+                                    · covers
+                                    {{
+                                      getEpisodeProposal(episode.episodeId)!.coveredEpisodeIds
+                                        ?.length ?? 0
+                                    }}
+                                    episodes
+                                  </span>
+                                </p>
+                                <div class="flex items-center gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    class="h-7 text-xs"
+                                    :disabled="proposalPending"
+                                    @click="
+                                      approveProposal.mutate({
+                                        path: { id: getEpisodeProposal(episode.episodeId)!.id },
+                                      })
+                                    "
+                                  >
+                                    <Sparkles class="size-3 mr-1.5" />
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    class="h-7 text-xs"
+                                    :disabled="proposalPending"
+                                    @click="
+                                      declineProposal.mutate({
+                                        path: { id: getEpisodeProposal(episode.episodeId)!.id },
+                                      })
+                                    "
+                                  >
+                                    <X class="size-3 mr-1.5" />
+                                    Decline
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          </template>
                           <!-- Episode is downloading individually -->
                           <template
                             v-else-if="getEpisodeJob(season.seasonNumber, episode.episodeNumber)"
@@ -212,12 +319,22 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useQuery } from '@tanstack/vue-query'
-import { Download, Check } from 'lucide-vue-next'
-import { mediaGetSeriesOptions } from '@/client/@tanstack/vue-query.gen'
-import type { SeasonDetail } from '@/client/types.gen'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+import { toast } from 'vue-sonner'
+import { Download, Check, Sparkles, X } from 'lucide-vue-next'
+import {
+  mediaGetSeriesOptions,
+  trackingByTmdbOptions,
+  trackingByTmdbQueryKey,
+  trackingProposalsOptions,
+  trackingProposalsQueryKey,
+  proposalsApproveMutation,
+  proposalsDeclineMutation,
+} from '@/client/@tanstack/vue-query.gen'
+import type { SeasonDetail, Want, ProposalView } from '@/client/types.gen'
+import { formatBytes } from '@/lib/format'
+import { problemMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
@@ -225,6 +342,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import CircularProgress from '@/components/ui/progress/CircularProgress.vue'
 import type { CircularProgressState } from '@/components/ui/progress/CircularProgress.vue'
 import MediaHero from '@/components/media/MediaHero.vue'
+import MediaHeroSkeleton from '@/components/media/MediaHeroSkeleton.vue'
 import RatingBadge from '@/components/media/RatingBadge.vue'
 import Poster from '@/components/poster/Poster.vue'
 import RailCast from '@/components/rails/RailCast.vue'
@@ -236,6 +354,8 @@ import { buildMetadataSubtitle } from '@/lib/utils'
 import { statusLabel } from '@/lib/mediaStatus'
 import { useDownloadJobs, type DownloadJob } from '@/composables/useDownloadJobs'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
+import SeriesAcquisitionControl from '@/components/acquisition/SeriesAcquisitionControl.vue'
+import WantStatusPill from '@/components/acquisition/WantStatusPill.vue'
 
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
@@ -255,6 +375,145 @@ const id = computed(() => {
 
 const { isLoading, isError, data } = useQuery(
   computed(() => mediaGetSeriesOptions({ path: { id: id.value } })),
+)
+
+// Per-episode acquisition state. A 404 means untracked (no wants), read as an
+// empty map below — don't burn retries on it. The generic want_updated SSE
+// binding invalidates every trackingByTmdb query, keeping this live.
+const { data: tracking } = useQuery(
+  computed(() => ({
+    ...trackingByTmdbOptions({ path: { tmdbId: id.value }, query: { type: 'series' } }),
+    retry: false,
+  })),
+)
+
+// Wants keyed by episodeId — the join the grid needs, since wants reference
+// episodeId while the episode rows key on (season, episode) numbers.
+const wantByEpisode = computed(() => {
+  const map = new Map<string, Want>()
+  for (const w of tracking.value?.wants ?? []) {
+    if (w.episodeId) map.set(w.episodeId, w)
+  }
+  return map
+})
+
+// The want that should drive an episode's action area: a live one mid-flight or
+// failed. 'available' shows via the file indicator; 'canceled' falls through to
+// the manual Download so the episode can be re-grabbed.
+function getEpisodeWant(episodeId?: string): Want | undefined {
+  if (!episodeId) return undefined
+  const want = wantByEpisode.value.get(episodeId)
+  if (!want || want.status === 'available' || want.status === 'canceled') return undefined
+  return want
+}
+
+const queryClient = useQueryClient()
+const trackingId = computed(() => tracking.value?.tracking?.id)
+
+// Open proposals for this tracking — the picks parked for one-tap approval when a
+// segment's autonomy is 'propose'. Dependent on the resolved tracking id; the
+// proposal_updated SSE binding invalidates this key to keep it live.
+const { data: proposals } = useQuery(
+  computed(() => ({
+    ...trackingProposalsOptions({ path: { id: trackingId.value! } }),
+    enabled: !!trackingId.value,
+  })),
+)
+
+// Proposals keyed by episodeId. A pack proposal covers several episodes, so each
+// of its coveredEpisodeIds maps to the same proposal object — Approve/Decline from
+// any covered episode acts on that one proposal.id.
+const proposalByEpisode = computed(() => {
+  const map = new Map<string, ProposalView>()
+  for (const p of proposals.value ?? []) {
+    for (const epId of p.coveredEpisodeIds ?? []) map.set(epId, p)
+  }
+  return map
+})
+
+function getEpisodeProposal(episodeId?: string): ProposalView | undefined {
+  if (!episodeId) return undefined
+  return proposalByEpisode.value.get(episodeId)
+}
+
+function invalidateProposalState() {
+  queryClient.invalidateQueries({
+    queryKey: trackingProposalsQueryKey({ path: { id: trackingId.value! } }),
+  })
+  queryClient.invalidateQueries({
+    queryKey: trackingByTmdbQueryKey({ path: { tmdbId: id.value }, query: { type: 'series' } }),
+  })
+}
+
+const approveProposal = useMutation({
+  ...proposalsApproveMutation(),
+  onSuccess: () => {
+    toast.success('Approved — grabbing now')
+    invalidateProposalState()
+  },
+  onError: (err) => toast.error(problemMessage(err, 'Failed to approve')),
+})
+
+const declineProposal = useMutation({
+  ...proposalsDeclineMutation(),
+  onSuccess: () => {
+    toast.success('Declined — searching for a different release')
+    invalidateProposalState()
+  },
+  onError: (err) => toast.error(problemMessage(err, 'Failed to decline')),
+})
+
+const proposalPending = computed(
+  () => approveProposal.isPending.value || declineProposal.isPending.value,
+)
+
+// Download progress (0-100) for a want-driven episode, from its live job.
+function getEpisodeWantProgress(seasonNumber: number, episodeNumber: number): number | null {
+  const job = getEpisodeJob(seasonNumber, episodeNumber)
+  if (!job) return null
+  return Math.round((job.progress ?? 0) * 100)
+}
+
+const availableEpisodeCount = computed(
+  () =>
+    data.value?.seasons?.reduce(
+      (sum, s) => sum + (s.episodes?.filter((e) => e.available).length ?? 0),
+      0,
+    ) ?? 0,
+)
+const totalEpisodeCount = computed(
+  () => data.value?.seasons?.reduce((sum, s) => sum + (s.episodes?.length ?? 0), 0) ?? 0,
+)
+
+// Aired episodes are the back-catalog the tracking would backfill. Counting them
+// (air date on-or-before now, specials excluded — scope presets never select
+// season 0) lets the track dialog show the stakes and skip the scope question
+// for an upcoming series with nothing aired.
+const airedEpisodeCount = computed(() => {
+  const now = Date.now()
+  return (
+    data.value?.seasons?.reduce(
+      (sum, s) =>
+        s.seasonNumber >= 1
+          ? sum +
+            (s.episodes?.filter((e) => e.airDate && new Date(e.airDate).getTime() <= now).length ??
+              0)
+          : sum,
+      0,
+    ) ?? 0
+  )
+})
+
+// Regular seasons only, for the scope card's "N episodes · M seasons" line.
+const seasonCount = computed(
+  () => data.value?.seasons?.filter((s) => s.seasonNumber >= 1).length ?? 0,
+)
+
+// A series still has new episodes to come unless it's definitively over. Fails
+// open on 'unknown' (unmapped provider status) — wrongly hiding the "new
+// episodes" choice locks the user out, wrongly showing it is harmless.
+const hasOngoing = computed(
+  () => data.value?.status !== 'ended' && data.value?.status !== 'canceled',
 )
 
 const firstAirYear = computed(() =>

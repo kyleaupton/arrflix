@@ -11,11 +11,12 @@ if ('scrollRestoration' in history) {
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   scrollBehavior(_to, _from, savedPosition) {
-    // Delay scroll until after the page transition (150ms) completes
     return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve(savedPosition || { top: 0 })
-      }, 160)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          resolve(savedPosition || { top: 0 })
+        })
+      })
     })
   },
   routes: [

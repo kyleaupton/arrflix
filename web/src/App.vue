@@ -34,8 +34,9 @@ watch(
   { immediate: true },
 )
 
-// Track navbar opaque state separately so it updates after the leave transition,
-// preventing the navbar from snapping before the old page has faded out.
+// Navbar opacity is committed once the outgoing page has been removed (on
+// after-leave), so it flips in lockstep with the incoming page rather than
+// snapping to the new route's layout a frame early.
 const navbarOpaque = ref(route.meta.layout !== 'immersive')
 
 const onPageAfterLeave = () => {

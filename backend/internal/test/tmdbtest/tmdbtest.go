@@ -251,6 +251,40 @@ func (s *Server) OnPersonDetails(id int64, details tmdb.PersonDetails) {
 	})
 }
 
+// SeasonEpisode builds one episode inside a TV season-details response. Tests
+// supply these so they don't have to construct golang-tmdb's anonymous episode
+// struct by hand.
+type SeasonEpisode struct {
+	ID            int64
+	EpisodeNumber int
+	Name          string
+	AirDate       string // "2024-01-15"; empty for unaired/unknown
+}
+
+// OnTVSeasonDetails handles GET /tv/{seriesID}/season/{season} — what
+// SyncSeriesStructure calls per season to enumerate episodes for the tree sync.
+func (s *Server) OnTVSeasonDetails(seriesID int64, season int, episodes ...SeasonEpisode) {
+	eps := make([]map[string]any, 0, len(episodes))
+	for _, e := range episodes {
+		eps = append(eps, map[string]any{
+			"id":             e.ID,
+			"episode_number": e.EpisodeNumber,
+			"name":           e.Name,
+			"air_date":       e.AirDate,
+			"season_number":  season,
+		})
+	}
+	body := map[string]any{
+		"_id":           fmt.Sprintf("season-%d", season),
+		"season_number": season,
+		"episodes":      eps,
+	}
+	path := fmt.Sprintf("/tv/%d/season/%d", seriesID, season)
+	s.register(http.MethodGet, path, func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, body)
+	})
+}
+
 // OnTVEpisodeDetails handles GET /tv/{seriesID}/season/{season}/episode/{episode} —
 // what the scan / persistConfident path calls when it needs an episode
 // title for a matched series file.

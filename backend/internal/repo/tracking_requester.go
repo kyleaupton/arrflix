@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/uuid"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
@@ -11,30 +12,40 @@ import (
 
 // AddRequesterParams is the domain-shaped input for AddRequester. Mirrors the
 // writeable subset of model.TrackingRequester (omits server-managed
-// timestamps).
+// timestamps). ScopeSeason is non-nil only for ScopeRule "season";
+// ScopeOverrides is nil when there are no per-episode overrides.
 type AddRequesterParams struct {
-	TrackingID uuid.UUID
-	UserID     uuid.UUID
-	Tier       string
+	TrackingID     uuid.UUID
+	UserID         uuid.UUID
+	Tier           string
+	ScopeRule      string
+	ScopeSeason    *int32
+	ScopeOverrides json.RawMessage
 }
 
 // toModelTrackingRequester translates a persistence-shaped
 // dbgen.TrackingRequester into the domain-shaped model.TrackingRequester.
 func toModelTrackingRequester(row dbgen.TrackingRequester) model.TrackingRequester {
 	return model.TrackingRequester{
-		TrackingID: uuidFromPgtype(row.TrackingID),
-		UserID:     uuidFromPgtype(row.UserID),
-		Tier:       row.Tier,
-		CreatedAt:  row.CreatedAt,
-		UpdatedAt:  row.UpdatedAt,
+		TrackingID:     uuidFromPgtype(row.TrackingID),
+		UserID:         uuidFromPgtype(row.UserID),
+		Tier:           row.Tier,
+		ScopeRule:      row.ScopeRule,
+		ScopeSeason:    row.ScopeSeason,
+		ScopeOverrides: json.RawMessage(row.ScopeOverrides),
+		CreatedAt:      row.CreatedAt,
+		UpdatedAt:      row.UpdatedAt,
 	}
 }
 
 func (r *Repository) AddRequester(ctx context.Context, params AddRequesterParams) (model.TrackingRequester, error) {
 	row, err := r.Q.AddRequester(ctx, dbgen.AddRequesterParams{
-		TrackingID: pgtypeFromUUID(params.TrackingID),
-		UserID:     pgtypeFromUUID(params.UserID),
-		Tier:       params.Tier,
+		TrackingID:     pgtypeFromUUID(params.TrackingID),
+		UserID:         pgtypeFromUUID(params.UserID),
+		Tier:           params.Tier,
+		ScopeRule:      params.ScopeRule,
+		ScopeSeason:    params.ScopeSeason,
+		ScopeOverrides: params.ScopeOverrides,
 	})
 	if err != nil {
 		return model.TrackingRequester{}, apperrors.FromPg(err, "add requester %s to tracking %s", params.UserID, params.TrackingID)

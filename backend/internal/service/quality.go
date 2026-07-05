@@ -577,3 +577,15 @@ func (s *QualityProfileService) Pick(ctx context.Context, profileID uuid.UUID, s
 	}
 	return prof.Pick(s.reg, subjects), nil
 }
+
+// StrictlyBetterQuality resolves the profile and reports whether candidate is a
+// strictly better pick than current on bin+score alone — the comparison the
+// propose supersede uses, where both sides are the {Bin,Score} a proposal
+// persists. Mirrors Pick's resolve-then-delegate shape.
+func (s *QualityProfileService) StrictlyBetterQuality(ctx context.Context, profileID uuid.UUID, current, candidate qualityprofile.FileQuality) (bool, error) {
+	prof, err := s.Resolve(ctx, profileID)
+	if err != nil {
+		return false, err
+	}
+	return prof.StrictlyBetterQuality(current, candidate), nil
+}

@@ -13,9 +13,9 @@ import (
 
 // ----- Handler -----
 
-// Tracking is the read-only observability surface over the tracking primitive
-// and its wants and requesters. The spawn write path lives on the Requests
-// handler; state transitions (pause/resume/cancel) are out of PoC scope.
+// Tracking is the observability surface over the tracking primitive and its
+// wants and requesters, plus the cancel (stop-tracking) write. The spawn write
+// path lives on the Requests handler; pause/resume/archive remain out of scope.
 type Tracking struct{ svc *service.Services }
 
 func NewTracking(s *service.Services) *Tracking { return &Tracking{svc: s} }
@@ -75,11 +75,13 @@ func (h *Tracking) ListWants(ctx context.Context, input *TrackingWantsInput) (*T
 // ----- Get by TMDB id -----
 
 type TrackingByTmdbInput struct {
-	TmdbID int64 `path:"tmdbId" minimum:"1" doc:"TMDB id of the movie"`
+	TmdbID int64  `path:"tmdbId" minimum:"1" doc:"TMDB id of the media item"`
+	Type   string `query:"type" enum:"movie,series" default:"movie" doc:"Media domain"`
 }
 
-// TrackingByTmdb is the acquisition state for a movie keyed by TMDB id: the
-// tracking plus its wants. Movie-only in the PoC, so there is one want.
+// TrackingByTmdb is the acquisition state for a media item keyed by TMDB id: the
+// tracking plus its wants. A movie has one want; a series has one want per
+// in-scope episode.
 type TrackingByTmdb struct {
 	Tracking model.Tracking `json:"tracking"`
 	Wants    []model.Want   `json:"wants"`
@@ -90,11 +92,43 @@ type TrackingByTmdbOutput struct {
 }
 
 func (h *Tracking) GetByTmdb(ctx context.Context, input *TrackingByTmdbInput) (*TrackingByTmdbOutput, error) {
-	tracking, wants, err := h.svc.Tracking.GetByTmdbID(ctx, input.TmdbID)
+	tracking, wants, err := h.svc.Tracking.GetByTmdbID(ctx, input.TmdbID, input.Type)
 	if err != nil {
 		return nil, err
 	}
 	return &TrackingByTmdbOutput{Body: TrackingByTmdb{Tracking: tracking, Wants: wants}}, nil
+}
+
+// ----- Cancel -----
+
+type TrackingCancelInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Tracking ID"`
+}
+
+func (h *Tracking) Cancel(ctx context.Context, input *TrackingCancelInput) (*TrackingOutput, error) {
+	out, err := h.svc.Tracking.Cancel(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &TrackingOutput{Body: out}, nil
+}
+
+// ----- Set autonomy -----
+
+type TrackingSetAutonomyInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"Tracking ID"`
+	Body struct {
+		Backfill string `json:"backfill" required:"true" enum:"auto,propose,manual" doc:"Autonomy for backfill wants (atoms dated before the tracking was created)"`
+		Ongoing  string `json:"ongoing" required:"true" enum:"auto,propose,manual" doc:"Autonomy for ongoing wants (atoms dated after the tracking was created)"`
+	}
+}
+
+func (h *Tracking) SetAutonomy(ctx context.Context, input *TrackingSetAutonomyInput) (*TrackingOutput, error) {
+	out, err := h.svc.Tracking.SetAutonomy(ctx, input.ID, input.Body.Backfill, input.Body.Ongoing)
+	if err != nil {
+		return nil, err
+	}
+	return &TrackingOutput{Body: out}, nil
 }
 
 // ----- List requesters -----
@@ -149,10 +183,30 @@ func (h *Tracking) RegisterHumachi(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/tracking/by-tmdb/{tmdbId}",
 		Summary:     "Get tracking by TMDB id",
-		Description: "Resolves a movie's acquisition state (tracking + wants) from its TMDB id. Returns 404 when the movie is not tracked.",
+		Description: "Resolves a media item's acquisition state (tracking + wants) from its TMDB id and type. Returns 404 when the item is not tracked.",
 		Tags:        []string{"tracking"},
 		Errors:      errsRead,
 	}, h.GetByTmdb)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "tracking-cancel",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/tracking/{id}/cancel",
+		Summary:     "Stop tracking",
+		Description: "Cancels in-flight wants (and their download jobs) and marks the tracking canceled. Already-available wants and their files are left intact.",
+		Tags:        []string{"tracking"},
+		Errors:      errsRead,
+	}, h.Cancel)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "tracking-set-autonomy",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/tracking/{id}/autonomy",
+		Summary:     "Set tracking autonomy",
+		Description: "Sets per-segment acquisition autonomy (backfill and ongoing) to 'auto', 'propose', or 'manual', reconciling the segment's live wants to match (manual holds them; auto and propose release held ones).",
+		Tags:        []string{"tracking"},
+		Errors:      errsUpsert,
+	}, h.SetAutonomy)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "tracking-requesters",

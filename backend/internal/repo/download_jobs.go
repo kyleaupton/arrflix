@@ -2,9 +2,11 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -14,10 +16,14 @@ type DownloadJobsRepo interface {
 	CreateDownloadJob(ctx context.Context, params CreateDownloadJobParams) (model.DownloadJob, error)
 	GetDownloadJob(ctx context.Context, id uuid.UUID) (model.DownloadJob, error)
 	GetDownloadJobByCandidate(ctx context.Context, indexerID int64, guid string) (model.DownloadJob, error)
+	FindActiveDownloadJobByGuid(ctx context.Context, indexerID int64, guid string) (model.DownloadJob, bool, error)
 	GetDownloadJobWithImportSummary(ctx context.Context, id uuid.UUID) (model.DownloadJobWithSummary, error)
 	GetDownloadJobTimeline(ctx context.Context, downloadJobID uuid.UUID) ([]model.DownloadJobTimelineEvent, error)
 	ListDownloadJobsByMediaItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.DownloadJob, error)
 	ListActiveDownloadJobsByWant(ctx context.Context, wantID uuid.UUID) ([]model.DownloadJob, error)
+	LinkDownloadJobWant(ctx context.Context, jobID, wantID uuid.UUID) error
+	UnlinkDownloadJobWant(ctx context.Context, jobID, wantID uuid.UUID) error
+	ListWantsByDownloadJob(ctx context.Context, jobID uuid.UUID) ([]model.Want, error)
 	ListDownloadJobsByTmdbMovieID(ctx context.Context, tmdbMovieID int64) ([]model.DownloadJob, error)
 	ListDownloadJobsByTmdbSeriesID(ctx context.Context, tmdbSeriesID int64) ([]model.DownloadJobBySeriesEntry, error)
 	ListDownloadJobs(ctx context.Context) ([]model.DownloadJob, error)
@@ -50,7 +56,6 @@ type CreateDownloadJobParams struct {
 	MediaItemID    uuid.UUID
 	SeasonID       uuid.UUID
 	EpisodeID      uuid.UUID
-	WantID         uuid.UUID
 	IndexerID      int64
 	Guid           string
 	CandidateTitle string
@@ -62,7 +67,8 @@ type CreateDownloadJobParams struct {
 
 // SetDownloadJobDownloadSnapshotParams is the domain-shaped input for
 // SetDownloadJobDownloadSnapshot. Mirrors the columns the worker writes
-// while polling downloader state.
+// while polling downloader state. NextRunAt rotates the polled job to the back
+// of the claim queue so newly-created jobs aren't starved.
 type SetDownloadJobDownloadSnapshotParams struct {
 	ID               uuid.UUID
 	Status           string
@@ -73,6 +79,7 @@ type SetDownloadJobDownloadSnapshotParams struct {
 	DownloadSpeed    *int64
 	EtaSeconds       *int64
 	TotalSize        *int64
+	NextRunAt        time.Time
 }
 
 // ScheduleDownloadJobRetryParams is the domain-shaped input for
@@ -130,7 +137,6 @@ func toModelDownloadJob(row dbgen.DownloadJob) model.DownloadJob {
 		MediaItemID:          uuidFromPgtype(row.MediaItemID),
 		SeasonID:             uuidFromPgtype(row.SeasonID),
 		EpisodeID:            uuidFromPgtype(row.EpisodeID),
-		WantID:               uuidFromPgtype(row.WantID),
 		LibraryID:            uuidFromPgtype(row.LibraryID),
 		NameTemplateID:       uuidFromPgtype(row.NameTemplateID),
 		DownloaderID:         uuidFromPgtype(row.DownloaderID),
@@ -170,7 +176,6 @@ func toModelDownloadJobWithSummary(row dbgen.GetDownloadJobWithImportSummaryRow)
 			MediaItemID:          uuidFromPgtype(row.MediaItemID),
 			SeasonID:             uuidFromPgtype(row.SeasonID),
 			EpisodeID:            uuidFromPgtype(row.EpisodeID),
-			WantID:               uuidFromPgtype(row.WantID),
 			LibraryID:            uuidFromPgtype(row.LibraryID),
 			NameTemplateID:       uuidFromPgtype(row.NameTemplateID),
 			DownloaderID:         uuidFromPgtype(row.DownloaderID),
@@ -225,7 +230,6 @@ func toModelDownloadJobWithSummaryFromList(row dbgen.ListDownloadJobsWithImportS
 			MediaItemID:          uuidFromPgtype(row.MediaItemID),
 			SeasonID:             uuidFromPgtype(row.SeasonID),
 			EpisodeID:            uuidFromPgtype(row.EpisodeID),
-			WantID:               uuidFromPgtype(row.WantID),
 			LibraryID:            uuidFromPgtype(row.LibraryID),
 			NameTemplateID:       uuidFromPgtype(row.NameTemplateID),
 			DownloaderID:         uuidFromPgtype(row.DownloaderID),
@@ -280,7 +284,6 @@ func toModelDownloadJobBySeriesEntry(row dbgen.ListDownloadJobsByTmdbSeriesIDRow
 			MediaItemID:          uuidFromPgtype(row.MediaItemID),
 			SeasonID:             uuidFromPgtype(row.SeasonID),
 			EpisodeID:            uuidFromPgtype(row.EpisodeID),
-			WantID:               uuidFromPgtype(row.WantID),
 			LibraryID:            uuidFromPgtype(row.LibraryID),
 			NameTemplateID:       uuidFromPgtype(row.NameTemplateID),
 			DownloaderID:         uuidFromPgtype(row.DownloaderID),
@@ -321,7 +324,6 @@ func toModelDownloadJobHistoryEntry(row dbgen.GetDownloadJobHistoryRow) model.Do
 			MediaItemID:          uuidFromPgtype(row.MediaItemID),
 			SeasonID:             uuidFromPgtype(row.SeasonID),
 			EpisodeID:            uuidFromPgtype(row.EpisodeID),
-			WantID:               uuidFromPgtype(row.WantID),
 			LibraryID:            uuidFromPgtype(row.LibraryID),
 			NameTemplateID:       uuidFromPgtype(row.NameTemplateID),
 			DownloaderID:         uuidFromPgtype(row.DownloaderID),
@@ -383,7 +385,6 @@ func (r *Repository) CreateDownloadJob(ctx context.Context, params CreateDownloa
 		MediaItemID:    pgtypeFromUUID(params.MediaItemID),
 		SeasonID:       pgtypeFromUUIDOrNull(params.SeasonID),
 		EpisodeID:      pgtypeFromUUIDOrNull(params.EpisodeID),
-		WantID:         pgtypeFromUUIDOrNull(params.WantID),
 		IndexerID:      params.IndexerID,
 		Guid:           params.Guid,
 		CandidateTitle: params.CandidateTitle,
@@ -415,6 +416,25 @@ func (r *Repository) GetDownloadJobByCandidate(ctx context.Context, indexerID in
 		return model.DownloadJob{}, apperrors.FromPg(err, "download job for candidate %d/%q not found", indexerID, guid)
 	}
 	return toModelDownloadJob(row), nil
+}
+
+// FindActiveDownloadJobByGuid returns the in-flight download_job for a candidate,
+// the find half of the season-pack grab's find-or-create. The bool reports whether
+// one exists: false (a 0-row match, surfaced as pgx.ErrNoRows) means no in-flight
+// job for this (indexer_id, guid) — the caller creates one. A completed pack is
+// deliberately not reused.
+func (r *Repository) FindActiveDownloadJobByGuid(ctx context.Context, indexerID int64, guid string) (model.DownloadJob, bool, error) {
+	row, err := r.Q.FindActiveDownloadJobByGuid(ctx, dbgen.FindActiveDownloadJobByGuidParams{
+		IndexerID: indexerID,
+		Guid:      guid,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.DownloadJob{}, false, nil
+		}
+		return model.DownloadJob{}, false, apperrors.FromPg(err, "find active download job for candidate %d/%q", indexerID, guid)
+	}
+	return toModelDownloadJob(row), true, nil
 }
 
 func (r *Repository) GetDownloadJobWithImportSummary(ctx context.Context, id uuid.UUID) (model.DownloadJobWithSummary, error) {
@@ -459,6 +479,26 @@ func (r *Repository) ListActiveDownloadJobsByWant(ctx context.Context, wantID uu
 		out = append(out, toModelDownloadJob(row))
 	}
 	return out, nil
+}
+
+// LinkDownloadJobWant records the download_job↔want edge, idempotently. The grab
+// tx calls it after creating the job; a converging grab that re-links a covered
+// want is a no-op (ON CONFLICT DO NOTHING).
+func (r *Repository) LinkDownloadJobWant(ctx context.Context, jobID, wantID uuid.UUID) error {
+	return apperrors.FromPg(r.Q.LinkDownloadJobWant(ctx, dbgen.LinkDownloadJobWantParams{
+		DownloadJobID: pgtypeFromUUID(jobID),
+		WantID:        pgtypeFromUUID(wantID),
+	}), "link download job %s to want %s", jobID, wantID)
+}
+
+// UnlinkDownloadJobWant removes one download_job↔want edge, the inverse of
+// LinkDownloadJobWant. The back-half calls it when releasing an under-covered want
+// so it detaches from the pack job.
+func (r *Repository) UnlinkDownloadJobWant(ctx context.Context, jobID, wantID uuid.UUID) error {
+	return apperrors.FromPg(r.Q.UnlinkDownloadJobWant(ctx, dbgen.UnlinkDownloadJobWantParams{
+		DownloadJobID: pgtypeFromUUID(jobID),
+		WantID:        pgtypeFromUUID(wantID),
+	}), "unlink download job %s from want %s", jobID, wantID)
 }
 
 func (r *Repository) ListDownloadJobsByTmdbMovieID(ctx context.Context, tmdbMovieID int64) ([]model.DownloadJob, error) {
@@ -551,6 +591,7 @@ func (r *Repository) SetDownloadJobDownloadSnapshot(ctx context.Context, params 
 		DownloadSpeed:    params.DownloadSpeed,
 		EtaSeconds:       params.EtaSeconds,
 		TotalSize:        params.TotalSize,
+		NextRunAt:        params.NextRunAt,
 	})
 	if err != nil {
 		return model.DownloadJob{}, apperrors.FromPg(err, "update download job %s snapshot", params.ID)
@@ -595,12 +636,30 @@ func (r *Repository) MarkDownloadJobFailed(ctx context.Context, id uuid.UUID, la
 	return toModelDownloadJob(row), nil
 }
 
+// RetryDownloadJob creates a successor job (via previous_job_id) from a failed
+// one and copies the predecessor's want links onto it, so a retried download
+// still advances its want(s). Both writes share one transaction — the successor
+// is never left without the wants it inherits.
 func (r *Repository) RetryDownloadJob(ctx context.Context, id uuid.UUID) (model.DownloadJob, error) {
-	row, err := r.Q.RetryDownloadJob(ctx, pgtypeFromUUID(id))
+	var newJob model.DownloadJob
+	err := r.InTx(ctx, func(tx *Repository) error {
+		row, err := tx.Q.RetryDownloadJob(ctx, pgtypeFromUUID(id))
+		if err != nil {
+			return apperrors.FromPg(err, "retry download job %s", id)
+		}
+		if err := tx.Q.CopyDownloadJobWants(ctx, dbgen.CopyDownloadJobWantsParams{
+			ToJobID:   row.ID,
+			FromJobID: pgtypeFromUUID(id),
+		}); err != nil {
+			return apperrors.FromPg(err, "copy want links from download job %s", id)
+		}
+		newJob = toModelDownloadJob(row)
+		return nil
+	})
 	if err != nil {
-		return model.DownloadJob{}, apperrors.FromPg(err, "retry download job %s", id)
+		return model.DownloadJob{}, err
 	}
-	return toModelDownloadJob(row), nil
+	return newJob, nil
 }
 
 func (r *Repository) GetDownloadJobHistory(ctx context.Context, id uuid.UUID) ([]model.DownloadJobHistoryEntry, error) {
