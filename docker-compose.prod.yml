@@ -32,7 +32,7 @@ services:
     ports:
       - "${ARRFLIX_PROD_PORT:-8484}:8484"
     volumes:
-      - ${MEDIA_LIBRARIES}:/data
+      - ${PROD_MEDIA_LIBRARIES}:/data
       - arrflix_prod_pg_data:/var/lib/postgresql/data
     restart: unless-stopped
 
