@@ -49,6 +49,10 @@
       <Search class="mr-2 size-4" />
       Search manually
     </Button>
+
+    <!-- Overflow actions — only meaningful once tracked (retry re-drives this
+         movie's want). -->
+    <TrackingActionsMenu v-if="trackingId" :tracking-id="trackingId" />
   </div>
 </template>
 
@@ -77,6 +81,7 @@ import { useAuthStore } from '@/stores/auth'
 import { isProblem, problemMessage } from '@/lib/api'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
 import WantStatusPill from './WantStatusPill.vue'
+import TrackingActionsMenu from './TrackingActionsMenu.vue'
 
 // tmdbId doubles as the movie route id the download-jobs endpoint is keyed on.
 const props = defineProps<{ tmdbId: number }>()
@@ -101,6 +106,9 @@ const {
 )
 
 const want = computed(() => tracking.value?.wants?.[0] ?? null)
+
+// Present only when the movie is tracked — gates the overflow menu.
+const trackingId = computed(() => tracking.value?.tracking?.id ?? null)
 
 // Download jobs for this movie, to correlate download progress onto the want.
 // A movie tracking is single-atom (one want, one in-flight job), and the list is

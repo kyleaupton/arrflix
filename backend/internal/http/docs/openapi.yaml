@@ -5087,6 +5087,26 @@ components:
         - createdAt
         - updatedAt
       type: object
+    TrackingRetryResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/TrackingRetryResult.json
+          format: uri
+          readOnly: true
+          type: string
+        retried:
+          description: Number of wants re-armed or nudged to search now
+          format: int64
+          type: integer
+        tracking:
+          $ref: "#/components/schemas/Tracking"
+      required:
+        - tracking
+        - retried
+      type: object
     TrackingSetAutonomyInputBody:
       additionalProperties: false
       properties:
@@ -10682,6 +10702,47 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: List a tracking's requesters
+      tags:
+        - tracking
+  /api/v1/tracking/{id}/retry:
+    post:
+      description: Re-arms terminal ('failed'/'canceled') wants and nudges pending wants to search immediately, resuming a tracking wedged by a transient outage or a since-fixed indexer. Parked (held), in-flight, and already-available wants are left untouched. Returns 404 when the tracking doesn't exist.
+      operationId: tracking-retry
+      parameters:
+        - description: Tracking ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Tracking ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingRetryResult"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Retry a tracking's acquisition
       tags:
         - tracking
   /api/v1/tracking/{id}/wants:

@@ -255,6 +255,28 @@ WHERE id = sqlc.arg(id)
   AND status IN ('failed', 'canceled')
 RETURNING *;
 
+-- RetryTrackingWants re-drives every still-acquirable want of one tracking in a
+-- single statement: a terminal ('failed'/'canceled') want is re-armed (attempt
+-- counter and error reset), and a 'pending' want is nudged to search now. Both
+-- land at next_run_at = now() so the AcquisitionWorker claims them on its next
+-- poll. The hold IS NULL guard leaves parked wants untouched — a 'needs_pick'
+-- want still awaits its manual pick and a 'proposed' want its operator decision,
+-- neither of which a retry should force. In-flight ('searching'/'grabbed'/
+-- 'downloading'/'imported') and 'available' wants fall outside the status set and
+-- are left alone. Returns the wants it re-drove. Re-stamping the manual gate on a
+-- re-armed want in a manual segment is the caller's concern (mirrors RearmWant).
+-- name: RetryTrackingWants :many
+UPDATE want
+SET status = 'pending',
+    attempt_count = CASE WHEN status IN ('failed', 'canceled') THEN 0 ELSE attempt_count END,
+    last_error = CASE WHEN status IN ('failed', 'canceled') THEN NULL ELSE last_error END,
+    next_run_at = now(),
+    updated_at = now()
+WHERE tracking_id = sqlc.arg(tracking_id)
+  AND status IN ('pending', 'failed', 'canceled')
+  AND hold IS NULL
+RETURNING *;
+
 -- MarkWantFailed terminally fails a want. Mirrors MarkDownloadJobFailed. The
 -- 'searching' guard keeps the worker from clobbering a want the reaper reset and
 -- another worker re-grabbed.

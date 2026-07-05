@@ -62,6 +62,35 @@ shell:
 rebuild:
     docker compose up -d --build {{container}}
 
+# --- prod-like ---------------------------------------------------------------
+# Build and run the published-image experience locally. docker/Dockerfile.prod
+# built for the host arch only (no QEMU) — minutes, not the ~15 the multi-arch
+# CI build takes. One all-in-one container, APP_ENV=prod, fresh onboarding, a
+# postgres volume isolated from dev. Host port defaults to 8484; override with
+# ARRFLIX_PROD_PORT in .env.
+
+prod-compose := "docker compose -f docker-compose.prod.yml"
+
+# Build the prod image locally (host arch only).
+[group('prod')]
+prod-build:
+    {{prod-compose}} build
+
+# Build (if needed) and start the prod-like container in the background.
+[group('prod')]
+prod-up:
+    {{prod-compose}} up -d --build
+
+# Stop and remove the prod-like container.
+[group('prod')]
+prod-down:
+    {{prod-compose}} down
+
+# Tail prod-like container logs.
+[group('prod')]
+prod-logs:
+    {{prod-compose}} logs -f
+
 # --- backend (in-container) --------------------------------------------------
 
 # Format Go code (gofmt -w).

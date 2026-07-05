@@ -108,6 +108,62 @@ func applyAutonomyToSegment(ctx context.Context, r *repo.Repository, trackingID 
 	return err
 }
 
+// Retry re-drives a tracking's acquisition: every terminal ('failed'/'canceled')
+// want is re-armed and every 'pending' want is nudged to search immediately, so a
+// tracking wedged by a transient outage — or one whose indexer config was just
+// fixed — resumes at once instead of waiting out its scheduled cadence. Parked
+// wants ('needs_pick'/'proposed' holds), in-flight wants, and 'available' wants
+// are all left untouched.
+//
+// The whole change runs in one transaction. A want re-armed in a manual segment
+// is re-held ('needs_pick') so the retry lands back under the manual gate rather
+// than slipping into auto-search — the bulk analogue of rearmMovieWant's
+// re-stamp. A retry also reactivates a tracking that Cancel parked in 'canceled'.
+// Returns the reactivated tracking and the count of wants re-driven; no SSE is
+// emitted, so the acting client invalidates and refetches the want list.
+func (s *TrackingService) Retry(ctx context.Context, trackingID uuid.UUID) (model.Tracking, int, error) {
+	var tracking model.Tracking
+	var retried int
+	err := s.repo.InTx(ctx, func(r *repo.Repository) error {
+		var err error
+		tracking, err = r.GetTracking(ctx, trackingID) // 404 flows through
+		if err != nil {
+			return err
+		}
+
+		wants, err := r.RetryTrackingWants(ctx, trackingID)
+		if err != nil {
+			return err
+		}
+		retried = len(wants)
+
+		// Re-stamp needs_pick on any manual segment so a re-armed want lands back
+		// under the manual gate rather than auto-searching. The query's hold IS
+		// NULL guard makes this idempotent on the segment's already-held wants.
+		for _, seg := range []model.WantSegment{model.WantSegmentBackfill, model.WantSegmentOngoing} {
+			if tracking.AutonomyFor(seg) == model.AutonomyManual {
+				if _, err := r.HoldWantsForSegment(ctx, trackingID, string(seg)); err != nil {
+					return err
+				}
+			}
+		}
+
+		// A retry reactivates a tracking Cancel parked in 'canceled'; a no-op for
+		// an already-active one.
+		if tracking.State != string(model.TrackingActive) {
+			tracking, err = r.SetTrackingState(ctx, trackingID, string(model.TrackingActive))
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return model.Tracking{}, 0, err
+	}
+	return tracking, retried, nil
+}
+
 func (s *TrackingService) List(ctx context.Context) ([]model.Tracking, error) {
 	return s.repo.ListTrackings(ctx)
 }

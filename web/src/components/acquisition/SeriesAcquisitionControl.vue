@@ -45,6 +45,9 @@
           </SelectContent>
         </Select>
       </label>
+
+      <!-- Overflow actions — retry re-drives this series' wants. -->
+      <TrackingActionsMenu v-if="trackingId" :tracking-id="trackingId" />
     </template>
 
     <!-- A genuine (non-404) load failure: 404 is the untracked signal, anything
@@ -86,6 +89,7 @@ import {
 import { useModal } from '@/composables/useModal'
 import { useAuthStore } from '@/stores/auth'
 import TrackSeriesDialog from '@/components/modals/TrackSeriesDialog.vue'
+import TrackingActionsMenu from './TrackingActionsMenu.vue'
 import { isProblem, problemMessage } from '@/lib/api'
 
 // availableCount/totalCount are computed by the parent from the already-loaded
@@ -124,6 +128,9 @@ const {
 )
 
 const isTracked = computed(() => !!tracking.value?.tracking)
+
+// Present only when tracked — gates the overflow menu.
+const trackingId = computed(() => tracking.value?.tracking?.id ?? null)
 
 const availableCount = computed(() => props.availableCount ?? 0)
 const totalCount = computed(() => props.totalCount ?? 0)

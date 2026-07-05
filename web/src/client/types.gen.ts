@@ -2164,6 +2164,18 @@ export type TrackingRequester = {
     userId: string;
 };
 
+export type TrackingRetryResult = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Number of wants re-armed or nudged to search now
+     */
+    retried: number;
+    tracking: Tracking;
+};
+
 export type TrackingSetAutonomyInputBody = {
     /**
      * A URL to the JSON Schema for this object.
@@ -3303,6 +3315,14 @@ export type TrackingWritable = {
 export type TrackingByTmdbWritable = {
     tracking: TrackingWritable;
     wants: Array<WantWritable> | null;
+};
+
+export type TrackingRetryResultWritable = {
+    /**
+     * Number of wants re-armed or nudged to search now
+     */
+    retried: number;
+    tracking: TrackingWritable;
 };
 
 export type TrackingSetAutonomyInputBodyWritable = {
@@ -8075,6 +8095,44 @@ export type TrackingRequestersResponses = {
 };
 
 export type TrackingRequestersResponse = TrackingRequestersResponses[keyof TrackingRequestersResponses];
+
+export type TrackingRetryData = {
+    body?: never;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}/retry';
+};
+
+export type TrackingRetryErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingRetryError = TrackingRetryErrors[keyof TrackingRetryErrors];
+
+export type TrackingRetryResponses = {
+    /**
+     * OK
+     */
+    200: TrackingRetryResult;
+};
+
+export type TrackingRetryResponse = TrackingRetryResponses[keyof TrackingRetryResponses];
 
 export type TrackingWantsData = {
     body?: never;

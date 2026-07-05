@@ -362,6 +362,24 @@ func (r *Repository) RearmWant(ctx context.Context, id uuid.UUID) (model.Want, b
 	return toModelWant(row), true, nil
 }
 
+// RetryTrackingWants re-drives a tracking's still-acquirable wants — re-arming
+// terminal ('failed'/'canceled') ones and nudging 'pending' ones to search now —
+// returning the wants it touched. Parked (held) and in-flight/'available' wants
+// are left untouched by the query. Re-stamping the manual gate on a re-armed want
+// in a manual segment is the service's concern (see TrackingService.Retry). Backs
+// the tracking-level retry endpoint.
+func (r *Repository) RetryTrackingWants(ctx context.Context, trackingID uuid.UUID) ([]model.Want, error) {
+	rows, err := r.Q.RetryTrackingWants(ctx, pgtypeFromUUID(trackingID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "retry wants for tracking %s", trackingID)
+	}
+	out := make([]model.Want, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelWant(row))
+	}
+	return out, nil
+}
+
 // MarkWantFailed terminally fails a still-'searching' want via compare-and-swap.
 // The bool reports ownership: false (a 0-row CAS, surfaced as pgx.ErrNoRows)
 // means the want is no longer 'searching' — the reaper reset it and another

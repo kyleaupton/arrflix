@@ -131,6 +131,31 @@ func (h *Tracking) SetAutonomy(ctx context.Context, input *TrackingSetAutonomyIn
 	return &TrackingOutput{Body: out}, nil
 }
 
+// ----- Retry -----
+
+type TrackingRetryInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"Tracking ID"`
+}
+
+// TrackingRetryResult reports the outcome of a retry: the (reactivated) tracking
+// and how many wants were re-armed or nudged to search now.
+type TrackingRetryResult struct {
+	Tracking model.Tracking `json:"tracking"`
+	Retried  int            `json:"retried" doc:"Number of wants re-armed or nudged to search now"`
+}
+
+type TrackingRetryOutput struct {
+	Body TrackingRetryResult
+}
+
+func (h *Tracking) Retry(ctx context.Context, input *TrackingRetryInput) (*TrackingRetryOutput, error) {
+	tracking, retried, err := h.svc.Tracking.Retry(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &TrackingRetryOutput{Body: TrackingRetryResult{Tracking: tracking, Retried: retried}}, nil
+}
+
 // ----- List requesters -----
 
 type TrackingRequestersInput struct {
@@ -207,6 +232,16 @@ func (h *Tracking) RegisterHumachi(api huma.API) {
 		Tags:        []string{"tracking"},
 		Errors:      errsUpsert,
 	}, h.SetAutonomy)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "tracking-retry",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/tracking/{id}/retry",
+		Summary:     "Retry a tracking's acquisition",
+		Description: "Re-arms terminal ('failed'/'canceled') wants and nudges pending wants to search immediately, resuming a tracking wedged by a transient outage or a since-fixed indexer. Parked (held), in-flight, and already-available wants are left untouched. Returns 404 when the tracking doesn't exist.",
+		Tags:        []string{"tracking"},
+		Errors:      errsRead,
+	}, h.Retry)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "tracking-requesters",

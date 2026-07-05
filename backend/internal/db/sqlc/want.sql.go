@@ -1028,6 +1028,63 @@ func (q *Queries) RescheduleWantRecheck(ctx context.Context, arg RescheduleWantR
 	return i, err
 }
 
+const retryTrackingWants = `-- name: RetryTrackingWants :many
+UPDATE want
+SET status = 'pending',
+    attempt_count = CASE WHEN status IN ('failed', 'canceled') THEN 0 ELSE attempt_count END,
+    last_error = CASE WHEN status IN ('failed', 'canceled') THEN NULL ELSE last_error END,
+    next_run_at = now(),
+    updated_at = now()
+WHERE tracking_id = $1
+  AND status IN ('pending', 'failed', 'canceled')
+  AND hold IS NULL
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+// RetryTrackingWants re-drives every still-acquirable want of one tracking in a
+// single statement: a terminal ('failed'/'canceled') want is re-armed (attempt
+// counter and error reset), and a 'pending' want is nudged to search now. Both
+// land at next_run_at = now() so the AcquisitionWorker claims them on its next
+// poll. The hold IS NULL guard leaves parked wants untouched — a 'needs_pick'
+// want still awaits its manual pick and a 'proposed' want its operator decision,
+// neither of which a retry should force. In-flight ('searching'/'grabbed'/
+// 'downloading'/'imported') and 'available' wants fall outside the status set and
+// are left alone. Returns the wants it re-drove. Re-stamping the manual gate on a
+// re-armed want in a manual segment is the caller's concern (mirrors RearmWant).
+func (q *Queries) RetryTrackingWants(ctx context.Context, trackingID pgtype.UUID) ([]Want, error) {
+	rows, err := q.db.Query(ctx, retryTrackingWants, trackingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.EpisodeID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.Segment,
+			&i.Hold,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const scheduleWantRetry = `-- name: ScheduleWantRetry :one
 UPDATE want
 SET status = 'pending',
