@@ -599,7 +599,7 @@ func (s *MediaService) GetSeriesDetail(ctx context.Context, tmdbID int64) (model
 	// Fetch full season details from TMDB to get episode metadata
 	seasons := make([]model.SeasonDetail, 0, len(tmdbDetails.Seasons))
 	for _, sInfo := range tmdbDetails.Seasons {
-		fullSeason, err := s.tmdb.GetTVSeasonDetails(ctx, tmdbID, int(sInfo.SeasonNumber))
+		fullSeason, err := s.tmdb.GetTVSeasonDetails(ctx, tmdbID, int(sInfo.SeasonNumber), false)
 		if err != nil {
 			s.logger.Debug().Err(err).Int64("tmdb_id", tmdbID).Int("season", int(sInfo.SeasonNumber)).Msg("Failed to fetch full season details")
 			// Fallback to basic info if full fetch fails

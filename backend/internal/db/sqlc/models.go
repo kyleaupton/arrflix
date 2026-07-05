@@ -368,6 +368,22 @@ type FileImport struct {
 	ErrorMessage *string     `json:"error_message"`
 }
 
+type FileOrigin struct {
+	FileID        pgtype.UUID `json:"file_id"`
+	Origin        string      `json:"origin"`
+	SourceTitle   *string     `json:"source_title"`
+	BinSource     *string     `json:"bin_source"`
+	BinResolution *string     `json:"bin_resolution"`
+	BinModifier   *string     `json:"bin_modifier"`
+	ReleaseGroup  *string     `json:"release_group"`
+	Edition       *string     `json:"edition"`
+	Parsed        []byte      `json:"parsed"`
+	IndexerID     *int64      `json:"indexer_id"`
+	Guid          *string     `json:"guid"`
+	DownloadJobID pgtype.UUID `json:"download_job_id"`
+	CapturedAt    time.Time   `json:"captured_at"`
+}
+
 type FileState struct {
 	FileID         pgtype.UUID `json:"file_id"`
 	Exists         bool        `json:"exists"`
@@ -461,27 +477,31 @@ type MediaEpisode struct {
 }
 
 type MediaItem struct {
-	ID                pgtype.UUID        `json:"id"`
-	Type              string             `json:"type"`
-	SeriesType        string             `json:"series_type"`
-	Title             string             `json:"title"`
-	Year              *int32             `json:"year"`
-	TmdbID            *int64             `json:"tmdb_id"`
-	CreatedAt         time.Time          `json:"created_at"`
-	UpdatedAt         time.Time          `json:"updated_at"`
-	PosterPath        *string            `json:"poster_path"`
-	BackdropPath      *string            `json:"backdrop_path"`
-	Overview          *string            `json:"overview"`
-	VoteAverage       *float64           `json:"vote_average"`
-	VoteCount         *int32             `json:"vote_count"`
-	Runtime           *int32             `json:"runtime"`
-	Status            *string            `json:"status"`
-	Certification     *string            `json:"certification"`
-	Genres            []byte             `json:"genres"`
-	ReleaseDate       pgtype.Date        `json:"release_date"`
-	LastAirDate       pgtype.Date        `json:"last_air_date"`
-	InProduction      *bool              `json:"in_production"`
-	MetadataUpdatedAt pgtype.Timestamptz `json:"metadata_updated_at"`
+	ID                      pgtype.UUID        `json:"id"`
+	Type                    string             `json:"type"`
+	SeriesType              string             `json:"series_type"`
+	Title                   string             `json:"title"`
+	Year                    *int32             `json:"year"`
+	TmdbID                  *int64             `json:"tmdb_id"`
+	CreatedAt               time.Time          `json:"created_at"`
+	UpdatedAt               time.Time          `json:"updated_at"`
+	PosterPath              *string            `json:"poster_path"`
+	BackdropPath            *string            `json:"backdrop_path"`
+	Overview                *string            `json:"overview"`
+	VoteAverage             *float64           `json:"vote_average"`
+	VoteCount               *int32             `json:"vote_count"`
+	Runtime                 *int32             `json:"runtime"`
+	Status                  *string            `json:"status"`
+	Certification           *string            `json:"certification"`
+	Genres                  []byte             `json:"genres"`
+	ReleaseDate             pgtype.Date        `json:"release_date"`
+	LastAirDate             pgtype.Date        `json:"last_air_date"`
+	InProduction            *bool              `json:"in_production"`
+	MetadataUpdatedAt       pgtype.Timestamptz `json:"metadata_updated_at"`
+	NextRefreshAt           pgtype.Timestamptz `json:"next_refresh_at"`
+	MetadataLastAttemptedAt pgtype.Timestamptz `json:"metadata_last_attempted_at"`
+	MetadataLastError       *string            `json:"metadata_last_error"`
+	MetadataAttemptCount    int32              `json:"metadata_attempt_count"`
 }
 
 type MediaItemExternalID struct {

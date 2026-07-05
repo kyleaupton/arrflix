@@ -166,7 +166,9 @@ SELECT
   nt.movie_dir_template,
   nt.series_show_template,
   nt.series_season_template,
-  dj.candidate_title
+  dj.candidate_title,
+  dj.indexer_id AS download_indexer_id,
+  dj.guid AS download_guid
 FROM import_task it
 JOIN media_item mi ON mi.id = it.media_item_id
 LEFT JOIN media_episode me ON me.id = it.episode_id

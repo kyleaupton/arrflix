@@ -10,10 +10,12 @@ import (
 )
 
 const (
-	batchSize          = 100
-	stalenessThreshold = 7 * 24 * time.Hour
-	backfillPause      = 5 * time.Second
-	refreshInterval    = 15 * time.Minute
+	batchSize     = 100
+	backfillPause = 5 * time.Second
+	// refreshInterval is the sweep cadence. It only bounds how often the due
+	// queue is polled — the actual per-item cadence lives in next_refresh_at
+	// (state-derived), so 15m comfortably serves the tightest (daily) tier.
+	refreshInterval = 15 * time.Minute
 )
 
 // Worker polls for media items with stale or missing metadata and enriches them.
@@ -66,8 +68,7 @@ func (w *Worker) Run(ctx context.Context) {
 }
 
 func (w *Worker) tick(ctx context.Context) int {
-	staleBefore := time.Now().Add(-stalenessThreshold)
-	enriched, err := w.enrichment.EnrichBatch(ctx, staleBefore, batchSize)
+	enriched, err := w.enrichment.EnrichBatch(ctx, time.Now(), batchSize)
 	if err != nil {
 		w.log.Error().Err(err).Msg("enrichment batch failed")
 		return 0

@@ -376,7 +376,9 @@ SELECT
   nt.movie_dir_template,
   nt.series_show_template,
   nt.series_season_template,
-  dj.candidate_title
+  dj.candidate_title,
+  dj.indexer_id AS download_indexer_id,
+  dj.guid AS download_guid
 FROM import_task it
 JOIN media_item mi ON mi.id = it.media_item_id
 LEFT JOIN media_episode me ON me.id = it.episode_id
@@ -423,6 +425,8 @@ type GetImportTaskWithDetailsRow struct {
 	SeriesShowTemplate   *string       `json:"series_show_template"`
 	SeriesSeasonTemplate *string       `json:"series_season_template"`
 	CandidateTitle       *string       `json:"candidate_title"`
+	DownloadIndexerID    *int64        `json:"download_indexer_id"`
+	DownloadGuid         *string       `json:"download_guid"`
 }
 
 // Get import task with related media info and name template
@@ -465,6 +469,8 @@ func (q *Queries) GetImportTaskWithDetails(ctx context.Context, id pgtype.UUID) 
 		&i.SeriesShowTemplate,
 		&i.SeriesSeasonTemplate,
 		&i.CandidateTitle,
+		&i.DownloadIndexerID,
+		&i.DownloadGuid,
 	)
 	return i, err
 }

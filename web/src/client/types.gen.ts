@@ -877,6 +877,8 @@ export type ImportTaskWithDetails = {
     candidateTitle: string | null;
     createdAt: string;
     destPath: string | null;
+    downloadGuid: string | null;
+    downloadIndexerId: number | null;
     downloadJobId: string;
     episodeId: string;
     episodeNumber: number | null;
@@ -2588,6 +2590,8 @@ export type ImportTaskWithDetailsWritable = {
     candidateTitle: string | null;
     createdAt: string;
     destPath: string | null;
+    downloadGuid: string | null;
+    downloadIndexerId: number | null;
     downloadJobId: string;
     episodeId: string;
     episodeNumber: number | null;

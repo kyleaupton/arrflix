@@ -59,6 +59,11 @@ type ImportTaskWithDetails struct {
 	SeriesShowTemplate   *string `json:"seriesShowTemplate"`
 	SeriesSeasonTemplate *string `json:"seriesSeasonTemplate"`
 	CandidateTitle       *string `json:"candidateTitle"`
+	// DownloadIndexerID / DownloadGuid are the originating grab's durable
+	// release identity, copied onto file_origin so it survives download_job
+	// pruning. Nil for the interactive/legacy import path (no download_job).
+	DownloadIndexerID *int64  `json:"downloadIndexerId"`
+	DownloadGuid      *string `json:"downloadGuid"`
 }
 
 // ImportTaskHistoryEntry is a row in the reimport chain. Mirrors the

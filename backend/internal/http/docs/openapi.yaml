@@ -2230,6 +2230,15 @@ components:
           type:
             - string
             - "null"
+        downloadGuid:
+          type:
+            - string
+            - "null"
+        downloadIndexerId:
+          format: int64
+          type:
+            - integer
+            - "null"
         downloadJobId:
           type: string
         episodeId:
@@ -2336,6 +2345,8 @@ components:
         - seriesShowTemplate
         - seriesSeasonTemplate
         - candidateTitle
+        - downloadIndexerId
+        - downloadGuid
         - id
         - status
         - downloadJobId

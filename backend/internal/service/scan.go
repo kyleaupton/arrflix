@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/jobs/jobutil"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/matcher"
 	"github.com/kyleaupton/arrflix/internal/metadata"
@@ -388,11 +389,13 @@ func (s *ScannerService) toFileRefs(ctx context.Context, library model.Library, 
 	}
 	refs := make([]matcher.FileRef, 0, len(collected))
 	for _, f := range collected {
-		id, err := s.ensureFileRow(ctx, library.ID, f)
+		// Parse before minting the row so ensureFileRow can stamp file_origin
+		// from the same parse the matcher's FileRef carries — one parse, two uses.
+		parsed := parsing.Parse(f.RelPath, domain, parsing.AsPath())
+		id, err := s.ensureFileRow(ctx, library.ID, domain, f, parsed)
 		if err != nil {
 			return nil, err
 		}
-		parsed := parsing.Parse(f.RelPath, domain, parsing.AsPath())
 		refs = append(refs, matcher.FileRef{
 			ID:          id,
 			Path:        f.AbsPath,
@@ -410,7 +413,7 @@ func (s *ScannerService) toFileRefs(ctx context.Context, library model.Library, 
 // that was no_match on scan #1 and confident on scan #2 keeps the same id
 // so the supersede chain points at the same logical file. The row exists
 // before MatchBatch runs because the decision's FK to file requires it.
-func (s *ScannerService) ensureFileRow(ctx context.Context, libraryID uuid.UUID, f collectedFile) (uuid.UUID, error) {
+func (s *ScannerService) ensureFileRow(ctx context.Context, libraryID uuid.UUID, domain parsing.Domain, f collectedFile, parsed parsing.ParsedRelease) (uuid.UUID, error) {
 	existing, err := s.repo.GetFileByLibraryAndPath(ctx, repo.GetFileByLibraryAndPathParams{
 		LibraryID: libraryID,
 		Path:      f.RelPath,
@@ -436,6 +439,16 @@ func (s *ScannerService) ensureFileRow(ctx context.Context, libraryID uuid.UUID,
 		SizeBytes: f.FileSize,
 		OsdbHash:  f.OsdbHash,
 	}); err != nil {
+		return uuid.Nil, err
+	}
+	// Stamp provenance the first time the row is minted: origin='scan',
+	// source_title = the relpath as first discovered (before any arrflix
+	// rename). Insert-once, so a re-scan after a rename never overwrites it.
+	// No grab fields — scan-discovered bytes have no originating release. Not in
+	// a tx: a third sequential call, consistent with the two above.
+	if err := s.repo.CreateFileOriginIfAbsent(ctx, jobutil.FileOriginParams(
+		id, "scan", f.RelPath, parsed, domain, nil, nil, nil,
+	)); err != nil {
 		return uuid.Nil, err
 	}
 	return id, nil

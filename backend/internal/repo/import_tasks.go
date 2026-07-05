@@ -167,6 +167,8 @@ func toModelImportTaskWithDetails(row dbgen.GetImportTaskWithDetailsRow) model.I
 		SeriesShowTemplate:   row.SeriesShowTemplate,
 		SeriesSeasonTemplate: row.SeriesSeasonTemplate,
 		CandidateTitle:       row.CandidateTitle,
+		DownloadIndexerID:    row.DownloadIndexerID,
+		DownloadGuid:         row.DownloadGuid,
 	}
 }
 

@@ -24,6 +24,7 @@ It does **not** pin down exact column types, indexes, or API shapes. As with the
 - **Series structure sync** is new and load-bearing: the [refresh engine](../sources/README.md#the-refresh-engine) (provider-agnostic scheduler + dispatched provider operations) pulls the full season/episode tree, including **unaired episodes**, so tracking and smart scheduling have something to operate on.
 - **Local overrides** are designed in now (model + read-time precedence), UI later.
 - **Refresh policy** is cadence-by-state: in-production weekly, recently-aired daily, ended monthly, manual immediate. Background worker drives the queue.
+- **One freshness clock.** `metadata_updated_at` means *upstream was actually consulted* — a refresh that reads a cached copy must never stamp it fresh. Canonical reads bypass the provider response cache, and the **engine (not the cache) owns freshness _and_ fetch granularity** — it skips immutable seasons rather than re-pulling the whole tree. See [Freshness invariant](#freshness-invariant).
 - **Images** continue to load direct from TMDB CDN in v1; local cache is deferred.
 - **Provider strategy lives in [sources](../sources/README.md).** This doc stays provider-agnostic: one canonical writer (TMDB) owns the columns, consumers see an internal domain type, and **raw-payload retention is the portability mechanism** — replacing a provider is a one-adapter job, not a rewrite. Roles are segregated seams, not one fat interface.
 - People (cast/crew) and per-user language preference are explicitly **out of scope**.
@@ -162,6 +163,8 @@ For each series, on a sync cycle:
 4. **External IDs** — fetch TMDB's `external_ids` endpoint for the series; upsert TVDB and IMDB IDs into `media_item_external_id`. The per-episode equivalent (TMDB → TVDB episode ID) is **deferred** — `media_episode_external_id` ships with its first consumer; the source data (`seasonDetails.Episodes[].TVDBID`) is already in the payload we fetch, so capture is cheap whenever it's wanted.
 5. **Raw payload** — store the full TMDB response in `media_metadata_source` keyed by `(media_item_id, source: tmdb)`.
 
+**Not every refresh re-fetches every season.** The list above is the shape of a *full* sync (first sync, or a forced refresh). Which seasons a routine refresh actually pulls from upstream is a [fetch-granularity](../sources/README.md#fetch-granularity) decision the engine makes: it re-fetches the series-level record plus the *mutable* seasons (current/most-recent, and any with unaired episodes) and skips immutable ended seasons — bounding both call volume and born-at-spawn latency for long-running series.
+
 ### Pre-air episodes
 
 We **store unaired episodes**. `air_date` is in the future (or NULL for announced-but-undated). They appear in:
@@ -243,6 +246,14 @@ The full provider strategy — role-segregated seams, the cost-to-enable taxonom
 ## Refresh & staleness policy
 
 The cadence tables above describe *what* the policy is; this section describes the staleness model and the triggers that feed it. The engine that *drains* that work — the provider-agnostic scheduler and the dispatched provider operations — is the [refresh engine](../sources/README.md#the-refresh-engine) in [sources](../sources/README.md), which conforms to [work-dispatch](../../patterns/work-dispatch/README.md) (the due-queue) and [connectivity-health](../../patterns/connectivity-health/README.md) (rate-limit / reachability state).
+
+### Freshness invariant
+
+**`metadata_updated_at` means *when upstream was actually consulted* — never "when we last copied a value from a cache."** (Same for its per-episode sibling and `media_metadata_source.fetched_at`.) A refresh that materializes canonical fields from a *cached* upstream response must not stamp them fresh: doing so makes the system trust stale data, and turns even a manual "refresh metadata" action into a lie.
+
+The hazard is that **two caches hold the same upstream bytes**, with independent freshness clocks: the durable, normalized `media_item` + `media_metadata_source` tree — whose TTL *is* this refresh policy — and the provider-layer response cache (keyed on URL-shaped strings). Stack them and the outer cadence ("re-check this airing show daily") is silently defeated by the inner cache serving a week-old body, then stamped `now()`. The [born-at-spawn](#series-structure-sync-the-foundation-gap) path carries the same bug in miniature: browse a series (warming the response cache), request it six days later, and it is born with six-day-old data stamped fresh — so the engine won't revisit it for a full cadence.
+
+The mechanism that upholds this — canonical reads consult upstream, not the response cache — is owned by [sources' refresh engine](../sources/README.md#reconciling-with-the-response-cache). This invariant is the persistence-side contract that mechanism must guarantee, honored whether the fetch bypasses the response cache (the default) or propagates the cached body's true fetch timestamp.
 
 ### Trigger sources
 

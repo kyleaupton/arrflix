@@ -8,9 +8,11 @@ import (
 
 	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/jobs/jobutil"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
@@ -212,6 +214,12 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 			f    model.File
 			ferr error
 		)
+		// closedWorldCreate is true only when this commit MINTS the file row —
+		// the genuine manual/closed-world create. The normal manual-match flow
+		// takes the SetFileIdentity branch (the row exists from scan) and stamps
+		// nothing, so those files keep origin='scan': provenance tracks how the
+		// bytes entered, not when identity was assigned.
+		closedWorldCreate := false
 		if _, gerr := r.GetFile(ctx, in.FileID); gerr == nil {
 			f, ferr = r.SetFileIdentity(ctx, repo.SetFileIdentityParams{
 				ID:          in.FileID,
@@ -229,6 +237,7 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 				EpisodeID:   episodeIDPtr,
 				Edition:     in.Edition,
 			})
+			closedWorldCreate = true
 		} else {
 			return gerr
 		}
@@ -243,6 +252,19 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 			OsdbHash:  in.OsdbHash,
 		}); serr != nil {
 			return serr
+		}
+
+		if closedWorldCreate {
+			domain := parsing.DomainSeries
+			if in.Library.Type == "movie" {
+				domain = parsing.DomainMovie
+			}
+			parsed := parsing.Parse(in.RelPath, domain, parsing.AsPath())
+			if oerr := r.CreateFileOriginIfAbsent(ctx, jobutil.FileOriginParams(
+				f.ID, "manual", in.RelPath, parsed, domain, nil, nil, nil,
+			)); oerr != nil {
+				return oerr
+			}
 		}
 
 		method := in.Method
