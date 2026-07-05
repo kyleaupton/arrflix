@@ -1699,6 +1699,7 @@ export type Request = {
     deniedReason: string | null;
     id: string;
     requestedBy: string;
+    scopeRule: string;
     spawnedTrackingId: string;
     status: string;
     tier: string;
@@ -1713,9 +1714,21 @@ export type RequestCreateBody = {
      */
     readonly $schema?: string;
     /**
-     * Requested quality tier
+     * Who picks releases for atoms dated before tracking began (defaults to 'auto')
      */
-    tier: 'HD' | '4K';
+    backfillAutonomy?: 'auto' | 'propose' | 'manual';
+    /**
+     * Who picks releases for atoms dated after tracking began (defaults to 'auto')
+     */
+    ongoingAutonomy?: 'auto' | 'propose' | 'manual';
+    /**
+     * Series scope preset (series only; defaults to 'all')
+     */
+    scopeRule?: 'all' | 'future_only';
+    /**
+     * Requested quality tier (defaults to 'HD'; operator-picked, requesters omit it)
+     */
+    tier?: 'HD' | '4K';
     /**
      * TMDB id of the requested title
      */
@@ -3038,6 +3051,7 @@ export type RequestWritable = {
     deniedReason: string | null;
     id: string;
     requestedBy: string;
+    scopeRule: string;
     spawnedTrackingId: string;
     status: string;
     tier: string;
@@ -3048,9 +3062,21 @@ export type RequestWritable = {
 
 export type RequestCreateBodyWritable = {
     /**
-     * Requested quality tier
+     * Who picks releases for atoms dated before tracking began (defaults to 'auto')
      */
-    tier: 'HD' | '4K';
+    backfillAutonomy?: 'auto' | 'propose' | 'manual';
+    /**
+     * Who picks releases for atoms dated after tracking began (defaults to 'auto')
+     */
+    ongoingAutonomy?: 'auto' | 'propose' | 'manual';
+    /**
+     * Series scope preset (series only; defaults to 'all')
+     */
+    scopeRule?: 'all' | 'future_only';
+    /**
+     * Requested quality tier (defaults to 'HD'; operator-picked, requesters omit it)
+     */
+    tier?: 'HD' | '4K';
     /**
      * TMDB id of the requested title
      */

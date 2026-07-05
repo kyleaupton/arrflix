@@ -68,6 +68,7 @@ func TestTracking_RoundTrip(t *testing.T) {
 		Type:        "movie",
 		Tier:        "HD",
 		Status:      string(model.RequestPending),
+		ScopeRule:   "all",
 	})
 	if err != nil {
 		t.Fatalf("create request: %v", err)

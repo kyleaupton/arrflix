@@ -36,14 +36,21 @@ func NewRequestService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, 
 	return &RequestService{repo: r, log: l, tmdb: tmdb, quality: quality, enrichment: enrichment, reconcile: reconcile}
 }
 
-// CreateRequestInput is the writeable shape for a new request. Tier is the
-// user-picked quality tier (resolved to a profile at spawn); Type is the media
-// domain (movie-only in the PoC).
+// CreateRequestInput is the writeable shape for a new request. Type is the
+// media domain. Every other field is optional intent with a default: Tier is
+// the quality tier resolved to a profile at spawn (empty → 'HD'); ScopeRule is
+// the requester's series-scope choice, persisted on the request row so it
+// survives the pending state (empty → 'all'; inert for movies); the autonomy
+// pair is the operator's tracking config, applied only on the auto-approve
+// spawn of a fresh tracking (empty → 'auto').
 type CreateRequestInput struct {
-	RequestedBy uuid.UUID
-	TmdbID      int64
-	Type        string
-	Tier        string
+	RequestedBy      uuid.UUID
+	TmdbID           int64
+	Type             string
+	Tier             string
+	ScopeRule        string
+	BackfillAutonomy string
+	OngoingAutonomy  string
 }
 
 // Create turns a request into a tracking. Validation and approval are shared
@@ -62,16 +69,32 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 	if in.Type != string(parsing.DomainMovie) && in.Type != string(parsing.DomainSeries) {
 		fields = append(fields, apperrors.Field("body.type", "must be 'movie' or 'series'"))
 	}
-	tier, tierOK := parseTier(in.Tier)
+	tier, tierOK := normalizeTier(in.Tier)
 	if !tierOK {
 		fields = append(fields, apperrors.Field("body.tier", "must be a known tier ('HD' or '4K')"))
 	}
 	if in.TmdbID <= 0 {
 		fields = append(fields, apperrors.Field("body.tmdbId", "must be a positive TMDB id"))
 	}
+	scopeRule, scopeOK := normalizeSeriesScope(in.ScopeRule)
+	if !scopeOK {
+		fields = append(fields, apperrors.Field("body.scopeRule", "must be 'all' or 'future_only'"))
+	}
+	backfill, backfillOK := normalizeAutonomy(in.BackfillAutonomy)
+	if !backfillOK {
+		fields = append(fields, apperrors.Field("body.backfillAutonomy", "must be 'auto', 'propose', or 'manual'"))
+	}
+	ongoing, ongoingOK := normalizeAutonomy(in.OngoingAutonomy)
+	if !ongoingOK {
+		fields = append(fields, apperrors.Field("body.ongoingAutonomy", "must be 'auto', 'propose', or 'manual'"))
+	}
 	if len(fields) > 0 {
 		return model.Request{}, apperrors.Validation("invalid request", fields...).Op(op)
 	}
+	// Replace the raw inputs with their normalized (defaulted) forms; the spawn
+	// path reads these, not the wire strings.
+	in.Tier = string(tier)
+	in.ScopeRule, in.BackfillAutonomy, in.OngoingAutonomy = scopeRule, backfill, ongoing
 
 	// Read approval. A user with no policy row is not auto-approved (default-deny).
 	userPolicy, err := s.repo.GetUserPolicy(ctx, in.RequestedBy)
@@ -81,7 +104,10 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 		return model.Request{}, err
 	}
 
-	// Not approved: persist the request as pending, no spawn.
+	// Not approved: persist the request as pending, no spawn. Scope rides the
+	// row so an approval-time spawn honors the requester's choice; autonomy
+	// deliberately does not — it's the approving operator's call, not the
+	// requester's.
 	if !evaluateApproval(userPolicy) {
 		return s.repo.CreateRequest(ctx, repo.CreateRequestParams{
 			RequestedBy: in.RequestedBy,
@@ -89,6 +115,7 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 			Type:        in.Type,
 			Tier:        in.Tier,
 			Status:      string(model.RequestPending),
+			ScopeRule:   in.ScopeRule,
 		})
 	}
 
@@ -129,6 +156,7 @@ func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, 
 			Type:        in.Type,
 			Tier:        in.Tier,
 			Status:      string(model.RequestApproved),
+			ScopeRule:   in.ScopeRule,
 		})
 		if err != nil {
 			return err
@@ -160,7 +188,7 @@ func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, 
 		// is single-valued, set from this request's tier on creation; two
 		// requesters at different tiers (HD vs 4K) on one movie is real
 		// multi-tier reconciliation, deferred — the first spawn wins the profile.
-		tracking, trackingCreated, err := ensureTracking(ctx, r, mediaItem.ID, profile.ID)
+		tracking, trackingCreated, err := ensureTracking(ctx, r, mediaItem.ID, profile.ID, in.BackfillAutonomy, in.OngoingAutonomy)
 		if err != nil {
 			return err
 		}
@@ -249,6 +277,7 @@ func (s *RequestService) spawnSeries(ctx context.Context, in CreateRequestInput,
 			Type:        in.Type,
 			Tier:        in.Tier,
 			Status:      string(model.RequestApproved),
+			ScopeRule:   in.ScopeRule,
 		})
 		if err != nil {
 			return err
@@ -274,19 +303,19 @@ func (s *RequestService) spawnSeries(ctx context.Context, in CreateRequestInput,
 			}
 		}
 
-		tracking, _, err = ensureTracking(ctx, r, mediaItem.ID, profile.ID)
+		tracking, _, err = ensureTracking(ctx, r, mediaItem.ID, profile.ID, in.BackfillAutonomy, in.OngoingAutonomy)
 		if err != nil {
 			return err
 		}
 
-		// Seed the requester at scope 'all' — the only preset until a
-		// scope-selection API lands. The reconciler reads this to decide which
-		// episodes to want.
+		// Seed the requester at the chosen scope ('all' or 'future_only',
+		// defaulted to 'all'). The reconciler reads this to decide which episodes
+		// to want; 'future_only' skips the aired back-catalog entirely.
 		if _, err := r.AddRequester(ctx, repo.AddRequesterParams{
 			TrackingID: tracking.ID,
 			UserID:     in.RequestedBy,
 			Tier:       in.Tier,
-			ScopeRule:  string(scope.RuleAll),
+			ScopeRule:  in.ScopeRule,
 		}); err != nil {
 			return err
 		}
@@ -320,7 +349,7 @@ func (s *RequestService) spawnSeries(ctx context.Context, in CreateRequestInput,
 // profile. The helper is neutral — it never reactivates a terminal tracking;
 // re-arming a terminal want on the join path is the caller's concern
 // (rearmMovieWant here, GrabManualWant on the manual-grab path).
-func ensureTracking(ctx context.Context, r *repo.Repository, mediaItemID, profileID uuid.UUID) (model.Tracking, bool, error) {
+func ensureTracking(ctx context.Context, r *repo.Repository, mediaItemID, profileID uuid.UUID, autonomyBackfill, autonomyOngoing string) (model.Tracking, bool, error) {
 	tracking, created, err := r.CreateTrackingIfAbsent(ctx, repo.CreateTrackingParams{
 		MediaItemID:      mediaItemID,
 		QualityProfileID: profileID,
@@ -328,11 +357,12 @@ func ensureTracking(ctx context.Context, r *repo.Repository, mediaItemID, profil
 		Scope:            "self",
 		UpgradeBehavior:  "none",
 		ScheduleStrategy: "smart",
-		// A new tracking is born fully autonomous on both segments. Settings-backed
-		// defaults (per-user auto/propose/manual) are deferred; the user dials
-		// autonomy per tracking via SetAutonomy after the fact.
-		AutonomyBackfill: string(model.AutonomyAuto),
-		AutonomyOngoing:  string(model.AutonomyAuto),
+		// Autonomy is set at add time from the operator's choice (defaulted to
+		// 'auto'/'auto' when unspecified). These params apply only on insert; a
+		// join onto an existing tracking re-reads it below and leaves its autonomy
+		// untouched — autonomy is tracking-level and the first spawn wins.
+		AutonomyBackfill: autonomyBackfill,
+		AutonomyOngoing:  autonomyOngoing,
 	})
 	if err != nil {
 		return model.Tracking{}, false, err
@@ -428,10 +458,42 @@ func parseReleaseDate(s string) *time.Time {
 	return &t
 }
 
-// parseTier maps a tier string to a known qualityprofile.Tier. The PoC accepts
-// the seeded HD/4K tiers.
-func parseTier(s string) (qualityprofile.Tier, bool) {
+// normalizeAutonomy validates an acquisition-autonomy string, mapping the empty
+// string (field omitted) to the born default 'auto'. Returns (normalized, ok);
+// ok is false for an unrecognized value.
+func normalizeAutonomy(s string) (string, bool) {
+	switch s {
+	case "":
+		return string(model.AutonomyAuto), true
+	case string(model.AutonomyAuto), string(model.AutonomyPropose), string(model.AutonomyManual):
+		return s, true
+	default:
+		return "", false
+	}
+}
+
+// normalizeSeriesScope validates a series scope preset, mapping the empty string
+// (field omitted) to the default 'all'. Only the two presets the add-a-series
+// modal offers are accepted; the richer presets need a param the API doesn't yet
+// carry. Returns (normalized, ok).
+func normalizeSeriesScope(s string) (string, bool) {
+	switch s {
+	case "":
+		return string(scope.RuleAll), true
+	case string(scope.RuleAll), string(scope.RuleFutureOnly):
+		return s, true
+	default:
+		return "", false
+	}
+}
+
+// normalizeTier maps a tier string to a known qualityprofile.Tier, with the
+// empty string (field omitted — requesters don't pick quality) defaulting to
+// HD. The PoC accepts the seeded HD/4K tiers. Returns (normalized, ok).
+func normalizeTier(s string) (qualityprofile.Tier, bool) {
 	switch qualityprofile.Tier(s) {
+	case "":
+		return qualityprofile.TierHD, true
 	case qualityprofile.TierHD, qualityprofile.Tier4K:
 		return qualityprofile.Tier(s), true
 	default:

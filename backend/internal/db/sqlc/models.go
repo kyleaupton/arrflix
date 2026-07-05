@@ -614,6 +614,7 @@ type Request struct {
 	DeniedReason      *string     `json:"denied_reason"`
 	CreatedAt         time.Time   `json:"created_at"`
 	UpdatedAt         time.Time   `json:"updated_at"`
+	ScopeRule         string      `json:"scope_rule"`
 }
 
 type Role struct {

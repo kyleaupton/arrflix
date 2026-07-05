@@ -30,8 +30,12 @@
           <template #actions>
             <SeriesAcquisitionControl
               :tmdb-id="id"
+              :title="data.title"
               :available-count="availableEpisodeCount"
               :total-count="totalEpisodeCount"
+              :aired-episode-count="airedEpisodeCount"
+              :season-count="seasonCount"
+              :has-ongoing="hasOngoing"
             />
           </template>
         </MediaHero>
@@ -479,6 +483,37 @@ const availableEpisodeCount = computed(
 )
 const totalEpisodeCount = computed(
   () => data.value?.seasons?.reduce((sum, s) => sum + (s.episodes?.length ?? 0), 0) ?? 0,
+)
+
+// Aired episodes are the back-catalog the tracking would backfill. Counting them
+// (air date on-or-before now, specials excluded — scope presets never select
+// season 0) lets the track dialog show the stakes and skip the scope question
+// for an upcoming series with nothing aired.
+const airedEpisodeCount = computed(() => {
+  const now = Date.now()
+  return (
+    data.value?.seasons?.reduce(
+      (sum, s) =>
+        s.seasonNumber >= 1
+          ? sum +
+            (s.episodes?.filter((e) => e.airDate && new Date(e.airDate).getTime() <= now).length ??
+              0)
+          : sum,
+      0,
+    ) ?? 0
+  )
+})
+
+// Regular seasons only, for the scope card's "N episodes · M seasons" line.
+const seasonCount = computed(
+  () => data.value?.seasons?.filter((s) => s.seasonNumber >= 1).length ?? 0,
+)
+
+// A series still has new episodes to come unless it's definitively over. Fails
+// open on 'unknown' (unmapped provider status) — wrongly hiding the "new
+// episodes" choice locks the user out, wrongly showing it is harmless.
+const hasOngoing = computed(
+  () => data.value?.status !== 'ended' && data.value?.status !== 'canceled',
 )
 
 const firstAirYear = computed(() =>

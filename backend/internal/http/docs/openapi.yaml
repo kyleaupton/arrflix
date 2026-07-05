@@ -4131,6 +4131,8 @@ components:
           type: string
         requestedBy:
           type: string
+        scopeRule:
+          type: string
         spawnedTrackingId:
           type: string
         status:
@@ -4151,6 +4153,7 @@ components:
         - tmdbId
         - type
         - tier
+        - scopeRule
         - status
         - spawnedTrackingId
         - deniedReason
@@ -4167,8 +4170,28 @@ components:
           format: uri
           readOnly: true
           type: string
+        backfillAutonomy:
+          description: Who picks releases for atoms dated before tracking began (defaults to 'auto')
+          enum:
+            - auto
+            - propose
+            - manual
+          type: string
+        ongoingAutonomy:
+          description: Who picks releases for atoms dated after tracking began (defaults to 'auto')
+          enum:
+            - auto
+            - propose
+            - manual
+          type: string
+        scopeRule:
+          description: Series scope preset (series only; defaults to 'all')
+          enum:
+            - all
+            - future_only
+          type: string
         tier:
-          description: Requested quality tier
+          description: Requested quality tier (defaults to 'HD'; operator-picked, requesters omit it)
           enum:
             - HD
             - 4K
@@ -4187,7 +4210,6 @@ components:
       required:
         - tmdbId
         - type
-        - tier
       type: object
     Resolved:
       additionalProperties: false

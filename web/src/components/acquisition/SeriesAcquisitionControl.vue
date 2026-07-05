@@ -51,37 +51,26 @@
          else is a real error worth showing rather than offering a stale Add. -->
     <p v-else-if="loadError" class="text-sm text-destructive">{{ loadError }}</p>
 
-    <!-- Not tracked: initiate the autonomous flow. The button face depends on
+    <!-- Not tracked: open the track dialog, where quality, scope, and per-segment
+         autonomy are chosen before anything is added. The button face depends on
          whether this user auto-approves. -->
     <template v-else-if="!isLoading">
-      <div class="flex items-center gap-2">
-        <Button :disabled="createRequest.isPending.value" @click="handleAdd">
-          <Plus class="mr-2 size-4" />
-          {{ createRequest.isPending.value ? 'Adding…' : primaryLabel }}
-        </Button>
-        <Select v-model="tier">
-          <SelectTrigger class="w-20" aria-label="Quality tier">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="HD">HD</SelectItem>
-            <SelectItem value="4K">4K</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <Button @click="openTrackDialog">
+        <Plus class="mr-2 size-4" />
+        {{ primaryLabel }}
+      </Button>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Check, Plus, X } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
   trackingByTmdbOptions,
   trackingByTmdbQueryKey,
-  requestsCreateMutation,
   trackingCancelMutation,
   trackingSetAutonomyMutation,
 } from '@/client/@tanstack/vue-query.gen'
@@ -96,21 +85,26 @@ import {
 } from '@/components/ui/select'
 import { useModal } from '@/composables/useModal'
 import { useAuthStore } from '@/stores/auth'
+import TrackSeriesDialog from '@/components/modals/TrackSeriesDialog.vue'
 import { isProblem, problemMessage } from '@/lib/api'
 
 // availableCount/totalCount are computed by the parent from the already-loaded
-// series detail (episodes with files / total), avoiding a second fetch here.
+// series detail. airedEpisodeCount / seasonCount / hasOngoing feed the track
+// dialog's scope cards and decide which questions can apply (no back-catalog,
+// or an ended series).
 const props = defineProps<{
   tmdbId: number
+  title: string
   availableCount?: number
   totalCount?: number
+  airedEpisodeCount?: number
+  seasonCount?: number
+  hasOngoing?: boolean
 }>()
 
 const auth = useAuthStore()
 const modal = useModal()
 const queryClient = useQueryClient()
-
-const tier = ref<'HD' | '4K'>('HD')
 
 const trackingKey = computed(() =>
   trackingByTmdbQueryKey({ path: { tmdbId: props.tmdbId }, query: { type: 'series' } }),
@@ -136,25 +130,20 @@ const totalCount = computed(() => props.totalCount ?? 0)
 
 const primaryLabel = computed(() => (auth.canAutoApproveMovie ? 'Add to Library' : 'Request'))
 
-const createRequest = useMutation({
-  ...requestsCreateMutation(),
-  onSuccess: (req) => {
-    // Two faces of one endpoint: a spawned tracking means the request
-    // auto-approved and is already searching; otherwise it awaits approval.
-    if (req.spawnedTrackingId) {
-      toast.success('Added — searching now')
-    } else {
-      toast.success('Requested — pending approval')
-    }
-    queryClient.invalidateQueries({ queryKey: trackingKey.value })
-  },
-  onError: (err) => {
-    toast.error(problemMessage(err, 'Failed to add to library'))
-  },
-})
-
-function handleAdd() {
-  createRequest.mutate({ body: { tmdbId: props.tmdbId, type: 'series', tier: tier.value } })
+// The dialog owns quality/scope/autonomy selection and fires the create request
+// atomically, so the chosen config lands before any search runs. It invalidates
+// the tracking query itself on success.
+function openTrackDialog() {
+  modal.open(TrackSeriesDialog, {
+    props: {
+      tmdbId: props.tmdbId,
+      title: props.title,
+      airedEpisodeCount: props.airedEpisodeCount ?? 0,
+      seasonCount: props.seasonCount ?? 0,
+      hasOngoing: props.hasOngoing ?? false,
+      isOperator: auth.canAutoApproveMovie,
+    },
+  })
 }
 
 const cancelTracking = useMutation({
