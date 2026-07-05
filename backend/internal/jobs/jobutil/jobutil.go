@@ -24,6 +24,20 @@ func Backoff(attempt int) time.Duration {
 	return time.Duration(math.Pow(2, float64(attempt))) * time.Second
 }
 
+// BackoffCapped is Backoff clamped to max — the delay for an indefinitely
+// retried job, where the exponential ramp must plateau instead of growing
+// unbounded. A retry that never terminally fails (the acquisition front-half's
+// transient-error path) uses this so an outage backs off to a steady ceiling
+// rather than to a delay measured in days. A high attempt count overflows
+// Backoff's int64 (2^attempt seconds), wrapping it negative — treat any
+// non-positive (overflowed) or over-cap delay as the cap.
+func BackoffCapped(attempt int, max time.Duration) time.Duration {
+	if d := Backoff(attempt); d > 0 && d < max {
+		return d
+	}
+	return max
+}
+
 // MirrorWant reflects a download/import lifecycle transition onto the owning want
 // and emits the SSE delta. It is the terminal-sticky mirror the download and
 // import workers share: MirrorWantStatus's CAS leaves a want already

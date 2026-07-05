@@ -102,17 +102,19 @@ func TestRequests_Validation(t *testing.T) {
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 
-	// Series is rejected by the enum (movie-only in the PoC).
+	// An out-of-domain type is rejected by the enum (movie/series only).
 	app.POST(t, "/api/v1/requests", map[string]any{
 		"tmdbId": spawnTmdbID,
-		"type":   "series",
+		"type":   "person",
 		"tier":   "HD",
 	}, nil, http.StatusUnprocessableEntity)
 
-	// Missing required 'tier' fails binding.
+	// An out-of-enum tier is rejected (HD/4K only). An *omitted* tier is legal —
+	// requesters don't pick quality; it defaults to HD.
 	app.POST(t, "/api/v1/requests", map[string]any{
 		"tmdbId": spawnTmdbID,
 		"type":   "movie",
+		"tier":   "8K",
 	}, nil, http.StatusUnprocessableEntity)
 }
 

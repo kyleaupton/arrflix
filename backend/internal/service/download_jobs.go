@@ -76,6 +76,14 @@ func (s *DownloadJobsService) ListImportTasks(ctx context.Context, jobID uuid.UU
 }
 
 // RetryDownload creates a new download job from a failed one, linking via previous_job_id.
+//
+// Post-A2 a failed job's wants are already recovering on their own (the download
+// worker excluded the release and returned them to 'pending' to re-search). A user
+// retry copies the want links onto the successor job, so a want can briefly race
+// two acquisitions — the successor's grab and the autonomous re-search. The grab
+// CAS and alreadyCoveredByPack keep that from double-filing, bounding the blast
+// radius, but it's a known rough edge; the real fix belongs with a retry/rearm
+// rework that reconciles the two paths.
 func (s *DownloadJobsService) RetryDownload(ctx context.Context, id uuid.UUID) (model.DownloadJobWithSummary, error) {
 	// Fetch existing job to validate state
 	job, err := s.repo.GetDownloadJob(ctx, id)

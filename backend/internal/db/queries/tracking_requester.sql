@@ -3,10 +3,20 @@
 -- AddRequester joins a user to a tracking, or refreshes their tier if they were
 -- already a requester. Idempotent on (tracking_id, user_id).
 -- name: AddRequester :one
-INSERT INTO tracking_requester (tracking_id, user_id, tier)
-VALUES (sqlc.arg(tracking_id), sqlc.arg(user_id), sqlc.arg(tier))
+INSERT INTO tracking_requester (tracking_id, user_id, tier, scope_rule, scope_season, scope_overrides)
+VALUES (
+  sqlc.arg(tracking_id),
+  sqlc.arg(user_id),
+  sqlc.arg(tier),
+  sqlc.arg(scope_rule),
+  sqlc.narg(scope_season),
+  sqlc.narg(scope_overrides)
+)
 ON CONFLICT (tracking_id, user_id) DO UPDATE
 SET tier = excluded.tier,
+    scope_rule = excluded.scope_rule,
+    scope_season = excluded.scope_season,
+    scope_overrides = excluded.scope_overrides,
     updated_at = now()
 RETURNING *;
 

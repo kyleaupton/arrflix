@@ -1,13 +1,14 @@
 -- Requests: the frozen user-intent artifact.
 
 -- name: CreateRequest :one
-INSERT INTO request (requested_by, tmdb_id, type, tier, status)
+INSERT INTO request (requested_by, tmdb_id, type, tier, status, scope_rule)
 VALUES (
   sqlc.arg(requested_by),
   sqlc.arg(tmdb_id),
   sqlc.arg(type),
   sqlc.arg(tier),
-  sqlc.arg(status)
+  sqlc.arg(status),
+  sqlc.arg(scope_rule)
 )
 RETURNING *;
 

@@ -246,7 +246,6 @@ export type DownloadJob = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
-    wantId: string;
 };
 
 export type DownloadJobBySeriesEntry = {
@@ -281,7 +280,6 @@ export type DownloadJobBySeriesEntry = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
-    wantId: string;
 };
 
 export type DownloadJobHistoryEntry = {
@@ -315,7 +313,6 @@ export type DownloadJobHistoryEntry = {
     status: string;
     totalSize: number | null;
     updatedAt: string;
-    wantId: string;
 };
 
 export type DownloadJobTimelineEvent = {
@@ -378,7 +375,6 @@ export type DownloadJobWithSummary = {
     totalImportTasks: number;
     totalSize: number | null;
     updatedAt: string;
-    wantId: string;
 };
 
 export type Downloader = {
@@ -526,6 +522,7 @@ export type EnumValue = {
 export type EpisodeAvailability = {
     airDate?: string;
     available: boolean;
+    episodeId: string;
     episodeNumber: number;
     file?: FileInfo;
     overview?: string;
@@ -1482,6 +1479,36 @@ export type ProfileFormat = {
     weight: number;
 };
 
+export type ProposalUpdatedPayload = {
+    trackingId: string;
+};
+
+export type ProposalView = {
+    bin: BinKey;
+    candidateLink: string;
+    candidateTitle: string;
+    coveredEpisodeIds: Array<string> | null;
+    coveredWantIds: Array<string> | null;
+    createdAt: string;
+    downloaderId: string;
+    episodeId?: string;
+    guid: string;
+    id: string;
+    indexerId: number;
+    isPack: boolean;
+    libraryId: string;
+    mediaItemId: string;
+    mediaType: string;
+    nameTemplateId: string;
+    protocol: string;
+    score: number;
+    seasonId?: string;
+    seeders: number;
+    size: number;
+    trackingId: string;
+    updatedAt: string;
+};
+
 export type QualityBinOption = {
     bin: BinKey;
     /**
@@ -1672,6 +1699,7 @@ export type Request = {
     deniedReason: string | null;
     id: string;
     requestedBy: string;
+    scopeRule: string;
     spawnedTrackingId: string;
     status: string;
     tier: string;
@@ -1686,15 +1714,27 @@ export type RequestCreateBody = {
      */
     readonly $schema?: string;
     /**
-     * Requested quality tier
+     * Who picks releases for atoms dated before tracking began (defaults to 'auto')
      */
-    tier: 'HD' | '4K';
+    backfillAutonomy?: 'auto' | 'propose' | 'manual';
+    /**
+     * Who picks releases for atoms dated after tracking began (defaults to 'auto')
+     */
+    ongoingAutonomy?: 'auto' | 'propose' | 'manual';
+    /**
+     * Series scope preset (series only; defaults to 'all')
+     */
+    scopeRule?: 'all' | 'future_only';
+    /**
+     * Requested quality tier (defaults to 'HD'; operator-picked, requesters omit it)
+     */
+    tier?: 'HD' | '4K';
     /**
      * TMDB id of the requested title
      */
     tmdbId: number;
     /**
-     * Media domain (movie-only in the PoC)
+     * Media domain
      */
     type: 'movie' | 'series';
 };
@@ -2089,6 +2129,8 @@ export type Tracking = {
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    autonomyBackfill: string;
+    autonomyOngoing: string;
     createdAt: string;
     id: string;
     mediaItemId: string;
@@ -2111,10 +2153,28 @@ export type TrackingByTmdb = {
 
 export type TrackingRequester = {
     createdAt: string;
+    scopeOverrides?: unknown;
+    scopeRule: string;
+    scopeSeason?: number;
     tier: string;
     trackingId: string;
     updatedAt: string;
     userId: string;
+};
+
+export type TrackingSetAutonomyInputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Autonomy for backfill wants (atoms dated before the tracking was created)
+     */
+    backfill: 'auto' | 'propose' | 'manual';
+    /**
+     * Autonomy for ongoing wants (atoms dated after the tracking was created)
+     */
+    ongoing: 'auto' | 'propose' | 'manual';
 };
 
 export type UpdateDetails = {
@@ -2211,11 +2271,14 @@ export type Want = {
     readonly $schema?: string;
     attemptCount: number;
     createdAt: string;
+    episodeId?: string;
+    hold?: string;
     id: string;
     lastError: string | null;
     mediaItemId: string;
     nextRunAt: string;
     qualityProfileId: string;
+    segment: string;
     status: string;
     trackingId: string;
     updatedAt: string;
@@ -2333,7 +2396,6 @@ export type DownloadJobWithSummaryWritable = {
     totalImportTasks: number;
     totalSize: number | null;
     updatedAt: string;
-    wantId: string;
 };
 
 export type DownloaderWritable = {
@@ -2989,6 +3051,7 @@ export type RequestWritable = {
     deniedReason: string | null;
     id: string;
     requestedBy: string;
+    scopeRule: string;
     spawnedTrackingId: string;
     status: string;
     tier: string;
@@ -2999,15 +3062,27 @@ export type RequestWritable = {
 
 export type RequestCreateBodyWritable = {
     /**
-     * Requested quality tier
+     * Who picks releases for atoms dated before tracking began (defaults to 'auto')
      */
-    tier: 'HD' | '4K';
+    backfillAutonomy?: 'auto' | 'propose' | 'manual';
+    /**
+     * Who picks releases for atoms dated after tracking began (defaults to 'auto')
+     */
+    ongoingAutonomy?: 'auto' | 'propose' | 'manual';
+    /**
+     * Series scope preset (series only; defaults to 'all')
+     */
+    scopeRule?: 'all' | 'future_only';
+    /**
+     * Requested quality tier (defaults to 'HD'; operator-picked, requesters omit it)
+     */
+    tier?: 'HD' | '4K';
     /**
      * TMDB id of the requested title
      */
     tmdbId: number;
     /**
-     * Media domain (movie-only in the PoC)
+     * Media domain
      */
     type: 'movie' | 'series';
 };
@@ -3208,6 +3283,8 @@ export type TierBindingWritable = {
 };
 
 export type TrackingWritable = {
+    autonomyBackfill: string;
+    autonomyOngoing: string;
     createdAt: string;
     id: string;
     mediaItemId: string;
@@ -3222,6 +3299,17 @@ export type TrackingWritable = {
 export type TrackingByTmdbWritable = {
     tracking: TrackingWritable;
     wants: Array<WantWritable> | null;
+};
+
+export type TrackingSetAutonomyInputBodyWritable = {
+    /**
+     * Autonomy for backfill wants (atoms dated before the tracking was created)
+     */
+    backfill: 'auto' | 'propose' | 'manual';
+    /**
+     * Autonomy for ongoing wants (atoms dated after the tracking was created)
+     */
+    ongoing: 'auto' | 'propose' | 'manual';
 };
 
 export type UserWritable = {
@@ -3277,11 +3365,14 @@ export type VersionInfoWritable = {
 export type WantWritable = {
     attemptCount: number;
     createdAt: string;
+    episodeId?: string;
+    hold?: string;
     id: string;
     lastError: string | null;
     mediaItemId: string;
     nextRunAt: string;
     qualityProfileId: string;
+    segment: string;
     status: string;
     trackingId: string;
     updatedAt: string;
@@ -4452,6 +4543,20 @@ export type EventsStreamResponses = {
          * The event name.
          */
         event: 'ping';
+        /**
+         * The event ID (sortable; used for Last-Event-ID resume).
+         */
+        id?: string;
+        /**
+         * The retry time in milliseconds.
+         */
+        retry?: number;
+    } | {
+        data: ProposalUpdatedPayload;
+        /**
+         * The event name.
+         */
+        event: 'proposal_updated';
         /**
          * The event ID (sortable; used for Last-Event-ID resume).
          */
@@ -6381,6 +6486,98 @@ export type MediaGetPersonResponses = {
 
 export type MediaGetPersonResponse = MediaGetPersonResponses[keyof MediaGetPersonResponses];
 
+export type ProposalsApproveData = {
+    body?: never;
+    path: {
+        /**
+         * Proposal ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/proposals/{id}/approve';
+};
+
+export type ProposalsApproveErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type ProposalsApproveError = ProposalsApproveErrors[keyof ProposalsApproveErrors];
+
+export type ProposalsApproveResponses = {
+    /**
+     * OK
+     */
+    200: Array<Want> | null;
+};
+
+export type ProposalsApproveResponse = ProposalsApproveResponses[keyof ProposalsApproveResponses];
+
+export type ProposalsDeclineData = {
+    body?: never;
+    path: {
+        /**
+         * Proposal ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/proposals/{id}/decline';
+};
+
+export type ProposalsDeclineErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type ProposalsDeclineError = ProposalsDeclineErrors[keyof ProposalsDeclineErrors];
+
+export type ProposalsDeclineResponses = {
+    /**
+     * OK
+     */
+    200: Array<Want> | null;
+};
+
+export type ProposalsDeclineResponse = ProposalsDeclineResponses[keyof ProposalsDeclineResponses];
+
 export type QualityListBinsData = {
     body?: never;
     path?: never;
@@ -7638,11 +7835,16 @@ export type TrackingByTmdbData = {
     body?: never;
     path: {
         /**
-         * TMDB id of the movie
+         * TMDB id of the media item
          */
         tmdbId: number;
     };
-    query?: never;
+    query?: {
+        /**
+         * Media domain
+         */
+        type?: 'movie' | 'series';
+    };
     url: '/api/v1/tracking/by-tmdb/{tmdbId}';
 };
 
@@ -7709,6 +7911,128 @@ export type TrackingGetResponses = {
 };
 
 export type TrackingGetResponse = TrackingGetResponses[keyof TrackingGetResponses];
+
+export type TrackingSetAutonomyData = {
+    body: TrackingSetAutonomyInputBodyWritable;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}/autonomy';
+};
+
+export type TrackingSetAutonomyErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingSetAutonomyError = TrackingSetAutonomyErrors[keyof TrackingSetAutonomyErrors];
+
+export type TrackingSetAutonomyResponses = {
+    /**
+     * OK
+     */
+    200: Tracking;
+};
+
+export type TrackingSetAutonomyResponse = TrackingSetAutonomyResponses[keyof TrackingSetAutonomyResponses];
+
+export type TrackingCancelData = {
+    body?: never;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}/cancel';
+};
+
+export type TrackingCancelErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingCancelError = TrackingCancelErrors[keyof TrackingCancelErrors];
+
+export type TrackingCancelResponses = {
+    /**
+     * OK
+     */
+    200: Tracking;
+};
+
+export type TrackingCancelResponse = TrackingCancelResponses[keyof TrackingCancelResponses];
+
+export type TrackingProposalsData = {
+    body?: never;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}/proposals';
+};
+
+export type TrackingProposalsErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingProposalsError = TrackingProposalsErrors[keyof TrackingProposalsErrors];
+
+export type TrackingProposalsResponses = {
+    /**
+     * OK
+     */
+    200: Array<ProposalView> | null;
+};
+
+export type TrackingProposalsResponse = TrackingProposalsResponses[keyof TrackingProposalsResponses];
 
 export type TrackingRequestersData = {
     body?: never;

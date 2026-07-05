@@ -168,6 +168,17 @@ func TestPick(t *testing.T) {
 		}
 	})
 
+	t.Run("seeders break a tie ahead of size", func(t *testing.T) {
+		// Same bin, same score. The healthier swarm wins even though it is the
+		// larger release — seeders outrank the size tiebreak.
+		healthy := subj("BluRay", "1080p", "", 50, 2000, "healthy")
+		stalled := subj("BluRay", "1080p", "", 8, 1000, "stalled")
+		sel := p.Pick(reg, []model.Subject{stalled, healthy})
+		if sel.Picked == nil || sel.Picked.Subject.Release.Candidate.GUID != "healthy" {
+			t.Errorf("picked = %+v, want the higher-seeder release", sel.Picked)
+		}
+	})
+
 	t.Run("size then guid is the deterministic final tiebreak", func(t *testing.T) {
 		big := subj("BluRay", "1080p", "", 10, 2000, "big")
 		small := subj("BluRay", "1080p", "", 10, 1000, "small")
@@ -380,10 +391,55 @@ func TestDefaultProfiles(t *testing.T) {
 		}
 	}
 
+	// Series presets ship without remux (parity with Sonarr's stock profiles);
+	// a per-season remux is far larger for a small fidelity gain.
+	for _, p := range profiles {
+		if p.Domain != parsing.DomainSeries {
+			continue
+		}
+		for _, b := range p.Bins {
+			if b.Modifier == parsing.ModRemux {
+				t.Errorf("%s/%s ships a remux bin %+v; series defaults must omit remux", p.Name, p.Domain, b)
+			}
+		}
+	}
+
 	// Smoke: the HD movie preset grabs a Bluray-1080p release.
 	hdMovie := profiles[0]
 	sel := hdMovie.Pick(reg, []model.Subject{subj("BluRay", "1080p", "", 10, 0, "x")})
 	if sel.Picked == nil {
 		t.Error("HD movie preset failed to pick a Bluray-1080p release")
+	}
+}
+
+// --- StrictlyBetterQuality ---------------------------------------------------
+
+// TestProfile_StrictlyBetterQuality covers the pure bin+score comparator the
+// propose supersede uses: bin rank dominates, score breaks a bin tie, and an
+// equal (or worse) candidate is never better.
+func TestProfile_StrictlyBetterQuality(t *testing.T) {
+	p := testProfile()
+	best := bin(parsing.SourceBluRay, parsing.Res1080p, parsing.ModNone) // rank 0
+	mid := bin(parsing.SourceWEBDL, parsing.Res1080p, parsing.ModNone)   // rank 1
+	worst := bin(parsing.SourceBluRay, parsing.Res720p, parsing.ModNone) // rank 2
+
+	cases := []struct {
+		name    string
+		current FileQuality
+		cand    FileQuality
+		want    bool
+	}{
+		{"better bin wins regardless of score", FileQuality{Bin: mid, Score: 100}, FileQuality{Bin: best, Score: 0}, true},
+		{"worse bin never wins even with higher score", FileQuality{Bin: mid, Score: 0}, FileQuality{Bin: worst, Score: 100}, false},
+		{"equal bin, higher score wins", FileQuality{Bin: mid, Score: 10}, FileQuality{Bin: mid, Score: 20}, true},
+		{"equal bin, equal score is not better", FileQuality{Bin: mid, Score: 20}, FileQuality{Bin: mid, Score: 20}, false},
+		{"equal bin, lower score is not better", FileQuality{Bin: mid, Score: 20}, FileQuality{Bin: mid, Score: 10}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := p.StrictlyBetterQuality(tc.current, tc.cand); got != tc.want {
+				t.Errorf("StrictlyBetterQuality(%+v, %+v) = %v, want %v", tc.current, tc.cand, got, tc.want)
+			}
+		})
 	}
 }

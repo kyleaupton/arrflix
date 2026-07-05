@@ -51,9 +51,14 @@ func DefaultConfig() Config {
 	}
 }
 
-// New creates a new download worker.
+// New creates a new download worker with the default configuration.
 func New(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker *sse.Broker) *Worker {
-	cfg := DefaultConfig()
+	return NewWithConfig(r, dlm, log, broker, DefaultConfig())
+}
+
+// NewWithConfig creates a new download worker with explicit configuration — the
+// seam tests use to drive the loop on a fast cadence.
+func NewWithConfig(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker *sse.Broker, cfg Config) *Worker {
 	return &Worker{
 		repo:         r,
 		dlm:          dlm,
@@ -204,17 +209,20 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 		DownloadSpeed:    jobutil.Ptr(item.DownloadSpeed),
 		EtaSeconds:       jobutil.Ptr(item.ETA),
 		TotalSize:        jobutil.Ptr(item.TotalSize),
+		// Rotate to the back of the claim queue so polling this in-flight
+		// download doesn't pin a claim slot and starve newly-created jobs.
+		NextRunAt: time.Now().Add(w.pollInterval),
 	})
 	if err != nil {
 		return err
 	}
 
-	// Mirror the want to 'downloading' on the transition edge only, so it isn't
-	// re-set on every poll. A job that races straight to completed without an
-	// observed 'downloading' skips it — the import worker advances the want from
-	// there.
-	if job.WantID != uuid.Nil && job.Status != newStatus && newStatus == "downloading" {
-		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantDownloading)
+	// Mirror the wants to 'downloading' on the transition edge only, so they
+	// aren't re-set on every poll. A job that races straight to completed without
+	// an observed 'downloading' skips it — the import worker advances the want
+	// from there.
+	if job.Status != newStatus && newStatus == "downloading" {
+		w.mirrorWants(ctx, job.ID, model.WantDownloading)
 	}
 
 	if job.Status != newStatus {
@@ -230,8 +238,7 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 	// Handle terminal downloader error
 	if newStatus == "failed" {
 		w.logEvent(ctx, job.ID, "error", "downloader reported failed status", nil)
-		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID, "downloader reported failed status", apperrors.KindBadGateway)
-		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantFailed)
+		w.failJobAndRecoverWants(ctx, job, "downloader reported failed status", apperrors.KindBadGateway)
 		return nil
 	}
 
@@ -285,11 +292,16 @@ func (w *Worker) spawnMovieImportTask(ctx context.Context, client downloader.Cli
 			NotRetryable()
 	}
 
+	wantID, err := w.linkedWantID(ctx, job.ID)
+	if err != nil {
+		return err
+	}
+
 	task, err := w.repo.CreateImportTask(ctx, repo.CreateImportTaskParams{
 		DownloadJobID:  job.ID,
 		SourcePath:     sourcePath,
 		PreviousTaskID: uuid.Nil,
-		WantID:         job.WantID,
+		WantID:         wantID,
 		MediaType:      "movie",
 		MediaItemID:    job.MediaItemID,
 		EpisodeID:      uuid.Nil,
@@ -357,8 +369,34 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 			NotRetryable()
 	}
 
+	// Map each linked want to its episode number, so a pack's files fan out onto
+	// the right per-episode want. A job with no linked wants is the manual-grab
+	// path (no want); its tasks file onto a NULL want_id, as before.
+	wantByEpisode, err := w.wantsByEpisode(ctx, job.ID)
+	if err != nil {
+		return err
+	}
+	hasWants := len(wantByEpisode) > 0
+
 	tasksCreated := 0
 	for epNum, f := range matchedFiles {
+		// Fan-out: file each matched episode onto its covering want. An overflow
+		// file (an episode no linked want covers) is skipped — left for scan/
+		// matching, never filed onto an unrelated want. The manual no-want path
+		// (hasWants false) files every match onto a NULL want_id.
+		wantID := uuid.Nil
+		if hasWants {
+			wid, ok := wantByEpisode[epNum]
+			if !ok {
+				w.log.Info().
+					Str("job_id", job.ID.String()).
+					Int("episode", epNum).
+					Msg("pack file has no covering want, skipping (overflow)")
+				continue
+			}
+			wantID = wid
+		}
+
 		sourcePath := f.Path
 		if !filepath.IsAbs(sourcePath) && item.SavePath != "" {
 			sourcePath = filepath.Join(item.SavePath, f.Path)
@@ -377,7 +415,7 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 			DownloadJobID:  job.ID,
 			SourcePath:     sourcePath,
 			PreviousTaskID: uuid.Nil,
-			WantID:         job.WantID,
+			WantID:         wantID,
 			MediaType:      "series",
 			MediaItemID:    job.MediaItemID,
 			EpisodeID:      episodeID,
@@ -401,6 +439,14 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 		tasksCreated++
 	}
 
+	// Under-coverage: a covered want with no matching file (a COMPLETE pack missing
+	// a later-aired episode) would otherwise wedge in grabbed/downloading. Release
+	// it back to 'pending' so it re-searches, and detach it from the pack job so
+	// mirroring and the cancel cascade stay scoped to what the pack actually carries.
+	if hasWants {
+		w.releaseUncoveredWants(ctx, job.ID, wantByEpisode, matchedFiles)
+	}
+
 	if tasksCreated == 0 {
 		return apperrors.Internalf("failed to create any import tasks").
 			Op("DownloadWorker.spawnSeriesImportTasks").
@@ -408,6 +454,132 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 	}
 
 	return nil
+}
+
+// wantsByEpisode maps each of a job's linked wants to its episode number, the
+// lookup the import fan-out files matched files through. A want with no episode_id
+// (defensive — series wants always carry one) is skipped.
+func (w *Worker) wantsByEpisode(ctx context.Context, jobID uuid.UUID) (map[int]uuid.UUID, error) {
+	wants, err := w.repo.ListWantsByDownloadJob(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int]uuid.UUID, len(wants))
+	for _, want := range wants {
+		if want.EpisodeID == nil {
+			continue
+		}
+		ep, err := w.repo.GetEpisode(ctx, *want.EpisodeID)
+		if err != nil {
+			return nil, err
+		}
+		out[int(ep.EpisodeNumber)] = want.ID
+	}
+	return out, nil
+}
+
+// releaseUncoveredWants returns every linked want the pack didn't carry a file for
+// to 'pending' and unlinks it from the job. Best-effort: a release/unlink failure
+// is logged, not propagated — it must not break the import of the files that did
+// land.
+func (w *Worker) releaseUncoveredWants(ctx context.Context, jobID uuid.UUID, wantByEpisode map[int]uuid.UUID, matched map[int]downloader.File) {
+	for epNum, wantID := range wantByEpisode {
+		if _, ok := matched[epNum]; ok {
+			continue
+		}
+		if _, _, err := w.repo.ReleaseWantFromGrab(ctx, wantID, "season pack did not contain this episode; re-searching"); err != nil {
+			w.log.Warn().Err(err).Str("want_id", wantID.String()).Int("episode", epNum).Msg("failed to release under-covered want")
+			continue
+		}
+		if err := w.repo.UnlinkDownloadJobWant(ctx, jobID, wantID); err != nil {
+			w.log.Warn().Err(err).Str("want_id", wantID.String()).Str("job_id", jobID.String()).Msg("failed to unlink under-covered want from job")
+			continue
+		}
+		w.log.Info().
+			Str("job_id", jobID.String()).
+			Str("want_id", wantID.String()).
+			Int("episode", epNum).
+			Msg("released under-covered want back to pending")
+	}
+}
+
+// failJobAndRecoverWants terminally fails a download job and recovers its linked
+// wants instead of dead-ending them. For each want it excludes the failed release
+// (so the re-search can't re-pick it) and returns the want to 'pending' to be
+// searched again — replacing the pre-A2 "mark the want failed", which required a
+// manual re-request. The recovery loop is bounded precisely because the exclusion
+// bars re-picking the same release: ProcessWant re-searches once and, on no other
+// winner, falls back to the scheduler's recheck cadence.
+//
+// Best-effort per want (log-and-continue), the same contract as
+// releaseUncoveredWants: one want's recovery failure must not block the others or
+// the job-fail. It shares the precedent's exclusion-before-release ordering — see
+// the inline note.
+func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJob, lastError string, kind apperrors.Kind) {
+	if _, err := w.repo.MarkDownloadJobFailed(ctx, job.ID, lastError, kind); err != nil {
+		w.log.Warn().Err(err).Str("job_id", job.ID.String()).Msg("failed to mark download job failed")
+	}
+	w.publishJobUpdated(ctx, job.ID)
+
+	wants, err := w.repo.ListWantsByDownloadJob(ctx, job.ID)
+	if err != nil {
+		w.log.Warn().Err(err).Str("job_id", job.ID.String()).Msg("failed to list wants for recovery")
+		return
+	}
+
+	detail := fmt.Sprintf("%s: %s", job.CandidateTitle, lastError)
+	for _, want := range wants {
+		// Exclude the failed release BEFORE releasing the want: the release makes
+		// the want claimable immediately, so if the exclusion isn't already in
+		// place the very next search could re-pick the release that just failed.
+		if err := w.repo.AddWantReleaseExclusion(ctx, repo.AddWantReleaseExclusionParams{
+			WantID:    want.ID,
+			IndexerID: job.IndexerID,
+			GUID:      job.Guid,
+			Reason:    model.ExclusionDownloadFailed,
+			Detail:    &detail,
+		}); err != nil {
+			// Releasing without the exclusion would loop on the same release. Fall
+			// back to the pre-A2 terminal-fail so the want doesn't wedge.
+			w.log.Warn().Err(err).Str("want_id", want.ID.String()).Msg("failed to exclude release; failing want")
+			jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, want.ID, model.WantFailed)
+			continue
+		}
+
+		released, ok, err := w.repo.ReleaseWantFromGrab(ctx, want.ID,
+			fmt.Sprintf("download failed (%s); release excluded, re-searching", lastError))
+		if err != nil {
+			w.log.Warn().Err(err).Str("want_id", want.ID.String()).Msg("failed to release want after download failure")
+			continue
+		}
+		if !ok {
+			// Canceled or already released — benign, nothing to re-arm.
+			continue
+		}
+		realtime.Emit(ctx, w.broker, realtime.WantUpdated(released))
+		w.restampManualHold(ctx, released)
+	}
+}
+
+// restampManualHold re-stamps the 'needs_pick' hold on a just-released want whose
+// tracking segment is manual. The grab cleared the hold, and ReleaseWantFromGrab
+// leaves it cleared; without this a want owned by a manual segment would fall into
+// the auto-search pool rather than waiting for the user to pick again. Mirrors
+// rearmMovieWant's re-stamp. One extra query per recovered want — failures are
+// rare.
+func (w *Worker) restampManualHold(ctx context.Context, released model.Want) {
+	tracking, err := w.repo.GetTracking(ctx, released.TrackingID)
+	if err != nil {
+		w.log.Warn().Err(err).Str("want_id", released.ID.String()).Msg("failed to load tracking for manual-hold restamp")
+		return
+	}
+	hold := model.HoldForNewWant(tracking, model.WantSegment(released.Segment))
+	if hold == nil {
+		return
+	}
+	if _, err := w.repo.SetWantHold(ctx, released.ID, hold); err != nil {
+		w.log.Warn().Err(err).Str("want_id", released.ID.String()).Msg("failed to restamp manual hold")
+	}
 }
 
 func (w *Worker) resolveEpisodeID(ctx context.Context, mediaItemID uuid.UUID, targetSeason *int, epNum int) (uuid.UUID, error) {
@@ -447,6 +619,38 @@ func (w *Worker) resolveEpisodeID(ctx context.Context, mediaItemID uuid.UUID, ta
 	return created.ID, nil
 }
 
+// mirrorWants reflects a lifecycle transition onto every want the job advances,
+// joined through download_job_want. In P1 a job links exactly one want; the loop
+// is the M:N shape a season pack (covering N wants) fans out over. A list failure
+// is logged but never propagated — mirroring must not break the pipeline, the
+// same contract as jobutil.MirrorWant.
+func (w *Worker) mirrorWants(ctx context.Context, jobID uuid.UUID, status model.WantStatus) {
+	wants, err := w.repo.ListWantsByDownloadJob(ctx, jobID)
+	if err != nil {
+		w.log.Warn().Err(err).Str("job_id", jobID.String()).Msg("failed to list wants for mirror")
+		return
+	}
+	for _, want := range wants {
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, want.ID, status)
+	}
+}
+
+// linkedWantID returns the single want a movie job's import task files onto. A
+// movie tracking is single-atom — one want per job — so the first (only) link is
+// it. uuid.Nil when there is no linked want (the manual-grab path), which
+// CreateImportTask stores as a NULL want_id. The series path instead fans out over
+// a per-episode → want map (see wantsByEpisode).
+func (w *Worker) linkedWantID(ctx context.Context, jobID uuid.UUID) (uuid.UUID, error) {
+	wants, err := w.repo.ListWantsByDownloadJob(ctx, jobID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if len(wants) == 0 {
+		return uuid.Nil, nil
+	}
+	return wants[0].ID, nil
+}
+
 func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err error) {
 	msg := err.Error()
 	kind := apperrors.KindOf(err)
@@ -464,18 +668,18 @@ func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err err
 
 	// Non-retryable errors fail immediately.
 	if !apperrors.IsRetryable(err) {
-		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID, msg, kind)
-		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantFailed)
+		w.failJobAndRecoverWants(ctx, job, msg, kind)
 		return
 	}
 
-	// Retryable errors: respect the max-attempts ceiling.
+	// Retryable errors: respect the max-attempts ceiling. A retryable failure that
+	// exhausts its attempts still recovers its wants — the release is excluded and
+	// re-searched. Indexer-wide outages (which would burn attempts across many
+	// jobs) are indexer-health-gating's concern, deferred.
 	attempt := int(job.AttemptCount) + 1
 	if attempt >= w.maxAttempts {
-		_, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID,
-			fmt.Sprintf("max attempts (%d) exceeded: %s", w.maxAttempts, msg),
-			kind)
-		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, job.WantID, model.WantFailed)
+		w.failJobAndRecoverWants(ctx, job,
+			fmt.Sprintf("max attempts (%d) exceeded: %s", w.maxAttempts, msg), kind)
 		return
 	}
 

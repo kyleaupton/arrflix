@@ -16,6 +16,7 @@ type SeriesEpisodeAvailability struct {
 	EpisodeID     uuid.UUID  `json:"episodeId"`
 	Title         *string    `json:"title,omitempty"`
 	AirDate       *time.Time `json:"airDate,omitempty"`
+	Deprecated    bool       `json:"deprecated"`
 	FileID        *uuid.UUID `json:"fileId,omitempty"`
 	LibraryID     *uuid.UUID `json:"libraryId,omitempty"`
 	FileExists    *bool      `json:"fileExists,omitempty"`

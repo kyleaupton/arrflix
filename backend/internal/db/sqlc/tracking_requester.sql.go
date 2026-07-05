@@ -13,30 +13,53 @@ import (
 
 const addRequester = `-- name: AddRequester :one
 
-INSERT INTO tracking_requester (tracking_id, user_id, tier)
-VALUES ($1, $2, $3)
+INSERT INTO tracking_requester (tracking_id, user_id, tier, scope_rule, scope_season, scope_overrides)
+VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6
+)
 ON CONFLICT (tracking_id, user_id) DO UPDATE
 SET tier = excluded.tier,
+    scope_rule = excluded.scope_rule,
+    scope_season = excluded.scope_season,
+    scope_overrides = excluded.scope_overrides,
     updated_at = now()
-RETURNING tracking_id, user_id, tier, created_at, updated_at
+RETURNING tracking_id, user_id, tier, scope_rule, scope_season, scope_overrides, created_at, updated_at
 `
 
 type AddRequesterParams struct {
-	TrackingID pgtype.UUID `json:"tracking_id"`
-	UserID     pgtype.UUID `json:"user_id"`
-	Tier       string      `json:"tier"`
+	TrackingID     pgtype.UUID `json:"tracking_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	Tier           string      `json:"tier"`
+	ScopeRule      string      `json:"scope_rule"`
+	ScopeSeason    *int32      `json:"scope_season"`
+	ScopeOverrides []byte      `json:"scope_overrides"`
 }
 
 // Tracking requesters: live per-requester intent and the dedup association.
 // AddRequester joins a user to a tracking, or refreshes their tier if they were
 // already a requester. Idempotent on (tracking_id, user_id).
 func (q *Queries) AddRequester(ctx context.Context, arg AddRequesterParams) (TrackingRequester, error) {
-	row := q.db.QueryRow(ctx, addRequester, arg.TrackingID, arg.UserID, arg.Tier)
+	row := q.db.QueryRow(ctx, addRequester,
+		arg.TrackingID,
+		arg.UserID,
+		arg.Tier,
+		arg.ScopeRule,
+		arg.ScopeSeason,
+		arg.ScopeOverrides,
+	)
 	var i TrackingRequester
 	err := row.Scan(
 		&i.TrackingID,
 		&i.UserID,
 		&i.Tier,
+		&i.ScopeRule,
+		&i.ScopeSeason,
+		&i.ScopeOverrides,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -44,7 +67,7 @@ func (q *Queries) AddRequester(ctx context.Context, arg AddRequesterParams) (Tra
 }
 
 const findRequester = `-- name: FindRequester :one
-SELECT tracking_id, user_id, tier, created_at, updated_at FROM tracking_requester
+SELECT tracking_id, user_id, tier, scope_rule, scope_season, scope_overrides, created_at, updated_at FROM tracking_requester
 WHERE tracking_id = $1 AND user_id = $2
 `
 
@@ -62,6 +85,9 @@ func (q *Queries) FindRequester(ctx context.Context, arg FindRequesterParams) (T
 		&i.TrackingID,
 		&i.UserID,
 		&i.Tier,
+		&i.ScopeRule,
+		&i.ScopeSeason,
+		&i.ScopeOverrides,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -69,7 +95,7 @@ func (q *Queries) FindRequester(ctx context.Context, arg FindRequesterParams) (T
 }
 
 const listRequestersByTracking = `-- name: ListRequestersByTracking :many
-SELECT tracking_id, user_id, tier, created_at, updated_at FROM tracking_requester
+SELECT tracking_id, user_id, tier, scope_rule, scope_season, scope_overrides, created_at, updated_at FROM tracking_requester
 WHERE tracking_id = $1
 ORDER BY created_at ASC
 `
@@ -87,6 +113,9 @@ func (q *Queries) ListRequestersByTracking(ctx context.Context, trackingID pgtyp
 			&i.TrackingID,
 			&i.UserID,
 			&i.Tier,
+			&i.ScopeRule,
+			&i.ScopeSeason,
+			&i.ScopeOverrides,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

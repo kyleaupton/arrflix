@@ -42,6 +42,15 @@ CREATE TABLE IF NOT EXISTS tracking (
   scope TEXT NOT NULL DEFAULT 'self',
   upgrade_behavior TEXT NOT NULL DEFAULT 'none' CHECK (upgrade_behavior IN ('auto', 'propose', 'none')),
   schedule_strategy TEXT NOT NULL DEFAULT 'smart' CHECK (schedule_strategy IN ('smart', 'fixed')),
+  -- Acquisition autonomy — who picks the release — dialed per want segment:
+  -- backfill (atoms dated before the tracking's creation) and ongoing (dated
+  -- after, or undated). 'auto' = the worker searches and grabs; 'manual' = wants
+  -- exist and stay visible but are never auto-searched (the user fulfills them
+  -- via the manual download flow); 'propose' is the future middle ground (the
+  -- worker searches and surfaces a pick for confirmation). The CHECK admits
+  -- 'propose' so the schema is stable, but the API/UI reject it until that phase.
+  autonomy_backfill TEXT NOT NULL DEFAULT 'auto' CHECK (autonomy_backfill IN ('auto', 'propose', 'manual')),
+  autonomy_ongoing TEXT NOT NULL DEFAULT 'auto' CHECK (autonomy_ongoing IN ('auto', 'propose', 'manual')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (media_item_id)
@@ -68,10 +77,23 @@ CREATE TABLE IF NOT EXISTS request (
 -- a second user requests an already-tracked movie they join here rather than
 -- creating a second tracking. The (tracking_id, user_id) PK makes the join
 -- idempotent.
+--
+-- Scope is held per-requester (one preset rule + per-episode overrides); the
+-- tracking's effective scope is the union across requesters, computed live by
+-- the reconciler. The hybrid columns are: scope_rule (the preset), scope_season
+-- (its only parameter, for 'season'), and scope_overrides (the JSONB include/
+-- exclude lists keyed on media_episode UUID). Movie requester rows carry the
+-- 'all' default but never consult it — movie tracking is single-atom, so scope
+-- is inert for them, exactly as tracking.scope stays an inert 'self' placeholder.
 CREATE TABLE IF NOT EXISTS tracking_requester (
   tracking_id UUID NOT NULL REFERENCES tracking(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
   tier TEXT NOT NULL,
+  scope_rule TEXT NOT NULL DEFAULT 'all'
+    CHECK (scope_rule IN ('all','future_only','season','pilot','latest_season_plus_future')),
+  scope_season INT,            -- param for scope_rule='season'; NULL otherwise
+  scope_overrides JSONB,       -- {"include":[uuid...],"exclude":[uuid...]}; NULL = none
+  CHECK ((scope_rule = 'season') = (scope_season IS NOT NULL)),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (tracking_id, user_id)
@@ -91,6 +113,10 @@ CREATE TABLE IF NOT EXISTS want (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tracking_id UUID NOT NULL REFERENCES tracking(id) ON DELETE CASCADE,
   media_item_id UUID NOT NULL REFERENCES media_item(id) ON DELETE RESTRICT,
+  -- The episode this want targets, for series. NULL for movies (single-atom
+  -- tracking). RESTRICT mirrors media_item_id: episodes are deprecated, never
+  -- hard-deleted, so a want's episode reference always resolves.
+  episode_id UUID REFERENCES media_episode(id) ON DELETE RESTRICT,
   quality_profile_id UUID REFERENCES quality_profile(id) ON DELETE RESTRICT,
   status TEXT NOT NULL CHECK (status IN (
     'pending',      -- created, not yet searched
@@ -102,6 +128,18 @@ CREATE TABLE IF NOT EXISTS want (
     'failed',       -- permanent failure (terminal)
     'canceled'      -- user/system canceled (terminal)
   )),
+  -- segment classifies the want against the tracking's autonomy dial: 'backfill'
+  -- for an atom whose air/release date precedes the tracking's created_at,
+  -- 'ongoing' for one dated after (or undated). Immutable — stamped once at
+  -- creation as a pure function of atom date vs tracking.created_at; a later
+  -- reconcile never reclassifies it.
+  segment TEXT NOT NULL DEFAULT 'ongoing' CHECK (segment IN ('backfill', 'ongoing')),
+  -- hold is the annotation axis: a non-NULL value keeps the want at its current
+  -- status (pending/searching) and visible everywhere, but bars the acquisition
+  -- worker from claiming it (ClaimRunnableWants requires hold IS NULL). NULL = no
+  -- hold. 'needs_pick' means a manual segment owns this want — the user picks the
+  -- release. A grab clears the hold; a reschedule preserves it.
+  hold TEXT CHECK (hold IN ('needs_pick')),
   next_run_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   attempt_count INT NOT NULL DEFAULT 0,
   last_error TEXT,
@@ -114,16 +152,36 @@ CREATE INDEX IF NOT EXISTS idx_want_next_run ON want(next_run_at)
   WHERE status IN ('pending', 'searching', 'grabbed', 'downloading', 'imported');
 CREATE INDEX IF NOT EXISTS idx_want_tracking ON want(tracking_id);
 
--- want linkage: download_job and import_task carry the want they satisfy, so a
--- transition can mirror back onto the want's lifecycle. Null for the
--- interactive (manual-grab) path, which has no want. ON DELETE SET NULL keeps
--- the job/task row if its want is removed. The partial indexes back the pre-grab
--- dedup lookup ("does this want already have an in-flight job?").
-ALTER TABLE download_job
-  ADD COLUMN want_id UUID REFERENCES want(id) ON DELETE SET NULL;
+-- Want idempotency: the series reconciler re-runs and must produce at most one
+-- want per (series tracking, episode), so CreateWantIfAbsent can ON CONFLICT DO
+-- NOTHING against this index. The movie counterpart caps a single-atom tracking
+-- at one want defensively — episode_id is always NULL there.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_want_tracking_episode ON want (tracking_id, episode_id)
+  WHERE episode_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_want_tracking_movie ON want (tracking_id)
+  WHERE episode_id IS NULL;
 
+-- import_task carries the single want it satisfies, so an import transition can
+-- mirror back onto the want's lifecycle. Each file fulfils exactly one want, so
+-- this stays a single FK. Null for the interactive (manual-grab) path, which has
+-- no want. ON DELETE SET NULL keeps the task row if its want is removed.
 ALTER TABLE import_task
   ADD COLUMN want_id UUID REFERENCES want(id) ON DELETE SET NULL;
 
-CREATE INDEX IF NOT EXISTS idx_download_job_want ON download_job(want_id) WHERE want_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_import_task_want ON import_task(want_id) WHERE want_id IS NOT NULL;
+
+-- download_job_want: the M:N edge between a download_job and the wants it
+-- advances. One pick (a movie or single episode today; a season pack later)
+-- links every in-flight want it covers, and the import fan-out files each file
+-- back onto its own want. Both FKs cascade so deleting a job or a want drops the
+-- edge. The per-column indexes back the two lookups: wants-by-job (import
+-- fan-out, lifecycle mirror) and active-jobs-by-want (cancel cascade).
+CREATE TABLE IF NOT EXISTS download_job_want (
+  download_job_id UUID NOT NULL REFERENCES download_job(id) ON DELETE CASCADE,
+  want_id UUID NOT NULL REFERENCES want(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (download_job_id, want_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_djw_job ON download_job_want(download_job_id);
+CREATE INDEX IF NOT EXISTS idx_djw_want ON download_job_want(want_id);

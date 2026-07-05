@@ -13,15 +13,16 @@ import (
 
 const createRequest = `-- name: CreateRequest :one
 
-INSERT INTO request (requested_by, tmdb_id, type, tier, status)
+INSERT INTO request (requested_by, tmdb_id, type, tier, status, scope_rule)
 VALUES (
   $1,
   $2,
   $3,
   $4,
-  $5
+  $5,
+  $6
 )
-RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at
+RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule
 `
 
 type CreateRequestParams struct {
@@ -30,6 +31,7 @@ type CreateRequestParams struct {
 	Type        string      `json:"type"`
 	Tier        string      `json:"tier"`
 	Status      string      `json:"status"`
+	ScopeRule   string      `json:"scope_rule"`
 }
 
 // Requests: the frozen user-intent artifact.
@@ -40,6 +42,7 @@ func (q *Queries) CreateRequest(ctx context.Context, arg CreateRequestParams) (R
 		arg.Type,
 		arg.Tier,
 		arg.Status,
+		arg.ScopeRule,
 	)
 	var i Request
 	err := row.Scan(
@@ -53,12 +56,13 @@ func (q *Queries) CreateRequest(ctx context.Context, arg CreateRequestParams) (R
 		&i.DeniedReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScopeRule,
 	)
 	return i, err
 }
 
 const getRequest = `-- name: GetRequest :one
-SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at FROM request
+SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule FROM request
 WHERE id = $1
 `
 
@@ -76,12 +80,13 @@ func (q *Queries) GetRequest(ctx context.Context, id pgtype.UUID) (Request, erro
 		&i.DeniedReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScopeRule,
 	)
 	return i, err
 }
 
 const listRequests = `-- name: ListRequests :many
-SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at FROM request
+SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule FROM request
 ORDER BY created_at DESC
 `
 
@@ -105,6 +110,7 @@ func (q *Queries) ListRequests(ctx context.Context) ([]Request, error) {
 			&i.DeniedReason,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ScopeRule,
 		); err != nil {
 			return nil, err
 		}
@@ -122,7 +128,7 @@ SET status = 'denied',
     denied_reason = $1,
     updated_at = now()
 WHERE id = $2
-RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at
+RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule
 `
 
 type SetRequestDeniedParams struct {
@@ -144,6 +150,7 @@ func (q *Queries) SetRequestDenied(ctx context.Context, arg SetRequestDeniedPara
 		&i.DeniedReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScopeRule,
 	)
 	return i, err
 }
@@ -154,7 +161,7 @@ SET status = 'spawned',
     spawned_tracking_id = $1,
     updated_at = now()
 WHERE id = $2
-RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at
+RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule
 `
 
 type SetRequestSpawnedParams struct {
@@ -176,6 +183,7 @@ func (q *Queries) SetRequestSpawned(ctx context.Context, arg SetRequestSpawnedPa
 		&i.DeniedReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScopeRule,
 	)
 	return i, err
 }

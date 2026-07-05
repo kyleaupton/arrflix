@@ -20,13 +20,15 @@ const (
 
 // Request is the domain shape for a request row — the frozen user-intent
 // artifact. SpawnedTrackingID is nil until the request spawns a tracking.
-// Mirrors dbgen.Request.
+// ScopeRule is the requester's series-scope choice ('all'/'future_only'; the
+// 'all' default for movies, which never consult it). Mirrors dbgen.Request.
 type Request struct {
 	ID                uuid.UUID  `json:"id"`
 	RequestedBy       uuid.UUID  `json:"requestedBy"`
 	TmdbID            int64      `json:"tmdbId"`
 	Type              string     `json:"type"`
 	Tier              string     `json:"tier"`
+	ScopeRule         string     `json:"scopeRule"`
 	Status            string     `json:"status"`
 	SpawnedTrackingID *uuid.UUID `json:"spawnedTrackingId"`
 	DeniedReason      *string    `json:"deniedReason"`

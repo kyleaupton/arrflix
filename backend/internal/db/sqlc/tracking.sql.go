@@ -13,16 +13,18 @@ import (
 
 const createTracking = `-- name: CreateTracking :one
 
-INSERT INTO tracking (media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy)
+INSERT INTO tracking (media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, autonomy_backfill, autonomy_ongoing)
 VALUES (
   $1,
   $2,
   $3,
   $4,
   $5,
-  $6
+  $6,
+  $7,
+  $8
 )
-RETURNING id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, created_at, updated_at
+RETURNING id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, autonomy_backfill, autonomy_ongoing, created_at, updated_at
 `
 
 type CreateTrackingParams struct {
@@ -32,6 +34,8 @@ type CreateTrackingParams struct {
 	Scope            string      `json:"scope"`
 	UpgradeBehavior  string      `json:"upgrade_behavior"`
 	ScheduleStrategy string      `json:"schedule_strategy"`
+	AutonomyBackfill string      `json:"autonomy_backfill"`
+	AutonomyOngoing  string      `json:"autonomy_ongoing"`
 }
 
 // Tracking: the ongoing-intent primitive.
@@ -43,6 +47,8 @@ func (q *Queries) CreateTracking(ctx context.Context, arg CreateTrackingParams) 
 		arg.Scope,
 		arg.UpgradeBehavior,
 		arg.ScheduleStrategy,
+		arg.AutonomyBackfill,
+		arg.AutonomyOngoing,
 	)
 	var i Tracking
 	err := row.Scan(
@@ -53,6 +59,8 @@ func (q *Queries) CreateTracking(ctx context.Context, arg CreateTrackingParams) 
 		&i.Scope,
 		&i.UpgradeBehavior,
 		&i.ScheduleStrategy,
+		&i.AutonomyBackfill,
+		&i.AutonomyOngoing,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -60,17 +68,19 @@ func (q *Queries) CreateTracking(ctx context.Context, arg CreateTrackingParams) 
 }
 
 const createTrackingIfAbsent = `-- name: CreateTrackingIfAbsent :one
-INSERT INTO tracking (media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy)
+INSERT INTO tracking (media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, autonomy_backfill, autonomy_ongoing)
 VALUES (
   $1,
   $2,
   $3,
   $4,
   $5,
-  $6
+  $6,
+  $7,
+  $8
 )
 ON CONFLICT (media_item_id) DO NOTHING
-RETURNING id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, created_at, updated_at
+RETURNING id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, autonomy_backfill, autonomy_ongoing, created_at, updated_at
 `
 
 type CreateTrackingIfAbsentParams struct {
@@ -80,6 +90,8 @@ type CreateTrackingIfAbsentParams struct {
 	Scope            string      `json:"scope"`
 	UpgradeBehavior  string      `json:"upgrade_behavior"`
 	ScheduleStrategy string      `json:"schedule_strategy"`
+	AutonomyBackfill string      `json:"autonomy_backfill"`
+	AutonomyOngoing  string      `json:"autonomy_ongoing"`
 }
 
 // CreateTrackingIfAbsent is the race-safe get-or-create for the dedup boundary:
@@ -94,6 +106,8 @@ func (q *Queries) CreateTrackingIfAbsent(ctx context.Context, arg CreateTracking
 		arg.Scope,
 		arg.UpgradeBehavior,
 		arg.ScheduleStrategy,
+		arg.AutonomyBackfill,
+		arg.AutonomyOngoing,
 	)
 	var i Tracking
 	err := row.Scan(
@@ -104,6 +118,8 @@ func (q *Queries) CreateTrackingIfAbsent(ctx context.Context, arg CreateTracking
 		&i.Scope,
 		&i.UpgradeBehavior,
 		&i.ScheduleStrategy,
+		&i.AutonomyBackfill,
+		&i.AutonomyOngoing,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -111,7 +127,7 @@ func (q *Queries) CreateTrackingIfAbsent(ctx context.Context, arg CreateTracking
 }
 
 const findTrackingByMediaItem = `-- name: FindTrackingByMediaItem :one
-SELECT id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, created_at, updated_at FROM tracking
+SELECT id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, autonomy_backfill, autonomy_ongoing, created_at, updated_at FROM tracking
 WHERE media_item_id = $1
 `
 
@@ -129,6 +145,8 @@ func (q *Queries) FindTrackingByMediaItem(ctx context.Context, mediaItemID pgtyp
 		&i.Scope,
 		&i.UpgradeBehavior,
 		&i.ScheduleStrategy,
+		&i.AutonomyBackfill,
+		&i.AutonomyOngoing,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -136,7 +154,7 @@ func (q *Queries) FindTrackingByMediaItem(ctx context.Context, mediaItemID pgtyp
 }
 
 const getTracking = `-- name: GetTracking :one
-SELECT id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, created_at, updated_at FROM tracking
+SELECT id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, autonomy_backfill, autonomy_ongoing, created_at, updated_at FROM tracking
 WHERE id = $1
 `
 
@@ -151,6 +169,8 @@ func (q *Queries) GetTracking(ctx context.Context, id pgtype.UUID) (Tracking, er
 		&i.Scope,
 		&i.UpgradeBehavior,
 		&i.ScheduleStrategy,
+		&i.AutonomyBackfill,
+		&i.AutonomyOngoing,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -158,7 +178,7 @@ func (q *Queries) GetTracking(ctx context.Context, id pgtype.UUID) (Tracking, er
 }
 
 const listTrackings = `-- name: ListTrackings :many
-SELECT id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, created_at, updated_at FROM tracking
+SELECT id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, autonomy_backfill, autonomy_ongoing, created_at, updated_at FROM tracking
 ORDER BY created_at DESC
 `
 
@@ -179,6 +199,8 @@ func (q *Queries) ListTrackings(ctx context.Context) ([]Tracking, error) {
 			&i.Scope,
 			&i.UpgradeBehavior,
 			&i.ScheduleStrategy,
+			&i.AutonomyBackfill,
+			&i.AutonomyOngoing,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -192,12 +214,48 @@ func (q *Queries) ListTrackings(ctx context.Context) ([]Tracking, error) {
 	return items, nil
 }
 
+const setTrackingAutonomy = `-- name: SetTrackingAutonomy :one
+UPDATE tracking
+SET autonomy_backfill = $1,
+    autonomy_ongoing = $2,
+    updated_at = now()
+WHERE id = $3
+RETURNING id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, autonomy_backfill, autonomy_ongoing, created_at, updated_at
+`
+
+type SetTrackingAutonomyParams struct {
+	AutonomyBackfill string      `json:"autonomy_backfill"`
+	AutonomyOngoing  string      `json:"autonomy_ongoing"`
+	ID               pgtype.UUID `json:"id"`
+}
+
+// SetTrackingAutonomy sets both per-segment autonomy dials. The service holds
+// the hold/release of affected wants in the same transaction.
+func (q *Queries) SetTrackingAutonomy(ctx context.Context, arg SetTrackingAutonomyParams) (Tracking, error) {
+	row := q.db.QueryRow(ctx, setTrackingAutonomy, arg.AutonomyBackfill, arg.AutonomyOngoing, arg.ID)
+	var i Tracking
+	err := row.Scan(
+		&i.ID,
+		&i.MediaItemID,
+		&i.QualityProfileID,
+		&i.State,
+		&i.Scope,
+		&i.UpgradeBehavior,
+		&i.ScheduleStrategy,
+		&i.AutonomyBackfill,
+		&i.AutonomyOngoing,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const setTrackingState = `-- name: SetTrackingState :one
 UPDATE tracking
 SET state = $1,
     updated_at = now()
 WHERE id = $2
-RETURNING id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, created_at, updated_at
+RETURNING id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, autonomy_backfill, autonomy_ongoing, created_at, updated_at
 `
 
 type SetTrackingStateParams struct {
@@ -216,6 +274,8 @@ func (q *Queries) SetTrackingState(ctx context.Context, arg SetTrackingStatePara
 		&i.Scope,
 		&i.UpgradeBehavior,
 		&i.ScheduleStrategy,
+		&i.AutonomyBackfill,
+		&i.AutonomyOngoing,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

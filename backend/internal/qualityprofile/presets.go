@@ -114,7 +114,6 @@ func DefaultProfiles() []Profile {
 			Name:   "HD",
 			Domain: parsing.DomainSeries,
 			Bins: []parsing.BinKey{
-				bin(parsing.SourceBluRay, parsing.Res1080p, parsing.ModRemux),
 				bin(parsing.SourceBluRay, parsing.Res1080p, parsing.ModNone),
 				bin(parsing.SourceWEBDL, parsing.Res1080p, parsing.ModNone),
 				bin(parsing.SourceWEBRip, parsing.Res1080p, parsing.ModNone),
@@ -132,7 +131,6 @@ func DefaultProfiles() []Profile {
 			Name:   "4K",
 			Domain: parsing.DomainSeries,
 			Bins: []parsing.BinKey{
-				bin(parsing.SourceBluRay, parsing.Res2160p, parsing.ModRemux),
 				bin(parsing.SourceBluRay, parsing.Res2160p, parsing.ModNone),
 				bin(parsing.SourceWEBDL, parsing.Res2160p, parsing.ModNone),
 				bin(parsing.SourceWEBRip, parsing.Res2160p, parsing.ModNone),

@@ -1,6 +1,23 @@
--- seed dev user
+-- seed test admin user (admin@example.com / admin, password 'password') with the admin role
 insert into app_user (email, username, password_hash, is_active)
-values ('dev@local.seed', 'devuser', 'v1:bcrypt:$2a$12$n180ANBjuXfZrr.hWFZXjukiDZuQ1Kw6yauaIrEHriMjempCALOB2', true);
+values ('admin@example.com', 'admin', 'v1:bcrypt:$2a$12$aMPgKNbhnjmvhWQmhU7EgO5YV45Hs9KYWNhWGGPkCg06RqlRM/tEK', true);
+
+insert into user_role (user_id, role_id)
+select u.id, r.id
+from app_user u, role r
+where u.username = 'admin' and r.name = 'admin';
+
+-- seed the admin's approval policy: normally UsersService.syncAutoApprovePolicy
+-- upserts this when the admin role is assigned, but the seed assigns the role
+-- via raw SQL and bypasses that path.
+insert into user_policy (user_id, auto_approve_movie)
+select u.id, true
+from app_user u
+where u.username = 'admin';
+
+-- mark the system initialized (normally flipped by the setup flow when the
+-- first admin is created; the seed creates the admin directly, so set it here)
+update app_setting set value_json = 'true'::jsonb where key = 'system.initialized';
 
 -- seed libraries
 insert into library (name, type, root_path, enabled, "default")
@@ -26,4 +43,13 @@ values ('Main Series Template', 'series', '{{.Media.Title}} - S{{.Media.Season}}
 
 insert into downloader (name, type, protocol, url, username, password, enabled, "default")
 values ('Main Downloader', 'qbittorrent', 'torrent', 'http://172.16.10.22:8480', 'admin', :'downloader_password', true, true);
+
+-- seed tmdb api key
+-- tmdb_api_key is injected by `just db-reseed` from TMDB_API_KEY in .env (kept
+-- out of git). Omitted entirely when unset so the app falls back to its own
+-- TMDB_API_KEY env var.
+\if :{?tmdb_api_key}
+insert into app_setting (key, type, value_json)
+values ('tmdb.api_key', 'text', to_jsonb(:'tmdb_api_key'::text));
+\endif
 

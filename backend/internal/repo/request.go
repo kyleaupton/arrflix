@@ -18,6 +18,7 @@ type CreateRequestParams struct {
 	Type        string
 	Tier        string
 	Status      string
+	ScopeRule   string
 }
 
 // toModelRequest translates a persistence-shaped dbgen.Request into the
@@ -30,6 +31,7 @@ func toModelRequest(row dbgen.Request) model.Request {
 		TmdbID:            row.TmdbID,
 		Type:              row.Type,
 		Tier:              row.Tier,
+		ScopeRule:         row.ScopeRule,
 		Status:            row.Status,
 		SpawnedTrackingID: uuidPtrFromPgtype(row.SpawnedTrackingID),
 		DeniedReason:      row.DeniedReason,
@@ -45,6 +47,7 @@ func (r *Repository) CreateRequest(ctx context.Context, params CreateRequestPara
 		Type:        params.Type,
 		Tier:        params.Tier,
 		Status:      params.Status,
+		ScopeRule:   params.ScopeRule,
 	})
 	if err != nil {
 		return model.Request{}, apperrors.FromPg(err, "create request for tmdb id %d", params.TmdbID)

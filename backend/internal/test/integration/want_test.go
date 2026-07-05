@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"testing"
+	"time"
 
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -58,7 +59,6 @@ func TestWant_Cancel(t *testing.T) {
 		Protocol:       "torrent",
 		MediaType:      "movie",
 		MediaItemID:    want.MediaItemID,
-		WantID:         want.ID,
 		IndexerID:      1,
 		Guid:           "guid-cancel",
 		CandidateTitle: "The Matrix 1999 1080p BluRay",
@@ -69,6 +69,9 @@ func TestWant_Cancel(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("create download job: %v", err)
+	}
+	if err := r.LinkDownloadJobWant(ctx, job.ID, want.ID); err != nil {
+		t.Fatalf("link download job to want: %v", err)
 	}
 	if _, err := r.SetDownloadJobDownloadSnapshot(ctx, repo.SetDownloadJobDownloadSnapshotParams{
 		ID:     job.ID,
@@ -126,8 +129,9 @@ func TestWant_Cancel(t *testing.T) {
 
 // TestWant_Cancel_Terminal proves the CAS guard at the service boundary: an
 // 'available' want can't be canceled (Conflict), while an already-'canceled'
-// want returns success idempotently. Both wants hang off the one seeded
-// tracking — the schema allows multiple wants per tracking.
+// want returns success idempotently. The two wants live on separate trackings —
+// the idx_want_tracking_movie partial unique index caps a movie tracking at one
+// want (single-atom), so the second want is seeded on its own tracking.
 func TestWant_Cancel_Terminal(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -145,12 +149,34 @@ func TestWant_Cancel_Terminal(t *testing.T) {
 		t.Fatalf("CancelWant on available want err = %v, want Conflict", err)
 	}
 
-	// A second want on the same tracking, already canceled: cancel is idempotent.
+	// A second want, on its own tracking, already canceled: cancel is idempotent.
+	year := int32(2010)
+	tmdbID := int64(27205)
+	media2, err := r.CreateMediaItem(ctx, repo.CreateMediaItemParams{
+		Type: "movie", Title: "Inception", Year: &year, TmdbID: &tmdbID,
+	})
+	if err != nil {
+		t.Fatalf("create second media item: %v", err)
+	}
+	tracking2, err := r.CreateTracking(ctx, repo.CreateTrackingParams{
+		MediaItemID:      media2.ID,
+		QualityProfileID: want.QualityProfileID,
+		State:            string(model.TrackingActive),
+		Scope:            "self",
+		UpgradeBehavior:  "none",
+		ScheduleStrategy: "smart",
+		AutonomyBackfill: string(model.AutonomyAuto),
+		AutonomyOngoing:  string(model.AutonomyAuto),
+	})
+	if err != nil {
+		t.Fatalf("create second tracking: %v", err)
+	}
 	want2, err := r.CreateWant(ctx, repo.CreateWantParams{
-		TrackingID:       want.TrackingID,
-		MediaItemID:      want.MediaItemID,
+		TrackingID:       tracking2.ID,
+		MediaItemID:      media2.ID,
 		QualityProfileID: want.QualityProfileID,
 		Status:           string(model.WantCanceled),
+		Segment:          string(model.WantSegmentOngoing),
 	})
 	if err != nil {
 		t.Fatalf("create canceled want: %v", err)
@@ -161,6 +187,64 @@ func TestWant_Cancel_Terminal(t *testing.T) {
 	}
 	if got.Status != string(model.WantCanceled) {
 		t.Errorf("idempotent cancel status = %q, want %q", got.Status, model.WantCanceled)
+	}
+}
+
+// TestWant_RescheduleRecheck_NoIncrement guards the attempt_count decoupling:
+// RescheduleWantRecheck (the "no eligible release yet" path) returns a searching
+// want to 'pending' WITHOUT bumping attempt_count, while ScheduleWantRetry (the
+// error-retry path) still increments. Both fire from the 'searching' CAS state.
+func TestWant_RescheduleRecheck_NoIncrement(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	want := seedPendingWant(t, ctx, r)
+	want = claimWant(t, ctx, r, want.ID)
+
+	// Recheck: pending, attempt_count untouched.
+	rechecked, ok, err := r.RescheduleWantRecheck(ctx, repo.ScheduleWantRetryParams{
+		ID:        want.ID,
+		LastError: "no eligible release",
+		NextRunAt: time.Now().Add(5 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("RescheduleWantRecheck: %v", err)
+	}
+	if !ok {
+		t.Fatalf("RescheduleWantRecheck ok = false, want true (want was 'searching')")
+	}
+	if rechecked.Status != string(model.WantPending) {
+		t.Errorf("rechecked status = %q, want %q", rechecked.Status, model.WantPending)
+	}
+	if rechecked.AttemptCount != want.AttemptCount {
+		t.Errorf("rechecked attemptCount = %d, want %d (recheck must not increment)", rechecked.AttemptCount, want.AttemptCount)
+	}
+	if rechecked.LastError == nil || *rechecked.LastError != "no eligible release" {
+		t.Errorf("rechecked lastError = %v, want %q", rechecked.LastError, "no eligible release")
+	}
+
+	// Re-flip to 'searching' so the error-retry CAS owns it (next_run_at is now
+	// in the future, so a claim wouldn't pick it).
+	if _, err := r.SetWantStatus(ctx, want.ID, string(model.WantSearching)); err != nil {
+		t.Fatalf("set want searching: %v", err)
+	}
+
+	// Error retry: still increments — the counter belongs to this path alone.
+	retried, ok, err := r.ScheduleWantRetry(ctx, repo.ScheduleWantRetryParams{
+		ID:        want.ID,
+		LastError: "transient blip",
+		NextRunAt: time.Now().Add(5 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("ScheduleWantRetry: %v", err)
+	}
+	if !ok {
+		t.Fatalf("ScheduleWantRetry ok = false, want true (want was 'searching')")
+	}
+	if retried.AttemptCount != want.AttemptCount+1 {
+		t.Errorf("retried attemptCount = %d, want %d (error retry must increment)", retried.AttemptCount, want.AttemptCount+1)
 	}
 }
 

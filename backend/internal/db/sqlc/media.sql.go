@@ -730,6 +730,7 @@ select
   me.id as episode_id,
   me.title,
   me.air_date,
+  me.deprecated,
   f.id as file_id,
   f.library_id,
   fs.exists
@@ -748,6 +749,7 @@ type ListEpisodeAvailabilityForSeriesRow struct {
 	EpisodeID     pgtype.UUID `json:"episode_id"`
 	Title         *string     `json:"title"`
 	AirDate       pgtype.Date `json:"air_date"`
+	Deprecated    bool        `json:"deprecated"`
 	FileID        pgtype.UUID `json:"file_id"`
 	LibraryID     pgtype.UUID `json:"library_id"`
 	Exists        *bool       `json:"exists"`
@@ -768,6 +770,7 @@ func (q *Queries) ListEpisodeAvailabilityForSeries(ctx context.Context, id pgtyp
 			&i.EpisodeID,
 			&i.Title,
 			&i.AirDate,
+			&i.Deprecated,
 			&i.FileID,
 			&i.LibraryID,
 			&i.Exists,
