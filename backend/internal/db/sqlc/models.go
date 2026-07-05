@@ -368,6 +368,22 @@ type FileImport struct {
 	ErrorMessage *string     `json:"error_message"`
 }
 
+type FileOrigin struct {
+	FileID        pgtype.UUID `json:"file_id"`
+	Origin        string      `json:"origin"`
+	SourceTitle   *string     `json:"source_title"`
+	BinSource     *string     `json:"bin_source"`
+	BinResolution *string     `json:"bin_resolution"`
+	BinModifier   *string     `json:"bin_modifier"`
+	ReleaseGroup  *string     `json:"release_group"`
+	Edition       *string     `json:"edition"`
+	Parsed        []byte      `json:"parsed"`
+	IndexerID     *int64      `json:"indexer_id"`
+	Guid          *string     `json:"guid"`
+	DownloadJobID pgtype.UUID `json:"download_job_id"`
+	CapturedAt    time.Time   `json:"captured_at"`
+}
+
 type FileState struct {
 	FileID         pgtype.UUID `json:"file_id"`
 	Exists         bool        `json:"exists"`

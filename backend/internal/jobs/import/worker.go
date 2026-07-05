@@ -169,8 +169,10 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 		return err
 	}
 
-	// Compute destination path using name template
-	destPath, err := w.computeDestPath(task, taskDetails, mi)
+	// Compute destination path using name template. The returned parse is the
+	// release the naming derived from — stamped onto file_origin below so the
+	// provenance survives download_job pruning without a re-parse.
+	destPath, parsedRelease, err := w.computeDestPath(task, taskDetails, mi)
 	if err != nil {
 		return err
 	}
@@ -277,6 +279,30 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 			return ierr
 		}
 
+		// Stamp durable provenance: origin='grab', with the release title the
+		// pick+naming used and the grab's indexer/guid/download_job backref. This
+		// is the only path that persists the parsed quality/release attributes the
+		// decision otherwise discards.
+		domain := parsing.DomainSeries
+		if task.MediaType == "movie" {
+			domain = parsing.DomainMovie
+		}
+		// nil on the interactive/legacy path (no download_job) so the nullable FK
+		// stays NULL rather than referencing a zero UUID; indexer/guid are already
+		// nil there (LEFT JOIN).
+		var dlJobID *uuid.UUID
+		if task.DownloadJobID != uuid.Nil {
+			id := task.DownloadJobID
+			dlJobID = &id
+		}
+		if oerr := r.CreateFileOriginIfAbsent(ctx, jobutil.FileOriginParams(
+			file.ID, "grab", jobutil.Deref(taskDetails.CandidateTitle),
+			parsedRelease, domain, dlJobID,
+			taskDetails.DownloadIndexerID, taskDetails.DownloadGuid,
+		)); oerr != nil {
+			return oerr
+		}
+
 		if _, terr := r.SetImportTaskCompleted(ctx, repo.SetImportTaskCompletedParams{
 			ID:           task.ID,
 			DestPath:     destPath,
@@ -320,7 +346,11 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 	return nil
 }
 
-func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTaskWithDetails, mi *model.MediaInfoFields) (string, error) {
+// computeDestPath renders the destination relpath and returns the ParsedRelease
+// it derived from the candidate title along the way. The parse is returned (not
+// re-derived) so the caller can stamp file_origin from the exact release the
+// naming used — re-parsing the same string would be redundant.
+func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTaskWithDetails, mi *model.MediaInfoFields) (string, parsing.ParsedRelease, error) {
 	srcExt := filepath.Ext(task.SourcePath)
 
 	// Build evaluation context for template rendering
@@ -388,19 +418,19 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 	if task.MediaType == "series" {
 		showPart, err := template.Render(jobutil.Deref(details.SeriesShowTemplate), templateData)
 		if err != nil {
-			return "", apperrors.Internalf("render show template: %v", err).
+			return "", q, apperrors.Internalf("render show template: %v", err).
 				Op("ImportWorker.computeDestPath").
 				NotRetryable()
 		}
 		seasonPart, err := template.Render(jobutil.Deref(details.SeriesSeasonTemplate), templateData)
 		if err != nil {
-			return "", apperrors.Internalf("render season template: %v", err).
+			return "", q, apperrors.Internalf("render season template: %v", err).
 				Op("ImportWorker.computeDestPath").
 				NotRetryable()
 		}
 		filePart, err := template.Render(details.NameTemplate, templateData)
 		if err != nil {
-			return "", apperrors.Internalf("render file template: %v", err).
+			return "", q, apperrors.Internalf("render file template: %v", err).
 				Op("ImportWorker.computeDestPath").
 				NotRetryable()
 		}
@@ -412,14 +442,14 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 			var err error
 			dirPart, err = template.Render(*details.MovieDirTemplate, templateData)
 			if err != nil {
-				return "", apperrors.Internalf("render movie dir template: %v", err).
+				return "", q, apperrors.Internalf("render movie dir template: %v", err).
 					Op("ImportWorker.computeDestPath").
 					NotRetryable()
 			}
 		}
 		filePart, err := template.Render(details.NameTemplate, templateData)
 		if err != nil {
-			return "", apperrors.Internalf("render file template: %v", err).
+			return "", q, apperrors.Internalf("render file template: %v", err).
 				Op("ImportWorker.computeDestPath").
 				NotRetryable()
 		}
@@ -431,7 +461,7 @@ func (w *Worker) computeDestPath(task model.ImportTask, details model.ImportTask
 	}
 
 	rel = importer.EnsureExt(rel, srcExt)
-	return rel, nil
+	return rel, q, nil
 }
 
 func (w *Worker) handleError(ctx context.Context, task model.ImportTask, err error) {

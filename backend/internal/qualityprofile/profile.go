@@ -93,6 +93,13 @@ type ScoredFormat struct {
 	Weight int
 }
 
+// BinOf projects a subject's parsed quality core into a domain's bin identity —
+// the exact projection proposals store, exported so out-of-package callers
+// (file-origin capture) record library quality in the same comparable vocabulary.
+func BinOf(s model.Subject, d parsing.Domain) parsing.BinKey {
+	return binOf(s, d)
+}
+
 // binOf projects a subject's parsed quality core into this domain's bin
 // identity. The model advertises "NONE" for an absent modifier (a display-layer
 // enum value) while parsing's ModNone is the empty string; normalize so the cast
