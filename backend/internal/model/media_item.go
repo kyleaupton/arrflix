@@ -30,6 +30,13 @@ type MediaItem struct {
 	LastAirDate       *time.Time `json:"lastAirDate,omitempty"`
 	InProduction      *bool      `json:"inProduction,omitempty"`
 	MetadataUpdatedAt *time.Time `json:"metadataUpdatedAt,omitempty"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	UpdatedAt         time.Time  `json:"updatedAt"`
+	// Refresh scheduling. NextRefreshAt is the state-derived due-time the
+	// enrichment sweep reads (NULL = due immediately). The metadata* failure
+	// fields drive exponential back-off on a failed sync.
+	NextRefreshAt           *time.Time `json:"nextRefreshAt,omitempty"`
+	MetadataLastAttemptedAt *time.Time `json:"metadataLastAttemptedAt,omitempty"`
+	MetadataLastError       *string    `json:"metadataLastError,omitempty"`
+	MetadataAttemptCount    int32      `json:"metadataAttemptCount"`
+	CreatedAt               time.Time  `json:"createdAt"`
+	UpdatedAt               time.Time  `json:"updatedAt"`
 }

@@ -76,3 +76,129 @@ func smartNextRunAt(anchor, now time.Time) time.Time {
 		return now.Add(tierCold)
 	}
 }
+
+// ── Metadata refresh cadence ────────────────────────────────────────────────
+//
+// A second, coarser curve: not "when to search a want" but "when to re-consult
+// the provider for an item's metadata". It rides item *state* (status, air
+// dates, release age) rather than a release anchor, encoding the spec's
+// per-state cadence tables. Also pure and total: unknown/empty inputs fall to a
+// safe weekly default, never an error.
+
+// Metadata refresh intervals, keyed by item state.
+const (
+	metadataDaily     = 24 * time.Hour
+	metadataWeekly    = 7 * 24 * time.Hour
+	metadataMonthly   = 30 * 24 * time.Hour
+	metadataQuarterly = 90 * 24 * time.Hour
+)
+
+// Air-activity windows that promote an in-production series to the daily tier,
+// and the released-movie age boundary between monthly and quarterly.
+const (
+	metadataAiringLead  = 30 * 24 * time.Hour  // next episode within 30d → daily
+	metadataAiringTrail = 14 * 24 * time.Hour  // last episode within 14d → daily
+	metadataMovieRecent = 365 * 24 * time.Hour // released < 1y → monthly, else quarterly
+)
+
+// Back-off growth for a failed sync: base·2^(attempt-1), capped.
+const (
+	metadataBackoffBase = 15 * time.Minute
+	metadataBackoffCap  = 24 * time.Hour
+)
+
+// Canonical media-status tokens the cadence keys on. They mirror the locked set
+// in model.MediaStatus (what model.CanonicalizeStatus writes); duplicated as
+// literals here to keep this package pure — stdlib-only, no model import.
+const (
+	statusContinuing = "continuing"
+	statusEnded      = "ended"
+	statusCanceled   = "canceled"
+)
+
+// MetadataRefreshInput carries the item state the refresh cadence reads. All
+// fields are primitives / *time.Time so the package stays free of repo and
+// model dependencies; the service reads them off the details payload at
+// apply-time and feeds them here.
+type MetadataRefreshInput struct {
+	Type           string     // "movie" | "series"
+	Status         string     // canonical status token, may be ""
+	ReleaseDate    *time.Time // movie release / series first-air
+	LastAirDate    *time.Time // series only
+	NextEpisodeAir *time.Time // series only
+	LastEpisodeAir *time.Time // series only
+	InProduction   bool
+}
+
+// MetadataRefreshAt returns when an item's metadata is next due for refresh,
+// derived from its state. Pure and total.
+func MetadataRefreshAt(in MetadataRefreshInput, now time.Time) time.Time {
+	if in.Type == "series" {
+		return now.Add(seriesRefreshInterval(in, now))
+	}
+	return now.Add(movieRefreshInterval(in, now))
+}
+
+// seriesRefreshInterval encodes the series cadence table: ended/canceled series
+// are structurally frozen (monthly); a continuing or in-production series with
+// live air activity — a new episode within 30 days or one aired in the last 14
+// — refreshes daily (that window is where new episodes and slipped air dates
+// surface); everything else (quiet in-production, upcoming, unknown, unset)
+// falls to weekly.
+func seriesRefreshInterval(in MetadataRefreshInput, now time.Time) time.Duration {
+	if in.Status == statusEnded || in.Status == statusCanceled {
+		return metadataMonthly
+	}
+
+	if in.Status == statusContinuing || in.InProduction {
+		if in.NextEpisodeAir != nil {
+			if d := in.NextEpisodeAir.Sub(now); d >= 0 && d <= metadataAiringLead {
+				return metadataDaily
+			}
+		}
+		if in.LastEpisodeAir != nil {
+			if d := now.Sub(*in.LastEpisodeAir); d >= 0 && d <= metadataAiringTrail {
+				return metadataDaily
+			}
+		}
+	}
+
+	return metadataWeekly
+}
+
+// movieRefreshInterval encodes the movie cadence table: an unreleased movie
+// (future or unknown release date) can still shift → weekly; released within
+// the last year still accrues late edits → monthly; older than a year is
+// effectively frozen → quarterly.
+func movieRefreshInterval(in MetadataRefreshInput, now time.Time) time.Duration {
+	if in.ReleaseDate == nil || in.ReleaseDate.After(now) {
+		return metadataWeekly
+	}
+	if now.Sub(*in.ReleaseDate) <= metadataMovieRecent {
+		return metadataMonthly
+	}
+	return metadataQuarterly
+}
+
+// MetadataBackoffAt returns the next due time after a failed sync: base·2^(n-1)
+// from now, capped at ~24h. attempt is the failing attempt's 1-based count
+// (first failure is 1). Pure and total.
+func MetadataBackoffAt(attempt int, now time.Time) time.Time {
+	return now.Add(metadataBackoff(attempt))
+}
+
+func metadataBackoff(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	// The cap is reached by attempt 8 (15m·2^7 = 32h > 24h); clamp the exponent
+	// so a stuck row that keeps incrementing never triggers a pathological shift.
+	shift := attempt - 1
+	if shift > 8 {
+		return metadataBackoffCap
+	}
+	if d := metadataBackoffBase << shift; d < metadataBackoffCap {
+		return d
+	}
+	return metadataBackoffCap
+}

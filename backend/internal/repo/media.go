@@ -46,7 +46,8 @@ type MediaRepo interface {
 
 	// Metadata enrichment
 	UpdateMediaItemMetadata(ctx context.Context, params UpdateMediaItemMetadataParams) (model.MediaItem, error)
-	ListStaleMediaItems(ctx context.Context, staleBefore time.Time, batchSize int32) ([]model.MediaItem, error)
+	RecordMetadataFailure(ctx context.Context, id uuid.UUID, nextRefreshAt time.Time, errMsg string) error
+	ListDueMediaItems(ctx context.Context, now time.Time, batchSize int32) ([]model.MediaItem, error)
 	UpsertMediaMetadataSource(ctx context.Context, params UpsertMediaMetadataSourceParams) error
 	UpsertMediaItemExternalID(ctx context.Context, mediaItemID uuid.UUID, source, externalID string) error
 
@@ -143,6 +144,11 @@ type UpdateMediaItemMetadataParams struct {
 	ReleaseDate   *time.Time
 	LastAirDate   *time.Time
 	InProduction  *bool
+	// NextRefreshAt is the state-derived due-time the caller computes from the
+	// item's metadata (via cadence.MetadataRefreshAt). The success-path SQL also
+	// clears the failure columns, so this method is only correct on a successful
+	// materialization.
+	NextRefreshAt *time.Time
 }
 
 // UpsertMediaMetadataSourceParams is the domain-shaped input for
@@ -158,23 +164,25 @@ type UpsertMediaMetadataSourceParams struct {
 // domain-shaped model.MediaItem. Lives next to the methods that use it.
 func toModelMediaItem(row dbgen.MediaItem) model.MediaItem {
 	m := model.MediaItem{
-		ID:            uuidFromPgtype(row.ID),
-		Type:          row.Type,
-		SeriesType:    row.SeriesType,
-		Title:         row.Title,
-		Year:          row.Year,
-		TmdbID:        row.TmdbID,
-		PosterPath:    row.PosterPath,
-		BackdropPath:  row.BackdropPath,
-		Overview:      row.Overview,
-		VoteAverage:   row.VoteAverage,
-		VoteCount:     row.VoteCount,
-		Runtime:       row.Runtime,
-		Status:        row.Status,
-		Certification: row.Certification,
-		InProduction:  row.InProduction,
-		CreatedAt:     row.CreatedAt,
-		UpdatedAt:     row.UpdatedAt,
+		ID:                   uuidFromPgtype(row.ID),
+		Type:                 row.Type,
+		SeriesType:           row.SeriesType,
+		Title:                row.Title,
+		Year:                 row.Year,
+		TmdbID:               row.TmdbID,
+		PosterPath:           row.PosterPath,
+		BackdropPath:         row.BackdropPath,
+		Overview:             row.Overview,
+		VoteAverage:          row.VoteAverage,
+		VoteCount:            row.VoteCount,
+		Runtime:              row.Runtime,
+		Status:               row.Status,
+		Certification:        row.Certification,
+		InProduction:         row.InProduction,
+		MetadataLastError:    row.MetadataLastError,
+		MetadataAttemptCount: row.MetadataAttemptCount,
+		CreatedAt:            row.CreatedAt,
+		UpdatedAt:            row.UpdatedAt,
 	}
 	if len(row.Genres) > 0 {
 		var genres []model.Genre
@@ -195,6 +203,14 @@ func toModelMediaItem(row dbgen.MediaItem) model.MediaItem {
 		t := row.MetadataUpdatedAt.Time
 		m.MetadataUpdatedAt = &t
 	}
+	if row.NextRefreshAt.Valid {
+		t := row.NextRefreshAt.Time
+		m.NextRefreshAt = &t
+	}
+	if row.MetadataLastAttemptedAt.Valid {
+		t := row.MetadataLastAttemptedAt.Time
+		m.MetadataLastAttemptedAt = &t
+	}
 	return m
 }
 
@@ -205,6 +221,15 @@ func pgDateFromTimePtr(t *time.Time) pgtype.Date {
 		return pgtype.Date{Valid: false}
 	}
 	return pgtype.Date{Time: *t, Valid: true}
+}
+
+// pgTimestamptzFromTimePtr converts a *time.Time into the pgtype.Timestamptz
+// shape SQLC parameters expect. Nil maps to a NULL-shaped value.
+func pgTimestamptzFromTimePtr(t *time.Time) pgtype.Timestamptz {
+	if t == nil {
+		return pgtype.Timestamptz{Valid: false}
+	}
+	return pgtype.Timestamptz{Time: *t, Valid: true}
 }
 
 func (r *Repository) ListMediaItems(ctx context.Context) ([]model.MediaItem, error) {
@@ -339,6 +364,7 @@ func (r *Repository) UpdateMediaItemMetadata(ctx context.Context, params UpdateM
 		ReleaseDate:   pgDateFromTimePtr(params.ReleaseDate),
 		LastAirDate:   pgDateFromTimePtr(params.LastAirDate),
 		InProduction:  params.InProduction,
+		NextRefreshAt: pgTimestamptzFromTimePtr(params.NextRefreshAt),
 	})
 	if err != nil {
 		return model.MediaItem{}, apperrors.FromPg(err, "update metadata for media item %s", params.ID)
@@ -346,13 +372,28 @@ func (r *Repository) UpdateMediaItemMetadata(ctx context.Context, params UpdateM
 	return toModelMediaItem(row), nil
 }
 
-func (r *Repository) ListStaleMediaItems(ctx context.Context, staleBefore time.Time, batchSize int32) ([]model.MediaItem, error) {
-	rows, err := r.Q.ListStaleMediaItems(ctx, dbgen.ListStaleMediaItemsParams{
-		StaleBefore: pgtype.Timestamptz{Time: staleBefore, Valid: true},
-		BatchSize:   batchSize,
+// RecordMetadataFailure records a failed metadata sync: it advances the attempt
+// counter, stores the error, and pushes next_refresh_at out to the caller's
+// back-off time. It never touches metadata_updated_at — a failed sync must not
+// read as fresh.
+func (r *Repository) RecordMetadataFailure(ctx context.Context, id uuid.UUID, nextRefreshAt time.Time, errMsg string) error {
+	return apperrors.FromPg(r.Q.RecordMetadataFailure(ctx, dbgen.RecordMetadataFailureParams{
+		ID:            pgtypeFromUUID(id),
+		LastError:     &errMsg,
+		NextRefreshAt: pgtype.Timestamptz{Time: nextRefreshAt, Valid: true},
+	}), "record metadata failure for media item %s", id)
+}
+
+// ListDueMediaItems returns items whose next_refresh_at has passed (NULL = due
+// immediately), oldest-due first, capped at batchSize. It is the enrichment
+// sweep's due queue.
+func (r *Repository) ListDueMediaItems(ctx context.Context, now time.Time, batchSize int32) ([]model.MediaItem, error) {
+	rows, err := r.Q.ListDueMediaItems(ctx, dbgen.ListDueMediaItemsParams{
+		Now:       pgtype.Timestamptz{Time: now, Valid: true},
+		BatchSize: batchSize,
 	})
 	if err != nil {
-		return nil, apperrors.FromPg(err, "list stale media items")
+		return nil, apperrors.FromPg(err, "list due media items")
 	}
 	out := make([]model.MediaItem, 0, len(rows))
 	for _, row := range rows {

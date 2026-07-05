@@ -103,7 +103,7 @@ func (s *TmdbService) FindByID(ctx context.Context, id, source string) (tmdb.Fin
 		return c.GetFindByID(id, map[string]string{
 			"external_source": source,
 		})
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 func (s *TmdbService) GetMovieDetails(ctx context.Context, id int64) (tmdb.MovieDetails, error) {
@@ -115,7 +115,7 @@ func (s *TmdbService) GetMovieDetails(ctx context.Context, id int64) (tmdb.Movie
 	cacheKey := fmt.Sprintf("tmdb_movie_details_%d", id)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.MovieDetails, error) {
 		return c.GetMovieDetails(int(id), map[string]string{})
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 // GetMovieDetailsWithExtras fetches movie details with appended release dates and watch providers.
@@ -131,7 +131,7 @@ func (s *TmdbService) GetMovieDetailsWithExtras(ctx context.Context, id int64) (
 		return c.GetMovieDetails(int(id), map[string]string{
 			"append_to_response": "release_dates,watch/providers",
 		})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
 func (s *TmdbService) GetSeriesDetails(ctx context.Context, id int64) (tmdb.TVDetails, error) {
@@ -143,7 +143,7 @@ func (s *TmdbService) GetSeriesDetails(ctx context.Context, id int64) (tmdb.TVDe
 	cacheKey := fmt.Sprintf("tmdb_series_details_%d", id)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.TVDetails, error) {
 		return c.GetTVDetails(int(id), map[string]string{})
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 // GetSeriesDetailsWithExtras fetches series details with appended content ratings and watch providers.
@@ -159,10 +159,13 @@ func (s *TmdbService) GetSeriesDetailsWithExtras(ctx context.Context, id int64) 
 		return c.GetTVDetails(int(id), map[string]string{
 			"append_to_response": "content_ratings,watch/providers",
 		})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
-func (s *TmdbService) GetTVSeasonDetails(ctx context.Context, id int64, seasonNumber int) (tmdb.TVSeasonDetails, error) {
+// GetTVSeasonDetails is dual-use: structure sync (canonical, must fetch fresh)
+// and render/candidate reads (ephemeral, cache-served). The caller picks via
+// forceRefresh — sync passes true, render passes false.
+func (s *TmdbService) GetTVSeasonDetails(ctx context.Context, id int64, seasonNumber int, forceRefresh bool) (tmdb.TVSeasonDetails, error) {
 	c, err := s.getClient()
 	if err != nil {
 		var zero tmdb.TVSeasonDetails
@@ -171,7 +174,7 @@ func (s *TmdbService) GetTVSeasonDetails(ctx context.Context, id int64, seasonNu
 	cacheKey := fmt.Sprintf("tmdb_tv_season_details_%d_%d", id, seasonNumber)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.TVSeasonDetails, error) {
 		return c.GetTVSeasonDetails(int(id), seasonNumber, map[string]string{})
-	}, STATIC_TTL)
+	}, STATIC_TTL, forceRefresh)
 }
 
 func (s *TmdbService) GetEpisodeDetails(ctx context.Context, id int64, season int64, episode int64) (tmdb.TVEpisodeDetails, error) {
@@ -183,7 +186,7 @@ func (s *TmdbService) GetEpisodeDetails(ctx context.Context, id int64, season in
 	cacheKey := fmt.Sprintf("tmdb_episode_details_%d_%d_%d", id, season, episode)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.TVEpisodeDetails, error) {
 		return c.GetTVEpisodeDetails(int(id), int(season), int(episode), map[string]string{})
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 func (s *TmdbService) GetTrendingMovies(ctx context.Context) (tmdb.Trending, error) {
@@ -195,7 +198,7 @@ func (s *TmdbService) GetTrendingMovies(ctx context.Context) (tmdb.Trending, err
 	cacheKey := "tmdb_trending_movies"
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.Trending, error) {
 		return c.GetTrending("movie", "day", map[string]string{})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
 func (s *TmdbService) GetTrendingSeries(ctx context.Context) (tmdb.Trending, error) {
@@ -207,7 +210,7 @@ func (s *TmdbService) GetTrendingSeries(ctx context.Context) (tmdb.Trending, err
 	cacheKey := "tmdb_trending_series"
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.Trending, error) {
 		return c.GetTrending("tv", "day", map[string]string{})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
 func (s *TmdbService) GetPopularMovies(ctx context.Context) (tmdb.MoviePopular, error) {
@@ -219,7 +222,7 @@ func (s *TmdbService) GetPopularMovies(ctx context.Context) (tmdb.MoviePopular, 
 	cacheKey := "tmdb_popular_movies"
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.MoviePopular, error) {
 		return c.GetMoviePopular(map[string]string{})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
 func (s *TmdbService) GetTopRatedMovies(ctx context.Context) (tmdb.MovieTopRated, error) {
@@ -231,7 +234,7 @@ func (s *TmdbService) GetTopRatedMovies(ctx context.Context) (tmdb.MovieTopRated
 	cacheKey := "tmdb_top_rated_movies"
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.MovieTopRated, error) {
 		return c.GetMovieTopRated(map[string]string{})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
 func (s *TmdbService) GetNowPlayingMovies(ctx context.Context) (tmdb.MovieNowPlaying, error) {
@@ -243,7 +246,7 @@ func (s *TmdbService) GetNowPlayingMovies(ctx context.Context) (tmdb.MovieNowPla
 	cacheKey := "tmdb_now_playing_movies"
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.MovieNowPlaying, error) {
 		return c.GetMovieNowPlaying(map[string]string{})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
 func (s *TmdbService) GetUpcomingMovies(ctx context.Context) (tmdb.MovieUpcoming, error) {
@@ -255,7 +258,7 @@ func (s *TmdbService) GetUpcomingMovies(ctx context.Context) (tmdb.MovieUpcoming
 	cacheKey := "tmdb_upcoming_movies"
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.MovieUpcoming, error) {
 		return c.GetMovieUpcoming(map[string]string{})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
 func (s *TmdbService) GetPopularSeries(ctx context.Context) (tmdb.TVPopular, error) {
@@ -267,7 +270,7 @@ func (s *TmdbService) GetPopularSeries(ctx context.Context) (tmdb.TVPopular, err
 	cacheKey := "tmdb_popular_series"
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.TVPopular, error) {
 		return c.GetTVPopular(map[string]string{})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
 func (s *TmdbService) GetTopRatedSeries(ctx context.Context) (tmdb.TVTopRated, error) {
@@ -279,7 +282,7 @@ func (s *TmdbService) GetTopRatedSeries(ctx context.Context) (tmdb.TVTopRated, e
 	cacheKey := "tmdb_top_rated_series"
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.TVTopRated, error) {
 		return c.GetTVTopRated(map[string]string{})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
 func (s *TmdbService) GetOnTheAirSeries(ctx context.Context) (tmdb.TVOnTheAir, error) {
@@ -291,7 +294,7 @@ func (s *TmdbService) GetOnTheAirSeries(ctx context.Context) (tmdb.TVOnTheAir, e
 	cacheKey := "tmdb_on_the_air_series"
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.TVOnTheAir, error) {
 		return c.GetTVOnTheAir(map[string]string{})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
 func (s *TmdbService) GetMovieCredits(ctx context.Context, id int64) (tmdb.MovieCredits, error) {
@@ -303,7 +306,7 @@ func (s *TmdbService) GetMovieCredits(ctx context.Context, id int64) (tmdb.Movie
 	cacheKey := fmt.Sprintf("tmdb_movie_credits_%d", id)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.MovieCredits, error) {
 		return c.GetMovieCredits(int(id), map[string]string{})
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 func (s *TmdbService) GetMovieVideos(ctx context.Context, id int64) (tmdb.VideoResults, error) {
@@ -315,7 +318,7 @@ func (s *TmdbService) GetMovieVideos(ctx context.Context, id int64) (tmdb.VideoR
 	cacheKey := fmt.Sprintf("tmdb_movie_videos_%d", id)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.VideoResults, error) {
 		return c.GetMovieVideos(int(id), map[string]string{})
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 func (s *TmdbService) GetTVCredits(ctx context.Context, id int64) (tmdb.TVCredits, error) {
@@ -327,7 +330,7 @@ func (s *TmdbService) GetTVCredits(ctx context.Context, id int64) (tmdb.TVCredit
 	cacheKey := fmt.Sprintf("tmdb_tv_credits_%d", id)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.TVCredits, error) {
 		return c.GetTVCredits(int(id), map[string]string{})
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 func (s *TmdbService) GetTVVideos(ctx context.Context, id int64) (tmdb.VideoResults, error) {
@@ -339,7 +342,7 @@ func (s *TmdbService) GetTVVideos(ctx context.Context, id int64) (tmdb.VideoResu
 	cacheKey := fmt.Sprintf("tmdb_tv_videos_%d", id)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.VideoResults, error) {
 		return c.GetTVVideos(int(id), map[string]string{})
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 func (s *TmdbService) GetMovieRecommendations(ctx context.Context, id int64) (tmdb.MovieRecommendations, error) {
@@ -351,7 +354,7 @@ func (s *TmdbService) GetMovieRecommendations(ctx context.Context, id int64) (tm
 	cacheKey := fmt.Sprintf("tmdb_movie_recommendations_%d", id)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.MovieRecommendations, error) {
 		return c.GetMovieRecommendations(int(id), map[string]string{})
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 func (s *TmdbService) GetPersonDetails(ctx context.Context, id int64) (tmdb.PersonDetails, error) {
@@ -363,7 +366,7 @@ func (s *TmdbService) GetPersonDetails(ctx context.Context, id int64) (tmdb.Pers
 	cacheKey := fmt.Sprintf("tmdb_person_details_%d", id)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.PersonDetails, error) {
 		return c.GetPersonDetails(int(id), map[string]string{})
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 func (s *TmdbService) MultiSearch(ctx context.Context, query string, page int) (tmdb.SearchMulti, error) {
@@ -377,7 +380,7 @@ func (s *TmdbService) MultiSearch(ctx context.Context, query string, page int) (
 		return c.GetSearchMulti(query, map[string]string{
 			"page": fmt.Sprintf("%d", page),
 		})
-	}, DYNAMIC_TTL)
+	}, DYNAMIC_TTL, false)
 }
 
 func (s *TmdbService) GetMovieReleaseDates(ctx context.Context, id int64) (tmdb.MovieReleaseDates, error) {
@@ -389,7 +392,7 @@ func (s *TmdbService) GetMovieReleaseDates(ctx context.Context, id int64) (tmdb.
 	cacheKey := fmt.Sprintf("tmdb_movie_release_dates_%d", id)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.MovieReleaseDates, error) {
 		return c.GetMovieReleaseDates(int(id))
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 func (s *TmdbService) GetTVContentRatings(ctx context.Context, id int64) (tmdb.TVContentRatings, error) {
@@ -401,7 +404,7 @@ func (s *TmdbService) GetTVContentRatings(ctx context.Context, id int64) (tmdb.T
 	cacheKey := fmt.Sprintf("tmdb_tv_content_ratings_%d", id)
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.TVContentRatings, error) {
 		return c.GetTVContentRatings(int(id), map[string]string{})
-	}, STATIC_TTL)
+	}, STATIC_TTL, false)
 }
 
 // GetMovieDetailsForEnrichment fetches movie details with release_dates appended
@@ -413,11 +416,13 @@ func (s *TmdbService) GetMovieDetailsForEnrichment(ctx context.Context, id int64
 		return zero, err
 	}
 	cacheKey := fmt.Sprintf("tmdb_movie_enrich_%d", id)
+	// Canonical-materializing read → fetch fresh (bypass the response-cache read)
+	// so a scheduled refresh never re-reads a stale body and stamps it fresh.
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.MovieDetails, error) {
 		return c.GetMovieDetails(int(id), map[string]string{
 			"append_to_response": "release_dates",
 		})
-	}, STATIC_TTL)
+	}, STATIC_TTL, true)
 }
 
 // GetSeriesDetailsForEnrichment fetches series details with content_ratings and external_ids
@@ -429,71 +434,79 @@ func (s *TmdbService) GetSeriesDetailsForEnrichment(ctx context.Context, id int6
 		return zero, err
 	}
 	cacheKey := fmt.Sprintf("tmdb_series_enrich_%d", id)
+	// Canonical-materializing read → fetch fresh (bypass the response-cache read)
+	// so a scheduled refresh never re-reads a stale body and stamps it fresh.
 	return getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*tmdb.TVDetails, error) {
 		return c.GetTVDetails(int(id), map[string]string{
 			"append_to_response": "content_ratings,external_ids",
 		})
-	}, STATIC_TTL)
+	}, STATIC_TTL, true)
 }
 
 // getOrFetchFromCache encapsulates the pattern of:
-// 1) checking API cache
-// 2) calling the provided fetch function on cache miss
+// 1) checking API cache (skipped when forceRefresh)
+// 2) calling the provided fetch function on cache miss (or forced refresh)
 // 3) storing the fresh response back into the cache
 // 4) returning the typed result
+//
+// forceRefresh bypasses the cache *read* but keeps the write — the freshness
+// invariant for canonical-materializing reads (enrichment, structure sync,
+// born-at-spawn), which the refresh engine has already decided are worth
+// spending and the response cache must not second-guess with a stale body.
+// Ephemeral render/browse reads pass false and keep the fan-out shield.
 //
 // Fetch failures are surfaced as BadGateway so upstream-API calls (TMDB,
 // GitHub) get the right wire status and retry semantics. Marshal/unmarshal
 // failures are Internal — they indicate a programming error, not transient.
-func getOrFetchFromCache[T any](ctx context.Context, r *repo.Repository, l *logger.Logger, cacheKey string, fetch func() (*T, error), ttl time.Duration) (T, error) {
-	cacheEntry, found, err := r.GetApiCache(ctx, cacheKey)
-	if err != nil {
-		var zero T
-		return zero, err
-	}
-
-	if !found {
-		l.Debug().Str("cache_key", cacheKey).Msg("Cache miss, fetching from API")
-		res, err := fetch()
+func getOrFetchFromCache[T any](ctx context.Context, r *repo.Repository, l *logger.Logger, cacheKey string, fetch func() (*T, error), ttl time.Duration, forceRefresh bool) (T, error) {
+	if !forceRefresh {
+		cacheEntry, found, err := r.GetApiCache(ctx, cacheKey)
 		if err != nil {
 			var zero T
-			return zero, apperrors.BadGatewayf("upstream fetch %q failed: %v", cacheKey, err)
+			return zero, err
 		}
-
-		category := "tmdb"
-		contentType := "application/json"
-
-		// Convert the result to json to be stored in the cache
-		jsonRes, err := json.Marshal(res)
-		if err != nil {
-			var zero T
-			return zero, apperrors.Internalf("marshal upstream response %q: %v", cacheKey, err).
-				NotRetryable()
+		if found {
+			var out T
+			if err := json.Unmarshal(cacheEntry.Response, &out); err != nil {
+				var zero T
+				return zero, apperrors.Internalf("unmarshal cached response %q: %v", cacheKey, err).
+					NotRetryable()
+			}
+			return out, nil
 		}
-
-		// Note: pass nil for headers so the DB receives NULL (valid for jsonb)
-		if err := r.UpsertApiCache(ctx, repo.UpsertApiCacheParams{
-			Key:         cacheKey,
-			Category:    &category,
-			Response:    jsonRes,
-			Status:      200,
-			ContentType: &contentType,
-			Headers:     nil,
-			TTL:         ttl,
-		}); err != nil {
-			l.Error().Err(err).Str("cache_key", cacheKey).Msg("Failed upserting api cache")
-		}
-
-		// Return the result
-		return *res, nil
 	}
 
-	var out T
-	err = json.Unmarshal(cacheEntry.Response, &out)
+	// Cache miss, or a forced-fresh canonical read: consult upstream directly.
+	l.Debug().Str("cache_key", cacheKey).Bool("force_refresh", forceRefresh).Msg("Fetching from API")
+	res, err := fetch()
 	if err != nil {
 		var zero T
-		return zero, apperrors.Internalf("unmarshal cached response %q: %v", cacheKey, err).
+		return zero, apperrors.BadGatewayf("upstream fetch %q failed: %v", cacheKey, err)
+	}
+
+	category := "tmdb"
+	contentType := "application/json"
+
+	// Convert the result to json to be stored in the cache
+	jsonRes, err := json.Marshal(res)
+	if err != nil {
+		var zero T
+		return zero, apperrors.Internalf("marshal upstream response %q: %v", cacheKey, err).
 			NotRetryable()
 	}
-	return out, nil
+
+	// Note: pass nil for headers so the DB receives NULL (valid for jsonb)
+	if err := r.UpsertApiCache(ctx, repo.UpsertApiCacheParams{
+		Key:         cacheKey,
+		Category:    &category,
+		Response:    jsonRes,
+		Status:      200,
+		ContentType: &contentType,
+		Headers:     nil,
+		TTL:         ttl,
+	}); err != nil {
+		l.Error().Err(err).Str("cache_key", cacheKey).Msg("Failed upserting api cache")
+	}
+
+	return *res, nil
 }

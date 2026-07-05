@@ -185,7 +185,7 @@ func (s *VersionService) getLatestRelease(ctx context.Context) (*github.Release,
 	cacheKey := "github_latest_release"
 	release, err := getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*github.Release, error) {
 		return s.gh.GetLatestRelease(ctx)
-	}, UpdateTTL)
+	}, UpdateTTL, false)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +196,7 @@ func (s *VersionService) getMainHeadCommit(ctx context.Context) (*github.Commit,
 	cacheKey := "github_main_head"
 	commit, err := getOrFetchFromCache(ctx, s.repo, s.logger, cacheKey, func() (*github.Commit, error) {
 		return s.gh.GetMainHeadCommit(ctx)
-	}, UpdateTTL)
+	}, UpdateTTL, false)
 	if err != nil {
 		return nil, err
 	}

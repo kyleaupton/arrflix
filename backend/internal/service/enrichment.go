@@ -9,6 +9,7 @@ import (
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 	"github.com/google/uuid"
+	"github.com/kyleaupton/arrflix/internal/cadence"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/metadata"
@@ -108,6 +109,17 @@ func (s *EnrichmentService) applyMovieMetadata(ctx context.Context, r *repo.Repo
 		InProduction:  &inProd,
 	}
 
+	// Schedule the next refresh from the movie's state (release age drives the
+	// cadence). Stamped here alongside metadata_updated_at so born-at-spawn and
+	// worker-refresh schedule uniformly through the one write.
+	refreshAt := cadence.MetadataRefreshAt(cadence.MetadataRefreshInput{
+		Type:         item.Type,
+		Status:       deref(params.Status),
+		ReleaseDate:  releaseDate,
+		InProduction: inProd,
+	}, time.Now())
+	params.NextRefreshAt = &refreshAt
+
 	if _, err := r.UpdateMediaItemMetadata(ctx, params); err != nil {
 		return err
 	}
@@ -204,6 +216,21 @@ func (s *EnrichmentService) applySeriesMetadata(ctx context.Context, r *repo.Rep
 		InProduction:  &details.InProduction,
 	}
 
+	// Schedule the next refresh from the series' state. The cadence reads the
+	// air-activity pointers straight off the details payload (no tree query) —
+	// an airing show lands on the daily tier, an ended one on monthly. Stamped
+	// here so born-at-spawn and worker-refresh schedule uniformly.
+	refreshAt := cadence.MetadataRefreshAt(cadence.MetadataRefreshInput{
+		Type:           item.Type,
+		Status:         deref(params.Status),
+		ReleaseDate:    firstAirDate,
+		LastAirDate:    lastAirDate,
+		NextEpisodeAir: parseDateToTimePtr(details.NextEpisodeToAir.AirDate),
+		LastEpisodeAir: parseDateToTimePtr(details.LastEpisodeToAir.AirDate),
+		InProduction:   details.InProduction,
+	}, time.Now())
+	params.NextRefreshAt = &refreshAt
+
 	if _, err := r.UpdateMediaItemMetadata(ctx, params); err != nil {
 		return err
 	}
@@ -252,23 +279,53 @@ func (s *EnrichmentService) storeRawPayload(ctx context.Context, mediaItemID uui
 	}
 }
 
-// SyncSeriesStructure upserts the full season/episode tree from TMDB,
-// including unaired episodes (air_date in the future or NULL). It is the
-// structural half of series sync — the data tracking and "coming soon" UI
-// operate on. Episodes are keyed on the stable TMDB episode id, so a renumber
-// updates rows in place rather than orphaning them. Best-effort: a season
-// fetch or upsert failing logs and continues so one bad season doesn't block
-// the rest of the tree.
+// SyncSeriesStructure upserts the season/episode tree from TMDB, including
+// unaired episodes (air_date in the future or NULL). It is the structural half
+// of series sync — the data tracking and "coming soon" UI operate on. Episodes
+// are keyed on the stable TMDB episode id, so a renumber updates rows in place
+// rather than orphaning them. Best-effort: a season fetch or upsert failing
+// logs and continues so one bad season doesn't block the rest of the tree.
+//
+// It fetches only the seasons that can still change — the mutable set (current
+// / next-airing / just-added, see mutableSeasons) plus any season we've never
+// synced. An immutable, already-synced season (a frozen back-catalog) is
+// skipped: re-pulling its episode rows is pure TMDB waste, and this bounds both
+// routine call volume and born-at-spawn latency for long-running airing series.
+// First sync fetches everything (no season exists yet), which is what enables
+// the deprecation pass below.
 func (s *EnrichmentService) SyncSeriesStructure(ctx context.Context, item model.MediaItem, details tmdb.TVDetails) {
+	// Existing season numbers — a cheap indexed read. A season absent here has
+	// never been synced and is always fetched; a listing error degrades to
+	// "treat all as unseen" (over-fetch, never under-fetch).
+	existingSeasons := make(map[int32]bool)
+	if seasons, err := s.repo.ListSeasonsForMedia(ctx, item.ID); err != nil {
+		s.logger.Warn().Err(err).Str("title", item.Title).
+			Msg("series structure sync: list existing seasons failed, fetching all")
+	} else {
+		for _, se := range seasons {
+			existingSeasons[se.SeasonNumber] = true
+		}
+	}
+	toFetch := seasonsToFetch(details, existingSeasons)
+
 	syncedIDs := make([]int64, 0, details.NumberOfEpisodes)
 
-	// Deprecation keys off the synced set, so a partial sync would read a
-	// failed season's still-live episodes as "removed". Only deprecate on a
-	// full pass; this flips false on any season fetch/upsert failure.
-	complete := true
+	// Deprecation keys off the synced set, so a partial pass would read a
+	// skipped (or failed) season's still-live episodes as "removed". Only a full
+	// pass — every season fetched (first sync), no failures — may deprecate; a
+	// skip (fetch set smaller than the season list) or any error flips this false.
+	complete := len(toFetch) == len(details.Seasons)
 
 	for _, season := range details.Seasons {
-		seasonDetails, err := s.tmdb.GetTVSeasonDetails(ctx, *item.TmdbID, season.SeasonNumber)
+		// A frozen, already-synced season is skipped (see seasonsToFetch); the
+		// deprecation guard above already accounts for it.
+		if !toFetch[season.SeasonNumber] {
+			continue
+		}
+
+		// forceRefresh: this is a canonical-materializing read, so it bypasses
+		// the response cache and consults TMDB directly — the freshness invariant.
+		seasonDetails, err := s.tmdb.GetTVSeasonDetails(ctx, *item.TmdbID, season.SeasonNumber, true)
 		if err != nil {
 			s.logger.Warn().Err(err).
 				Str("title", item.Title).Int("season", season.SeasonNumber).
@@ -326,9 +383,60 @@ func (s *EnrichmentService) SyncSeriesStructure(ctx context.Context, item model.
 	}
 }
 
-// EnrichBatch queries stale items and enriches each. Returns the count of items processed.
-func (s *EnrichmentService) EnrichBatch(ctx context.Context, staleBefore time.Time, batchSize int32) (int, error) {
-	items, err := s.repo.ListStaleMediaItems(ctx, staleBefore, batchSize)
+// seasonsToFetch decides which of a series' seasons a structure sync pulls from
+// TMDB: a season is fetched iff it can still change (in the mutable set) or has
+// never been synced (absent from existing). Pure — this is the per-season
+// fetch/skip decision SyncSeriesStructure applies, lifted out for testing. On
+// first sync `existing` is empty, so every season is fetched; on a routine
+// refresh of an established series only the mutable set is fetched; a
+// newly-added season (absent from existing) is always included.
+func seasonsToFetch(details tmdb.TVDetails, existing map[int32]bool) map[int]bool {
+	mutable := mutableSeasons(details)
+	out := make(map[int]bool, len(details.Seasons))
+	for _, se := range details.Seasons {
+		if mutable[se.SeasonNumber] || !existing[int32(se.SeasonNumber)] {
+			out[se.SeasonNumber] = true
+		}
+	}
+	return out
+}
+
+// mutableSeasons returns the season numbers a routine refresh must re-fetch
+// because their contents can still change, derived purely from the series
+// payload (no per-season fetch): the season carrying the next episode to air,
+// the season carrying the last episode aired, and the highest-numbered season.
+// The max catches a just-added, still-undated season that has no next/last
+// pointer yet. Every other season is treated as frozen. The next/last pointers
+// are guarded on a non-zero id so an absent pointer (zero struct) doesn't mark
+// season 0 mutable.
+func mutableSeasons(details tmdb.TVDetails) map[int]bool {
+	m := make(map[int]bool, 3)
+	if details.NextEpisodeToAir.ID != 0 {
+		m[details.NextEpisodeToAir.SeasonNumber] = true
+	}
+	if details.LastEpisodeToAir.ID != 0 {
+		m[details.LastEpisodeToAir.SeasonNumber] = true
+	}
+	maxSeason, have := 0, false
+	for _, se := range details.Seasons {
+		if !have || se.SeasonNumber > maxSeason {
+			maxSeason, have = se.SeasonNumber, true
+		}
+	}
+	if have {
+		m[maxSeason] = true
+	}
+	return m
+}
+
+// EnrichBatch drains the due queue (items whose next_refresh_at has passed as of
+// now) and enriches each, returning the count successfully processed. A failed
+// enrich records back-off state (RecordMetadataFailure) so the item drops out of
+// the due set for exponentially longer rather than being retried every tick; the
+// success path reschedules via next_refresh_at inside applyMovieMetadata /
+// applySeriesMetadata.
+func (s *EnrichmentService) EnrichBatch(ctx context.Context, now time.Time, batchSize int32) (int, error) {
+	items, err := s.repo.ListDueMediaItems(ctx, now, batchSize)
 	if err != nil {
 		return 0, err
 	}
@@ -340,10 +448,20 @@ func (s *EnrichmentService) EnrichBatch(ctx context.Context, staleBefore time.Ti
 		}
 
 		if err := s.EnrichMediaItem(ctx, item); err != nil {
+			// Back off: push next_refresh_at out by base·2^(attempt-1) so a
+			// persistently-failing item (rate limit, gone-upstream) doesn't burn
+			// a fetch every tick. Born-at-spawn failures roll back their tx, so
+			// only the worker path records back-off.
+			backoffAt := cadence.MetadataBackoffAt(int(item.MetadataAttemptCount)+1, now)
+			if rerr := s.repo.RecordMetadataFailure(ctx, item.ID, backoffAt, err.Error()); rerr != nil {
+				s.logger.Warn().Err(rerr).
+					Str("media_item_id", item.ID.String()).
+					Msg("enrichment: record failure back-off failed")
+			}
 			s.logger.Warn().Err(err).
 				Str("media_item_id", item.ID.String()).
 				Str("title", item.Title).
-				Msg("enrichment failed, will retry later")
+				Msg("enrichment failed, backing off")
 			continue
 		}
 		enriched++

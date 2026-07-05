@@ -385,6 +385,11 @@ SELECT path FROM file WHERE library_id = $1 AND deleted_at IS NULL;
 -- Metadata enrichment queries
 
 -- name: UpdateMediaItemMetadata :one
+-- The success path: materializes canonical fields and, since it is only ever
+-- called after a successful upstream fetch, both stamps the freshness clock
+-- (metadata_updated_at) and schedules the next refresh (next_refresh_at,
+-- computed by the caller from item state). It also clears any failure state —
+-- a success resets the back-off counter.
 UPDATE media_item
 SET poster_path        = sqlc.arg(poster_path),
     backdrop_path      = sqlc.arg(backdrop_path),
@@ -398,16 +403,35 @@ SET poster_path        = sqlc.arg(poster_path),
     release_date       = sqlc.arg(release_date),
     last_air_date      = sqlc.arg(last_air_date),
     in_production      = sqlc.arg(in_production),
+    next_refresh_at    = sqlc.arg(next_refresh_at),
     metadata_updated_at = now(),
+    metadata_last_attempted_at = now(),
+    metadata_last_error = NULL,
+    metadata_attempt_count = 0,
     updated_at         = now()
 WHERE id = sqlc.arg(id)
 RETURNING *;
 
--- name: ListStaleMediaItems :many
+-- name: RecordMetadataFailure :exec
+-- The failure path: advances the attempt counter, records the error, and pushes
+-- next_refresh_at out per the caller's back-off. Distinct from the success path
+-- (UpdateMediaItemMetadata) so a failed sync never stamps metadata_updated_at.
+UPDATE media_item
+SET metadata_last_attempted_at = now(),
+    metadata_last_error        = sqlc.arg(last_error),
+    metadata_attempt_count     = metadata_attempt_count + 1,
+    next_refresh_at            = sqlc.arg(next_refresh_at),
+    updated_at                 = now()
+WHERE id = sqlc.arg(id);
+
+-- name: ListDueMediaItems :many
+-- The due queue: items with a canonical id whose next_refresh_at has passed
+-- (NULL = never scheduled → due immediately, the one-time post-migration
+-- backfill). NULLS FIRST drains those un-scheduled rows ahead of scheduled ones.
 SELECT * FROM media_item
 WHERE tmdb_id IS NOT NULL
-  AND (metadata_updated_at IS NULL OR metadata_updated_at < sqlc.arg(stale_before))
-ORDER BY metadata_updated_at ASC NULLS FIRST
+  AND (next_refresh_at IS NULL OR next_refresh_at <= sqlc.arg(now))
+ORDER BY next_refresh_at ASC NULLS FIRST
 LIMIT sqlc.arg(batch_size);
 
 -- name: UpsertMediaMetadataSource :exec
