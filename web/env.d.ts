@@ -12,7 +12,7 @@ export {}
 declare module 'vue-router' {
   interface RouteMeta {
     public?: boolean
-    layout?: 'immersive' | 'auth'
+    layout?: 'immersive' | 'auth' | 'sidebar'
     setup?: boolean
   }
 }

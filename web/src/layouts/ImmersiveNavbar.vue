@@ -34,11 +34,30 @@ const navbarStyle = computed(() => {
   }
 })
 
-const navLinks = [
+interface NavLink {
+  label: string
+  // Present for pages that exist today; absent for planned, disabled placeholders.
+  to?: string
+  disabled?: boolean
+}
+
+// Browse cluster (left) — the collection. Activity cluster (right) — time-sensitive
+// things you check and act on. See specs/patterns/navigation.
+const browseLinks: NavLink[] = [
   { label: 'Home', to: '/' },
   { label: 'Library', to: '/library' },
+]
+
+const activityLinks: NavLink[] = [
+  { label: 'Calendar', disabled: true },
+  { label: 'Requests', disabled: true },
   { label: 'Downloads', to: '/downloads' },
 ]
+
+const linkBase = 'px-3 py-1.5 rounded-md text-sm font-medium transition-colors'
+const linkActive = 'text-foreground bg-white/10'
+const linkIdle = 'text-foreground/70 hover:text-foreground hover:bg-white/5'
+const linkDisabled = 'text-foreground/30 cursor-not-allowed select-none'
 
 const isLinkActive = (to: string) => {
   if (to === '/') return route.path === '/'
@@ -62,18 +81,13 @@ const isLinkActive = (to: string) => {
       <span class="font-medium text-sm text-foreground">Arrflix</span>
     </RouterLink>
 
-    <!-- Nav links -->
+    <!-- Browse cluster -->
     <nav class="flex items-center gap-1">
       <RouterLink
-        v-for="link in navLinks"
+        v-for="link in browseLinks"
         :key="link.to"
-        :to="link.to"
-        :class="[
-          'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-          isLinkActive(link.to)
-            ? 'text-foreground bg-white/10'
-            : 'text-foreground/70 hover:text-foreground hover:bg-white/5',
-        ]"
+        :to="link.to!"
+        :class="[linkBase, isLinkActive(link.to!) ? linkActive : linkIdle]"
       >
         {{ link.label }}
       </RouterLink>
@@ -81,6 +95,25 @@ const isLinkActive = (to: string) => {
 
     <!-- Spacer -->
     <div class="flex-1" />
+
+    <!-- Activity cluster -->
+    <nav class="flex items-center gap-1 mr-2">
+      <template v-for="link in activityLinks" :key="link.label">
+        <Tooltip v-if="link.disabled">
+          <TooltipTrigger as-child>
+            <span :class="[linkBase, linkDisabled]">{{ link.label }}</span>
+          </TooltipTrigger>
+          <TooltipContent>Coming soon</TooltipContent>
+        </Tooltip>
+        <RouterLink
+          v-else
+          :to="link.to!"
+          :class="[linkBase, isLinkActive(link.to!) ? linkActive : linkIdle]"
+        >
+          {{ link.label }}
+        </RouterLink>
+      </template>
+    </nav>
 
     <!-- Search button -->
     <Tooltip>

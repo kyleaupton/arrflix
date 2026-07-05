@@ -43,12 +43,14 @@ const router = createRouter({
       component: () => import('@/views/Downloads.vue'),
     },
     {
+      // Users moved under Settings; keep the old path working for bookmarks.
       path: '/users',
-      component: () => import('@/views/Users.vue'),
+      redirect: '/settings/users',
     },
     {
       path: '/settings',
       component: () => import('@/views/settings/SettingsLayout.vue'),
+      meta: { layout: 'sidebar' },
       children: [
         {
           path: '',
@@ -81,6 +83,10 @@ const router = createRouter({
         {
           path: 'quality-profiles',
           component: () => import('@/views/settings/QualityProfilesSettings.vue'),
+        },
+        {
+          path: 'users',
+          component: () => import('@/views/Users.vue'),
         },
       ],
     },

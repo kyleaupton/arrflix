@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { Inbox, LogOut, Settings2, Users } from 'lucide-vue-next'
+import { Inbox, LogOut, Settings2, UserCog } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { useInboxCount } from '@/composables/useInboxCount'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -48,9 +48,10 @@ const handleLogout = () => {
         </span>
       </DropdownMenuLabel>
       <DropdownMenuSeparator v-if="authStore.user?.name" />
-      <DropdownMenuItem @click="router.push('/users')">
-        <Users class="mr-2 size-4" />
-        Users
+      <DropdownMenuItem disabled>
+        <UserCog class="mr-2 size-4" />
+        Preferences
+        <span class="ml-auto text-[10px] text-muted-foreground">Soon</span>
       </DropdownMenuItem>
       <DropdownMenuItem @click="router.push('/settings')">
         <Settings2 class="mr-2 size-4" />
