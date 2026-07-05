@@ -541,6 +541,38 @@ type PermissionGrant struct {
 	CreatedAt     time.Time    `json:"created_at"`
 }
 
+type Proposal struct {
+	ID             pgtype.UUID `json:"id"`
+	TrackingID     pgtype.UUID `json:"tracking_id"`
+	MediaItemID    pgtype.UUID `json:"media_item_id"`
+	IsPack         bool        `json:"is_pack"`
+	Protocol       string      `json:"protocol"`
+	MediaType      string      `json:"media_type"`
+	SeasonID       pgtype.UUID `json:"season_id"`
+	EpisodeID      pgtype.UUID `json:"episode_id"`
+	IndexerID      int64       `json:"indexer_id"`
+	Guid           string      `json:"guid"`
+	CandidateTitle string      `json:"candidate_title"`
+	CandidateLink  string      `json:"candidate_link"`
+	DownloaderID   pgtype.UUID `json:"downloader_id"`
+	LibraryID      pgtype.UUID `json:"library_id"`
+	NameTemplateID pgtype.UUID `json:"name_template_id"`
+	Size           int64       `json:"size"`
+	Seeders        int32       `json:"seeders"`
+	BinSource      string      `json:"bin_source"`
+	BinResolution  string      `json:"bin_resolution"`
+	BinModifier    string      `json:"bin_modifier"`
+	Score          int32       `json:"score"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
+}
+
+type ProposalWant struct {
+	ProposalID pgtype.UUID `json:"proposal_id"`
+	WantID     pgtype.UUID `json:"want_id"`
+	CreatedAt  time.Time   `json:"created_at"`
+}
+
 type QualityProfile struct {
 	ID            pgtype.UUID `json:"id"`
 	Name          string      `json:"name"`

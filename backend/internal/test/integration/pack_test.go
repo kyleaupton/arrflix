@@ -258,10 +258,10 @@ func grabPackForSeason(t *testing.T, ctx context.Context, r *repo.Repository, se
 			return results, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
-	if _, grabbed, err := svc.ProcessWant(ctx, want); err != nil {
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	if _, outcome, err := svc.ProcessWant(ctx, want); err != nil {
 		t.Fatalf("ProcessWant: %v", err)
-	} else if !grabbed {
+	} else if outcome != service.OutcomeGrabbed {
 		t.Fatalf("ProcessWant grabbed = false, want true (the pack covers the want)")
 	}
 	jobs, err := r.ListDownloadJobsByMediaItem(ctx, seeded.mediaItemID)

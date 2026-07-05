@@ -137,25 +137,30 @@ func (w *Worker) reap(ctx context.Context) {
 }
 
 func (w *Worker) handle(ctx context.Context, want model.Want) {
-	grabbedWant, grabbed, err := w.svc.ProcessWant(ctx, want)
+	processed, outcome, err := w.svc.ProcessWant(ctx, want)
 	if err != nil {
 		w.handleError(ctx, want, err)
 		return
 	}
 
-	if !grabbed {
+	switch outcome {
+	case service.OutcomeGrabbed:
+		// ProcessWant flipped the want to 'grabbed' in its tx and handed back the
+		// updated row, so emit the transition for the frontend pill; the download
+		// worker drives the subsequent 'downloading' delta.
+		realtime.Emit(ctx, w.broker, realtime.WantUpdated(processed))
+	case service.OutcomeProposed:
+		// The pick was parked as a proposal; ProposalService already emitted the
+		// proposal and want deltas. Critically, do NOT recheck — the want is still
+		// 'searching' (held), and recheck's CAS would return it to 'pending',
+		// un-parking it.
+	default: // service.OutcomeNoRelease
 		// No eligible release — the title may simply not be out yet, but the
 		// indexer was reached. Recheck on the air-date-aware cadence and reset
 		// attempt_count: a successful reach clears the consecutive-error counter so
 		// a later infra blip backs off from scratch.
 		w.recheck(ctx, want, "no eligible release")
-		return
 	}
-
-	// grabbed: ProcessWant flipped the want to 'grabbed' in its tx and handed back
-	// the updated row, so emit the transition for the frontend pill; the download
-	// worker drives the subsequent 'downloading' delta.
-	realtime.Emit(ctx, w.broker, realtime.WantUpdated(grabbedWant))
 }
 
 func (w *Worker) handleError(ctx context.Context, want model.Want, err error) {

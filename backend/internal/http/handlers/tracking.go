@@ -118,8 +118,8 @@ func (h *Tracking) Cancel(ctx context.Context, input *TrackingCancelInput) (*Tra
 type TrackingSetAutonomyInput struct {
 	ID   uuid.UUID `path:"id" format:"uuid" doc:"Tracking ID"`
 	Body struct {
-		Backfill string `json:"backfill" required:"true" enum:"auto,manual" doc:"Autonomy for backfill wants (atoms dated before the tracking was created)"`
-		Ongoing  string `json:"ongoing" required:"true" enum:"auto,manual" doc:"Autonomy for ongoing wants (atoms dated after the tracking was created)"`
+		Backfill string `json:"backfill" required:"true" enum:"auto,propose,manual" doc:"Autonomy for backfill wants (atoms dated before the tracking was created)"`
+		Ongoing  string `json:"ongoing" required:"true" enum:"auto,propose,manual" doc:"Autonomy for ongoing wants (atoms dated after the tracking was created)"`
 	}
 }
 
@@ -203,7 +203,7 @@ func (h *Tracking) RegisterHumachi(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/tracking/{id}/autonomy",
 		Summary:     "Set tracking autonomy",
-		Description: "Sets per-segment acquisition autonomy (backfill and ongoing) to 'auto' or 'manual', holding or releasing the segment's live wants to match. 'propose' is not yet accepted.",
+		Description: "Sets per-segment acquisition autonomy (backfill and ongoing) to 'auto', 'propose', or 'manual', reconciling the segment's live wants to match (manual holds them; auto and propose release held ones).",
 		Tags:        []string{"tracking"},
 		Errors:      errsUpsert,
 	}, h.SetAutonomy)

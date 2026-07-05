@@ -188,6 +188,11 @@ RETURNING *;
 -- crash between ClaimRunnableWants' flip and a terminal transition. Reset-only:
 -- attempt_count is untouched and no want is failed (mirrors the "no release yet"
 -- reschedule). The cutoff is passed from Go for testability.
+--
+-- A held want (hold IS NOT NULL) is intentionally parked, not crashed — a
+-- 'proposed' want sits in 'searching' awaiting operator approval, and reaping it
+-- to 'pending' would break approve's grab-from-searching CAS. The hold IS NULL
+-- guard keeps the reaper to genuinely-wedged wants.
 -- name: ReclaimStaleSearchingWants :many
 UPDATE want
 SET status = 'pending',
@@ -195,6 +200,7 @@ SET status = 'pending',
     next_run_at = now(),
     updated_at = now()
 WHERE status = 'searching'
+  AND hold IS NULL
   AND updated_at < sqlc.arg(stale_before)
 RETURNING *;
 
@@ -301,6 +307,40 @@ UPDATE want
 SET hold = sqlc.narg(hold),
     updated_at = now()
 WHERE id = sqlc.arg(id)
+RETURNING *;
+
+-- HoldProposedWants stamps hold='proposed' on the wants a proposal covers,
+-- parking them so the acquisition worker won't re-claim them while the operator
+-- decides. It's the propose-time analogue of GrabWantsForPack: the IN-guard
+-- claims only still-claimable (pending/searching) wants with no existing hold, so
+-- a want already advanced, terminal, or held is skipped silently and the RETURNING
+-- set reports exactly which wants this call parked. The hold IS NULL guard keeps
+-- it from clobbering a needs_pick hold. Concurrent callers serialize on row locks.
+-- name: HoldProposedWants :many
+UPDATE want
+SET hold = 'proposed',
+    updated_at = now()
+WHERE id = ANY(sqlc.arg(ids)::uuid[])
+  AND status IN ('pending', 'searching')
+  AND hold IS NULL
+RETURNING *;
+
+-- RearmProposedWant returns a proposed want to the pool via compare-and-swap: it
+-- fires only while the want still carries hold='proposed', clearing the hold and
+-- re-arming it for immediate search. Backs decline (search a different release)
+-- and supersede's coverage-shrink (a want dropped from the newer pick re-searches).
+-- attempt_count resets — a decline isn't a retryable error. A 0-row match
+-- (the want was grabbed or already re-armed) surfaces as pgx.ErrNoRows.
+-- name: RearmProposedWant :one
+UPDATE want
+SET status = 'pending',
+    hold = NULL,
+    attempt_count = 0,
+    last_error = sqlc.arg(last_error),
+    next_run_at = now(),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND hold = 'proposed'
 RETURNING *;
 
 -- FindLiveWantForEpisode returns the still-acquirable (pending/searching) want a

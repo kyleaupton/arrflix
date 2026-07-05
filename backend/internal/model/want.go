@@ -33,10 +33,17 @@ const (
 	WantSegmentOngoing  WantSegment = "ongoing"
 )
 
-// WantHoldNeedsPick is the hold value stamped on a want owned by a manual
-// segment: it stays pending/searching and visible but is never claimed by the
-// acquisition worker, because the user picks the release.
-const WantHoldNeedsPick = "needs_pick"
+// Want hold values. A non-NULL hold keeps a want at its current status and
+// visible but bars the acquisition worker from claiming it.
+//
+//   - WantHoldNeedsPick: a manual segment owns this want — the user picks the
+//     release directly.
+//   - WantHoldProposed: a propose segment surfaced a release for confirmation —
+//     the want is parked until the operator approves or declines the proposal.
+const (
+	WantHoldNeedsPick = "needs_pick"
+	WantHoldProposed  = "proposed"
+)
 
 // SegmentFor classifies a want by its atom's air/release date against the
 // tracking's creation time: a date strictly before createdAt is backfill;

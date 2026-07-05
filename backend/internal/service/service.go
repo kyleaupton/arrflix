@@ -33,6 +33,7 @@ type Services struct {
 	MatchDecisions     *MatchDecisionsService
 	Media              *MediaService
 	NameTemplates      *NameTemplatesService
+	Proposals          *ProposalService
 	QualityProfiles    *QualityProfileService
 	Reconcile          *ReconcileService
 	Requests           *RequestService
@@ -94,6 +95,9 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	enrichment := NewEnrichmentService(r, l, tmdb, reconcile)
 	downloadJobs := NewDownloadJobsService(r)
 	wants := NewWantService(r, downloadJobs)
+	// Proposals is constructed before Acquisition, which depends on it for the
+	// propose branch. broker is in scope from New's params.
+	proposals := NewProposalService(r, quality, broker, l)
 
 	// Matcher: the v1 resolver catalog (path-embed + name-parse) wires
 	// up via DefaultRegistry. ScannerService.MatchBatch is the only
@@ -114,7 +118,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	matchDecisionsSvc := NewMatchDecisionsService(r, l, tmdb, enrichment, metadataProvider, settings)
 
 	return &Services{
-		Acquisition:        NewAcquisitionService(r, l, indexerSource, routingSvc, quality),
+		Acquisition:        NewAcquisitionService(r, l, indexerSource, routingSvc, quality, proposals),
 		Auth:               NewAuthService(r, cfg, settings, invites),
 		Downloaders:        NewDownloadersService(r),
 		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, routingSvc),
@@ -131,6 +135,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		MatchDecisions:     matchDecisionsSvc,
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
+		Proposals:          proposals,
 		QualityProfiles:    quality,
 		Reconcile:          reconcile,
 		Requests:           NewRequestService(r, l, tmdb, quality, enrichment, reconcile),

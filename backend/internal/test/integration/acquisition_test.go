@@ -286,9 +286,10 @@ func TestAcquisition_ProcessWant_HappyPath(t *testing.T) {
 			return []indexer.SearchResult{cannedResult()}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
 
-	_, grabbed, err := svc.ProcessWant(ctx, want)
+	_, outcome, err := svc.ProcessWant(ctx, want)
+	grabbed := outcome == service.OutcomeGrabbed
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -362,9 +363,10 @@ func TestAcquisition_ProcessWant_PicksQualified(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
 
-	_, grabbed, err := svc.ProcessWant(ctx, want)
+	_, outcome, err := svc.ProcessWant(ctx, want)
+	grabbed := outcome == service.OutcomeGrabbed
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -432,9 +434,10 @@ func TestAcquisition_ProcessWant_AllGatedOut(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
 
-	_, grabbed, err := svc.ProcessWant(ctx, want)
+	_, outcome, err := svc.ProcessWant(ctx, want)
+	grabbed := outcome == service.OutcomeGrabbed
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -490,9 +493,10 @@ func TestAcquisition_ProcessWant_RejectsWrongTitle(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
 
-	_, grabbed, err := svc.ProcessWant(ctx, want)
+	_, outcome, err := svc.ProcessWant(ctx, want)
+	grabbed := outcome == service.OutcomeGrabbed
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -526,9 +530,10 @@ func TestAcquisition_ProcessWant_NoRelease(t *testing.T) {
 			return nil, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
 
-	_, grabbed, err := svc.ProcessWant(ctx, want)
+	_, outcome, err := svc.ProcessWant(ctx, want)
+	grabbed := outcome == service.OutcomeGrabbed
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -838,9 +843,10 @@ func TestAcquisition_ProcessWant_SeriesHappyPath(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
 
-	_, grabbed, err := svc.ProcessWant(ctx, want)
+	_, outcome, err := svc.ProcessWant(ctx, want)
+	grabbed := outcome == service.OutcomeGrabbed
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -929,9 +935,10 @@ func TestAcquisition_ProcessWant_SeriesGatesNonEpisode(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
 
-	_, grabbed, err := svc.ProcessWant(ctx, want)
+	_, outcome, err := svc.ProcessWant(ctx, want)
+	grabbed := outcome == service.OutcomeGrabbed
 	if err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	}
@@ -1024,10 +1031,11 @@ func TestAcquisition_ProcessWant_DedupesSupersededGrab(t *testing.T) {
 			return []indexer.SearchResult{cannedResult()}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
 
 	// First run: the CAS owns the 'searching' want, grabs it, creates one job.
-	_, grabbed, err := svc.ProcessWant(ctx, want)
+	_, outcome, err := svc.ProcessWant(ctx, want)
+	grabbed := outcome == service.OutcomeGrabbed
 	if err != nil {
 		t.Fatalf("first ProcessWant: %v", err)
 	}
@@ -1037,7 +1045,8 @@ func TestAcquisition_ProcessWant_DedupesSupersededGrab(t *testing.T) {
 
 	// Second run with the same (now-stale) want value: the want is no longer
 	// 'searching', so the grab CAS matches 0 rows and ProcessWant no-ops.
-	_, grabbedAgain, err := svc.ProcessWant(ctx, want)
+	_, outcomeAgain, err := svc.ProcessWant(ctx, want)
+	grabbedAgain := outcomeAgain == service.OutcomeGrabbed
 	if err != nil {
 		t.Fatalf("second ProcessWant: %v", err)
 	}
@@ -1093,7 +1102,7 @@ func TestAcquisition_RetryableErrorNeverFails(t *testing.T) {
 			return nil, errors.New("indexer unreachable")
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
 	w := acquisitionworker.NewWithConfig(r, svc, service.NewSchedulerService(r, logger.New(true)), logger.New(true), nil, retryTestConfig())
 
 	workerCtx, cancel := context.WithCancel(ctx)
@@ -1186,7 +1195,7 @@ func TestAcquisition_NonRetryableErrorFails(t *testing.T) {
 			return []indexer.SearchResult{cannedResult()}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
 	w := acquisitionworker.NewWithConfig(r, svc, service.NewSchedulerService(r, logger.New(true)), logger.New(true), nil, retryTestConfig())
 
 	workerCtx, cancel := context.WithCancel(ctx)

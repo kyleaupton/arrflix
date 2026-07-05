@@ -10,7 +10,6 @@ import (
 	tmdb "github.com/cyruzin/golang-tmdb"
 	"github.com/google/uuid"
 
-	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/indexer"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -227,9 +226,11 @@ func TestTrackingAutonomy_SetAutoReleasesHeld(t *testing.T) {
 	}
 }
 
-// TestTrackingAutonomy_RejectsPropose proves 'propose' is rejected at the API
-// boundary until the phase that implements it, even though the DB CHECK admits it.
-func TestTrackingAutonomy_RejectsPropose(t *testing.T) {
+// TestTrackingAutonomy_AcceptsPropose proves 'propose' is a settable dial and a
+// pure dial change: setting the backfill segment to propose accepts the value and
+// leaves its pending wants unheld (claimable), so the worker proposes each on its
+// next tick rather than the dial pre-holding them the way manual does.
+func TestTrackingAutonomy_AcceptsPropose(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
 	r := repo.New(pool)
@@ -238,8 +239,23 @@ func TestTrackingAutonomy_RejectsPropose(t *testing.T) {
 	seeded := seedTwoSegmentTracking(t, ctx, r, nil, nil)
 	svc := newTrackingService(r)
 
-	if _, err := svc.SetAutonomy(ctx, seeded.trackingID, string(model.AutonomyPropose), string(model.AutonomyAuto)); !apperrors.IsValidation(err) {
-		t.Fatalf("SetAutonomy(propose) err = %v, want Validation", err)
+	updated, err := svc.SetAutonomy(ctx, seeded.trackingID, string(model.AutonomyPropose), string(model.AutonomyAuto))
+	if err != nil {
+		t.Fatalf("SetAutonomy(propose) err = %v, want nil", err)
+	}
+	if updated.AutonomyBackfill != string(model.AutonomyPropose) {
+		t.Errorf("backfill dial = %q, want propose", updated.AutonomyBackfill)
+	}
+
+	// Pure-dial semantic: unlike manual, propose does not pre-hold. The backfill
+	// want stays pending and unheld, so ClaimRunnableWants still picks it up (the
+	// propose fork happens later, in ProcessWant).
+	got, err := r.GetWant(ctx, seeded.backfillWant.ID)
+	if err != nil {
+		t.Fatalf("get backfill want: %v", err)
+	}
+	if got.Hold != nil {
+		t.Errorf("backfill want hold = %q, want nil (propose does not pre-hold)", *got.Hold)
 	}
 }
 

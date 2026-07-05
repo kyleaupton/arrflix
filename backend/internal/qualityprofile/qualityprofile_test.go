@@ -411,3 +411,35 @@ func TestDefaultProfiles(t *testing.T) {
 		t.Error("HD movie preset failed to pick a Bluray-1080p release")
 	}
 }
+
+// --- StrictlyBetterQuality ---------------------------------------------------
+
+// TestProfile_StrictlyBetterQuality covers the pure bin+score comparator the
+// propose supersede uses: bin rank dominates, score breaks a bin tie, and an
+// equal (or worse) candidate is never better.
+func TestProfile_StrictlyBetterQuality(t *testing.T) {
+	p := testProfile()
+	best := bin(parsing.SourceBluRay, parsing.Res1080p, parsing.ModNone) // rank 0
+	mid := bin(parsing.SourceWEBDL, parsing.Res1080p, parsing.ModNone)   // rank 1
+	worst := bin(parsing.SourceBluRay, parsing.Res720p, parsing.ModNone) // rank 2
+
+	cases := []struct {
+		name    string
+		current FileQuality
+		cand    FileQuality
+		want    bool
+	}{
+		{"better bin wins regardless of score", FileQuality{Bin: mid, Score: 100}, FileQuality{Bin: best, Score: 0}, true},
+		{"worse bin never wins even with higher score", FileQuality{Bin: mid, Score: 0}, FileQuality{Bin: worst, Score: 100}, false},
+		{"equal bin, higher score wins", FileQuality{Bin: mid, Score: 10}, FileQuality{Bin: mid, Score: 20}, true},
+		{"equal bin, equal score is not better", FileQuality{Bin: mid, Score: 20}, FileQuality{Bin: mid, Score: 20}, false},
+		{"equal bin, lower score is not better", FileQuality{Bin: mid, Score: 20}, FileQuality{Bin: mid, Score: 10}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := p.StrictlyBetterQuality(tc.current, tc.cand); got != tc.want {
+				t.Errorf("StrictlyBetterQuality(%+v, %+v) = %v, want %v", tc.current, tc.cand, got, tc.want)
+			}
+		})
+	}
+}

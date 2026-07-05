@@ -47,6 +47,14 @@ export function installRealtime(qc: QueryClient) {
     qc.invalidateQueries({ queryKey: [{ _id: 'trackingByTmdb' }] })
   })
 
+  // Proposal delta (kick-only, keyed by trackingId). Refresh both the proposal
+  // lists and the by-tmdb wants so a mounted series page flips its "Suggested"
+  // pills and Approve/Decline rows without a manual refetch.
+  on('proposal_updated', () => {
+    qc.invalidateQueries({ queryKey: [{ _id: 'trackingProposals' }] })
+    qc.invalidateQueries({ queryKey: [{ _id: 'trackingByTmdb' }] })
+  })
+
   // Recovery (reconnect-after-drop or replay-buffer gap): the cache may have
   // missed deltas, so refetch every active query.
   onResync(() => {

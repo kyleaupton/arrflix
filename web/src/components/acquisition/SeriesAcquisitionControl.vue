@@ -27,6 +27,7 @@
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="auto">Automatic</SelectItem>
+            <SelectItem value="propose">Suggest first</SelectItem>
             <SelectItem value="manual">I'll pick</SelectItem>
           </SelectContent>
         </Select>
@@ -39,6 +40,7 @@
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="auto">Automatic</SelectItem>
+            <SelectItem value="propose">Suggest first</SelectItem>
             <SelectItem value="manual">I'll pick</SelectItem>
           </SelectContent>
         </Select>
@@ -180,19 +182,21 @@ const setAutonomy = useMutation({
   },
 })
 
-function submitAutonomy(backfill: 'auto' | 'manual', ongoing: 'auto' | 'manual') {
+type Autonomy = 'auto' | 'propose' | 'manual'
+
+function submitAutonomy(backfill: Autonomy, ongoing: Autonomy) {
   const id = tracking.value?.tracking?.id
   if (!id) return
   setAutonomy.mutate({ path: { id }, body: { backfill, ongoing } })
 }
 
-const autonomyBackfill = computed<'auto' | 'manual'>({
-  get: () => (tracking.value?.tracking?.autonomyBackfill as 'auto' | 'manual') ?? 'auto',
+const autonomyBackfill = computed<Autonomy>({
+  get: () => (tracking.value?.tracking?.autonomyBackfill as Autonomy) ?? 'auto',
   set: (val) => submitAutonomy(val, autonomyOngoing.value),
 })
 
-const autonomyOngoing = computed<'auto' | 'manual'>({
-  get: () => (tracking.value?.tracking?.autonomyOngoing as 'auto' | 'manual') ?? 'auto',
+const autonomyOngoing = computed<Autonomy>({
+  get: () => (tracking.value?.tracking?.autonomyOngoing as Autonomy) ?? 'auto',
   set: (val) => submitAutonomy(autonomyBackfill.value, val),
 })
 

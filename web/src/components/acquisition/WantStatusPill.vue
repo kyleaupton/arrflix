@@ -7,7 +7,7 @@
 
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
-import { Check, CircleAlert, Download, Hand, Loader, Search } from 'lucide-vue-next'
+import { Check, CircleAlert, Download, Hand, Loader, Search, Sparkles } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
 import type { BadgeVariants } from '@/components/ui/badge'
 
@@ -30,7 +30,15 @@ const isHeld = computed(
   () => props.hold === 'needs_pick' && (props.status === 'pending' || props.status === 'searching'),
 )
 
+// A proposed want (segment on the 'propose' autonomy dial) has a release picked
+// and parked for one-tap approval. Like a hold it overrides the pre-grab
+// lifecycle face; a grab clears the hold, so the normal face resumes afterward.
+const isProposed = computed(
+  () => props.hold === 'proposed' && (props.status === 'pending' || props.status === 'searching'),
+)
+
 const label = computed(() => {
+  if (isProposed.value) return 'Suggested'
   if (isHeld.value) return 'Needs your pick'
   switch (props.status) {
     case 'pending':
@@ -57,6 +65,7 @@ const label = computed(() => {
 })
 
 const variant = computed<BadgeVariants['variant']>(() => {
+  if (isProposed.value) return 'default'
   if (isHeld.value) return 'outline'
   switch (props.status) {
     case 'available':
@@ -73,6 +82,7 @@ const variant = computed<BadgeVariants['variant']>(() => {
 })
 
 const icon = computed<Component | null>(() => {
+  if (isProposed.value) return Sparkles
   if (isHeld.value) return Hand
   switch (props.status) {
     case 'searching':

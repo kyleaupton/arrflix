@@ -3599,6 +3599,100 @@ components:
         - customFormatId
         - weight
       type: object
+    ProposalUpdatedPayload:
+      additionalProperties: false
+      properties:
+        trackingId:
+          type: string
+      required:
+        - trackingId
+      type: object
+    ProposalView:
+      additionalProperties: false
+      properties:
+        bin:
+          $ref: "#/components/schemas/BinKey"
+        candidateLink:
+          type: string
+        candidateTitle:
+          type: string
+        coveredEpisodeIds:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        coveredWantIds:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        createdAt:
+          format: date-time
+          type: string
+        downloaderId:
+          type: string
+        episodeId:
+          type: string
+        guid:
+          type: string
+        id:
+          type: string
+        indexerId:
+          format: int64
+          type: integer
+        isPack:
+          type: boolean
+        libraryId:
+          type: string
+        mediaItemId:
+          type: string
+        mediaType:
+          type: string
+        nameTemplateId:
+          type: string
+        protocol:
+          type: string
+        score:
+          format: int64
+          type: integer
+        seasonId:
+          type: string
+        seeders:
+          format: int64
+          type: integer
+        size:
+          format: int64
+          type: integer
+        trackingId:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - coveredEpisodeIds
+        - coveredWantIds
+        - id
+        - trackingId
+        - mediaItemId
+        - isPack
+        - protocol
+        - mediaType
+        - indexerId
+        - guid
+        - candidateTitle
+        - candidateLink
+        - downloaderId
+        - libraryId
+        - nameTemplateId
+        - size
+        - seeders
+        - bin
+        - score
+        - createdAt
+        - updatedAt
+      type: object
     QualityBinOption:
       additionalProperties: false
       properties:
@@ -4974,12 +5068,14 @@ components:
           description: Autonomy for backfill wants (atoms dated before the tracking was created)
           enum:
             - auto
+            - propose
             - manual
           type: string
         ongoing:
           description: Autonomy for ongoing wants (atoms dated after the tracking was created)
           enum:
             - auto
+            - propose
             - manual
           type: string
       required:
@@ -6561,6 +6657,24 @@ paths:
                         - data
                         - event
                       title: Event ping
+                      type: object
+                    - properties:
+                        data:
+                          $ref: "#/components/schemas/ProposalUpdatedPayload"
+                        event:
+                          const: proposal_updated
+                          description: The event name.
+                          type: string
+                        id:
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
+                        retry:
+                          description: The retry time in milliseconds.
+                          type: integer
+                      required:
+                        - data
+                        - event
+                      title: Event proposal_updated
                       type: object
                     - properties:
                         data:
@@ -8726,6 +8840,120 @@ paths:
       summary: Get person
       tags:
         - media
+  /api/v1/proposals/{id}/approve:
+    post:
+      description: Grabs the proposed release and clears the proposal. 404 if already resolved; 409 if the covered wants are no longer grabbable (a stale pack or a declined-then-approved race).
+      operationId: proposals-approve
+      parameters:
+        - description: Proposal ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Proposal ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Want"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Approve a proposal
+      tags:
+        - tracking
+  /api/v1/proposals/{id}/decline:
+    post:
+      description: Excludes the proposed release for every covered want and re-arms them so the next search proposes a different release. 404 if already resolved.
+      operationId: proposals-decline
+      parameters:
+        - description: Proposal ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Proposal ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Want"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Decline a proposal
+      tags:
+        - tracking
   /api/v1/quality-bins:
     get:
       description: Returns the canonical quality bins for the domain with their rendered display names — the vocabulary editors label, pick, and order profile bins against.
@@ -10236,7 +10464,7 @@ paths:
         - tracking
   /api/v1/tracking/{id}/autonomy:
     post:
-      description: Sets per-segment acquisition autonomy (backfill and ongoing) to 'auto' or 'manual', holding or releasing the segment's live wants to match. 'propose' is not yet accepted.
+      description: Sets per-segment acquisition autonomy (backfill and ongoing) to 'auto', 'propose', or 'manual', reconciling the segment's live wants to match (manual holds them; auto and propose release held ones).
       operationId: tracking-set-autonomy
       parameters:
         - description: Tracking ID
@@ -10332,6 +10560,51 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: Stop tracking
+      tags:
+        - tracking
+  /api/v1/tracking/{id}/proposals:
+    get:
+      description: Returns the tracking's open proposals (picks parked for confirmation), each with the episode and want ids it covers.
+      operationId: tracking-proposals
+      parameters:
+        - description: Tracking ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Tracking ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/ProposalView"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: List a tracking's proposals
       tags:
         - tracking
   /api/v1/tracking/{id}/requesters:

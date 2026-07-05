@@ -14,6 +14,7 @@ type ExclusionReason string
 
 const (
 	ExclusionDownloadFailed ExclusionReason = "download_failed"
+	ExclusionDeclined       ExclusionReason = "declined"
 )
 
 // WantReleaseExclusion is the domain shape for a want_release_exclusion row —

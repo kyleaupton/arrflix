@@ -25,46 +25,71 @@ import (
 // autonomous flow searches and enqueues in one pass, so caching the chosen
 // SearchResult between calls buys nothing.
 type AcquisitionService struct {
-	repo    *repo.Repository
-	log     *logger.Logger
-	source  indexer.IndexerSource
-	routing *RoutingService
-	quality *QualityProfileService
+	repo      *repo.Repository
+	log       *logger.Logger
+	source    indexer.IndexerSource
+	routing   *RoutingService
+	quality   *QualityProfileService
+	proposals *ProposalService
 }
 
 // NewAcquisitionService creates a new acquisition service. source and routingSvc
 // are the same instances DownloadCandidatesService holds; qualitySvc supplies the
-// gate→score→pick engine keyed off the want's quality_profile_id.
-func NewAcquisitionService(r *repo.Repository, l *logger.Logger, source indexer.IndexerSource, routingSvc *RoutingService, qualitySvc *QualityProfileService) *AcquisitionService {
+// gate→score→pick engine keyed off the want's quality_profile_id; proposalsSvc is
+// where a propose-segment want's pick is parked instead of grabbed.
+func NewAcquisitionService(r *repo.Repository, l *logger.Logger, source indexer.IndexerSource, routingSvc *RoutingService, qualitySvc *QualityProfileService, proposalsSvc *ProposalService) *AcquisitionService {
 	return &AcquisitionService{
-		repo:    r,
-		log:     l,
-		source:  source,
-		routing: routingSvc,
-		quality: qualitySvc,
+		repo:      r,
+		log:       l,
+		source:    source,
+		routing:   routingSvc,
+		quality:   qualitySvc,
+		proposals: proposalsSvc,
 	}
 }
 
+// ProcessOutcome is the terminal disposition of one ProcessWant tick, replacing
+// the old grabbed bool so the worker can distinguish a parked proposal (which the
+// ProposalService already emitted and must NOT be un-parked by a recheck) from a
+// real grab and from a genuine no-release reschedule.
+type ProcessOutcome int
+
+const (
+	// OutcomeNoRelease: no eligible release this tick (no results, all gated out,
+	// or a benign grab-CAS dedup no-op). The worker reschedules a recheck.
+	OutcomeNoRelease ProcessOutcome = iota
+	// OutcomeGrabbed: the want (or its pack siblings) was flipped to 'grabbed' and
+	// a download_job created. The worker emits the transition.
+	OutcomeGrabbed
+	// OutcomeProposed: a propose-segment want's pick was written as a proposal and
+	// the want parked at hold='proposed'. The ProposalService already emitted the
+	// events; the worker does nothing — critically, it does NOT recheck, which
+	// would return the still-'searching' want to 'pending' and un-park it.
+	OutcomeProposed
+)
+
 // ProcessWant runs the happy path for one claimed want: search → pick → route →
-// enqueue, flipping the want to 'grabbed' in a single transaction. On success it
-// returns the grabbed want (grabbed=true) so the worker can emit the transition
-// without re-reading. It returns grabbed=false (with nil error) when the search
-// yields no eligible release, so the worker can reschedule rather than fail.
-func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (grabbedWant model.Want, grabbed bool, err error) {
+// enqueue, flipping the want to 'grabbed' in a single transaction. It returns
+// OutcomeGrabbed with the grabbed want so the worker can emit the transition
+// without re-reading, OutcomeNoRelease (nil error) when the search yields no
+// eligible release so the worker can reschedule, or OutcomeProposed when the
+// want's segment autonomy is 'propose' — the pick was parked as a proposal
+// instead of grabbed, and the worker must leave it alone (no recheck).
+func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (model.Want, ProcessOutcome, error) {
 	// Early skip: a sibling want processed earlier this sequential tick may have
 	// grabbed a season pack that already covers this want (GrabWantsForPack flips
 	// every covered sibling to 'grabbed' and links it to the one pack job). Re-read
 	// it; if it's already grabbed and attached to a live job, the pack has it — no
 	// redundant search, no second job.
 	if skip, cur, serr := s.alreadyCoveredByPack(ctx, want); serr != nil {
-		return model.Want{}, false, serr
+		return model.Want{}, OutcomeNoRelease, serr
 	} else if skip {
-		return cur, true, nil
+		return cur, OutcomeGrabbed, nil
 	}
 
 	mi, err := s.repo.GetMediaItem(ctx, want.MediaItemID)
 	if err != nil {
-		return model.Want{}, false, err
+		return model.Want{}, OutcomeNoRelease, err
 	}
 
 	// IMDb id is best-effort: capable indexers (e.g. IPTorrents) accept it for
@@ -72,14 +97,14 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	// which case the query and gate fall back to title+year.
 	imdbID, err := s.repo.GetMediaItemExternalID(ctx, mi.ID, string(metadata.SourceIMDB))
 	if err != nil {
-		return model.Want{}, false, err
+		return model.Want{}, OutcomeNoRelease, err
 	}
 
 	// A want for an episode resolves to its season/episode coordinates; movie
 	// wants leave epCtx nil and follow the original path unchanged.
 	epCtx, err := s.resolveEpisodeCtx(ctx, want)
 	if err != nil {
-		return model.Want{}, false, err
+		return model.Want{}, OutcomeNoRelease, err
 	}
 
 	// An episode want loads its in-flight season siblings up front: a season pack
@@ -89,17 +114,17 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	if epCtx != nil {
 		siblings, err = s.loadSeasonSiblings(ctx, want, epCtx)
 		if err != nil {
-			return model.Want{}, false, err
+			return model.Want{}, OutcomeNoRelease, err
 		}
 	}
 
 	// Load the release blocklist for the processed want and its in-flight season
 	// siblings in one batch, so pick can drop any candidate a want has already
-	// excluded (a download that failed on it, today). Movie wants have no
-	// siblings — the set is just the one want.
+	// excluded (a download that failed on it, or one a proposal declined). Movie
+	// wants have no siblings — the set is just the one want.
 	excl, err := s.loadExclusions(ctx, want, siblings)
 	if err != nil {
-		return model.Want{}, false, err
+		return model.Want{}, OutcomeNoRelease, err
 	}
 
 	// A season pack is a per-season release, but search is per-want. When the want
@@ -109,18 +134,18 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	seasonScoped := len(siblings) >= 2
 	results, err := s.source.Search(ctx, s.wantToQuery(mi, epCtx, seasonScoped))
 	if err != nil {
-		return model.Want{}, false, apperrors.BadGatewayf("indexer search %q: %v", mi.Title, err).
+		return model.Want{}, OutcomeNoRelease, apperrors.BadGatewayf("indexer search %q: %v", mi.Title, err).
 			Op("AcquisitionService.ProcessWant")
 	}
 
 	outcome, err := s.pick(ctx, want, mi, imdbID, epCtx, siblings, results, excl)
 	if err != nil {
-		return model.Want{}, false, err
+		return model.Want{}, OutcomeNoRelease, err
 	}
 	if outcome == nil {
 		// Every candidate was gated out — behaviorally identical to no results.
 		// The worker reschedules with backoff.
-		return model.Want{}, false, nil
+		return model.Want{}, OutcomeNoRelease, nil
 	}
 	cand := outcome.eval.Subject.Release.Candidate
 
@@ -128,7 +153,7 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	// picked Subject already carries its Media fields from pick.
 	actions, _, err := s.routing.Dispatch(ctx, outcome.eval.Subject)
 	if err != nil {
-		return model.Want{}, false, err
+		return model.Want{}, OutcomeNoRelease, err
 	}
 	job := repo.CreateDownloadJobParams{
 		Protocol:       cand.Protocol,
@@ -153,84 +178,123 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 		}
 	}
 
-	if outcome.isPack {
-		grabbedWant, grabbed, err = s.grabPack(ctx, want, job, outcome.coveredWantIDs)
-	} else {
-		grabbedWant, grabbed, err = s.grabSingle(ctx, want, job)
+	// Propose branch: when this want's segment autonomy is 'propose', the pick is
+	// parked as a proposal instead of grabbed. The job (fully resolved above) is
+	// what the proposal stores, so approve is a pure DB replay. This sits after
+	// both the single and pack linkage paths, so it covers either. loaded once,
+	// only on the grab path (a no-release tick never reaches here).
+	tracking, err := s.repo.GetTracking(ctx, want.TrackingID)
+	if err != nil {
+		return model.Want{}, OutcomeNoRelease, err
 	}
+	if tracking.AutonomyFor(model.WantSegment(want.Segment)) == model.AutonomyPropose {
+		if err := s.proposals.ProposeOrSupersede(ctx, want, job, outcome.isPack, outcome.coveredWantIDs, outcome.eval.Bin, outcome.eval.Score, cand.Size, cand.Seeders); err != nil {
+			return model.Want{}, OutcomeNoRelease, err
+		}
+		return want, OutcomeProposed, nil
+	}
+
+	if outcome.isPack {
+		var claimed []model.Want
+		if err := s.repo.InTx(ctx, func(r *repo.Repository) error {
+			var gerr error
+			claimed, gerr = grabPack(ctx, r, job, outcome.coveredWantIDs)
+			return gerr
+		}); err != nil {
+			return model.Want{}, OutcomeNoRelease, err
+		}
+		// Emit the transition for the processed want only; sibling coverage is
+		// picked up when each sibling's tick hits alreadyCoveredByPack.
+		for _, cw := range claimed {
+			if cw.ID == want.ID {
+				return cw, OutcomeGrabbed, nil
+			}
+		}
+		// The processed want wasn't claimed — a concurrent grab won it. Benign
+		// dedup no-op, behaviorally a no-release.
+		return model.Want{}, OutcomeNoRelease, nil
+	}
+
+	var grabbedWant model.Want
+	var grabbed bool
+	if err := s.repo.InTx(ctx, func(r *repo.Repository) error {
+		var gerr error
+		grabbedWant, grabbed, gerr = grabSingle(ctx, r, want, job)
+		return gerr
+	}); err != nil {
+		return model.Want{}, OutcomeNoRelease, err
+	}
+	if !grabbed {
+		// A benign dedup no-op (the CAS matched 0 rows — a concurrent grab won, or
+		// the reaper reset and re-claimed). Behaviorally a no-release, exactly as
+		// before the outcome enum.
+		return model.Want{}, OutcomeNoRelease, nil
+	}
+	return grabbedWant, OutcomeGrabbed, nil
+}
+
+// grabSingle grabs one want and creates the download_job linked to it. CAS first,
+// job second: GrabWant flips 'searching → grabbed' only while the worker still
+// owns the want, holding the row lock through commit so concurrent grabbers
+// serialize. A 0-row CAS (ok=false) means the want was superseded (a concurrent
+// grab won) — a benign no-op, and no job is created. grabbed is set only after
+// the job insert, so an insert failure fails the whole tx (want stays 'searching').
+//
+// It runs on the caller's tx-bound repo r — it does NOT open its own transaction,
+// so the caller MUST wrap it in InTx. Package-level (not a method) so ProcessWant's
+// auto branch and ProposalService.Approve converge on ONE grab path without a
+// service cycle: both pass the tx repo they hold.
+func grabSingle(ctx context.Context, r *repo.Repository, want model.Want, jobParams repo.CreateDownloadJobParams) (model.Want, bool, error) {
+	gw, ok, err := r.GrabWant(ctx, want.ID)
 	if err != nil {
 		return model.Want{}, false, err
 	}
-
-	return grabbedWant, grabbed, nil
+	if !ok {
+		return model.Want{}, false, nil
+	}
+	job, err := r.CreateDownloadJob(ctx, jobParams)
+	if err != nil {
+		return model.Want{}, false, err
+	}
+	if err := r.LinkDownloadJobWant(ctx, job.ID, want.ID); err != nil {
+		return model.Want{}, false, err
+	}
+	return gw, true, nil
 }
 
-// grabSingle grabs one want and creates the download_job linked to it, in a single
-// transaction. CAS first, job second: GrabWant flips 'searching → grabbed' only
-// while the worker still owns the want, holding the row lock through commit so
-// concurrent grabbers serialize. A 0-row CAS (ok=false) means the want was
-// superseded (the reaper reset it and another worker re-claimed, or a concurrent
-// grab won) — a benign no-op. grabbed is set only after the job insert, so an
-// insert failure rolls back the whole tx (want stays 'searching').
-func (s *AcquisitionService) grabSingle(ctx context.Context, want model.Want, jobParams repo.CreateDownloadJobParams) (grabbedWant model.Want, grabbed bool, err error) {
-	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
-		gw, ok, gerr := r.GrabWant(ctx, want.ID)
-		if gerr != nil {
-			return gerr
-		}
-		if !ok {
-			return nil
-		}
-		job, jerr := r.CreateDownloadJob(ctx, jobParams)
-		if jerr != nil {
-			return jerr
-		}
-		if lerr := r.LinkDownloadJobWant(ctx, job.ID, want.ID); lerr != nil {
-			return lerr
-		}
-		grabbedWant = gw
-		grabbed = true
-		return nil
-	})
-	return grabbedWant, grabbed, err
-}
-
-// grabPack grabs a season pack covering several in-flight wants in one transaction:
+// grabPack grabs a release covering several in-flight wants in one transaction:
 // find-or-create the job by (indexer_id, guid) over in-flight jobs (so converging
 // sibling grabs reuse one job, made idempotent by the partial UNIQUE(indexer_id,
-// guid) key), batch-grab the covered wants, and link only the wants the CAS
-// actually claimed. The processed want's grabbed row is returned (grabbed=true)
-// when the pack claimed it; if a concurrent grab beat us to it, grabbed=false is a
-// benign no-op, exactly as in the single path.
-func (s *AcquisitionService) grabPack(ctx context.Context, want model.Want, jobParams repo.CreateDownloadJobParams, coveredWantIDs []uuid.UUID) (grabbedWant model.Want, grabbed bool, err error) {
-	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
-		job, found, ferr := r.FindActiveDownloadJobByGuid(ctx, jobParams.IndexerID, jobParams.Guid)
-		if ferr != nil {
-			return ferr
+// guid) key), batch-grab the covered wants (GrabWantsForPack CASes each from
+// pending/searching, clearing any hold), and link only the wants the CAS actually
+// claimed. Returns the full claimed set — the caller derives what it needs (the
+// auto branch finds the processed want; approve emits all). An empty return means
+// every covered want was already advanced or terminal (a concurrent grab or a
+// stale pack approval). It runs on the caller's tx-bound repo r — it does NOT
+// open its own transaction, so the caller MUST wrap it in InTx. Package-level so
+// the auto pack path and ProposalService converge on one grab path.
+func grabPack(ctx context.Context, r *repo.Repository, jobParams repo.CreateDownloadJobParams, coveredWantIDs []uuid.UUID) ([]model.Want, error) {
+	job, found, err := r.FindActiveDownloadJobByGuid(ctx, jobParams.IndexerID, jobParams.Guid)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		job, err = r.CreateDownloadJob(ctx, jobParams)
+		if err != nil {
+			return nil, err
 		}
-		if !found {
-			job, ferr = r.CreateDownloadJob(ctx, jobParams)
-			if ferr != nil {
-				return ferr
-			}
-		}
+	}
 
-		claimed, gerr := r.GrabWantsForPack(ctx, coveredWantIDs)
-		if gerr != nil {
-			return gerr
+	claimed, err := r.GrabWantsForPack(ctx, coveredWantIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, cw := range claimed {
+		if lerr := r.LinkDownloadJobWant(ctx, job.ID, cw.ID); lerr != nil {
+			return nil, lerr
 		}
-		for _, cw := range claimed {
-			if lerr := r.LinkDownloadJobWant(ctx, job.ID, cw.ID); lerr != nil {
-				return lerr
-			}
-			if cw.ID == want.ID {
-				grabbedWant = cw
-				grabbed = true
-			}
-		}
-		return nil
-	})
-	return grabbedWant, grabbed, err
+	}
+	return claimed, nil
 }
 
 // alreadyCoveredByPack reports whether this want was already grabbed by a sibling's

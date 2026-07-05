@@ -1479,6 +1479,36 @@ export type ProfileFormat = {
     weight: number;
 };
 
+export type ProposalUpdatedPayload = {
+    trackingId: string;
+};
+
+export type ProposalView = {
+    bin: BinKey;
+    candidateLink: string;
+    candidateTitle: string;
+    coveredEpisodeIds: Array<string> | null;
+    coveredWantIds: Array<string> | null;
+    createdAt: string;
+    downloaderId: string;
+    episodeId?: string;
+    guid: string;
+    id: string;
+    indexerId: number;
+    isPack: boolean;
+    libraryId: string;
+    mediaItemId: string;
+    mediaType: string;
+    nameTemplateId: string;
+    protocol: string;
+    score: number;
+    seasonId?: string;
+    seeders: number;
+    size: number;
+    trackingId: string;
+    updatedAt: string;
+};
+
 export type QualityBinOption = {
     bin: BinKey;
     /**
@@ -2127,11 +2157,11 @@ export type TrackingSetAutonomyInputBody = {
     /**
      * Autonomy for backfill wants (atoms dated before the tracking was created)
      */
-    backfill: 'auto' | 'manual';
+    backfill: 'auto' | 'propose' | 'manual';
     /**
      * Autonomy for ongoing wants (atoms dated after the tracking was created)
      */
-    ongoing: 'auto' | 'manual';
+    ongoing: 'auto' | 'propose' | 'manual';
 };
 
 export type UpdateDetails = {
@@ -3249,11 +3279,11 @@ export type TrackingSetAutonomyInputBodyWritable = {
     /**
      * Autonomy for backfill wants (atoms dated before the tracking was created)
      */
-    backfill: 'auto' | 'manual';
+    backfill: 'auto' | 'propose' | 'manual';
     /**
      * Autonomy for ongoing wants (atoms dated after the tracking was created)
      */
-    ongoing: 'auto' | 'manual';
+    ongoing: 'auto' | 'propose' | 'manual';
 };
 
 export type UserWritable = {
@@ -4487,6 +4517,20 @@ export type EventsStreamResponses = {
          * The event name.
          */
         event: 'ping';
+        /**
+         * The event ID (sortable; used for Last-Event-ID resume).
+         */
+        id?: string;
+        /**
+         * The retry time in milliseconds.
+         */
+        retry?: number;
+    } | {
+        data: ProposalUpdatedPayload;
+        /**
+         * The event name.
+         */
+        event: 'proposal_updated';
         /**
          * The event ID (sortable; used for Last-Event-ID resume).
          */
@@ -6416,6 +6460,98 @@ export type MediaGetPersonResponses = {
 
 export type MediaGetPersonResponse = MediaGetPersonResponses[keyof MediaGetPersonResponses];
 
+export type ProposalsApproveData = {
+    body?: never;
+    path: {
+        /**
+         * Proposal ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/proposals/{id}/approve';
+};
+
+export type ProposalsApproveErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type ProposalsApproveError = ProposalsApproveErrors[keyof ProposalsApproveErrors];
+
+export type ProposalsApproveResponses = {
+    /**
+     * OK
+     */
+    200: Array<Want> | null;
+};
+
+export type ProposalsApproveResponse = ProposalsApproveResponses[keyof ProposalsApproveResponses];
+
+export type ProposalsDeclineData = {
+    body?: never;
+    path: {
+        /**
+         * Proposal ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/proposals/{id}/decline';
+};
+
+export type ProposalsDeclineErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type ProposalsDeclineError = ProposalsDeclineErrors[keyof ProposalsDeclineErrors];
+
+export type ProposalsDeclineResponses = {
+    /**
+     * OK
+     */
+    200: Array<Want> | null;
+};
+
+export type ProposalsDeclineResponse = ProposalsDeclineResponses[keyof ProposalsDeclineResponses];
+
 export type QualityListBinsData = {
     body?: never;
     path?: never;
@@ -7833,6 +7969,44 @@ export type TrackingCancelResponses = {
 };
 
 export type TrackingCancelResponse = TrackingCancelResponses[keyof TrackingCancelResponses];
+
+export type TrackingProposalsData = {
+    body?: never;
+    path: {
+        /**
+         * Tracking ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/tracking/{id}/proposals';
+};
+
+export type TrackingProposalsErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type TrackingProposalsError = TrackingProposalsErrors[keyof TrackingProposalsErrors];
+
+export type TrackingProposalsResponses = {
+    /**
+     * OK
+     */
+    200: Array<ProposalView> | null;
+};
+
+export type TrackingProposalsResponse = TrackingProposalsResponses[keyof TrackingProposalsResponses];
 
 export type TrackingRequestersData = {
     body?: never;

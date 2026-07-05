@@ -292,3 +292,20 @@ func (p Profile) StrictlyBetter(reg *rules.Registry, current FileQuality, candid
 	score, _ := p.Score(reg, candidate, model.PhaseSearch)
 	return score-current.Score > antiFlapDelta
 }
+
+// StrictlyBetterQuality reports whether candidate is a strictly better pick than
+// current, comparing only their held bin+score — the form a proposal persists on
+// both sides (it stores {Bin,Score}, not a candidate Subject, so StrictlyBetter's
+// Subject-shaped comparison is not usable). Bin rank dominates; on an equal bin a
+// strictly-higher score wins; otherwise (equal or worse) it is not better. Pure —
+// exercised directly by the supersede unit test. Unlike StrictlyBetter this has no
+// anti-flap margin: the front-half already picked the best release, so any
+// bin-or-score improvement over an open proposal is worth surfacing in place.
+func (p Profile) StrictlyBetterQuality(current, candidate FileQuality) bool {
+	cand := p.rank(candidate.Bin)
+	cur := p.rank(current.Bin)
+	if cand != cur {
+		return cand < cur
+	}
+	return candidate.Score > current.Score
+}

@@ -411,6 +411,57 @@ func (q *Queries) GrabWantsForPack(ctx context.Context, ids []pgtype.UUID) ([]Wa
 	return items, nil
 }
 
+const holdProposedWants = `-- name: HoldProposedWants :many
+UPDATE want
+SET hold = 'proposed',
+    updated_at = now()
+WHERE id = ANY($1::uuid[])
+  AND status IN ('pending', 'searching')
+  AND hold IS NULL
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+// HoldProposedWants stamps hold='proposed' on the wants a proposal covers,
+// parking them so the acquisition worker won't re-claim them while the operator
+// decides. It's the propose-time analogue of GrabWantsForPack: the IN-guard
+// claims only still-claimable (pending/searching) wants with no existing hold, so
+// a want already advanced, terminal, or held is skipped silently and the RETURNING
+// set reports exactly which wants this call parked. The hold IS NULL guard keeps
+// it from clobbering a needs_pick hold. Concurrent callers serialize on row locks.
+func (q *Queries) HoldProposedWants(ctx context.Context, ids []pgtype.UUID) ([]Want, error) {
+	rows, err := q.db.Query(ctx, holdProposedWants, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Want
+	for rows.Next() {
+		var i Want
+		if err := rows.Scan(
+			&i.ID,
+			&i.TrackingID,
+			&i.MediaItemID,
+			&i.EpisodeID,
+			&i.QualityProfileID,
+			&i.Status,
+			&i.Segment,
+			&i.Hold,
+			&i.NextRunAt,
+			&i.AttemptCount,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const holdWantsForSegment = `-- name: HoldWantsForSegment :many
 UPDATE want
 SET hold = 'needs_pick',
@@ -684,6 +735,51 @@ func (q *Queries) MirrorWantStatus(ctx context.Context, arg MirrorWantStatusPara
 	return i, err
 }
 
+const rearmProposedWant = `-- name: RearmProposedWant :one
+UPDATE want
+SET status = 'pending',
+    hold = NULL,
+    attempt_count = 0,
+    last_error = $1,
+    next_run_at = now(),
+    updated_at = now()
+WHERE id = $2
+  AND hold = 'proposed'
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type RearmProposedWantParams struct {
+	LastError *string     `json:"last_error"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// RearmProposedWant returns a proposed want to the pool via compare-and-swap: it
+// fires only while the want still carries hold='proposed', clearing the hold and
+// re-arming it for immediate search. Backs decline (search a different release)
+// and supersede's coverage-shrink (a want dropped from the newer pick re-searches).
+// attempt_count resets — a decline isn't a retryable error. A 0-row match
+// (the want was grabbed or already re-armed) surfaces as pgx.ErrNoRows.
+func (q *Queries) RearmProposedWant(ctx context.Context, arg RearmProposedWantParams) (Want, error) {
+	row := q.db.QueryRow(ctx, rearmProposedWant, arg.LastError, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.Segment,
+		&i.Hold,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const rearmWant = `-- name: RearmWant :one
 UPDATE want
 SET status = 'pending',
@@ -730,6 +826,7 @@ SET status = 'pending',
     next_run_at = now(),
     updated_at = now()
 WHERE status = 'searching'
+  AND hold IS NULL
   AND updated_at < $2
 RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
 `
@@ -744,6 +841,11 @@ type ReclaimStaleSearchingWantsParams struct {
 // crash between ClaimRunnableWants' flip and a terminal transition. Reset-only:
 // attempt_count is untouched and no want is failed (mirrors the "no release yet"
 // reschedule). The cutoff is passed from Go for testability.
+//
+// A held want (hold IS NOT NULL) is intentionally parked, not crashed — a
+// 'proposed' want sits in 'searching' awaiting operator approval, and reaping it
+// to 'pending' would break approve's grab-from-searching CAS. The hold IS NULL
+// guard keeps the reaper to genuinely-wedged wants.
 func (q *Queries) ReclaimStaleSearchingWants(ctx context.Context, arg ReclaimStaleSearchingWantsParams) ([]Want, error) {
 	rows, err := q.db.Query(ctx, reclaimStaleSearchingWants, arg.LastError, arg.StaleBefore)
 	if err != nil {

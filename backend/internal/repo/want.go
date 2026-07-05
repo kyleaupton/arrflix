@@ -431,6 +431,44 @@ func (r *Repository) SetWantHold(ctx context.Context, id uuid.UUID, hold *string
 	return toModelWant(row), nil
 }
 
+// HoldProposedWants stamps hold='proposed' on the wants a proposal covers,
+// parking them while the operator decides. It returns exactly the wants this call
+// parked (still-claimable, unheld) — the propose-time analogue of GrabWantsForPack.
+func (r *Repository) HoldProposedWants(ctx context.Context, ids []uuid.UUID) ([]model.Want, error) {
+	pgIDs := make([]pgtype.UUID, len(ids))
+	for i, id := range ids {
+		pgIDs[i] = pgtypeFromUUID(id)
+	}
+	rows, err := r.Q.HoldProposedWants(ctx, pgIDs)
+	if err != nil {
+		return nil, apperrors.FromPg(err, "hold proposed wants")
+	}
+	out := make([]model.Want, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelWant(row))
+	}
+	return out, nil
+}
+
+// RearmProposedWant returns a proposed want to the pool via compare-and-swap,
+// clearing the hold and re-arming for immediate search. The bool reports whether
+// the re-arm landed: false (a 0-row CAS, surfaced as pgx.ErrNoRows) means the want
+// no longer carries hold='proposed' (grabbed or already re-armed) — a benign
+// no-op. Backs decline and supersede's coverage-shrink.
+func (r *Repository) RearmProposedWant(ctx context.Context, id uuid.UUID, lastError string) (model.Want, bool, error) {
+	row, err := r.Q.RearmProposedWant(ctx, dbgen.RearmProposedWantParams{
+		ID:        pgtypeFromUUID(id),
+		LastError: &lastError,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "rearm proposed want %s", id)
+	}
+	return toModelWant(row), true, nil
+}
+
 // FindLiveWantForEpisode returns the still-acquirable (pending/searching) want a
 // tracking holds for one episode. A pgx.ErrNoRows flows through FromPg as
 // NotFound — the series manual-grab path reads that as "no live want to join."

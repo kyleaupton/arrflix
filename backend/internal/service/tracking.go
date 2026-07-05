@@ -28,28 +28,29 @@ func (s *TrackingService) Get(ctx context.Context, id uuid.UUID) (model.Tracking
 }
 
 // SetAutonomy dials a tracking's per-segment acquisition autonomy and reconciles
-// its live wants to match. Both segments must be 'auto' or 'manual' — 'propose'
-// is rejected until the phase that implements it, though the DB CHECK admits it.
+// its live wants to match. Each segment must be 'auto', 'propose', or 'manual'.
 //
 // The whole change runs in one transaction: set both dials, then for each
-// segment that actually changed, hold its wants (→manual) or release them
-// (→auto). Only pending/searching wants are affected. Searching wants are held
-// too, not just pending ones: the reschedule/reclaim queries return a searcher
-// to pending without touching hold, so holding only pending would let a
-// perpetual searcher slip past the manual gate. Grabbed/downloading/imported and
-// terminal wants are left alone — a grab already in flight when its segment goes
-// manual completes normally (an acceptable race; the file lands and the want
-// advances). No SSE is emitted: the acting client invalidates via the mutation;
-// other clients stay stale until the next want event.
+// segment that actually changed, reconcile its wants. manual holds them
+// (needs_pick); auto releases held ones. propose is a pure dial change — no want
+// mutation: pending wants stay claimable and are each proposed on their next tick.
+// Only pending/searching wants are ever affected. Searching wants are held too,
+// not just pending ones: the reschedule/reclaim queries return a searcher to
+// pending without touching hold, so holding only pending would let a perpetual
+// searcher slip past the manual gate. Grabbed/downloading/imported and terminal
+// wants are left alone — a grab already in flight when its segment goes manual
+// completes normally (an acceptable race; the file lands and the want advances).
+// No SSE is emitted: the acting client invalidates via the mutation; other
+// clients stay stale until the next want event.
 func (s *TrackingService) SetAutonomy(ctx context.Context, trackingID uuid.UUID, backfill, ongoing string) (model.Tracking, error) {
 	const op = "TrackingService.SetAutonomy"
 
 	var fields []apperrors.FieldError
 	if !isSettableAutonomy(backfill) {
-		fields = append(fields, apperrors.Field("body.backfill", "must be 'auto' or 'manual'"))
+		fields = append(fields, apperrors.Field("body.backfill", "must be 'auto', 'propose', or 'manual'"))
 	}
 	if !isSettableAutonomy(ongoing) {
-		fields = append(fields, apperrors.Field("body.ongoing", "must be 'auto' or 'manual'"))
+		fields = append(fields, apperrors.Field("body.ongoing", "must be 'auto', 'propose', or 'manual'"))
 	}
 	if len(fields) > 0 {
 		return model.Tracking{}, apperrors.Validation("invalid autonomy", fields...).Op(op)
@@ -83,16 +84,21 @@ func (s *TrackingService) SetAutonomy(ctx context.Context, trackingID uuid.UUID,
 	return updated, nil
 }
 
-// isSettableAutonomy reports whether an autonomy value is one the API accepts
-// today: 'auto' or 'manual'. 'propose' is a valid DB value but a later phase, so
-// it's rejected at this boundary.
+// isSettableAutonomy reports whether an autonomy value is one the API accepts:
+// 'auto', 'propose', or 'manual' — the full DB vocabulary.
 func isSettableAutonomy(a string) bool {
-	return a == string(model.AutonomyAuto) || a == string(model.AutonomyManual)
+	return a == string(model.AutonomyAuto) ||
+		a == string(model.AutonomyPropose) ||
+		a == string(model.AutonomyManual)
 }
 
-// applyAutonomyToSegment reconciles one segment's live wants to a new autonomy:
-// manual holds them (barring the worker), auto releases the held ones (re-arming
-// the worker). Called inside the SetAutonomy transaction.
+// applyAutonomyToSegment reconciles one segment's live wants to a new autonomy.
+// manual holds them (needs_pick, barring the worker). auto and propose both want
+// the segment's wants claimable — they differ only at ProcessWant time (auto
+// grabs, propose parks a proposal), not in pre-claim gating — so both release any
+// needs_pick hold and re-arm. Releasing is scoped to hold='needs_pick', so an
+// open proposal's hold='proposed' is never disturbed. Called inside the
+// SetAutonomy transaction.
 func applyAutonomyToSegment(ctx context.Context, r *repo.Repository, trackingID uuid.UUID, seg model.WantSegment, autonomy string) error {
 	if autonomy == string(model.AutonomyManual) {
 		_, err := r.HoldWantsForSegment(ctx, trackingID, string(seg))

@@ -43,10 +43,10 @@ func grabMovieWant(t *testing.T, ctx context.Context, r *repo.Repository, want m
 			return results, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
-	if _, grabbed, err := svc.ProcessWant(ctx, claimed); err != nil {
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	if _, outcome, err := svc.ProcessWant(ctx, claimed); err != nil {
 		t.Fatalf("ProcessWant: %v", err)
-	} else if !grabbed {
+	} else if outcome != service.OutcomeGrabbed {
 		t.Fatalf("ProcessWant grabbed = false, want true")
 	}
 	jobs, err := r.ListDownloadJobsByMediaItem(ctx, want.MediaItemID)
@@ -184,20 +184,20 @@ func TestRecovery_ExcludedReleaseNotRepicked(t *testing.T) {
 				return results, nil
 			},
 		}
-		return service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r))
+		return service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
 	}
 
 	// Offered only the excluded release → no grab.
-	if _, grabbed, err := newSvc([]indexer.SearchResult{movieResult("guid-a")}).ProcessWant(ctx, claimed); err != nil {
+	if _, outcome, err := newSvc([]indexer.SearchResult{movieResult("guid-a")}).ProcessWant(ctx, claimed); err != nil {
 		t.Fatalf("ProcessWant (excluded only): %v", err)
-	} else if grabbed {
+	} else if outcome == service.OutcomeGrabbed {
 		t.Fatalf("grabbed = true, want false (only candidate is excluded)")
 	}
 
 	// Offer the excluded release plus an alternative → the alternative is grabbed.
-	if _, grabbed, err := newSvc([]indexer.SearchResult{movieResult("guid-a"), movieResult("guid-b")}).ProcessWant(ctx, claimed); err != nil {
+	if _, outcome, err := newSvc([]indexer.SearchResult{movieResult("guid-a"), movieResult("guid-b")}).ProcessWant(ctx, claimed); err != nil {
 		t.Fatalf("ProcessWant (excluded + alt): %v", err)
-	} else if !grabbed {
+	} else if outcome != service.OutcomeGrabbed {
 		t.Fatalf("grabbed = false, want true (guid-b is not excluded)")
 	}
 
