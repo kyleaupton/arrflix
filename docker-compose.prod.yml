@@ -1,0 +1,40 @@
+# Prod-like compose for dogfooding the published-image experience without
+# waiting on the multi-arch CI build. This builds docker/Dockerfile.prod locally
+# for the host arch only (no QEMU), producing the same all-in-one container an
+# end user gets from ghcr.io: postgres + prowlarr + nginx + the compiled backend
+# under s6-overlay, with APP_ENV=prod baked in.
+#
+# Unlike docker-compose.yml (dev), there are no source bind mounts or hot reload
+# — the code is compiled into the image, so a rebuild is required to pick up
+# changes. The postgres volume is separate from dev's, so onboarding starts
+# fresh, exactly as a real user experiences it.
+#
+#   just prod-up      # build + start
+#   just prod-logs    # follow logs
+#   just prod-down    # stop
+#
+# Host port defaults to 8484 (end-user parity). Override with ARRFLIX_PROD_PORT
+# in .env if the dev container already holds 8484.
+
+# Own project namespace so this stack's network/volumes stay isolated from the
+# dev compose project (which derives its name from the directory).
+name: arrflix-prod
+
+services:
+  arrflix:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+      args:
+        ARRFLIX_VERSION: local
+    image: arrflix:prod
+    container_name: arrflix-prod
+    ports:
+      - "${ARRFLIX_PROD_PORT:-8484}:8484"
+    volumes:
+      - ${MEDIA_LIBRARIES}:/data
+      - arrflix_prod_pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  arrflix_prod_pg_data:
