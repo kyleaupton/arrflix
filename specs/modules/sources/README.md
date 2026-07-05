@@ -128,6 +128,25 @@ The engine **conforms to existing patterns rather than re-specifying them**: the
 
 Normalization happens **at the provider boundary**: TMDB's `status` strings → the canonical [status enum](../metadata/README.md#canonical-status), ISO date strings → typed dates, provider genre arrays → canonical genres. A future provider's different vocabulary is translated inside *its* operation; consumer code never sees a native shape.
 
+### Reconciling with the response cache
+
+The refresh engine sits *above* the provider-layer response cache — the TTL-keyed store behind the TMDB service (its `STATIC_TTL` / `DYNAMIC_TTL` notches). That cache and the durable `media_item` + `media_metadata_source` tree are **two caches of the same upstream bytes**, each with its own freshness clock. If a scheduled sync reads *through* the response cache, the engine's cadence is silently defeated — a "daily" re-check handed a week-old body — while `metadata_updated_at` is stamped fresh anyway, violating [metadata's freshness invariant](../metadata/README.md#freshness-invariant).
+
+The rule is **one freshness decision-maker per read path**:
+
+- **Canonical-materializing reads** — enrichment, structure sync, born-at-spawn, manual refresh — are reads the engine has *already decided* are worth spending; the cache must not second-guess them. They **consult upstream directly, bypassing the response cache on read.** (Writing the fresh body back through is optional and buys little: under a uniform bypass it could only ever serve a *browse* read, and canonical fetches are keyed separately from the render/search fetches, so the two rarely share an entry.) Mechanically, a `fresh` variant of the service's `getOrFetchFromCache` that skips the read but keeps the write; once the [role seams](#roles-not-one-provider) are extracted, the `MetadataSource` / `StructureSource` operations simply always fetch fresh.
+- **Ephemeral render reads** — search proxy, non-adopted focus pages, discover/trending, watch providers — have no canonical copy, are hammered per-render, and tolerate hours-to-a-day of staleness. This is where the response cache earns its keep, unchanged.
+
+**The response cache stays dumb.** Making *its* TTL state-aware (so it "knows" an airing show) is rejected: it is keyed on URL-shaped strings and cannot see entity state without reaching into the entity layer — which would implement the cadence policy twice, in two layers that drift. All state-awareness concentrates in the engine. (`STATIC_TTL` / `DYNAMIC_TTL` were that same instinct born at the only layer that then existed; the engine is it moved to the layer that can see entity state.)
+
+The cache's role therefore **shrinks rather than disappears**: from a freshness mechanism for anything canonical to purely the **fan-out shield for browse/search**. The two budgets are distinct and non-substitutable — *canonical* calls are bounded by `adopted items × cadence × fetch granularity` and minimized by the engine; *browse* calls are unbounded and repetition-heavy and minimized by the cache. Neither layer can do the other's job.
+
+### Fetch granularity
+
+The engine decides **what to fetch, not only when** — because a series refresh is not one call. Structure sync fans out to **one provider call per season**, and most seasons are immutable (an episode that aired years ago will not change). Fetching every season on every cadence tick re-pulls that frozen back-catalog repeatedly — the exact waste the response cache existed to prevent — and it lands hardest on the worst case: a long-running show that is *still airing* (a decades-long anime, a daily soap) is simultaneously the most-refreshed and the most-seasoned. It also inflates **born-at-spawn latency**, since that synchronous path runs the same per-season fan-out while the user waits.
+
+So the engine fetches only what can have changed: the **series-level record + the current/most-recent season + any season carrying unaired episodes**; **ended seasons are skipped** (the engine holds the tree and air dates, so it knows which seasons are frozen). This preserves the daily-airing correctness win — new episodes and slipped air dates live in the current/future seasons and the series-level status, all kept fresh — while bounding both call volume and add latency. Fetch granularity is a *scheduler* concern (part of "what's due, and what does servicing it entail"), not a provider one: a provider operation still services whatever slice the engine hands it.
+
 ## Anime (embedded data vs API)
 
 Anime is a [`series_type`](../metadata/README.md#item-level-metadata) classification, not a media type or a global toggle. Its provider footprint is deliberately tiny and mostly *not* a provider at all:

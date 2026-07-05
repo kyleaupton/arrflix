@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/metadata"
@@ -62,6 +63,23 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item model.MediaIte
 			Op("EnrichmentService.enrichMovie")
 	}
 
+	if err := s.applyMovieMetadata(ctx, s.repo, item, details); err != nil {
+		return err
+	}
+	s.storeRawPayload(ctx, item.ID, "tmdb", details)
+	return nil
+}
+
+// applyMovieMetadata writes a movie's already-fetched TMDB payload onto the
+// media_item row and records the imdb cross-ref. It runs against the passed repo
+// handle `r`, so it composes into either the enrichment worker's plain repo or a
+// caller's transaction — the request spawn applies metadata inside its spawn tx,
+// born-complete and with no extra TMDB call. Both the item columns and the imdb
+// external-id are hard writes: a failure returns and, under the spawn tx, rolls
+// the spawn back rather than birthing a half-populated item. The raw-payload
+// store is deliberately excluded — it's best-effort and belongs outside any tx
+// (see storeRawPayload).
+func (s *EnrichmentService) applyMovieMetadata(ctx context.Context, r *repo.Repository, item model.MediaItem, details tmdb.MovieDetails) error {
 	// Extract certification from appended release dates
 	var certification string
 	if details.MovieReleaseDatesAppend != nil && details.ReleaseDates != nil {
@@ -90,22 +108,17 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item model.MediaIte
 		InProduction:  &inProd,
 	}
 
-	if _, err := s.repo.UpdateMediaItemMetadata(ctx, params); err != nil {
+	if _, err := r.UpdateMediaItemMetadata(ctx, params); err != nil {
 		return err
 	}
 
-	s.upsertExternalID(ctx, item, metadata.SourceIMDB, details.IMDbID)
-
-	// Store raw source data
-	rawJSON, err := json.Marshal(details)
-	if err == nil {
-		_ = s.repo.UpsertMediaMetadataSource(ctx, repo.UpsertMediaMetadataSourceParams{
-			MediaItemID: item.ID,
-			Source:      "tmdb",
-			Data:        rawJSON,
-		})
+	// The imdb id helps acquisition ID-match on the first search. Guarded on a
+	// non-empty value so a missing id doesn't write an empty external_id.
+	if details.IMDbID != "" {
+		if err := r.UpsertMediaItemExternalID(ctx, item.ID, string(metadata.SourceIMDB), details.IMDbID); err != nil {
+			return err
+		}
 	}
-
 	return nil
 }
 
@@ -116,6 +129,46 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 			Op("EnrichmentService.enrichSeries")
 	}
 
+	if err := s.applySeriesMetadata(ctx, s.repo, item, details); err != nil {
+		return err
+	}
+
+	s.storeRawPayload(ctx, item.ID, "tmdb", details)
+
+	// Sync the full season/episode tree (incl. unaired episodes) from the
+	// seasons TMDB already returned on `details`. Best-effort: never fails the
+	// enrich. applySeriesMetadata advanced metadata_updated_at above, so a
+	// partial structure-sync failure here doesn't leave the item pinned stale
+	// and re-fetched every tick.
+	s.SyncSeriesStructure(ctx, item, details)
+
+	// Newly-aired / newly-added in-scope episodes become wants on the next sync.
+	// Only tracked series reconcile; enrichment also runs for untracked items.
+	tracking, err := s.repo.FindTrackingByMediaItem(ctx, item.ID)
+	if apperrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if s.reconcile != nil {
+		if rerr := s.reconcile.Reconcile(ctx, tracking.ID); rerr != nil {
+			s.logger.Warn().Err(rerr).Str("title", item.Title).
+				Msg("series enrich: post-sync reconcile failed, will heal on next pass")
+		}
+	}
+	return nil
+}
+
+// applySeriesMetadata writes a series' already-fetched TMDB payload onto the
+// media_item row and records the imdb/tvdb cross-refs. Like applyMovieMetadata
+// it runs against the passed repo handle `r`, composing into either the worker's
+// plain repo or the request spawn's transaction. It is scoped to the media_item
+// row and its external ids only — structure sync and want reconciliation stay
+// as the separate post-commit calls the callers make, since folding them here
+// would double-sync the episode tree. All writes are hard (a failure rolls back
+// under the spawn tx); the raw-payload store is excluded (see storeRawPayload).
+func (s *EnrichmentService) applySeriesMetadata(ctx context.Context, r *repo.Repository, item model.MediaItem, details tmdb.TVDetails) error {
 	// Extract certification from appended content ratings
 	var certification string
 	if details.TVContentRatingsAppend != nil && details.ContentRatings != nil {
@@ -128,8 +181,8 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 	// Use first episode runtime if available
 	var runtime *int32
 	if len(details.EpisodeRunTime) > 0 {
-		r := int32(details.EpisodeRunTime[0])
-		runtime = &r
+		rt := int32(details.EpisodeRunTime[0])
+		runtime = &rt
 	}
 
 	voteAvg := float64(details.VoteAverage)
@@ -151,9 +204,7 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 		InProduction:  &details.InProduction,
 	}
 
-	// Advance metadata_updated_at first, so a later partial structure-sync
-	// failure doesn't leave the item pinned stale and re-fetched every tick.
-	if _, err := s.repo.UpdateMediaItemMetadata(ctx, params); err != nil {
+	if _, err := r.UpdateMediaItemMetadata(ctx, params); err != nil {
 		return err
 	}
 
@@ -162,43 +213,43 @@ func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaIt
 	// indexer-search time — fetched via the external_ids append, persisted here.
 	// The guard ensures the append actually came back before we trust its ids.
 	if details.TVExternalIDsAppend != nil && details.TVExternalIDs != nil {
-		s.upsertExternalID(ctx, item, metadata.SourceIMDB, details.IMDbID)
-		if details.TVDBID != 0 {
-			s.upsertExternalID(ctx, item, metadata.SourceTVDB, strconv.FormatInt(details.TVDBID, 10))
+		if details.IMDbID != "" {
+			if err := r.UpsertMediaItemExternalID(ctx, item.ID, string(metadata.SourceIMDB), details.IMDbID); err != nil {
+				return err
+			}
 		}
-	}
-
-	// Store raw source data
-	rawJSON, err := json.Marshal(details)
-	if err == nil {
-		_ = s.repo.UpsertMediaMetadataSource(ctx, repo.UpsertMediaMetadataSourceParams{
-			MediaItemID: item.ID,
-			Source:      "tmdb",
-			Data:        rawJSON,
-		})
-	}
-
-	// Sync the full season/episode tree (incl. unaired episodes) from the
-	// seasons TMDB already returned on `details`. Best-effort: never fails the
-	// enrich (item metadata is already committed above).
-	s.SyncSeriesStructure(ctx, item, details)
-
-	// Newly-aired / newly-added in-scope episodes become wants on the next sync.
-	// Only tracked series reconcile; enrichment also runs for untracked items.
-	tracking, err := s.repo.FindTrackingByMediaItem(ctx, item.ID)
-	if apperrors.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if s.reconcile != nil {
-		if rerr := s.reconcile.Reconcile(ctx, tracking.ID); rerr != nil {
-			s.logger.Warn().Err(rerr).Str("title", item.Title).
-				Msg("series enrich: post-sync reconcile failed, will heal on next pass")
+		if details.TVDBID != 0 {
+			if err := r.UpsertMediaItemExternalID(ctx, item.ID, string(metadata.SourceTVDB), strconv.FormatInt(details.TVDBID, 10)); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// storeRawPayload marshals a provider payload and upserts it into
+// media_metadata_source. Best-effort: the raw blob is portability/debug
+// insurance, never user-visible, so a marshal or write failure logs and
+// continues rather than failing the caller. It must be called outside any
+// transaction — the ~100KB JSONB blob stays off the atomic spawn path, and a
+// swallowed error mid-tx would poison the whole pgx transaction.
+func (s *EnrichmentService) storeRawPayload(ctx context.Context, mediaItemID uuid.UUID, source string, payload any) {
+	rawJSON, err := json.Marshal(payload)
+	if err != nil {
+		s.logger.Warn().Err(err).
+			Str("media_item_id", mediaItemID.String()).Str("source", source).
+			Msg("enrich: marshal raw payload failed")
+		return
+	}
+	if err := s.repo.UpsertMediaMetadataSource(ctx, repo.UpsertMediaMetadataSourceParams{
+		MediaItemID: mediaItemID,
+		Source:      source,
+		Data:        rawJSON,
+	}); err != nil {
+		s.logger.Warn().Err(err).
+			Str("media_item_id", mediaItemID.String()).Str("source", source).
+			Msg("enrich: store raw payload failed")
+	}
 }
 
 // SyncSeriesStructure upserts the full season/episode tree from TMDB,
@@ -306,20 +357,6 @@ func strPtrIfNotEmpty(s string) *string {
 		return nil
 	}
 	return &s
-}
-
-// upsertExternalID records a secondary-namespace cross-reference (imdb/tvdb/…)
-// in the external_id registry. Best-effort: metadata is already committed, so a
-// write failure logs rather than failing the enrich. Empty values are skipped.
-func (s *EnrichmentService) upsertExternalID(ctx context.Context, item model.MediaItem, source metadata.ExternalSource, value string) {
-	if value == "" {
-		return
-	}
-	if err := s.repo.UpsertMediaItemExternalID(ctx, item.ID, string(source), value); err != nil {
-		s.logger.Warn().Err(err).
-			Str("title", item.Title).Str("source", string(source)).
-			Msg("enrich: external-id upsert failed")
-	}
 }
 
 // canonicalStatusPtr maps a raw TMDB status to our canonical token, returning

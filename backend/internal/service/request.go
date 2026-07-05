@@ -8,7 +8,6 @@ import (
 
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
-	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/qualityprofile"
@@ -132,8 +131,10 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, tier qualityprofile.Tier) (model.Request, error) {
 	const op = "RequestService.spawnMovie"
 
-	// Outside the tx: fetch movie details for the media_item title/year.
-	details, err := s.tmdb.GetMovieDetails(ctx, in.TmdbID)
+	// Outside the tx: fetch the full enrichment payload (release_dates appended
+	// for certification) so the spawn can apply metadata born-complete with no
+	// extra TMDB call — the same fetch the enrichment worker uses.
+	details, err := s.tmdb.GetMovieDetailsForEnrichment(ctx, in.TmdbID)
 	if err != nil {
 		return model.Request{}, apperrors.BadGatewayf("fetch tmdb movie %d: %v", in.TmdbID, err).Op(op)
 	}
@@ -149,6 +150,7 @@ func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, 
 
 	tmdbID := in.TmdbID
 	var spawned model.Request
+	var mediaItem model.MediaItem
 	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
 		req, err := r.CreateRequest(ctx, repo.CreateRequestParams{
 			RequestedBy: in.RequestedBy,
@@ -162,7 +164,7 @@ func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, 
 			return err
 		}
 
-		mediaItem, err := r.UpsertMediaItem(ctx, repo.UpsertMediaItemParams{
+		mediaItem, err = r.UpsertMediaItem(ctx, repo.UpsertMediaItemParams{
 			Type:   string(parsing.DomainMovie),
 			Title:  title,
 			Year:   year,
@@ -172,14 +174,13 @@ func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, 
 			return err
 		}
 
-		// Persist the imdb id now (the details fetch already carries it) so the
-		// acquisition gate can ID-match on the first search, rather than waiting
-		// for the async enrichment worker to backfill it. Full enrichment
-		// (poster, runtime, …) still lands later via that worker.
-		if details.IMDbID != "" {
-			if err := r.UpsertMediaItemExternalID(ctx, mediaItem.ID, string(metadata.SourceIMDB), details.IMDbID); err != nil {
-				return err
-			}
+		// Born-complete: apply the full TMDB payload (poster, overview, runtime,
+		// genres, …) plus the imdb cross-ref onto the just-created media_item,
+		// inside this tx and with no extra TMDB call — the fetch above already
+		// carries it. The item is never visible metadata-less, and the advanced
+		// metadata_updated_at keeps the enrichment worker from re-fetching it.
+		if err := s.enrichment.applyMovieMetadata(ctx, r, mediaItem, details); err != nil {
+			return err
 		}
 
 		// Dedup: at most one tracking per media item. ensureTracking finds
@@ -237,6 +238,12 @@ func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, 
 	if err != nil {
 		return model.Request{}, err
 	}
+
+	// Post-commit, best-effort: stash the raw TMDB payload (the ~100KB
+	// portability blob) off the atomic spawn path. A failure just defers the raw
+	// row to the next enrichment sweep; the user-visible metadata is committed.
+	s.enrichment.storeRawPayload(ctx, mediaItem.ID, "tmdb", details)
+
 	return spawned, nil
 }
 
@@ -293,14 +300,12 @@ func (s *RequestService) spawnSeries(ctx context.Context, in CreateRequestInput,
 			return err
 		}
 
-		// Persist the imdb id now so acquisition can ID-match on the first search;
-		// the imdb id rides on the appended external_ids of the details fetch. The
-		// guard mirrors enrichSeries: IMDbID is promoted from a *TVExternalIDs that
-		// is nil unless the append actually came back.
-		if details.TVExternalIDsAppend != nil && details.TVExternalIDs != nil && details.IMDbID != "" {
-			if err := r.UpsertMediaItemExternalID(ctx, mediaItem.ID, string(metadata.SourceIMDB), details.IMDbID); err != nil {
-				return err
-			}
+		// Born-complete: apply the full TMDB payload plus the imdb/tvdb cross-refs
+		// onto the just-created media_item, inside this tx with no extra TMDB call.
+		// Structure sync + reconcile stay post-commit (below) — folding them here
+		// would double-sync the episode tree.
+		if err := s.enrichment.applySeriesMetadata(ctx, r, mediaItem, details); err != nil {
+			return err
 		}
 
 		tracking, _, err = ensureTracking(ctx, r, mediaItem.ID, profile.ID, in.BackfillAutonomy, in.OngoingAutonomy)
@@ -327,9 +332,11 @@ func (s *RequestService) spawnSeries(ctx context.Context, in CreateRequestInput,
 		return model.Request{}, err
 	}
 
-	// Post-commit, best-effort: sync the episode tree, then reconcile it into
-	// per-episode wants. A failure here leaves the tracking in place; the next
-	// reconcile (re-request or enrichment trigger) heals it.
+	// Post-commit, best-effort: stash the raw TMDB payload (the ~100KB
+	// portability blob) off the atomic path, then sync the episode tree and
+	// reconcile it into per-episode wants. A failure here leaves the tracking in
+	// place; the next reconcile (re-request or enrichment trigger) heals it.
+	s.enrichment.storeRawPayload(ctx, mediaItem.ID, "tmdb", details)
 	s.enrichment.SyncSeriesStructure(ctx, mediaItem, details)
 	if err := s.reconcile.Reconcile(ctx, tracking.ID); err != nil {
 		s.log.Warn().Err(err).

@@ -168,6 +168,75 @@ func TestSpawn_HappyPathAndDedup(t *testing.T) {
 	}
 }
 
+// TestSpawn_MovieBornWithMetadata proves Layer 1: a spawned movie lands
+// metadata-complete synchronously — the spawn applies the TMDB payload it
+// already fetched inside its tx, so the poster/overview/runtime/status/genres
+// are present the instant the row exists, with metadata_updated_at set so the
+// enrichment worker won't re-fetch it.
+func TestSpawn_MovieBornWithMetadata(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	tmdbSrv, tmdbClient := tmdbtest.New(t)
+	tmdbSrv.OnMovieDetails(spawnTmdbID, tmdb.MovieDetails{
+		ID:          spawnTmdbID,
+		Title:       "The Matrix",
+		ReleaseDate: "1999-03-31",
+		PosterPath:  "/matrix.jpg",
+		Overview:    "A hacker learns the truth about his reality.",
+		Runtime:     136,
+		VoteMetrics: tmdb.VoteMetrics{VoteAverage: 8.2},
+		Status:      "Released",
+		Genres:      []tmdb.Genre{{ID: 28, Name: "Action"}, {ID: 878, Name: "Science Fiction"}},
+	})
+	app := testapp.New(t, pool, testapp.WithTMDB(tmdbClient))
+	ctx := context.Background()
+
+	if err := app.Services.QualityProfiles.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seed defaults: %v", err)
+	}
+	admin := adminUser(t, app, ctx)
+	if _, err := app.Repo.UpsertUserPolicy(ctx, admin.ID, true); err != nil {
+		t.Fatalf("upsert admin policy: %v", err)
+	}
+
+	if _, err := app.Services.Requests.Create(ctx, service.CreateRequestInput{
+		RequestedBy: admin.ID,
+		TmdbID:      spawnTmdbID,
+		Type:        "movie",
+		Tier:        "HD",
+	}); err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+
+	// Read the row straight back: the spawn applied the full payload, so no
+	// worker sweep is needed for the metadata to be present.
+	item, err := app.Repo.GetMediaItemByTmdbID(ctx, spawnTmdbID)
+	if err != nil {
+		t.Fatalf("get media item by tmdb id: %v", err)
+	}
+	if item.PosterPath == nil || *item.PosterPath == "" {
+		t.Errorf("posterPath = %v, want populated at birth", item.PosterPath)
+	}
+	if item.Overview == nil || *item.Overview == "" {
+		t.Errorf("overview = %v, want populated at birth", item.Overview)
+	}
+	if item.Runtime == nil || *item.Runtime != 136 {
+		t.Errorf("runtime = %v, want 136", item.Runtime)
+	}
+	if item.Status == nil || *item.Status == "" {
+		t.Errorf("status = %v, want populated at birth", item.Status)
+	}
+	if item.VoteAverage == nil || *item.VoteAverage <= 0 {
+		t.Errorf("voteAverage = %v, want the fixture's positive vote at birth", item.VoteAverage)
+	}
+	if len(item.Genres) == 0 {
+		t.Errorf("genres empty, want populated at birth")
+	}
+	if item.MetadataUpdatedAt == nil {
+		t.Errorf("metadataUpdatedAt = nil, want set at birth (keeps worker from re-fetching)")
+	}
+}
+
 const spawnSeriesTmdbID = int64(1396) // Breaking Bad
 
 // TestSpawn_Series drives the series spawn branch end-to-end through the service:
@@ -180,10 +249,16 @@ func TestSpawn_Series(t *testing.T) {
 	pool := dbtest.New(t)
 	tmdbSrv, tmdbClient := tmdbtest.New(t)
 	tmdbSrv.OnTVDetails(spawnSeriesTmdbID, tmdb.TVDetails{
-		ID:           spawnSeriesTmdbID,
-		Name:         "Breaking Bad",
-		FirstAirDate: "2008-01-20",
-		Seasons:      []tmdb.Season{{SeasonNumber: 1}},
+		ID:             spawnSeriesTmdbID,
+		Name:           "Breaking Bad",
+		FirstAirDate:   "2008-01-20",
+		Seasons:        []tmdb.Season{{SeasonNumber: 1}},
+		PosterPath:     "/breaking-bad.jpg",
+		Overview:       "A chemistry teacher turns to making meth.",
+		VoteMetrics:    tmdb.VoteMetrics{VoteAverage: 8.9},
+		Status:         "Ended",
+		Genres:         []tmdb.Genre{{ID: 18, Name: "Drama"}, {ID: 80, Name: "Crime"}},
+		EpisodeRunTime: []int{47},
 	})
 	tmdbSrv.OnTVSeasonDetails(spawnSeriesTmdbID, 1,
 		tmdbtest.SeasonEpisode{ID: 62085, EpisodeNumber: 1, Name: "Pilot", AirDate: "2008-01-20"},
@@ -262,6 +337,32 @@ func TestSpawn_Series(t *testing.T) {
 	}
 	if dueNow != 1 || deferred != 1 {
 		t.Errorf("want scheduling = %d due-now / %d deferred, want 1 / 1 (pilot due, future deferred)", dueNow, deferred)
+	}
+
+	// The series media_item was born with the full TMDB payload applied inside
+	// the spawn tx — poster/overview/status/genres present immediately, and
+	// metadata_updated_at set so the enrichment worker won't re-fetch it.
+	seriesItem, err := app.Repo.GetMediaItemByTmdbID(ctx, spawnSeriesTmdbID)
+	if err != nil {
+		t.Fatalf("get series media item: %v", err)
+	}
+	if seriesItem.PosterPath == nil || *seriesItem.PosterPath == "" {
+		t.Errorf("series posterPath = %v, want populated at birth", seriesItem.PosterPath)
+	}
+	if seriesItem.Overview == nil || *seriesItem.Overview == "" {
+		t.Errorf("series overview = %v, want populated at birth", seriesItem.Overview)
+	}
+	if seriesItem.Status == nil || *seriesItem.Status == "" {
+		t.Errorf("series status = %v, want populated at birth", seriesItem.Status)
+	}
+	if seriesItem.Runtime == nil || *seriesItem.Runtime != 47 {
+		t.Errorf("series runtime = %v, want 47 (first episode runtime)", seriesItem.Runtime)
+	}
+	if len(seriesItem.Genres) == 0 {
+		t.Errorf("series genres empty, want populated at birth")
+	}
+	if seriesItem.MetadataUpdatedAt == nil {
+		t.Errorf("series metadataUpdatedAt = nil, want set at birth")
 	}
 }
 
