@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
@@ -133,6 +134,62 @@ func extractMovieCertification(releaseDates *tmdb.MovieReleaseDates) string {
 		}
 	}
 	return ""
+}
+
+// extractMovieReleaseDates pulls per-type release dates (theatrical/digital/
+// physical) from the appended TMDB release_dates. Region priority mirrors
+// extractMovieCertification (US → GB → CA → AU); the first priority region that
+// carries any of the three types wins, and all three fields come from that one
+// region so the trio stays internally consistent rather than mixed across
+// regions. TMDB Type ints: 3 = Theatrical, 4 = Digital, 5 = Physical (1/2/6 —
+// premiere, limited, TV — are ignored). Returns nil when no priority region has
+// a usable date.
+func extractMovieReleaseDates(releaseDates *tmdb.MovieReleaseDates) *model.ReleaseDatesByType {
+	if releaseDates == nil || releaseDates.MovieReleaseDatesResults == nil {
+		return nil
+	}
+	priorityCountries := []string{"US", "GB", "CA", "AU"}
+	for _, country := range priorityCountries {
+		for _, result := range releaseDates.Results {
+			if result.Iso3166_1 != country {
+				continue
+			}
+			var out model.ReleaseDatesByType
+			for _, rd := range result.ReleaseDates {
+				date := trimToDate(rd.ReleaseDate)
+				if date == "" {
+					continue
+				}
+				switch rd.Type {
+				case 3: // Theatrical
+					if out.Theatrical == "" {
+						out.Theatrical = date
+					}
+				case 4: // Digital
+					if out.Digital == "" {
+						out.Digital = date
+					}
+				case 5: // Physical
+					if out.Physical == "" {
+						out.Physical = date
+					}
+				}
+			}
+			if out.Theatrical != "" || out.Digital != "" || out.Physical != "" {
+				return &out
+			}
+		}
+	}
+	return nil
+}
+
+// trimToDate reduces a TMDB RFC3339-ish timestamp ("2018-12-15T00:00:00.000Z")
+// to its date part ("2018-12-15"). Already-date strings pass through.
+func trimToDate(ts string) string {
+	if i := strings.IndexByte(ts, 'T'); i >= 0 {
+		return ts[:i]
+	}
+	return ts
 }
 
 // extractTVCertification extracts US certification (fallback to GB, CA, AU)
@@ -434,10 +491,12 @@ func (s *MediaService) GetMovieDetail(ctx context.Context, tmdbID int64) (model.
 		fileInfos = append(fileInfos, downloadJobFiles...)
 	}
 
-	// Extract certification from appended release dates
+	// Extract certification and per-type release dates from appended release dates
 	var certification string
+	var releaseDates *model.ReleaseDatesByType
 	if tmdbDetails.MovieReleaseDatesAppend != nil && tmdbDetails.ReleaseDates != nil {
 		certification = extractMovieCertification(tmdbDetails.ReleaseDates)
+		releaseDates = extractMovieReleaseDates(tmdbDetails.ReleaseDates)
 	}
 
 	// Extract watch providers for user's region
@@ -467,6 +526,7 @@ func (s *MediaService) GetMovieDetail(ctx context.Context, tmdbID int64) (model.
 		Videos:          videos,
 		Recommendations: recommendations,
 		WatchProviders:  watchProviders,
+		ReleaseDates:    releaseDates,
 	}, nil
 }
 

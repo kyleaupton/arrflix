@@ -3222,6 +3222,8 @@ components:
             - "null"
         releaseDate:
           type: string
+        releaseDates:
+          $ref: "#/components/schemas/ReleaseDatesByType"
         runtime:
           format: int64
           type: integer
@@ -4120,6 +4122,16 @@ components:
         - Quality
         - Encode
         - MediaInfo
+      type: object
+    ReleaseDatesByType:
+      additionalProperties: false
+      properties:
+        digital:
+          type: string
+        physical:
+          type: string
+        theatrical:
+          type: string
       type: object
     Request:
       additionalProperties: false

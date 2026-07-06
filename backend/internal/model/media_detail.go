@@ -39,11 +39,21 @@ type MovieDetail struct {
 	PosterPath    string      `json:"posterPath,omitempty"`
 	BackdropPath  string      `json:"backdropPath,omitempty"`
 
-	Files           []FileInfo      `json:"files"`
-	Credits         *Credits        `json:"credits,omitempty"`
-	Videos          []Video         `json:"videos,omitempty"`
-	Recommendations []MovieRail     `json:"recommendations,omitempty"`
-	WatchProviders  *WatchProviders `json:"watchProviders,omitempty"`
+	Files           []FileInfo          `json:"files"`
+	Credits         *Credits            `json:"credits,omitempty"`
+	Videos          []Video             `json:"videos,omitempty"`
+	Recommendations []MovieRail         `json:"recommendations,omitempty"`
+	WatchProviders  *WatchProviders     `json:"watchProviders,omitempty"`
+	ReleaseDates    *ReleaseDatesByType `json:"releaseDates,omitempty"`
+}
+
+// ReleaseDatesByType carries a movie's per-type release dates (date-only, e.g.
+// "2018-12-15"). All three are drawn from a single TMDB region so the trio is
+// internally consistent; any type absent for that region is left empty.
+type ReleaseDatesByType struct {
+	Theatrical string `json:"theatrical,omitempty"`
+	Digital    string `json:"digital,omitempty"`
+	Physical   string `json:"physical,omitempty"`
 }
 
 type EpisodeAvailability struct {

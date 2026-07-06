@@ -33,48 +33,50 @@
           </template>
         </MediaHero>
 
-        <div :class="isImmersive ? 'px-6 space-y-10' : 'space-y-10'">
-          <div v-if="data.files?.length" class="bg-card rounded-lg border p-4 sm:p-6 space-y-4">
-            <h2 class="text-xl font-semibold">Local Files</h2>
-            <DataTable
-              :data="filesWithProgress"
-              :columns="movieFilesColumns"
-              :loading="false"
-              empty-message="No files found"
-              :searchable="false"
-              search-placeholder="Search files..."
-              paginator
-              :rows="10"
-            >
-              <template #empty-icon>
-                <File class="size-5" />
-              </template>
-            </DataTable>
+        <div :class="isImmersive ? 'px-6' : ''">
+          <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
+            <div class="flex flex-col gap-10">
+              <MovieStatusCard :movie="data" />
+
+              <AttentionCard v-if="auth.isAdmin" :tmdb-id="id" type="movie" />
+
+              <div v-if="data.files?.length" class="bg-card rounded-lg border p-4 sm:p-6 space-y-4">
+                <h2 class="text-xl font-semibold">Local Files</h2>
+                <DataTable
+                  :data="filesWithProgress"
+                  :columns="movieFilesColumns"
+                  :loading="false"
+                  empty-message="No files found"
+                  :searchable="false"
+                  search-placeholder="Search files..."
+                  paginator
+                  :rows="10"
+                >
+                  <template #empty-icon>
+                    <File class="size-5" />
+                  </template>
+                </DataTable>
+              </div>
+            </div>
+
+            <DetailsRail :facts="movieFacts" :watch-providers="data.watchProviders" />
           </div>
 
-          <FeaturedTrailer v-if="officialTrailer" :video="officialTrailer" />
+          <div class="mt-10 flex flex-col gap-10">
+            <RailVideos v-if="nonTrailerVideos.length" title="Videos" :videos="nonTrailerVideos" />
 
-          <RailVideos v-if="nonTrailerVideos.length" title="Videos" :videos="nonTrailerVideos" />
+            <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
 
-          <RailCast v-if="data.credits?.cast?.length" title="Cast" :cast="data.credits.cast" />
-
-          <RailMovie
-            v-if="data.recommendations?.length"
-            :rail="{
-              id: 'related-movies',
-              title: 'Related Movies',
-              type: 'movie',
-              movies: data.recommendations,
-              series: [],
-            }"
-          />
-
-          <div
-            v-if="data.watchProviders"
-            class="py-6 bg-muted/30 rounded-lg"
-            :class="isImmersive ? '-mx-6 px-6' : ''"
-          >
-            <WatchProviders :providers="data.watchProviders" />
+            <RailMovie
+              v-if="data.recommendations?.length"
+              :rail="{
+                id: 'related-movies',
+                title: 'Related Movies',
+                type: 'movie',
+                movies: data.recommendations,
+                series: [],
+              }"
+            />
           </div>
         </div>
       </div>
@@ -96,17 +98,21 @@ import Poster from '@/components/poster/Poster.vue'
 import RailCast from '@/components/rails/RailCast.vue'
 import RailVideos from '@/components/rails/RailVideos.vue'
 import RailMovie from '@/components/rails/RailMovie.vue'
-import WatchProviders from '@/components/media/WatchProviders.vue'
-import FeaturedTrailer from '@/components/videos/FeaturedTrailer.vue'
+import DetailsRail, { type Fact } from '@/components/media/DetailsRail.vue'
 import DataTable from '@/components/tables/DataTable.vue'
 import { movieFilesColumns } from '@/components/tables/configs/movieFilesTableConfig'
-import { buildMetadataSubtitle } from '@/lib/utils'
+import { buildMetadataSubtitle, formatRuntime } from '@/lib/utils'
+import { statusLabel } from '@/lib/mediaStatus'
 import { useDownloadJobs, isJobActive } from '@/composables/useDownloadJobs'
 import AcquisitionControl from '@/components/acquisition/AcquisitionControl.vue'
+import AttentionCard from '@/components/acquisition/AttentionCard.vue'
+import MovieStatusCard from '@/components/acquisition/MovieStatusCard.vue'
+import { useAuthStore } from '@/stores/auth'
 import type { FileInfo } from '@/client/types.gen'
 
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
+const auth = useAuthStore()
 const { getJobById } = useDownloadJobs()
 
 const id = computed(() => {
@@ -137,13 +143,41 @@ const { isLoading, isError, data } = useQuery(
   computed(() => mediaGetMovieOptions({ path: { id: id.value } })),
 )
 
-const officialTrailer = computed(() => {
-  return data.value?.videos?.find((v) => v.isOfficialTrailer)
-})
-
 const nonTrailerVideos = computed(() => {
   return data.value?.videos?.filter((v) => !v.isOfficialTrailer) ?? []
 })
+
+// Right-rail facts, derived from the detail payload. Empty values are dropped so
+// the rail only shows what this movie actually exposes.
+const movieFacts = computed<Fact[]>(() => {
+  if (!data.value) return []
+  const facts: Fact[] = []
+  const status = statusLabel(data.value.status)
+  if (status) facts.push({ label: 'Status', value: status })
+  // Per-type dates supersede the single release date: the primary date becomes
+  // the theatrical row, and digital/physical get their own rows when present.
+  const rd = data.value.releaseDates
+  const theatrical = rd?.theatrical ?? data.value.releaseDate
+  if (theatrical)
+    facts.push({ label: rd ? 'Theatrical' : 'Released', value: formatDate(theatrical) })
+  if (rd?.digital) facts.push({ label: 'Digital', value: formatDate(rd.digital) })
+  if (rd?.physical) facts.push({ label: 'Physical', value: formatDate(rd.physical) })
+  const runtime = formatRuntime(data.value.runtime)
+  if (runtime) facts.push({ label: 'Runtime', value: runtime })
+  if (data.value.genres?.length)
+    facts.push({
+      label: data.value.genres.length > 1 ? 'Genres' : 'Genre',
+      value: data.value.genres.map((g) => g.name).join(', '),
+    })
+  return facts
+})
+
+function formatDate(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso.includes('T') ? iso : iso + 'T00:00:00')
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+}
 
 const movieSubtitle = computed(() => {
   if (!data.value) return ''

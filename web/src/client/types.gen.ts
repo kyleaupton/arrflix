@@ -1294,6 +1294,7 @@ export type MovieDetail = {
     posterPath?: string;
     recommendations?: Array<MovieRail> | null;
     releaseDate?: string;
+    releaseDates?: ReleaseDatesByType;
     runtime?: number;
     status: string;
     tagline?: string;
@@ -1690,6 +1691,12 @@ export type Release = {
     Identity: IdentityFields;
     MediaInfo: MediaInfoFields;
     Quality: QualityFields;
+};
+
+export type ReleaseDatesByType = {
+    digital?: string;
+    physical?: string;
+    theatrical?: string;
 };
 
 export type Request = {
@@ -2873,6 +2880,7 @@ export type MovieDetailWritable = {
     posterPath?: string;
     recommendations?: Array<MovieRail> | null;
     releaseDate?: string;
+    releaseDates?: ReleaseDatesByType;
     runtime?: number;
     status: string;
     tagline?: string;

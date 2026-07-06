@@ -1,22 +1,15 @@
 <template>
   <div class="flex flex-wrap items-center gap-3">
-    <!-- Tracked: the want's live state replaces the primary action. -->
+    <!-- Tracked: the want's live state replaces the primary action. Cancel and
+         manual search live in the kebab. -->
     <template v-if="want">
       <WantStatusPill
         :status="want.status"
         :attempt-count="want.attemptCount"
         :last-error="want.lastError"
         :progress="wantProgress"
+        :hold="want.hold"
       />
-      <Button
-        v-if="canCancel"
-        variant="outline"
-        :disabled="cancelWant.isPending.value"
-        @click="handleCancel"
-      >
-        <X class="mr-2 size-4" />
-        {{ cancelWant.isPending.value ? 'Canceling…' : 'Cancel' }}
-      </Button>
     </template>
 
     <!-- A genuine (non-404) load failure: 404 is the untracked signal, anything
@@ -43,29 +36,27 @@
       </div>
     </template>
 
-    <!-- Manual override — admin only. Available in both tracked and untracked
-         states. -->
-    <Button v-if="auth.isAdmin" variant="outline" @click="openManualSearch">
-      <Search class="mr-2 size-4" />
-      Search manually
-    </Button>
-
-    <!-- Overflow actions — only meaningful once tracked (retry re-drives this
-         movie's want). -->
-    <TrackingActionsMenu v-if="trackingId" :tracking-id="trackingId" />
+    <!-- Overflow actions. Shown to admins even when untracked, so manual search
+         stays reachable before anything is added; otherwise only once tracked. -->
+    <TrackingActionsMenu
+      v-if="auth.isAdmin || trackingId"
+      type="movie"
+      :tmdb-id="tmdbId"
+      :tracking-id="trackingId"
+      :want="want"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
-import { Plus, Search, X } from 'lucide-vue-next'
+import { Plus } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import {
   trackingByTmdbOptions,
   trackingByTmdbQueryKey,
   requestsCreateMutation,
-  wantsCancelMutation,
   downloadJobsListForMovieOptions,
 } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
@@ -76,10 +67,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useModal } from '@/composables/useModal'
 import { useAuthStore } from '@/stores/auth'
 import { isProblem, problemMessage } from '@/lib/api'
-import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
 import WantStatusPill from './WantStatusPill.vue'
 import TrackingActionsMenu from './TrackingActionsMenu.vue'
 
@@ -87,7 +76,6 @@ import TrackingActionsMenu from './TrackingActionsMenu.vue'
 const props = defineProps<{ tmdbId: number }>()
 
 const auth = useAuthStore()
-const modal = useModal()
 const queryClient = useQueryClient()
 
 const tier = ref<'HD' | '4K'>('HD')
@@ -107,7 +95,7 @@ const {
 
 const want = computed(() => tracking.value?.wants?.[0] ?? null)
 
-// Present only when the movie is tracked — gates the overflow menu.
+// Present only when the movie is tracked — gates the tracking-only kebab items.
 const trackingId = computed(() => tracking.value?.tracking?.id ?? null)
 
 // Download jobs for this movie, to correlate download progress onto the want.
@@ -147,45 +135,6 @@ const createRequest = useMutation({
 
 function handleAdd() {
   createRequest.mutate({ body: { tmdbId: props.tmdbId, type: 'movie', tier: tier.value } })
-}
-
-// Cancel is offered only while the want is still in flight; terminal states
-// ('available', 'failed', 'canceled') have nothing to stop.
-const CANCELABLE_STATUSES = new Set(['pending', 'searching', 'grabbed', 'downloading', 'imported'])
-
-const canCancel = computed(() => !!want.value && CANCELABLE_STATUSES.has(want.value.status))
-
-const cancelWant = useMutation({
-  ...wantsCancelMutation(),
-  onSuccess: () => {
-    toast.success('Canceled')
-    queryClient.invalidateQueries({
-      queryKey: trackingByTmdbQueryKey({ path: { tmdbId: props.tmdbId } }),
-    })
-  },
-  onError: (err) => {
-    toast.error(problemMessage(err, 'Failed to cancel'))
-  },
-})
-
-async function handleCancel() {
-  if (!want.value) return
-  const confirmed = await modal.confirm({
-    title: 'Cancel acquisition',
-    message: 'Stop searching/downloading and mark this movie canceled?',
-    severity: 'danger',
-  })
-  if (!confirmed) return
-  cancelWant.mutate({ path: { id: want.value.id } })
-}
-
-function openManualSearch() {
-  modal.open(DownloadCandidatesDialog, {
-    props: {
-      class: 'max-w-[90vw] sm:max-w-4xl lg:max-w-6xl',
-      movieId: props.tmdbId,
-    },
-  })
 }
 
 // A 404 is the untracked signal, not an error; surface anything else.
