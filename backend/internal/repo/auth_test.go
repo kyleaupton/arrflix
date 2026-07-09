@@ -28,8 +28,8 @@ func TestRolesFromAggregate(t *testing.T) {
 		},
 		{
 			name:      "raw json bytes",
-			raw:       []byte(`[{"id":"` + id + `","name":"manager","description":"ops"}]`),
-			wantNames: []string{"manager"},
+			raw:       []byte(`[{"id":"` + id + `","name":"co_admin","description":"ops"}]`),
+			wantNames: []string{"co_admin"},
 		},
 		{
 			name:      "json string",

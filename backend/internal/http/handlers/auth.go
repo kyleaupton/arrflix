@@ -93,7 +93,7 @@ func (h *Auth) Signup(ctx context.Context, input *SignupInput) (*SignupOutput, e
 		}
 	}
 
-	if _, err := h.svc.Users.Create(ctx, input.Body.Email, input.Body.Username, input.Body.Password, "user", true); err != nil {
+	if _, err := h.svc.Users.Create(ctx, input.Body.Email, input.Body.Username, input.Body.Password, "requester", true); err != nil {
 		return nil, err
 	}
 	return &SignupOutput{Body: SignupResponse{Success: true}}, nil

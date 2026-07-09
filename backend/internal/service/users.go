@@ -66,7 +66,7 @@ func (s *UsersService) Create(ctx context.Context, email, username, password str
 	}
 
 	if roleName == "" {
-		roleName = "user" // Default to 'user' role
+		roleName = "requester" // Default to 'requester' role
 	}
 
 	// Hash password

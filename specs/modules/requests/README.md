@@ -13,7 +13,7 @@ The request entity is deliberately thin. A requester makes at most two choices �
 - A **request** is a per-user intent statement: "I want this media, at this tier" (+ for a series, "this much of it"). It is **distinct** from the library state (tracking) and the work items (wants).
 - A requester chooses **at most two things**: **`tier`** (a single value from the admin's tier catalog) and, for series, **`scope`**. Both have sane defaults; many requests are a single tap.
 - Lifecycle: `pending → approved → spawned`, _or_ `pending → denied / cancelled / expired`. After `spawned`, downstream state lives on tracking/wants — the request itself becomes a frozen artifact.
-- Approval is permission-driven: `requests.auto_approve:<type>:<tier>` auto-approves at request time; otherwise the request waits for someone holding `requests.approve` (see [users](../users/README.md#permissions)).
+- Approval is permission-driven: `requests.auto_approve:<type>:<tier>` auto-approves at request time; otherwise the request waits for someone holding `requests.approve:<type>` (see [users](../users/README.md#catalog-frozen--iteration-2)).
 - Quotas live on `user_policy` from the [users spec](../users/README.md#user_policy) and are a **binary hard cap**: under the cap proceeds, over the cap is rejected at submit. Pre-flight visibility ("this will be your 3rd of 5 movies this week") is a first-class affordance.
 - Multi-requester semantics are **owned by tracking** for both movies and series (tracking is the dedup boundary); requests stay 1:1 with users.
 - **Retention / cleanup is not here.** A request says *what to acquire*, not *how long to keep it*. Keeping and cleanup are a library-wide policy owned by [hygiene](../hygiene/README.md).
@@ -22,7 +22,7 @@ The request entity is deliberately thin. A requester makes at most two choices �
 
 Three concerns sit just adjacent to requests but don't belong inside them:
 
-- **Identity, roles, permissions, quotas** — owned by [users](../users/README.md). Requests consume the permission vocabulary (`requests.create:*`, `requests.approve`, `requests.auto_approve:*`) and quota envelope but do not define them.
+- **Identity, roles, permissions, quotas** — owned by [users](../users/README.md). Requests consume the permission vocabulary (`requests.create:*`, `requests.{approve,deny}:<type>`, `requests.auto_approve:*`) and quota envelope but do not define them.
 - **The ongoing-intent primitive** — owned by [tracking](../tracking/README.md). A request (movie or series) _spawns_ tracking; it does not _replace_ it. Scope semantics, multi-requester union, smart scheduling all live on tracking.
 - **The work itself** — owned by [acquisition](../acquisition/README.md). Approval produces a tracking, which produces the want(s); from there it's the pipeline's problem.
 
@@ -146,15 +146,14 @@ Auto-approve is **per-tier**: a user can have `auto_approve:movie:hd` but requir
 
 ### Manual approval
 
-If auto-approve does not fire (no permission, or over quota), the request sits in `pending`. Any user holding `requests.approve` (or a scope-qualified variant) can transition it to `approved` or `denied`, with an optional reason.
+If auto-approve does not fire (no permission, or over quota), the request sits in `pending`. Any user holding `requests.approve:<type>` for the request's media type can transition it to `approved`; `requests.deny:<type>` transitions it to `denied`, with an optional reason.
 
-Approver permissions (defined in [users](../users/README.md#permissions)):
+Approver permissions (frozen in [users](../users/README.md#catalog-frozen--iteration-2)):
 
-- `requests.approve` — approve any pending request
-- `requests.approve:movie` / `requests.approve:series` — approve by media type
-- `requests.deny` — deny any pending request
+- `requests.approve:<type>` — approve a pending request of that media type
+- `requests.deny:<type>` — deny a pending request of that media type
 
-The approve / deny split exists because some admin patterns want different sets of users gating each side. Deny is the heavier action (it ends the request); approve is the routine action.
+Both are type-qualified (`:movie` / `:series`) but not tier-qualified — approval authority splits by type, not tier (see the [users catalog rationale](../users/README.md#catalog-frozen--iteration-2)). The approve / deny split exists because some admin patterns want different sets of users gating each side: they are distinct keys, so a "can approve but not deny" role is a grant choice, not a schema change. Deny is the heavier action (it ends the request); approve is the routine action. The built-in `admin` / `co_admin` roles hold both.
 
 **Approve-with-modification** — out of scope for v1. (Approvers can deny with a reason like "request again at HD" rather than silently mutating intent.)
 
@@ -227,10 +226,9 @@ Different requesters can have different intents pointing at the same downstream 
 
 Request visibility is governed by the [users spec activity-scoping predicate](../users/README.md#activity-visibility-scoping). Concretely:
 
-- A user always sees their own requests across all states.
-- A user with `requests.view:all` sees every request system-wide (the admin / co-admin view).
-- A user with `requests.view:org` sees requests within their org (the family / group view, if orgs exist).
-- A denied request's _reason_ is visible only to the requester and to anyone with `requests.view:all`. (Privacy: avoid leaking "Alice was denied because she asked for too much 4K" to siblings.)
+- A user always sees their own requests (`requests.view.own`) across all states.
+- A user with `requests.view.any` sees every request system-wide (the admin / co-admin view).
+- A denied request's _reason_ is visible only to the requester and to anyone with `requests.view.any`. (Privacy: avoid leaking "Alice was denied because she asked for too much 4K" to siblings.)
 - The requester's _notes_ on a request are visible to anyone who can view the request; the approver's notes follow the same rule.
 
 The default user-facing surface is the requester's own request list. "All requests" is a deliberate admin view, not the home page.

@@ -120,7 +120,7 @@ func (s *AuthService) LoginWithPlex(ctx context.Context, plexSubject, email, use
 	}
 
 	// Assign default role
-	role, err := s.repo.GetRoleByName(ctx, "user")
+	role, err := s.repo.GetRoleByName(ctx, "requester")
 	if err == nil {
 		_ = s.repo.AssignRole(ctx, user.ID, role.ID)
 	}

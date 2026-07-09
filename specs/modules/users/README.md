@@ -46,7 +46,7 @@ A role is a named bundle of permission grants.
 
 ### Starter built-in roles
 
-Directional; iteration 2 pins the exact seed grants:
+The exact per-role grants are pinned in [Seed grants](#seed-grants-frozen--iteration-2) below.
 
 | Role           | Captures                                                                            |
 | -------------- | ----------------------------------------------------------------------------------- |
@@ -58,6 +58,20 @@ Directional; iteration 2 pins the exact seed grants:
 The current seeded roles (`admin` / `manager` / `user` / `guest`) map cleanly: `manager → co_admin`, `user → requester`, `guest → viewer`. Since there's one user today (Kyle), the existing seed migration is replaced rather than data-migrated.
 
 Custom-role examples sit on top of this without changing the model: a `family` role granting HD movie + series request and auto-approve; a `kids` role with `library.read` scoped to a specific library UUID; a `co_admin` variant without the `admin.settings.write` they hold by default.
+
+### Seed grants (frozen — iteration 2)
+
+The exact `effect='allow'`, global (`resource_id IS NULL`) grant rows seeded per built-in role. Brace shorthand (`{movie,series}`) expands to the cartesian set of real grant rows — there are **no wildcard grants** ([open question 2](#open-questions)). All entries reference the [frozen catalog](#catalog-frozen--iteration-2).
+
+**`admin`** — the entire catalog. Every key, including `admin.users.manage`. Concretely: `requests.{create,auto_approve}:{movie,series}:{hd,4k}`, `requests.{approve,deny}:{movie,series}`, `requests.cancel.any`, `requests.view.any`, `library.{read,write,scan}`, `media.write`, `tracking.{create,cancel}.any`, `jobs.{read,manage}`, `hygiene.{read,resolve}`, `admin.users.manage`, `admin.settings.{read,write}`, `admin.{indexers,downloaders}.manage`.
+
+**`co_admin`** — `admin` minus `admin.users.manage`. Identical to admin across the request family and all operational domains; it simply cannot manage users. This is the entire admin/co_admin difference. (Holds `admin.settings.{read,write}` by default; the "co_admin without settings-write" variant noted above is a custom role, not this seed.)
+
+**`requester`** — `library.read` (global), `requests.create:{movie,series}:hd`, `requests.cancel.own`, `requests.view.own`. No `auto_approve` (their requests queue for review), no `4k`, no `approve` / `deny`, no admin. Tracking is spawned on their behalf by the request-approval service, so a requester needs no `tracking.*` grant to get content.
+
+**`viewer`** — `library.read` (global) only. Browse, nothing else.
+
+The `.any`-satisfies-own rule means `admin` / `co_admin` need only the `.any` variants of `cancel` / `view`; `requester` gets the `.own` variants. New built-in tiers (e.g. a `family` role) are added as their own seed bundles without disturbing these four.
 
 ## Permissions
 
@@ -74,6 +88,17 @@ A permission is a string key naming a capability. Keys are **structured**: they 
 - **`sub_action`** — when scope matters within an action (`own` vs `any`, e.g., `requests.cancel.own`).
 - **`qualifier`** — colon-separated enum-shaped attributes. Order matters within a key: `:<type>:<tier>` for request keys. Position is part of the contract — grep finds the same key the same way.
 
+### The dot/colon rule (frozen — iteration 2)
+
+Every separator in a key is chosen by one test: **is the discriminator a closed structural scope, or an open registry enum?**
+
+- **Dot** joins a **closed, structural** segment — domain, sub-namespace, or scope-of-action (`.own` / `.any`). Its legal values are fixed in code. It is part of the capability's *identity*.
+- **Colon** prefixes an **open, registry-valued** qualifier — `:<type>` from the media-type enum, `:<tier>` from the [tier registry](../quality-profiles/README.md#tiers). New values enter without touching the grammar.
+
+The test for any new key: fixed set of values → dot; registry-backed → colon. This is what resolves the two naming forms that drifted across the draft specs — `requests.view:all` (colon on a closed scope) is wrong and becomes `requests.view.any`; `requests.approve:movie` (colon on a registry enum) is right and stays.
+
+**Lexical conventions.** Segments are `snake_case` (`auto_approve`). Dots separate structural segments; each enum qualifier is colon-prefixed. Qualifier order is positional and load-bearing — always `:<type>:<tier>`, never reordered — so a `grep` for a key matches it identically everywhere.
+
 ### Why structure in the key string
 
 Two alternatives we considered:
@@ -85,17 +110,18 @@ Encoding in the key keeps the runtime check a string equality (`exists permissio
 
 **Per-resource scope** (specific library UUIDs) uses the existing `resource_type` / `resource_id` columns on `permission_grant`. UUIDs don't go in the key string because they're not enumerable. A grant for "the kids library only" is `(permission_key='library.read', resource_type='library', resource_id=<kids_uuid>)`.
 
-### Starter catalog
+### Catalog (frozen — iteration 2)
 
-Directional; finalized in iteration 2. The catalog is **append-only** — adding a key is a code change, removing one is a migration.
+This is the pinned key set. The catalog is **append-only** — adding a key is a code change, removing one is a migration. Every key obeys [the dot/colon rule](#the-dotcolon-rule-frozen--iteration-2).
 
 | Key                                     | Meaning                                            |
 | --------------------------------------- | -------------------------------------------------- |
 | `requests.create:<type>:<tier>`         | Eligibility to request `<type>` at `<tier>`        |
-| `requests.auto_approve:<type>:<tier>`   | Auto-approve `<type>` at `<tier>` (bypass queue)   |
-| `requests.approve`                      | Approve / deny others' requests                    |
-| `requests.cancel.own` / `.any`          | Cancel own / anyone's requests                     |
-| `requests.view.own` / `.any`            | View own / all requests in admin queue             |
+| `requests.auto_approve:<type>:<tier>`   | Requesting `<type>` at `<tier>` auto-spawns (bypass queue) |
+| `requests.approve:<type>`               | Approve a pending `<type>` request                 |
+| `requests.deny:<type>`                  | Deny a pending `<type>` request                    |
+| `requests.cancel.own` / `.any`          | Withdraw own / cancel anyone's requests            |
+| `requests.view.own` / `.any`            | View own requests / the full admin queue           |
 | `library.read`                          | Browse library content (resource-scopable)         |
 | `library.write`                         | Create / edit library configs                      |
 | `library.scan`                          | Trigger scans                                      |
@@ -109,7 +135,14 @@ Directional; finalized in iteration 2. The catalog is **append-only** — adding
 | `admin.indexers.manage`                 | Manage indexer connections                         |
 | `admin.downloaders.manage`              | Manage downloader connections                      |
 
-`<type>` is `movie | series`. `<tier>` is the tier registry from [quality profiles](../quality-profiles/README.md) — initially `hd | 4k`. New tiers added there flow into the keyspace.
+`<type>` is `movie | series`. `<tier>` is the [tier registry](../quality-profiles/README.md#tiers) — currently `hd | 4k`. A new tier there adds new `requests.create:*` / `requests.auto_approve:*` keys and an admin grant backfill (see [open question 2](#open-questions)); it is not a wildcard.
+
+**Two calls baked into the request family**, both departing from the earlier drafts:
+
+- **`approve` and `deny` are split, type-qualified, and distinct keys** — reconciling the users-spec `requests.approve` and the requests-spec `requests.approve:movie` / `requests.deny`. Keeping them as separate stable keys makes "approve-but-not-deny" or "TV-only approver" a **role-config** choice (which grants a role holds), never a **catalog migration** (which keys exist). The built-in roles below grant approve and deny together; splitting them is a later edit to a role, not a schema change.
+- **`approve` / `deny` carry `:<type>` but deliberately not `:<tier>`** — the one place the request family breaks symmetry with `create` / `auto_approve`. Tier is the self-service differentiator (HD auto-spawns, 4K queues); tier-scoped *approval authority* instead fragments the queue (a 4K request landing in nobody's approve-set). Tier escalation is expressed the other way — hold `auto_approve:*:hd` but not `auto_approve:*:4k`, and 4K routes to whoever holds `approve:*`. Re-qualifying `approve` with `:tier` later is an expensive migration, so this is a deliberate freeze, not a default.
+
+**`.own` / `.any` runtime semantics.** A scoped pair resolves at the check site as: `.any` grants the action on *any* subject; `.own` grants it only when the subject belongs to the caller. The check tries `.any` first, then falls back to ownership + `.own`. So a holder of `cancel.any` / `view.any` also passes on their own subjects — roles that hold the `.any` variant need not also be granted `.own`.
 
 ## Grants
 
@@ -254,8 +287,8 @@ Retention follows the same configurable cadence as the [decision-artifact retent
 ## Open questions
 
 1. **Built-in role set finalization.** The starter (`admin` / `co_admin` / `requester` / `viewer`) is directional. Should `co_admin` exist as built-in, or is it a custom role most installs don't need? Lean: keep it built-in; multi-admin households are common.
-2. **Wildcard grants vs explicit seeding.** Admins get every key via explicit seed grants. New keys added in a future migration require an admin backfill. Wildcard semantics (`requests.create:*:*`) would solve this but complicate the runtime check. Lean: no wildcards; document the backfill as part of "adding a permission key" in the contributor docs.
-3. **Permission-key catalog freeze.** The starter list is directional. Iteration 2 should pin the exact set and the seed grants for each built-in role.
+2. **Wildcard grants vs explicit seeding.** *Resolved (iteration 2): no wildcards.* Admins get every key via explicit seed grants (see [Seed grants](#seed-grants-frozen--iteration-2)); the runtime check stays string-equality. Adding a permission key — including a new tier's `requests.*` keys — requires an admin grant backfill, documented as part of "adding a permission key" in the contributor docs.
+3. **Permission-key catalog freeze.** *Resolved (iteration 2):* the [catalog](#catalog-frozen--iteration-2) and [per-role seed grants](#seed-grants-frozen--iteration-2) are pinned above, and the [dot/colon rule](#the-dotcolon-rule-frozen--iteration-2) reconciles the earlier naming drift (`approve`/`deny` split and type-qualified; `view`/`cancel` scoped with `.own`/`.any`).
 4. **Cache invalidation strategy.** Role and grant changes need to propagate. Options: short JWT TTL (15min) so caches expire naturally; explicit cache-bust on change; cache keyed by `(user_id, settings_version)`. Lean: explicit bust via in-process pub/sub; we're single-instance for the foreseeable future.
 5. **Deny grants — worth keeping?** Real use cases are narrow ("revoke 4K from this one user temporarily"). The composition rule (deny wins) is standard. Risk is admin confusion at scale. Lean: ship `deny` since the column exists and the semantics are well-trodden; surface it sparingly in UI.
 6. **Plex friends sync cadence.** On every login, periodic sweep, or both? Periodic catches removals (was a friend, no longer is); on-login is the natural pivot point. Lean: on-login check + a daily sweep for removals.
