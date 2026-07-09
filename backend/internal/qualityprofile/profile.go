@@ -159,6 +159,13 @@ const (
 	Tier4K Tier = "4K"
 )
 
+// AllTiers is the concrete tier keyspace, best-first. It is the single source
+// of truth for tier enumeration: the RBAC permission catalog builds its
+// per-tier request keys over this slice, so adding a tier here grows the
+// keyspace (and trips the authz drift test until a migration seeds the new
+// permission rows).
+var AllTiers = []Tier{TierHD, Tier4K}
+
 // TierBinding binds a (Tier, Domain) to a concrete profile.
 type TierBinding struct {
 	Tier      Tier

@@ -12,11 +12,12 @@ import (
 )
 
 type UsersService struct {
-	repo *repo.Repository
+	repo  *repo.Repository
+	authz *AuthzService
 }
 
-func NewUsersService(r *repo.Repository) *UsersService {
-	return &UsersService{repo: r}
+func NewUsersService(r *repo.Repository, authz *AuthzService) *UsersService {
+	return &UsersService{repo: r, authz: authz}
 }
 
 // List returns all users with their roles
@@ -159,6 +160,11 @@ func (s *UsersService) AssignRole(ctx context.Context, userID uuid.UUID, roleNam
 	if err := s.repo.AssignRole(ctx, userID, role.ID); err != nil {
 		return err
 	}
+
+	// Roles changed → the user's cached grant set is stale. AssignRole (via
+	// UnassignAllRoles + AssignRole) is the only grant-mutation path today, so
+	// this is the sole Bust site.
+	s.authz.Bust(userID)
 
 	return s.syncAutoApprovePolicy(ctx, userID, roleName)
 }

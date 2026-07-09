@@ -19,6 +19,7 @@ import (
 type Services struct {
 	Acquisition        *AcquisitionService
 	Auth               *AuthService
+	Authz              *AuthzService
 	Downloaders        *DownloadersService
 	DownloadCandidates *DownloadCandidatesService
 	DownloadJobs       *DownloadJobsService
@@ -88,7 +89,8 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	media := NewMediaService(r, l, tmdb, settings)
 	routingSvc := NewRoutingService(r)
 	quality := NewQualityProfileService(r)
-	users := NewUsersService(r)
+	authz := NewAuthzService(r)
+	users := NewUsersService(r, authz)
 	invites := NewInvitesService(r)
 	reconcile := NewReconcileService(r, l)
 	scheduler := NewSchedulerService(r, l)
@@ -120,6 +122,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	return &Services{
 		Acquisition:        NewAcquisitionService(r, l, indexerSource, routingSvc, quality, proposals),
 		Auth:               NewAuthService(r, cfg, settings, invites),
+		Authz:              authz,
 		Downloaders:        NewDownloadersService(r),
 		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, routingSvc),
 		DownloadJobs:       downloadJobs,
