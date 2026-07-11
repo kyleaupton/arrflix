@@ -2171,7 +2171,8 @@ export type TrackingByTmdb = {
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
-    tracking: Tracking;
+    myRequest?: Request;
+    tracking?: Tracking;
     wants: Array<Want> | null;
 };
 
@@ -3347,7 +3348,8 @@ export type TrackingWritable = {
 };
 
 export type TrackingByTmdbWritable = {
-    tracking: TrackingWritable;
+    myRequest?: RequestWritable;
+    tracking?: TrackingWritable;
     wants: Array<WantWritable> | null;
 };
 
@@ -8055,17 +8057,9 @@ export type TrackingByTmdbData = {
 
 export type TrackingByTmdbErrors = {
     /**
-     * Not Found
+     * Error
      */
-    404: ProblemDetails;
-    /**
-     * Unprocessable Entity
-     */
-    422: ProblemDetails;
-    /**
-     * Internal Server Error
-     */
-    500: ProblemDetails;
+    default: ProblemDetails;
 };
 
 export type TrackingByTmdbError = TrackingByTmdbErrors[keyof TrackingByTmdbErrors];

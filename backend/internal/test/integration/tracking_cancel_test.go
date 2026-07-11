@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 
-	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/qualityprofile"
@@ -268,9 +267,13 @@ func TestTracking_GetByTmdbID_Series(t *testing.T) {
 		t.Fatalf("create want: %v", err)
 	}
 
-	gotTracking, gotWants, err := app.Services.Tracking.GetByTmdbID(ctx, tmdbID, string(parsing.DomainSeries))
+	admin := adminUser(t, app, ctx)
+	gotTracking, gotWants, _, err := app.Services.Tracking.GetByTmdbID(ctx, admin.ID, tmdbID, string(parsing.DomainSeries))
 	if err != nil {
 		t.Fatalf("GetByTmdbID(series): %v", err)
+	}
+	if gotTracking == nil {
+		t.Fatalf("resolved tracking = nil, want %s", tracking.ID)
 	}
 	if gotTracking.ID != tracking.ID {
 		t.Errorf("resolved tracking = %s, want %s", gotTracking.ID, tracking.ID)
@@ -283,8 +286,8 @@ func TestTracking_GetByTmdbID_Series(t *testing.T) {
 	}
 
 	// The type discriminates: no movie with this id exists, so a movie lookup
-	// is NotFound (the untracked signal).
-	if _, _, err := app.Services.Tracking.GetByTmdbID(ctx, tmdbID, string(parsing.DomainMovie)); !apperrors.IsNotFound(err) {
-		t.Errorf("GetByTmdbID(movie) for series-only id = %v, want NotFound", err)
+	// resolves as untracked — nil tracking, no error (not a 404).
+	if gotMovie, _, _, err := app.Services.Tracking.GetByTmdbID(ctx, admin.ID, tmdbID, string(parsing.DomainMovie)); err != nil || gotMovie != nil {
+		t.Errorf("GetByTmdbID(movie) for series-only id = (%v, %v), want (nil, nil)", gotMovie, err)
 	}
 }

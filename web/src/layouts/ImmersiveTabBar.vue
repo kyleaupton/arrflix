@@ -49,7 +49,11 @@ const itemIdle = 'text-foreground/55'
       <span>Requests</span>
     </RouterLink>
 
-    <button type="button" :class="[itemBase, moreOpen ? itemActive : itemIdle]" @click="moreOpen = true">
+    <button
+      type="button"
+      :class="[itemBase, moreOpen ? itemActive : itemIdle]"
+      @click="moreOpen = true"
+    >
       <span class="relative flex items-center justify-center">
         <Avatar class="size-5 text-[0.5rem]">
           <AvatarFallback>{{ initials }}</AvatarFallback>

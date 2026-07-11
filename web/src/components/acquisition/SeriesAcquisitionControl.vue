@@ -48,7 +48,7 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { Check, Plus } from 'lucide-vue-next'
-import { trackingByTmdbOptions, requestsListOptions } from '@/client/@tanstack/vue-query.gen'
+import { trackingByTmdbOptions } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useModal } from '@/composables/useModal'
@@ -75,17 +75,17 @@ const props = defineProps<{
 const auth = useAuthStore()
 const modal = useModal()
 
-// An expected 404 ("not tracked") is the common case for most series, so don't
-// burn retries on it; the 404 is read as the untracked state below, not an error.
+// Acquisition status for this series: the tracking + its per-episode wants, plus
+// the caller's own pending request. Untracked / un-requested is a normal 200 with
+// null fields (not a 404), read directly by the branches below.
 const {
   data: tracking,
   isLoading,
   error,
 } = useQuery(
-  computed(() => ({
-    ...trackingByTmdbOptions({ path: { tmdbId: props.tmdbId }, query: { type: 'series' } }),
-    retry: false,
-  })),
+  computed(() =>
+    trackingByTmdbOptions({ path: { tmdbId: props.tmdbId }, query: { type: 'series' } }),
+  ),
 )
 
 const isTracked = computed(() => !!tracking.value?.tracking)
@@ -93,16 +93,10 @@ const isTracked = computed(() => !!tracking.value?.tracking)
 // Present only when tracked — gates the overflow menu.
 const trackingId = computed(() => tracking.value?.tracking?.id ?? null)
 
-// A pending request has no tracking yet, so it doesn't surface as a tracking
-// state; find the caller's own pending series request to show its status instead
-// of the Add button. denied/canceled fall through so a re-request stays possible.
-const { data: myRequests } = useQuery(requestsListOptions({}))
-const myPending = computed(
-  () =>
-    (myRequests.value ?? []).find(
-      (r) => r.tmdbId === props.tmdbId && r.type === 'series' && r.status === 'pending',
-    ) ?? null,
-)
+// The caller's own pending request rides along on the status payload, so the
+// pending badge needs no separate request-list fetch. The endpoint returns only a
+// pending request (denied/canceled never surface here), so a re-request stays open.
+const myPending = computed(() => tracking.value?.myRequest ?? null)
 
 const availableCount = computed(() => props.availableCount ?? 0)
 const totalCount = computed(() => props.totalCount ?? 0)
@@ -129,10 +123,9 @@ function openTrackDialog() {
   })
 }
 
-// A 404 is the untracked signal, not an error; surface anything else.
+// Untracked is a normal 200, so any error here is a genuine load failure worth
+// showing rather than offering a stale Add.
 const loadError = computed(() =>
-  isProblem(error.value) && error.value.status !== 404
-    ? problemMessage(error.value, 'Failed to load tracking state')
-    : null,
+  isProblem(error.value) ? problemMessage(error.value, 'Failed to load tracking state') : null,
 )
 </script>

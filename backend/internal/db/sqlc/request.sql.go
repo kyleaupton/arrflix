@@ -80,6 +80,48 @@ func (q *Queries) CreateRequest(ctx context.Context, arg CreateRequestParams) (R
 	return i, err
 }
 
+const findPendingRequestForUser = `-- name: FindPendingRequestForUser :one
+SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto FROM request
+WHERE requested_by = $1
+  AND tmdb_id = $2
+  AND type = $3
+  AND status = 'pending'
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type FindPendingRequestForUserParams struct {
+	RequestedBy pgtype.UUID `json:"requested_by"`
+	TmdbID      int64       `json:"tmdb_id"`
+	Type        string      `json:"type"`
+}
+
+// FindPendingRequestForUser returns the caller's still-pending request for a
+// title (tmdb id + type), if any. The acquisition-status endpoint joins this so
+// a focus page shows the Pending badge without pulling the user's whole request
+// list. Most-recent first, at most one row.
+func (q *Queries) FindPendingRequestForUser(ctx context.Context, arg FindPendingRequestForUserParams) (Request, error) {
+	row := q.db.QueryRow(ctx, findPendingRequestForUser, arg.RequestedBy, arg.TmdbID, arg.Type)
+	var i Request
+	err := row.Scan(
+		&i.ID,
+		&i.RequestedBy,
+		&i.TmdbID,
+		&i.Type,
+		&i.Tier,
+		&i.Status,
+		&i.SpawnedTrackingID,
+		&i.DeniedReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScopeRule,
+		&i.DecidedBy,
+		&i.DecidedAt,
+		&i.DecisionAuto,
+	)
+	return i, err
+}
+
 const getRequest = `-- name: GetRequest :one
 SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto FROM request
 WHERE id = $1

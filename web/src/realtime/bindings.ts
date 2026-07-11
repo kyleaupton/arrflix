@@ -5,11 +5,11 @@
 
 import type { QueryClient } from '@tanstack/vue-query'
 import { downloadJobsListQueryKey } from '@/client/@tanstack/vue-query.gen'
-import type { DownloadJobWithSummary } from '@/client/types.gen'
+import type { DownloadJobWithSummary, TrackingByTmdb, Want } from '@/client/types.gen'
 import { on, onResync } from '@/realtime/connection'
 
-// upsert merges a full download-job delta into the cached list.
-function upsert(
+// upsertJob merges a full download-job delta into the cached list.
+function upsertJob(
   prev: DownloadJobWithSummary[] | undefined,
   job: DownloadJobWithSummary,
 ): DownloadJobWithSummary[] {
@@ -21,6 +21,30 @@ function upsert(
   return next
 }
 
+// upsertWant merges a want delta into a tracking's wants array.
+function upsertWant(list: Want[], want: Want): Want[] {
+  const idx = list.findIndex((w) => w.id === want.id)
+  if (idx === -1) return [...list, want]
+  const next = list.slice()
+  next[idx] = want
+  return next
+}
+
+// coalesce collapses a burst of calls into a single trailing invocation. The
+// invalidate-based bindings can fire many times in a short window (a season's
+// worth of proposals, an import sweep); coalescing bounds them to one refetch
+// per burst instead of one per event.
+function coalesce(fn: () => void, ms = 300): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  return () => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      fn()
+    }, ms)
+  }
+}
+
 export function installRealtime(qc: QueryClient) {
   const jobsKey = downloadJobsListQueryKey()
 
@@ -29,31 +53,40 @@ export function installRealtime(qc: QueryClient) {
   // progress cadence.
   on('download_job_updated', (data) => {
     qc.setQueryData<DownloadJobWithSummary[]>(jobsKey, (prev) =>
-      upsert(prev, data as DownloadJobWithSummary),
+      upsertJob(prev, data as DownloadJobWithSummary),
     )
   })
 
   // Kick-only payload → invalidate every per-job import-task list (partial match
   // on the operation id). This is what live-updates the detail drawer during an
   // import; only the mounted/selected one refetches immediately.
-  on('import_task_updated', () => {
-    qc.invalidateQueries({ queryKey: [{ _id: 'downloadJobsListImportTasks' }] })
+  const refreshImportTasks = coalesce(() =>
+    qc.invalidateQueries({ queryKey: [{ _id: 'downloadJobsListImportTasks' }] }),
+  )
+  on('import_task_updated', refreshImportTasks)
+
+  // Want lifecycle delta — the full want, carrying trackingId. Patch it straight
+  // into every cached trackingByTmdb entry whose tracking matches, exactly like
+  // download jobs: no refetch, so a series fulfilling dozens of episode wants
+  // costs zero round-trips. A brand-new tracking (just-spawned, no cached entry)
+  // isn't patched here — the mounted page's own request mutation invalidates that
+  // key, so it's already covered.
+  on('want_updated', (data) => {
+    const want = data as Want
+    qc.setQueriesData<TrackingByTmdb>({ queryKey: [{ _id: 'trackingByTmdb' }] }, (prev) => {
+      if (!prev?.tracking || prev.tracking.id !== want.trackingId) return prev
+      return { ...prev, wants: upsertWant(prev.wants ?? [], want) }
+    })
   })
 
-  // Want lifecycle delta. The payload is keyed by mediaItemId, not the tmdbId the
-  // by-tmdb query is keyed on, so partial-match every trackingByTmdb query — only
-  // a mounted movie page (the acquisition pill) refetches immediately.
-  on('want_updated', () => {
-    qc.invalidateQueries({ queryKey: [{ _id: 'trackingByTmdb' }] })
-  })
-
-  // Proposal delta (kick-only, keyed by trackingId). Refresh both the proposal
-  // lists and the by-tmdb wants so a mounted series page flips its "Suggested"
-  // pills and Approve/Decline rows without a manual refetch.
-  on('proposal_updated', () => {
+  // Proposal delta (kick-only, keyed by trackingId). The want side is already
+  // patched by want_updated above; this refreshes the separate proposal lists
+  // (Approve/Decline rows) and, as a coalesced backstop, the by-tmdb wants.
+  const refreshProposals = coalesce(() => {
     qc.invalidateQueries({ queryKey: [{ _id: 'trackingProposals' }] })
     qc.invalidateQueries({ queryKey: [{ _id: 'trackingByTmdb' }] })
   })
+  on('proposal_updated', refreshProposals)
 
   // Recovery (reconnect-after-drop or replay-buffer gap): the cache may have
   // missed deltas, so refetch every active query.

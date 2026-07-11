@@ -49,10 +49,7 @@ function handleLogout() {
 
 <template>
   <Sheet v-model:open="open">
-    <SheetContent
-      side="bottom"
-      class="rounded-t-xl pb-[env(safe-area-inset-bottom)] max-h-[85svh]"
-    >
+    <SheetContent side="bottom" class="rounded-t-xl pb-[env(safe-area-inset-bottom)] max-h-[85svh]">
       <SheetHeader class="flex-row items-center gap-3 space-y-0 text-left">
         <Avatar class="size-10">
           <AvatarFallback>{{ initials }}</AvatarFallback>

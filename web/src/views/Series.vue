@@ -49,6 +49,15 @@
         <div :class="isImmersive ? 'px-6' : ''">
           <div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
             <div class="flex min-w-0 flex-col gap-6">
+              <SeriesStatusCard
+                :tracking="tracking?.tracking ?? null"
+                :my-request="tracking?.myRequest ?? null"
+                :ongoing="hasOngoing"
+                :available-count="availableEpisodeCount"
+                :total-count="totalEpisodeCount"
+                :aired-total-count="airedEpisodeCount"
+                :active-download-count="activeJobsForSeries.length"
+              />
               <AttentionCard v-if="auth.canManageJobs" :tmdb-id="id" type="series" />
               <NextEpisodeBanner v-if="data.nextEpisodeToAir" :episode="data.nextEpisodeToAir" />
               <div v-if="data.seasons?.length" class="space-y-4">
@@ -131,7 +140,9 @@
                             </Tooltip>
                           </TooltipProvider>
                         </template>
-                        <template v-else-if="!seasonComplete(season)">
+                        <!-- Manual season search is an operator action; requesters
+                         see only the progress states above. -->
+                        <template v-else-if="!seasonComplete(season) && auth.canManageJobs">
                           <Button
                             size="sm"
                             variant="outline"
@@ -206,7 +217,10 @@
                                     :hold="getEpisodeWant(episode.episodeId)!.hold"
                                   />
                                   <Button
-                                    v-if="getEpisodeWant(episode.episodeId)!.hold === 'needs_pick'"
+                                    v-if="
+                                      getEpisodeWant(episode.episodeId)!.hold === 'needs_pick' &&
+                                      auth.canManageJobs
+                                    "
                                     size="sm"
                                     variant="outline"
                                     class="h-7 text-xs"
@@ -257,8 +271,9 @@
                                   </Tooltip>
                                 </TooltipProvider>
                               </template>
-                              <!-- Not available: offer a manual download. -->
-                              <template v-else>
+                              <!-- Not available: operators get a manual download;
+                               requesters see an empty cell (no manual action). -->
+                              <template v-else-if="auth.canManageJobs">
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -329,6 +344,7 @@ import { statusLabel } from '@/lib/mediaStatus'
 import { useDownloadJobs, type DownloadJob } from '@/composables/useDownloadJobs'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
 import SeriesAcquisitionControl from '@/components/acquisition/SeriesAcquisitionControl.vue'
+import SeriesStatusCard from '@/components/acquisition/SeriesStatusCard.vue'
 import AttentionCard from '@/components/acquisition/AttentionCard.vue'
 import WantStatusPill from '@/components/acquisition/WantStatusPill.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -352,14 +368,11 @@ const { isLoading, isError, data } = useQuery(
   computed(() => mediaGetSeriesOptions({ path: { id: id.value } })),
 )
 
-// Per-episode acquisition state. A 404 means untracked (no wants), read as an
-// empty map below — don't burn retries on it. The generic want_updated SSE
-// binding invalidates every trackingByTmdb query, keeping this live.
+// Per-episode acquisition state. Untracked is a normal 200 with no wants, read as
+// an empty map below. The want_updated SSE binding patches this query's cache in
+// place (matched by trackingId), so a fulfilling series stays live without refetch.
 const { data: tracking } = useQuery(
-  computed(() => ({
-    ...trackingByTmdbOptions({ path: { tmdbId: id.value }, query: { type: 'series' } }),
-    retry: false,
-  })),
+  computed(() => trackingByTmdbOptions({ path: { tmdbId: id.value }, query: { type: 'series' } })),
 )
 
 // Wants keyed by episodeId — the join the rows need, since wants reference
