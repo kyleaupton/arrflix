@@ -45,19 +45,26 @@ func BackoffCapped(attempt int, max time.Duration) time.Duration {
 // resurrect a canceled want. A nil want id (the interactive/legacy path with no
 // want) is a no-op, and a mirror failure is logged but never propagated — it must
 // not break the pipeline.
-func MirrorWant(ctx context.Context, r *repo.Repository, broker *sse.Broker, log *logger.Logger, wantID uuid.UUID, status model.WantStatus) {
+//
+// It returns the mirrored want and whether the transition actually fired (the CAS
+// matched). A caller that only mirrors ignores both; a caller that must act
+// exactly once on the real transition — enqueuing a want.available notification,
+// say — keys off the bool so an idempotent re-run or a terminal-sticky no-op
+// doesn't double-fire.
+func MirrorWant(ctx context.Context, r *repo.Repository, broker *sse.Broker, log *logger.Logger, wantID uuid.UUID, status model.WantStatus) (model.Want, bool) {
 	if wantID == uuid.Nil {
-		return
+		return model.Want{}, false
 	}
 	want, ok, err := r.MirrorWantStatus(ctx, wantID, string(status))
 	if err != nil {
 		log.Warn().Err(err).Str("want_id", wantID.String()).Msg("failed to mirror want status")
-		return
+		return model.Want{}, false
 	}
 	if !ok {
-		return
+		return model.Want{}, false
 	}
 	realtime.Emit(ctx, broker, realtime.WantUpdated(want))
+	return want, true
 }
 
 // Ptr returns a pointer to v, for wrapping scalars into the optional-pointer

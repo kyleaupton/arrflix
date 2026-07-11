@@ -82,6 +82,41 @@ func (s *NotificationService) MarkAllRead(ctx context.Context, userID uuid.UUID)
 	return s.repo.MarkAllInboxRead(ctx, userID)
 }
 
+// NotifyWantAvailable enqueues a want.available notification to every requester
+// of the want's tracking — the first user-facing producer. The import worker
+// calls it when a want reaches its terminal 'available' state (the file is on
+// disk). Each requester gets their own event (one outbox row per requester per
+// enabled channel); a requester who has muted the my_requests bundle's channel
+// is filtered by Enqueue's preference gate.
+func (s *NotificationService) NotifyWantAvailable(ctx context.Context, want model.Want) error {
+	item, err := s.repo.GetMediaItem(ctx, want.MediaItemID)
+	if err != nil {
+		return err
+	}
+	requesters, err := s.repo.ListRequestersByTracking(ctx, want.TrackingID)
+	if err != nil {
+		return err
+	}
+
+	media := notifications.MediaRef{Title: item.Title}
+	if item.Year != nil {
+		media.Year = int(*item.Year)
+	}
+	if item.PosterPath != nil {
+		media.PosterPath = *item.PosterPath
+	}
+
+	for _, req := range requesters {
+		if err := s.Enqueue(ctx, notifications.WantAvailable{
+			Recipient: req.UserID,
+			Media:     media,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Enqueue writes outbox rows for an event: one per (recipient, channel) the
 // recipient is subscribed to. It is the single entry point producers use — there
 // is no path to the outbox that doesn't go through a typed Event.

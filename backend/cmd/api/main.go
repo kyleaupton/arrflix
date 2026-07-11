@@ -91,7 +91,7 @@ func main() {
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	services.Scanner.SetContext(workerCtx)
 	dlWorker := downloadworker.New(repo, downloaderManager, logg, broker)
-	impWorker := importworker.New(repo, downloaderManager, logg, broker)
+	impWorker := importworker.New(repo, downloaderManager, logg, broker, services.Notifications)
 	enrichWorker := enrichmentworker.New(services.Enrichment, logg)
 	acqWorker := acquisitionworker.New(repo, services.Acquisition, services.Scheduler, logg, broker)
 	// The notification worker drains the outbox. v1 serves the in_app channel

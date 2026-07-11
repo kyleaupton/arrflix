@@ -24,6 +24,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/pathmapping"
 	"github.com/kyleaupton/arrflix/internal/realtime"
 	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
 	"github.com/kyleaupton/arrflix/internal/template"
 )
@@ -37,6 +38,12 @@ type Worker struct {
 	broker     *sse.Broker
 	sm         *state.ImportTaskMachine
 	mediaInfo  *mediainfo.Analyzer
+	// notifications enqueues the want.available notification when an import
+	// reaches the terminal 'available' transition. Optional: unit tests that build
+	// the worker as a struct literal leave it nil, which skips the enqueue (the
+	// notification is a best-effort side effect, never part of the import's
+	// correctness).
+	notifications *service.NotificationService
 
 	pollInterval time.Duration
 	claimLimit   int32
@@ -60,19 +67,20 @@ func DefaultConfig() Config {
 }
 
 // New creates a new import worker.
-func New(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker *sse.Broker) *Worker {
+func New(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker *sse.Broker, notifications *service.NotificationService) *Worker {
 	cfg := DefaultConfig()
 	return &Worker{
-		repo:         r,
-		dlm:          dlm,
-		pathMapper:   pathmapping.New(),
-		log:          log,
-		broker:       broker,
-		sm:           state.NewImportTaskMachine(),
-		mediaInfo:    mediainfo.NewAnalyzer(*log),
-		pollInterval: cfg.PollInterval,
-		claimLimit:   cfg.ClaimLimit,
-		maxAttempts:  cfg.MaxAttempts,
+		repo:          r,
+		dlm:           dlm,
+		pathMapper:    pathmapping.New(),
+		log:           log,
+		broker:        broker,
+		sm:            state.NewImportTaskMachine(),
+		mediaInfo:     mediainfo.NewAnalyzer(*log),
+		notifications: notifications,
+		pollInterval:  cfg.PollInterval,
+		claimLimit:    cfg.ClaimLimit,
+		maxAttempts:   cfg.MaxAttempts,
 	}
 }
 
@@ -333,7 +341,16 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 	// guard above), so the want advances 'imported' → 'available' — Arrflix's own
 	// authority that the file is on disk, reachable with no media server. MirrorWant
 	// no-ops on the interactive/legacy path (no want).
-	jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, task.WantID, model.WantAvailable)
+	want, becameAvailable := jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, task.WantID, model.WantAvailable)
+
+	// Notify the want's requesters exactly once, keyed off the real transition
+	// (not a terminal-sticky no-op). Best-effort: the file is already imported, so
+	// a notification failure is logged, never surfaced.
+	if becameAvailable && w.notifications != nil {
+		if nerr := w.notifications.NotifyWantAvailable(ctx, want); nerr != nil {
+			w.log.Warn().Err(nerr).Str("want_id", want.ID.String()).Msg("failed to enqueue want.available notification")
+		}
+	}
 
 	w.logEvent(ctx, task.ID, "status_changed", "", map[string]any{
 		"old_status":    "in_progress",
