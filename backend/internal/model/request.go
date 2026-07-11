@@ -45,4 +45,9 @@ type Request struct {
 	DecisionAuto      *bool      `json:"decisionAuto"`
 	CreatedAt         time.Time  `json:"createdAt"`
 	UpdatedAt         time.Time  `json:"updatedAt"`
+
+	// RequesterName is the requester's display name, joined onto the list read so
+	// an approver who can't reach the users endpoint can still label the queue.
+	// Populated only by ListRequests; empty on write-path returns.
+	RequesterName *string `json:"requesterName,omitempty"`
 }

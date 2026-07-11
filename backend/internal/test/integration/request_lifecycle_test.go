@@ -129,6 +129,11 @@ func TestRequestLifecycle_Approve(t *testing.T) {
 	if approved.DecisionAuto == nil || *approved.DecisionAuto {
 		t.Errorf("approved request decisionAuto = %v, want false (manual)", approved.DecisionAuto)
 	}
+	// Write-path returns the bare row (no join), so RequesterName is absent — only
+	// the list read populates it.
+	if approved.RequesterName != nil {
+		t.Errorf("approved request RequesterName = %v, want nil (write-path is bare)", approved.RequesterName)
+	}
 
 	// The approve produced a real tracking + one pending want.
 	trackingID := approved.SpawnedTrackingID.String()
@@ -169,6 +174,9 @@ func TestRequestLifecycle_Deny(t *testing.T) {
 	if denied.DecidedBy == nil || *denied.DecidedBy != admin.ID {
 		t.Errorf("denied request decidedBy = %v, want admin %s", denied.DecidedBy, admin.ID)
 	}
+	if denied.RequesterName != nil {
+		t.Errorf("denied request RequesterName = %v, want nil (write-path is bare)", denied.RequesterName)
+	}
 
 	// The requester reads their own denial reason (view.own).
 	var seen model.Request
@@ -188,25 +196,34 @@ func TestRequestLifecycle_Queue(t *testing.T) {
 	t.Parallel()
 	app, ctx := lifecycleApp(t)
 
-	_, reqA := app.UserToken(t, ctx, "req_a", "requester")
+	userA, reqA := app.UserToken(t, ctx, "req_a", "requester")
 	_, reqB := app.UserToken(t, ctx, "req_b", "requester")
 
 	aReq := createMovieRequest(t, app, reqA)
 	_ = createMovieRequest(t, app, reqB)
 
-	// Admin sees both pending requests.
+	// Admin sees both pending requests, each carrying the requester's joined name
+	// (an approver who lacks admin.users.manage relies on this to label the queue).
 	var adminQueue []model.Request
 	app.GET(t, "/api/v1/requests?status=pending", &adminQueue, http.StatusOK)
 	if len(adminQueue) != 2 {
 		t.Errorf("admin pending queue = %d, want 2", len(adminQueue))
 	}
+	for _, r := range adminQueue {
+		if r.RequesterName == nil || *r.RequesterName == "" {
+			t.Errorf("queue row %s has empty RequesterName, want the joined username", r.ID)
+		}
+	}
 
 	// Requester A sees only their own pending request — own/any scoping applies
-	// before the status filter.
+	// before the status filter — with A's own name joined on.
 	var aQueue []model.Request
 	app.GETAs(t, reqA, "/api/v1/requests?status=pending", &aQueue, http.StatusOK)
 	if len(aQueue) != 1 || aQueue[0].ID != aReq.ID {
 		t.Errorf("requester A pending queue = %d requests, want just A's own", len(aQueue))
+	}
+	if aQueue[0].RequesterName == nil || *aQueue[0].RequesterName != userA.Username {
+		t.Errorf("requester A queue RequesterName = %v, want %q", aQueue[0].RequesterName, userA.Username)
 	}
 
 	// A no-match filter returns an empty (non-null) list for the admin.
@@ -241,6 +258,9 @@ func TestRequestLifecycle_CancelPendingAndForbidden(t *testing.T) {
 	}
 	if canceled.DecidedBy == nil {
 		t.Errorf("canceled request decidedBy = nil, want the canceller")
+	}
+	if canceled.RequesterName != nil {
+		t.Errorf("canceled request RequesterName = %v, want nil (write-path is bare)", canceled.RequesterName)
 	}
 }
 

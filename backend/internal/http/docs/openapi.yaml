@@ -4169,6 +4169,8 @@ components:
           type: string
         requestedBy:
           type: string
+        requesterName:
+          type: string
         scopeRule:
           type: string
         spawnedTrackingId:

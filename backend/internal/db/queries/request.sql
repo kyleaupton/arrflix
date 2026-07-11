@@ -25,9 +25,15 @@ RETURNING *;
 SELECT * FROM request
 WHERE id = $1;
 
+-- ListRequests joins app_user so the list carries the requester's display name.
+-- A co_admin approver lacks admin.users.manage and so can't resolve names via
+-- the users endpoint; the join makes the queue self-sufficient. Write-path
+-- queries stay bare — the UI refetches this joined list after any mutation.
 -- name: ListRequests :many
-SELECT * FROM request
-ORDER BY created_at DESC;
+SELECT request.*, app_user.username AS requester_name
+FROM request
+JOIN app_user ON app_user.id = request.requested_by
+ORDER BY request.created_at DESC;
 
 -- name: SetRequestApproved :one
 UPDATE request

@@ -41,6 +41,18 @@ export const useAuthStore = defineStore('auth', () => {
   const canManageUsers = computed(() => can('admin.users.manage'))
   const canManageSettings = computed(() => can('admin.settings.read'))
 
+  // Requests. view.own gates the /requests page + nav; view.any is the approver
+  // queue. approve/deny are per-media-type, so they're functions, not getters.
+  const canViewOwnRequests = computed(() => can('requests.view.own'))
+  const canReviewRequests = computed(() => can('requests.view.any'))
+  const canCancelRequests = computed(() => can('requests.cancel.own') || can('requests.cancel.any'))
+  function canApprove(type: 'movie' | 'series'): boolean {
+    return can(`requests.approve:${type}`)
+  }
+  function canDeny(type: 'movie' | 'series'): boolean {
+    return can(`requests.deny:${type}`)
+  }
+
   function applyTokenToClient(nextToken: string | null) {
     // Put Authorization on all requests
     if (nextToken) {
@@ -203,6 +215,11 @@ export const useAuthStore = defineStore('auth', () => {
     canViewJobs,
     canManageUsers,
     canManageSettings,
+    canViewOwnRequests,
+    canReviewRequests,
+    canCancelRequests,
+    canApprove,
+    canDeny,
     // actions
     fetchMe,
     rehydrateToken,

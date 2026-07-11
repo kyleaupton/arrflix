@@ -50,12 +50,13 @@ const browseLinks: NavLink[] = [
   { label: 'Library', to: '/library' },
 ]
 
-// Downloads is an operator view (jobs.read); hide it from users who can't reach
-// it so they don't see a door the router would bounce them from. Calendar and
-// Requests stay as disabled placeholders (Requests UI is the next plan).
+// Downloads is an operator view (jobs.read); Requests needs requests.view.own
+// (excludes viewer). Both are hidden from users who can't reach them so they
+// don't see a door the router would bounce them from. Calendar stays a disabled
+// placeholder.
 const activityLinks = computed<NavLink[]>(() => [
   { label: 'Calendar', disabled: true },
-  { label: 'Requests', disabled: true },
+  ...(auth.canViewOwnRequests ? [{ label: 'Requests', to: '/requests' } as NavLink] : []),
   ...(auth.canViewJobs ? [{ label: 'Downloads', to: '/downloads' } as NavLink] : []),
 ])
 

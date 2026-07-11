@@ -16,9 +16,17 @@
          else is a real error worth showing rather than offering a stale Add. -->
     <p v-else-if="loadError" class="text-sm text-destructive">{{ loadError }}</p>
 
+    <!-- Not tracked, but the caller has a pending request: show its status
+         read-only. Withdrawal lives on the /requests page, keeping this control
+         bounded to the add flow. -->
+    <template v-else-if="!isLoading && myPending">
+      <RequestStatusPill :status="myPending.status" />
+    </template>
+
     <!-- Not tracked: initiate the autonomous flow. The button face depends on
-         whether this user auto-approves. -->
-    <template v-else-if="!isLoading">
+         whether this user auto-approves; the tier select offers only tiers the
+         caller can request (a user with no movie-create grant sees nothing). -->
+    <template v-else-if="!isLoading && availableTiers.length">
       <div class="flex items-center gap-2">
         <Button :disabled="createRequest.isPending.value" @click="handleAdd">
           <Plus class="mr-2 size-4" />
@@ -29,8 +37,7 @@
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="HD">HD</SelectItem>
-            <SelectItem value="4K">4K</SelectItem>
+            <SelectItem v-for="t in availableTiers" :key="t" :value="t">{{ t }}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -58,6 +65,7 @@ import {
   trackingByTmdbOptions,
   trackingByTmdbQueryKey,
   requestsCreateMutation,
+  requestsListOptions,
   downloadJobsListForMovieOptions,
 } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
@@ -71,6 +79,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { isProblem, problemMessage } from '@/lib/api'
 import WantStatusPill from './WantStatusPill.vue'
+import RequestStatusPill from './RequestStatusPill.vue'
 import TrackingActionsMenu from './TrackingActionsMenu.vue'
 
 // tmdbId doubles as the movie route id the download-jobs endpoint is keyed on.
@@ -79,7 +88,13 @@ const props = defineProps<{ tmdbId: number }>()
 const auth = useAuthStore()
 const queryClient = useQueryClient()
 
-const tier = ref<'HD' | '4K'>('HD')
+// The caller sees only the tiers they hold a create grant for, so they can't
+// pick one the API would 403. tier defaults to the first available (or HD when
+// the caller has no grant — the add block is hidden in that case anyway).
+const availableTiers = computed<('HD' | '4K')[]>(() =>
+  (['HD', '4K'] as const).filter((t) => auth.can(`requests.create:movie:${t.toLowerCase()}`)),
+)
+const tier = ref<'HD' | '4K'>(availableTiers.value[0] ?? 'HD')
 
 // An expected 404 ("not tracked") is the common case for most movies, so don't
 // burn retries on it; the 404 is read as the untracked state below, not an error.
@@ -98,6 +113,17 @@ const want = computed(() => tracking.value?.wants?.[0] ?? null)
 
 // Present only when the movie is tracked — gates the tracking-only kebab items.
 const trackingId = computed(() => tracking.value?.tracking?.id ?? null)
+
+// A pending request has no tracking yet, so it doesn't surface as a want; find
+// the caller's own pending request for this movie to show its status instead of
+// the Add button. denied/canceled fall through, so a re-request stays possible.
+const { data: myRequests } = useQuery(requestsListOptions({}))
+const myPending = computed(
+  () =>
+    (myRequests.value ?? []).find(
+      (r) => r.tmdbId === props.tmdbId && r.type === 'movie' && r.status === 'pending',
+    ) ?? null,
+)
 
 // Download jobs for this movie, to correlate download progress onto the want.
 // A movie tracking is single-atom (one want, one in-flight job), and the list is

@@ -44,6 +44,12 @@ const router = createRouter({
       meta: { requires: 'jobs.read' },
     },
     {
+      // requests.view.own is the floor — excludes viewer, who can't request.
+      path: '/requests',
+      component: () => import('@/views/Requests.vue'),
+      meta: { requires: 'requests.view.own' },
+    },
+    {
       // Users moved under Settings; keep the old path working for bookmarks.
       path: '/users',
       redirect: '/settings/users',

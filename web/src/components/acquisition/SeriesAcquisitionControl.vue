@@ -26,6 +26,12 @@
          else is a real error worth showing rather than offering a stale Add. -->
     <p v-else-if="loadError" class="text-sm text-destructive">{{ loadError }}</p>
 
+    <!-- Not tracked, but the caller has a pending request: show its status
+         read-only. Withdrawal lives on the /requests page. -->
+    <template v-else-if="!isLoading && myPending">
+      <RequestStatusPill :status="myPending.status" />
+    </template>
+
     <!-- Not tracked: open the track dialog, where quality, scope, and per-segment
          autonomy are chosen before anything is added. The button face depends on
          whether this user auto-approves. -->
@@ -42,12 +48,13 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { Check, Plus } from 'lucide-vue-next'
-import { trackingByTmdbOptions } from '@/client/@tanstack/vue-query.gen'
+import { trackingByTmdbOptions, requestsListOptions } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useModal } from '@/composables/useModal'
 import { useAuthStore } from '@/stores/auth'
 import TrackSeriesDialog from '@/components/modals/TrackSeriesDialog.vue'
+import RequestStatusPill from './RequestStatusPill.vue'
 import TrackingActionsMenu from './TrackingActionsMenu.vue'
 import { isProblem, problemMessage } from '@/lib/api'
 
@@ -85,6 +92,17 @@ const isTracked = computed(() => !!tracking.value?.tracking)
 
 // Present only when tracked — gates the overflow menu.
 const trackingId = computed(() => tracking.value?.tracking?.id ?? null)
+
+// A pending request has no tracking yet, so it doesn't surface as a tracking
+// state; find the caller's own pending series request to show its status instead
+// of the Add button. denied/canceled fall through so a re-request stays possible.
+const { data: myRequests } = useQuery(requestsListOptions({}))
+const myPending = computed(
+  () =>
+    (myRequests.value ?? []).find(
+      (r) => r.tmdbId === props.tmdbId && r.type === 'series' && r.status === 'pending',
+    ) ?? null,
+)
 
 const availableCount = computed(() => props.availableCount ?? 0)
 const totalCount = computed(() => props.totalCount ?? 0)

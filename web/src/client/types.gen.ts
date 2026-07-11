@@ -1711,6 +1711,7 @@ export type Request = {
     deniedReason: string | null;
     id: string;
     requestedBy: string;
+    requesterName?: string;
     scopeRule: string;
     spawnedTrackingId: string;
     status: string;
@@ -3092,6 +3093,7 @@ export type RequestWritable = {
     deniedReason: string | null;
     id: string;
     requestedBy: string;
+    requesterName?: string;
     scopeRule: string;
     spawnedTrackingId: string;
     status: string;

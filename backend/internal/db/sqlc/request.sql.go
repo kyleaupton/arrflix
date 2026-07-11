@@ -7,6 +7,7 @@ package dbgen
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -107,19 +108,43 @@ func (q *Queries) GetRequest(ctx context.Context, id pgtype.UUID) (Request, erro
 }
 
 const listRequests = `-- name: ListRequests :many
-SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto FROM request
-ORDER BY created_at DESC
+SELECT request.id, request.requested_by, request.tmdb_id, request.type, request.tier, request.status, request.spawned_tracking_id, request.denied_reason, request.created_at, request.updated_at, request.scope_rule, request.decided_by, request.decided_at, request.decision_auto, app_user.username AS requester_name
+FROM request
+JOIN app_user ON app_user.id = request.requested_by
+ORDER BY request.created_at DESC
 `
 
-func (q *Queries) ListRequests(ctx context.Context) ([]Request, error) {
+type ListRequestsRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	RequestedBy       pgtype.UUID        `json:"requested_by"`
+	TmdbID            int64              `json:"tmdb_id"`
+	Type              string             `json:"type"`
+	Tier              string             `json:"tier"`
+	Status            string             `json:"status"`
+	SpawnedTrackingID pgtype.UUID        `json:"spawned_tracking_id"`
+	DeniedReason      *string            `json:"denied_reason"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
+	ScopeRule         string             `json:"scope_rule"`
+	DecidedBy         pgtype.UUID        `json:"decided_by"`
+	DecidedAt         pgtype.Timestamptz `json:"decided_at"`
+	DecisionAuto      *bool              `json:"decision_auto"`
+	RequesterName     string             `json:"requester_name"`
+}
+
+// ListRequests joins app_user so the list carries the requester's display name.
+// A co_admin approver lacks admin.users.manage and so can't resolve names via
+// the users endpoint; the join makes the queue self-sufficient. Write-path
+// queries stay bare — the UI refetches this joined list after any mutation.
+func (q *Queries) ListRequests(ctx context.Context) ([]ListRequestsRow, error) {
 	rows, err := q.db.Query(ctx, listRequests)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Request
+	var items []ListRequestsRow
 	for rows.Next() {
-		var i Request
+		var i ListRequestsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.RequestedBy,
@@ -135,6 +160,7 @@ func (q *Queries) ListRequests(ctx context.Context) ([]Request, error) {
 			&i.DecidedBy,
 			&i.DecidedAt,
 			&i.DecisionAuto,
+			&i.RequesterName,
 		); err != nil {
 			return nil, err
 		}

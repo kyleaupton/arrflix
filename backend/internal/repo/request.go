@@ -50,6 +50,30 @@ func toModelRequest(row dbgen.Request) model.Request {
 	}
 }
 
+// toModelRequestFromListRow translates a ListRequests join row into model.Request,
+// carrying the requester's username the plain toModelRequest can't (the bare row
+// has no join). Same field mapping otherwise; RequesterName is set from the join.
+func toModelRequestFromListRow(row dbgen.ListRequestsRow) model.Request {
+	name := row.RequesterName
+	return model.Request{
+		ID:                uuidFromPgtype(row.ID),
+		RequestedBy:       uuidFromPgtype(row.RequestedBy),
+		TmdbID:            row.TmdbID,
+		Type:              row.Type,
+		Tier:              row.Tier,
+		ScopeRule:         row.ScopeRule,
+		Status:            row.Status,
+		SpawnedTrackingID: uuidPtrFromPgtype(row.SpawnedTrackingID),
+		DeniedReason:      row.DeniedReason,
+		DecidedBy:         uuidPtrFromPgtype(row.DecidedBy),
+		DecidedAt:         timePtrFromPgTimestamptz(row.DecidedAt),
+		DecisionAuto:      row.DecisionAuto,
+		CreatedAt:         row.CreatedAt,
+		UpdatedAt:         row.UpdatedAt,
+		RequesterName:     &name,
+	}
+}
+
 func (r *Repository) CreateRequest(ctx context.Context, params CreateRequestParams) (model.Request, error) {
 	row, err := r.Q.CreateRequest(ctx, dbgen.CreateRequestParams{
 		RequestedBy:  pgtypeFromUUID(params.RequestedBy),
@@ -83,7 +107,7 @@ func (r *Repository) ListRequests(ctx context.Context) ([]model.Request, error) 
 	}
 	out := make([]model.Request, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, toModelRequest(row))
+		out = append(out, toModelRequestFromListRow(row))
 	}
 	return out, nil
 }
