@@ -544,6 +544,33 @@ type NameTemplate struct {
 	UpdatedAt            time.Time   `json:"updated_at"`
 }
 
+type NotificationOutbox struct {
+	ID              pgtype.UUID        `json:"id"`
+	EventType       string             `json:"event_type"`
+	Audience        string             `json:"audience"`
+	RecipientUserID pgtype.UUID        `json:"recipient_user_id"`
+	Channel         string             `json:"channel"`
+	Payload         []byte             `json:"payload"`
+	DedupKey        *string            `json:"dedup_key"`
+	Status          string             `json:"status"`
+	Attempts        int32              `json:"attempts"`
+	NextAttemptAt   time.Time          `json:"next_attempt_at"`
+	LastError       *string            `json:"last_error"`
+	CreatedAt       time.Time          `json:"created_at"`
+	DeliveredAt     pgtype.Timestamptz `json:"delivered_at"`
+	ReadAt          pgtype.Timestamptz `json:"read_at"`
+}
+
+type NotificationPreference struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	Scope     string      `json:"scope"`
+	Value     string      `json:"value"`
+	Channel   string      `json:"channel"`
+	Enabled   bool        `json:"enabled"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
+}
+
 type Permission struct {
 	ID          pgtype.UUID `json:"id"`
 	Key         string      `json:"key"`
