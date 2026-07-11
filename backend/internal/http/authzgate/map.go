@@ -37,6 +37,10 @@ var operationPerms = map[string]requirement{
 	"events-subscriptions-list":     authUser(),
 	"events-subscriptions-add":      authUser(),
 	"events-subscriptions-remove":   authUser(),
+	"notifications-list":            authUser(),
+	"notifications-unread-count":    authUser(),
+	"notifications-mark-read":       authUser(),
+	"notifications-mark-all-read":   authUser(),
 
 	// ----- admin.users.manage -----
 	"users-list":            perm(authz.AdminUsersManage),

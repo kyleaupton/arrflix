@@ -2412,6 +2412,32 @@ components:
         - outcome
         - confidence
       type: object
+    InboxNotification:
+      additionalProperties: false
+      properties:
+        body:
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        eventType:
+          type: string
+        id:
+          type: string
+        payload: {}
+        readAt:
+          format: date-time
+          type: string
+        title:
+          type: string
+      required:
+        - id
+        - eventType
+        - title
+        - body
+        - payload
+        - createdAt
+      type: object
     InboxPage:
       additionalProperties: false
       properties:
@@ -3416,6 +3442,23 @@ components:
         - seasonNumber
         - episodeNumber
         - title
+      type: object
+    NotificationsUnreadBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/NotificationsUnreadBody.json
+          format: uri
+          readOnly: true
+          type: string
+        count:
+          description: Delivered-but-unread in_app notification count
+          format: int64
+          type: integer
+      required:
+        - count
       type: object
     PageLibraryItem:
       additionalProperties: false
@@ -8891,6 +8934,101 @@ paths:
       summary: Update name template
       tags:
         - name-templates
+  /api/v1/notifications:
+    get:
+      description: Returns the caller's delivered in-app notifications, newest first, each with its title and body rendered from the event template.
+      operationId: notifications-list
+      parameters:
+        - description: Max notifications to return, newest first
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: Max notifications to return, newest first
+            format: int32
+            maximum: 200
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/InboxNotification"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: List my notifications
+      tags:
+        - notifications
+  /api/v1/notifications/read-all:
+    post:
+      operationId: notifications-mark-all-read
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Mark all my notifications read
+      tags:
+        - notifications
+  /api/v1/notifications/unread-count:
+    get:
+      operationId: notifications-unread-count
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationsUnreadBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Count my unread notifications
+      tags:
+        - notifications
+  /api/v1/notifications/{id}/read:
+    post:
+      description: Marks one of the caller's notifications read. Idempotent, and a no-op for an id that isn't the caller's.
+      operationId: notifications-mark-read
+      parameters:
+        - description: Notification ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Notification ID
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Mark a notification read
+      tags:
+        - notifications
   /api/v1/person/{id}:
     get:
       description: Returns the full person detail.

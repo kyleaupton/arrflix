@@ -63,6 +63,21 @@ type NotificationOutbox struct {
 	ReadAt          *time.Time      `json:"readAt"`
 }
 
+// InboxNotification is the bell-icon read shape: a delivered in_app outbox row
+// with its title and body already rendered from the event's template, so the
+// frontend renders text server-side (one templating syntax across the app) while
+// Payload still carries the structured extras (poster path, deep link) a rich
+// card wants. It is a read projection of NotificationOutbox, not a stored row.
+type InboxNotification struct {
+	ID        uuid.UUID       `json:"id"`
+	EventType string          `json:"eventType"`
+	Title     string          `json:"title"`
+	Body      string          `json:"body"`
+	Payload   json.RawMessage `json:"payload"`
+	CreatedAt time.Time       `json:"createdAt"`
+	ReadAt    *time.Time      `json:"readAt,omitempty"`
+}
+
 // NotificationPreference is the domain shape for a notification_preference row —
 // one channel toggle at bundle or event scope. Value is a bundle name when
 // Scope is 'bundle', an event-type string when 'event'. Mirrors

@@ -930,6 +930,16 @@ export type InboxItem = {
     year?: number;
 };
 
+export type InboxNotification = {
+    body: string;
+    createdAt: string;
+    eventType: string;
+    id: string;
+    payload: unknown;
+    readAt?: string;
+    title: string;
+};
+
 export type InboxPage = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1379,6 +1389,17 @@ export type NextEpisode = {
     seasonNumber: number;
     stillPath?: string;
     title: string;
+};
+
+export type NotificationsUnreadBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Delivered-but-unread in_app notification count
+     */
+    count: number;
 };
 
 export type PageLibraryItem = {
@@ -2950,6 +2971,13 @@ export type NameTemplateWriteBodyWritable = {
      * Template type
      */
     type: 'movie' | 'series';
+};
+
+export type NotificationsUnreadBodyWritable = {
+    /**
+     * Delivered-but-unread in_app notification count
+     */
+    count: number;
 };
 
 export type PageLibraryItemWritable = {
@@ -6501,6 +6529,116 @@ export type NameTemplatesUpdateResponses = {
 };
 
 export type NameTemplatesUpdateResponse = NameTemplatesUpdateResponses[keyof NameTemplatesUpdateResponses];
+
+export type NotificationsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Max notifications to return, newest first
+         */
+        limit?: number;
+    };
+    url: '/api/v1/notifications';
+};
+
+export type NotificationsListErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type NotificationsListError = NotificationsListErrors[keyof NotificationsListErrors];
+
+export type NotificationsListResponses = {
+    /**
+     * OK
+     */
+    200: Array<InboxNotification> | null;
+};
+
+export type NotificationsListResponse = NotificationsListResponses[keyof NotificationsListResponses];
+
+export type NotificationsMarkAllReadData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/read-all';
+};
+
+export type NotificationsMarkAllReadErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type NotificationsMarkAllReadError = NotificationsMarkAllReadErrors[keyof NotificationsMarkAllReadErrors];
+
+export type NotificationsMarkAllReadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type NotificationsMarkAllReadResponse = NotificationsMarkAllReadResponses[keyof NotificationsMarkAllReadResponses];
+
+export type NotificationsUnreadCountData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/unread-count';
+};
+
+export type NotificationsUnreadCountErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type NotificationsUnreadCountError = NotificationsUnreadCountErrors[keyof NotificationsUnreadCountErrors];
+
+export type NotificationsUnreadCountResponses = {
+    /**
+     * OK
+     */
+    200: NotificationsUnreadBody;
+};
+
+export type NotificationsUnreadCountResponse = NotificationsUnreadCountResponses[keyof NotificationsUnreadCountResponses];
+
+export type NotificationsMarkReadData = {
+    body?: never;
+    path: {
+        /**
+         * Notification ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/notifications/{id}/read';
+};
+
+export type NotificationsMarkReadErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type NotificationsMarkReadError = NotificationsMarkReadErrors[keyof NotificationsMarkReadErrors];
+
+export type NotificationsMarkReadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type NotificationsMarkReadResponse = NotificationsMarkReadResponses[keyof NotificationsMarkReadResponses];
 
 export type MediaGetPersonData = {
     body?: never;

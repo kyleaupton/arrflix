@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
+
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/notifications"
@@ -22,13 +24,62 @@ type NotificationService struct {
 	// and email join when their adapters land, at which point this becomes
 	// adapter-driven rather than a fixed list.
 	channels []model.NotificationChannel
+	// renderer renders the bell-icon read projection (title + body). The worker
+	// holds its own renderer for delivery-side needs; this one serves the read
+	// path. Both parse the same embedded templates.
+	renderer *notifications.Renderer
 }
 
 func NewNotificationService(r *repo.Repository) *NotificationService {
 	return &NotificationService{
 		repo:     r,
 		channels: []model.NotificationChannel{model.ChannelInApp},
+		renderer: notifications.MustNewRenderer(),
 	}
+}
+
+// Inbox returns a user's delivered in_app notifications, newest first, each with
+// its title and body rendered from the event template. A row whose template
+// can't render (should not happen post-startup-verify) falls back to the raw
+// event type as title rather than dropping the entry or failing the whole read.
+func (s *NotificationService) Inbox(ctx context.Context, userID uuid.UUID, limit int32) ([]model.InboxNotification, error) {
+	rows, err := s.repo.ListInbox(ctx, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.InboxNotification, 0, len(rows))
+	for _, row := range rows {
+		title, body, err := s.renderer.Render(row.EventType, model.ChannelInApp, row.Payload)
+		if err != nil {
+			title, body = row.EventType, ""
+		}
+		out = append(out, model.InboxNotification{
+			ID:        row.ID,
+			EventType: row.EventType,
+			Title:     title,
+			Body:      body,
+			Payload:   row.Payload,
+			CreatedAt: row.CreatedAt,
+			ReadAt:    row.ReadAt,
+		})
+	}
+	return out, nil
+}
+
+// UnreadCount is the bell badge: the user's delivered-but-unread in_app count.
+func (s *NotificationService) UnreadCount(ctx context.Context, userID uuid.UUID) (int64, error) {
+	return s.repo.CountUnreadInbox(ctx, userID)
+}
+
+// MarkRead marks one of the user's in_app notifications read. Guarded by
+// recipient in the repo, so a user can only touch their own; idempotent.
+func (s *NotificationService) MarkRead(ctx context.Context, id, userID uuid.UUID) error {
+	return s.repo.MarkInboxRead(ctx, id, userID)
+}
+
+// MarkAllRead clears the user's unread in_app notifications in one write.
+func (s *NotificationService) MarkAllRead(ctx context.Context, userID uuid.UUID) error {
+	return s.repo.MarkAllInboxRead(ctx, userID)
 }
 
 // Enqueue writes outbox rows for an event: one per (recipient, channel) the

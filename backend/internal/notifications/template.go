@@ -68,6 +68,20 @@ func NewRenderer() (*Renderer, error) {
 	return r, nil
 }
 
+// MustNewRenderer is NewRenderer for a non-fallible construction path (service
+// wiring, where the surrounding constructor returns no error). A parse failure is
+// a programmer error in embedded, build-time-fixed templates — deterministic, not
+// environmental — so it panics at startup, mirroring text/template's Must. The
+// worker uses the fallible NewRenderer because it pairs parsing with a
+// channel-composition Verify that legitimately returns an error.
+func MustNewRenderer() *Renderer {
+	r, err := NewRenderer()
+	if err != nil {
+		panic(err)
+	}
+	return r
+}
+
 // Render executes the title and body templates for an (event, channel) pair
 // against the event's stored JSON payload. The payload decodes to a generic
 // structure, so a template references the payload's JSON keys (e.g.
