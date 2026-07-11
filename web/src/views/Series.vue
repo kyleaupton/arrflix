@@ -22,7 +22,13 @@
           :full-bleed="isImmersive"
         >
           <template #poster>
-            <Poster :item="data" size="large" :clickable="false" :is-downloading="isDownloading" />
+            <Poster
+              :item="data"
+              size="large"
+              responsive
+              :clickable="false"
+              :is-downloading="isDownloading"
+            />
           </template>
           <template v-if="data.voteAverage" #ratings>
             <RatingBadge source="tmdb" :score="data.voteAverage" :vote-count="data.voteCount" />
@@ -41,8 +47,8 @@
         </MediaHero>
 
         <div :class="isImmersive ? 'px-6' : ''">
-          <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
-            <div class="flex flex-col gap-6">
+          <div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
+            <div class="flex min-w-0 flex-col gap-6">
               <AttentionCard v-if="auth.canManageJobs" :tmdb-id="id" type="series" />
               <NextEpisodeBanner v-if="data.nextEpisodeToAir" :episode="data.nextEpisodeToAir" />
               <div v-if="data.seasons?.length" class="space-y-4">

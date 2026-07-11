@@ -87,8 +87,8 @@ const isLinkActive = (to: string) => {
       <span class="font-medium text-sm text-foreground">Arrflix</span>
     </RouterLink>
 
-    <!-- Browse cluster -->
-    <nav class="flex items-center gap-1">
+    <!-- Browse cluster (desktop only — the mobile bottom bar replaces it) -->
+    <nav class="hidden sm:flex items-center gap-1">
       <RouterLink
         v-for="link in browseLinks"
         :key="link.to"
@@ -102,8 +102,8 @@ const isLinkActive = (to: string) => {
     <!-- Spacer -->
     <div class="flex-1" />
 
-    <!-- Activity cluster -->
-    <nav class="flex items-center gap-1 mr-2">
+    <!-- Activity cluster (desktop only) -->
+    <nav class="hidden sm:flex items-center gap-1 mr-2">
       <template v-for="link in activityLinks" :key="link.label">
         <Tooltip v-if="link.disabled">
           <TooltipTrigger as-child>
@@ -121,11 +121,11 @@ const isLinkActive = (to: string) => {
       </template>
     </nav>
 
-    <!-- Search button -->
+    <!-- Search button (desktop only — mobile searches from the bottom bar) -->
     <Tooltip>
       <TooltipTrigger as-child>
         <button
-          class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-foreground/70 hover:text-foreground hover:bg-white/5 transition-colors mr-2"
+          class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-foreground/70 hover:text-foreground hover:bg-white/5 transition-colors mr-2"
           @click="emit('openSearch')"
         >
           <Search class="size-4" />
@@ -142,7 +142,9 @@ const isLinkActive = (to: string) => {
       </TooltipContent>
     </Tooltip>
 
-    <!-- User avatar -->
-    <ImmersiveNavUser />
+    <!-- User avatar (desktop only — the mobile More tab owns the user menu) -->
+    <span class="hidden sm:block">
+      <ImmersiveNavUser />
+    </span>
   </header>
 </template>

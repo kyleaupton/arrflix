@@ -9,8 +9,8 @@
     </div>
 
     <div class="content relative px-4 py-6 sm:px-6 sm:py-8 md:px-8 md:py-10">
-      <div class="flex gap-4 md:gap-6 items-end">
-        <div v-if="posterUrl || $slots.poster" class="poster shadow-xl">
+      <div class="flex flex-col sm:flex-row gap-4 md:gap-6 sm:items-end">
+        <div v-if="posterUrl || $slots.poster" class="poster shadow-xl w-28 sm:w-44 md:w-56">
           <slot name="poster">
             <img v-if="posterUrl" :src="posterUrl" :alt="title" loading="eager" decoding="async" />
           </slot>
@@ -115,17 +115,13 @@ const openTrailerModal = () => {
   align-items: flex-start;
 }
 
+/* Wrapper owns the responsive width (w-28 sm:w-44 md:w-56); the poster — whether
+   the slotted <Poster responsive> or the fallback <img> — fills it. */
 .poster img {
-  width: 10rem;
+  width: 100%;
   aspect-ratio: 2 / 3;
   border-radius: 0.75rem;
   object-fit: cover;
-}
-
-@media (min-width: 768px) {
-  .poster img {
-    width: 14rem;
-  }
 }
 
 .title {

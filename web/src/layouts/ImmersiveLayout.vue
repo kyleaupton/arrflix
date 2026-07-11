@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import ImmersiveNavbar from './ImmersiveNavbar.vue'
+import ImmersiveTabBar from './ImmersiveTabBar.vue'
 import SearchDialog from '@/components/search/SearchDialog.vue'
 
 defineProps<{
@@ -29,8 +30,11 @@ onUnmounted(() => {
   <div class="min-h-svh">
     <ImmersiveNavbar :opaque="navbarOpaque" @open-search="searchOpen = true" />
     <SearchDialog v-model:open="searchOpen" />
-    <main class="min-w-0">
+    <!-- Bottom clearance keeps content clear of the fixed mobile tab bar (its own
+         height plus the home-indicator safe area); zeroed once the bar is gone at sm. -->
+    <main class="min-w-0 pb-[calc(3.75rem+env(safe-area-inset-bottom))] sm:pb-0">
       <slot />
     </main>
+    <ImmersiveTabBar />
   </div>
 </template>

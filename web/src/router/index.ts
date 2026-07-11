@@ -36,7 +36,6 @@ const router = createRouter({
     {
       path: '/search',
       component: () => import('@/views/Search.vue'),
-      meta: { layout: 'immersive' },
     },
     {
       path: '/downloads',

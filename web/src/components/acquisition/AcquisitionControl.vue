@@ -27,8 +27,8 @@
          whether this user auto-approves; the tier select offers only tiers the
          caller can request (a user with no movie-create grant sees nothing). -->
     <template v-else-if="!isLoading && availableTiers.length">
-      <div class="flex items-center gap-2">
-        <Button :disabled="createRequest.isPending.value" @click="handleAdd">
+      <div class="flex w-full sm:w-auto items-center gap-2">
+        <Button class="grow sm:grow-0" :disabled="createRequest.isPending.value" @click="handleAdd">
           <Plus class="mr-2 size-4" />
           {{ createRequest.isPending.value ? 'Adding…' : primaryLabel }}
         </Button>

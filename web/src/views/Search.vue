@@ -1,8 +1,19 @@
 <template>
   <div class="flex flex-col gap-6">
-    <!-- Header -->
-    <div>
-      <h1 class="text-2xl font-semibold">Search Results</h1>
+    <!-- Header — the page owns its own search box so it works as a standalone
+         destination (the mobile Search tab routes straight here). -->
+    <div class="flex flex-col gap-3">
+      <div class="relative max-w-xl">
+        <Search
+          class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          v-model="queryInput"
+          type="search"
+          placeholder="Search movies, series, people..."
+          class="pl-9"
+        />
+      </div>
       <p v-if="searchQuery" class="text-sm text-muted-foreground">
         {{ totalResults }} results for "{{ searchQuery }}"
       </p>
@@ -45,9 +56,9 @@
         class="flex flex-col items-center justify-center py-12 text-center"
       >
         <Search class="h-12 w-12 text-muted-foreground mb-4" />
-        <p class="text-lg font-medium">Enter a search query</p>
+        <p class="text-lg font-medium">Search for something</p>
         <p class="text-sm text-muted-foreground mt-1">
-          Use the search bar above to find movies, series, and people
+          Find movies, series, and people to add to your library
         </p>
       </div>
 
@@ -117,25 +128,42 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import { Search, Film, Tv, User, CheckCircle2 } from 'lucide-vue-next'
 import { mediaSearch } from '@/client/sdk.gen'
 import type { SearchResult } from '@/client/types.gen'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
+import Input from '@/components/ui/input/Input.vue'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 const route = useRoute()
+const router = useRouter()
 
+// The URL's ?q= is the source of truth that drives the fetch; the field is a
+// debounced editor for it, so deep links and browser back stay authoritative.
 const searchQuery = computed(() => (route.query.q as string) || '')
+const queryInput = ref(searchQuery.value)
 const typeFilter = ref('')
 
 // Reset type filter when search query changes
-watch(searchQuery, () => {
+watch(searchQuery, (q) => {
   typeFilter.value = ''
+  if (q !== queryInput.value) queryInput.value = q
 })
+
+let debounce: ReturnType<typeof setTimeout> | undefined
+watch(queryInput, (q) => {
+  clearTimeout(debounce)
+  debounce = setTimeout(() => {
+    const trimmed = q.trim()
+    if (trimmed === searchQuery.value) return
+    router.replace({ path: '/search', query: trimmed ? { q: trimmed } : {} })
+  }, 250)
+})
+onBeforeUnmount(() => clearTimeout(debounce))
 
 const { data, isLoading, isError, error } = useQuery({
   queryKey: computed(() => ['search-page', searchQuery.value]),

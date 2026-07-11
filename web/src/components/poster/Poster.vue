@@ -234,6 +234,14 @@ const onError = () => {
   max-width: var(--poster-width);
 }
 
+/* On phones, shrink the rail poster so a third one peeks past the edge —
+   the cue that the rail scrolls horizontally rather than being a static pair. */
+@media (max-width: 639px) {
+  .poster--md {
+    --poster-width: 9rem;
+  }
+}
+
 .poster--lg {
   --poster-width: 16rem;
   width: var(--poster-width);

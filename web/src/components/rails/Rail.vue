@@ -4,7 +4,8 @@
       <slot name="title">
         <h2 class="text-xl font-semibold">{{ title }}</h2>
       </slot>
-      <div class="flex items-center gap-2">
+      <!-- Arrows are a desktop affordance; on touch you swipe the rail. -->
+      <div class="hidden sm:flex items-center gap-2">
         <Button
           variant="outline"
           size="icon-sm"
