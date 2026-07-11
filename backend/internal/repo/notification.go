@@ -133,6 +133,14 @@ func (r *Repository) MarkOutboxDead(ctx context.Context, id uuid.UUID, lastError
 	return toModelOutbox(row), nil
 }
 
+func (r *Repository) GetOutbox(ctx context.Context, id uuid.UUID) (model.NotificationOutbox, error) {
+	row, err := r.Q.GetOutbox(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.NotificationOutbox{}, apperrors.FromPg(err, "notification %s not found", id)
+	}
+	return toModelOutbox(row), nil
+}
+
 func (r *Repository) ListInbox(ctx context.Context, userID uuid.UUID, limit int32) ([]model.NotificationOutbox, error) {
 	rows, err := r.Q.ListInbox(ctx, dbgen.ListInboxParams{
 		UserID:   pgtypeFromUUID(userID),

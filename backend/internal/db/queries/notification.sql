@@ -29,10 +29,14 @@ ORDER BY created_at
 LIMIT sqlc.arg(batch_size)
 FOR UPDATE SKIP LOCKED;
 
+-- MarkOutboxDelivering is the worker's claim: it flips a queued row to
+-- delivering, guarded by status so the transition is a compare-and-set. A row
+-- another worker already claimed (status no longer 'queued') matches nothing and
+-- returns no row, which the repo surfaces as NotFound — the caller skips it.
 -- name: MarkOutboxDelivering :one
 UPDATE notification_outbox
 SET status = 'delivering'
-WHERE id = sqlc.arg(id)
+WHERE id = sqlc.arg(id) AND status = 'queued'
 RETURNING *;
 
 -- name: MarkOutboxDelivered :one
@@ -60,6 +64,9 @@ SET status = 'dead',
     last_error = sqlc.arg(last_error)
 WHERE id = sqlc.arg(id)
 RETURNING *;
+
+-- name: GetOutbox :one
+SELECT * FROM notification_outbox WHERE id = sqlc.arg(id);
 
 -- ListInbox is the bell-icon read: a user's delivered in_app notifications, newest
 -- first. Delivered-only — queued/failed rows aren't user-visible.

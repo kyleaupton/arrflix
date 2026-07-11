@@ -87,6 +87,32 @@ func (q *Queries) EnqueueOutbox(ctx context.Context, arg EnqueueOutboxParams) (N
 	return i, err
 }
 
+const getOutbox = `-- name: GetOutbox :one
+SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at FROM notification_outbox WHERE id = $1
+`
+
+func (q *Queries) GetOutbox(ctx context.Context, id pgtype.UUID) (NotificationOutbox, error) {
+	row := q.db.QueryRow(ctx, getOutbox, id)
+	var i NotificationOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.EventType,
+		&i.Audience,
+		&i.RecipientUserID,
+		&i.Channel,
+		&i.Payload,
+		&i.DedupKey,
+		&i.Status,
+		&i.Attempts,
+		&i.NextAttemptAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.DeliveredAt,
+		&i.ReadAt,
+	)
+	return i, err
+}
+
 const listDueOutbox = `-- name: ListDueOutbox :many
 SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at FROM notification_outbox
 WHERE status = 'queued' AND next_attempt_at <= now()
@@ -320,10 +346,14 @@ func (q *Queries) MarkOutboxDelivered(ctx context.Context, id pgtype.UUID) (Noti
 const markOutboxDelivering = `-- name: MarkOutboxDelivering :one
 UPDATE notification_outbox
 SET status = 'delivering'
-WHERE id = $1
+WHERE id = $1 AND status = 'queued'
 RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at
 `
 
+// MarkOutboxDelivering is the worker's claim: it flips a queued row to
+// delivering, guarded by status so the transition is a compare-and-set. A row
+// another worker already claimed (status no longer 'queued') matches nothing and
+// returns no row, which the repo surfaces as NotFound — the caller skips it.
 func (q *Queries) MarkOutboxDelivering(ctx context.Context, id pgtype.UUID) (NotificationOutbox, error) {
 	row := q.db.QueryRow(ctx, markOutboxDelivering, id)
 	var i NotificationOutbox
