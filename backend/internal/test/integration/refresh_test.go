@@ -44,10 +44,8 @@ func TestRefresh_BornSeriesScheduledNotDue(t *testing.T) {
 	if err := app.Services.QualityProfiles.SeedDefaults(ctx); err != nil {
 		t.Fatalf("seed defaults: %v", err)
 	}
+	// The admin auto-approves via its role grants (requests.auto_approve:*).
 	admin := adminUser(t, app, ctx)
-	if _, err := app.Repo.UpsertUserPolicy(ctx, admin.ID, true); err != nil {
-		t.Fatalf("upsert admin policy: %v", err)
-	}
 
 	if _, err := app.Services.Requests.Create(ctx, service.CreateRequestInput{
 		RequestedBy: admin.ID,

@@ -30,20 +30,6 @@ func (s *UsersService) Get(ctx context.Context, id uuid.UUID) (model.User, error
 	return s.repo.GetUser(ctx, id)
 }
 
-// GetPolicy returns a user's approval policy. A user with no policy row is
-// default-deny (zero-value UserPolicy), matching RequestService.Create's
-// approval read — the absence of a row is "not auto-approved", not an error.
-func (s *UsersService) GetPolicy(ctx context.Context, userID uuid.UUID) (model.UserPolicy, error) {
-	p, err := s.repo.GetUserPolicy(ctx, userID)
-	if apperrors.IsNotFound(err) {
-		return model.UserPolicy{}, nil
-	}
-	if err != nil {
-		return model.UserPolicy{}, err
-	}
-	return p, nil
-}
-
 // Create creates a new user with password and role assignment
 func (s *UsersService) Create(ctx context.Context, email, username, password string, roleName string, isActive bool) (model.User, error) {
 	// Validation — collect every field problem before returning.
@@ -95,7 +81,6 @@ func (s *UsersService) Create(ctx context.Context, email, username, password str
 	}
 
 	_ = s.repo.AssignRole(ctx, user.ID, role.ID)
-	_ = s.syncAutoApprovePolicy(ctx, user.ID, roleName)
 
 	return user, nil
 }
@@ -163,19 +148,11 @@ func (s *UsersService) AssignRole(ctx context.Context, userID uuid.UUID, roleNam
 
 	// Roles changed → the user's cached grant set is stale. AssignRole (via
 	// UnassignAllRoles + AssignRole) is the only grant-mutation path today, so
-	// this is the sole Bust site.
+	// this is the sole Bust site. Auto-approve rides the role's grants
+	// (requests.auto_approve:*), so there's no separate per-user state to sync.
 	s.authz.Bust(userID)
 
-	return s.syncAutoApprovePolicy(ctx, userID, roleName)
-}
-
-// syncAutoApprovePolicy seeds the per-user approval policy from the assigned
-// role: admins auto-approve movie requests, everyone else does not. Approval
-// stays policy-driven (RequestService reads user_policy) — assigning a role is
-// the only place that role seeds the policy, and demotion revokes it.
-func (s *UsersService) syncAutoApprovePolicy(ctx context.Context, userID uuid.UUID, roleName string) error {
-	_, err := s.repo.UpsertUserPolicy(ctx, userID, roleName == "admin")
-	return err
+	return nil
 }
 
 // Delete removes a user

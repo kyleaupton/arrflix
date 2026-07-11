@@ -1705,6 +1705,9 @@ export type Request = {
      */
     readonly $schema?: string;
     createdAt: string;
+    decidedAt: string | null;
+    decidedBy: string;
+    decisionAuto: boolean | null;
     deniedReason: string | null;
     id: string;
     requestedBy: string;
@@ -1746,6 +1749,17 @@ export type RequestCreateBody = {
      * Media domain
      */
     type: 'movie' | 'series';
+};
+
+export type RequestsDenyInputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Optional reason shown to the requester
+     */
+    reason?: string;
 };
 
 export type Resolved = {
@@ -3072,6 +3086,9 @@ export type ReimportResultWritable = {
 
 export type RequestWritable = {
     createdAt: string;
+    decidedAt: string | null;
+    decidedBy: string;
+    decisionAuto: boolean | null;
     deniedReason: string | null;
     id: string;
     requestedBy: string;
@@ -3109,6 +3126,13 @@ export type RequestCreateBodyWritable = {
      * Media domain
      */
     type: 'movie' | 'series';
+};
+
+export type RequestsDenyInputBodyWritable = {
+    /**
+     * Optional reason shown to the requester
+     */
+    reason?: string;
 };
 
 export type RoutingEvaluateBodyWritable = {
@@ -6989,7 +7013,12 @@ export type QualityBindTierResponse = QualityBindTierResponses[keyof QualityBind
 export type RequestsListData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Filter by request status
+         */
+        status?: '' | 'pending' | 'approved' | 'spawned' | 'denied' | 'canceled';
+    };
     url: '/api/v1/requests';
 };
 
@@ -7089,6 +7118,148 @@ export type RequestsGetResponses = {
 };
 
 export type RequestsGetResponse = RequestsGetResponses[keyof RequestsGetResponses];
+
+export type RequestsApproveData = {
+    body?: never;
+    path: {
+        /**
+         * Request ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{id}/approve';
+};
+
+export type RequestsApproveErrors = {
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+    /**
+     * Bad Gateway
+     */
+    502: ProblemDetails;
+};
+
+export type RequestsApproveError = RequestsApproveErrors[keyof RequestsApproveErrors];
+
+export type RequestsApproveResponses = {
+    /**
+     * OK
+     */
+    200: Request;
+};
+
+export type RequestsApproveResponse = RequestsApproveResponses[keyof RequestsApproveResponses];
+
+export type RequestsCancelData = {
+    body?: never;
+    path: {
+        /**
+         * Request ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{id}/cancel';
+};
+
+export type RequestsCancelErrors = {
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RequestsCancelError = RequestsCancelErrors[keyof RequestsCancelErrors];
+
+export type RequestsCancelResponses = {
+    /**
+     * OK
+     */
+    200: Request;
+};
+
+export type RequestsCancelResponse = RequestsCancelResponses[keyof RequestsCancelResponses];
+
+export type RequestsDenyData = {
+    body: RequestsDenyInputBodyWritable;
+    path: {
+        /**
+         * Request ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{id}/deny';
+};
+
+export type RequestsDenyErrors = {
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RequestsDenyError = RequestsDenyErrors[keyof RequestsDenyErrors];
+
+export type RequestsDenyResponses = {
+    /**
+     * OK
+     */
+    200: Request;
+};
+
+export type RequestsDenyResponse = RequestsDenyResponses[keyof RequestsDenyResponses];
 
 export type RolesListData = {
     body?: never;

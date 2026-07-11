@@ -32,6 +32,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/downloader/qbittorrent"
 	internalhttp "github.com/kyleaupton/arrflix/internal/http"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
@@ -143,6 +144,31 @@ func New(t *testing.T, pool *pgxpool.Pool, opts ...Option) *App {
 	}
 }
 
+// UserToken creates an active user with the given seeded role and returns the
+// user plus a freshly issued JWT for them. Roles are the catalog roles
+// ("admin", "co_admin", "requester", "viewer"). Use the returned token with the
+// *As request helpers to drive the API as a non-admin caller.
+func (a *App) UserToken(t *testing.T, ctx context.Context, username, role string) (model.User, string) {
+	t.Helper()
+	email := username + "@test.local"
+	user, err := a.Repo.CreateUser(ctx, repo.CreateUserParams{
+		Email:    email,
+		Username: username,
+		IsActive: true,
+	})
+	if err != nil {
+		t.Fatalf("testapp: create user %q: %v", username, err)
+	}
+	if err := a.Services.Users.AssignRole(ctx, user.ID, role); err != nil {
+		t.Fatalf("testapp: assign role %q to %q: %v", role, username, err)
+	}
+	token, err := a.Services.Auth.IssueToken(user.ID, &email, username)
+	if err != nil {
+		t.Fatalf("testapp: issue token for %q: %v", username, err)
+	}
+	return user, token
+}
+
 func (a *App) GET(t *testing.T, path string, out any, wantStatus int) {
 	t.Helper()
 	resp := a.Do(t, nethttp.MethodGet, path, nil, out, wantStatus)
@@ -152,6 +178,28 @@ func (a *App) GET(t *testing.T, path string, out any, wantStatus int) {
 func (a *App) POST(t *testing.T, path string, body any, out any, wantStatus int) {
 	t.Helper()
 	_ = a.Do(t, nethttp.MethodPost, path, body, out, wantStatus)
+}
+
+// GETAs / POSTAs mirror GET / POST but authenticate as the given token instead
+// of the default admin, for role-matrix tests.
+func (a *App) GETAs(t *testing.T, token, path string, out any, wantStatus int) {
+	t.Helper()
+	_ = a.DoAs(t, token, nethttp.MethodGet, path, nil, out, wantStatus)
+}
+
+func (a *App) POSTAs(t *testing.T, token, path string, body any, out any, wantStatus int) {
+	t.Helper()
+	_ = a.DoAs(t, token, nethttp.MethodPost, path, body, out, wantStatus)
+}
+
+// Status issues the request as the given token and returns the response status
+// without asserting on it. For gate tests that only care whether authorization
+// passed (non-403) versus was denied (403), independent of what the handler
+// does afterward.
+func (a *App) Status(t *testing.T, token, method, path string, body any) int {
+	t.Helper()
+	resp := a.DoAs(t, token, method, path, body, nil, -1)
+	return resp.StatusCode
 }
 
 func (a *App) PUT(t *testing.T, path string, body any, out any, wantStatus int) {
@@ -164,10 +212,17 @@ func (a *App) DELETE(t *testing.T, path string, wantStatus int) {
 	_ = a.Do(t, nethttp.MethodDelete, path, nil, nil, wantStatus)
 }
 
-// Do always sets the admin Bearer token, JSON-encodes body when non-nil,
-// JSON-decodes into out when non-nil, and asserts the response status. The
-// returned response body is already consumed.
+// Do is DoAs authenticated as the default admin token.
 func (a *App) Do(t *testing.T, method, path string, body any, out any, wantStatus int) *nethttp.Response {
+	t.Helper()
+	return a.DoAs(t, a.Token, method, path, body, out, wantStatus)
+}
+
+// DoAs sets the given Bearer token, JSON-encodes body when non-nil,
+// JSON-decodes into out when non-nil, and asserts the response status. A
+// wantStatus of -1 skips the status assertion so the caller can inspect the
+// code itself. The returned response body is already consumed.
+func (a *App) DoAs(t *testing.T, token, method, path string, body any, out any, wantStatus int) *nethttp.Response {
 	t.Helper()
 
 	var bodyReader io.Reader
@@ -186,7 +241,7 @@ func (a *App) Do(t *testing.T, method, path string, body any, out any, wantStatu
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("Authorization", "Bearer "+a.Token)
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := nethttp.DefaultClient.Do(req)
 	if err != nil {
@@ -194,7 +249,7 @@ func (a *App) Do(t *testing.T, method, path string, body any, out any, wantStatu
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != wantStatus {
+	if wantStatus >= 0 && resp.StatusCode != wantStatus {
 		respBody, _ := io.ReadAll(resp.Body)
 		t.Fatalf("testapp: %s %s: unexpected status: got %d want %d; body: %s",
 			method, path, resp.StatusCode, wantStatus, string(respBody))

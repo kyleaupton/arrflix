@@ -17,10 +17,11 @@ import (
 type TrackingService struct {
 	repo  *repo.Repository
 	wants *WantService
+	authz *AuthzService
 }
 
-func NewTrackingService(r *repo.Repository, wants *WantService) *TrackingService {
-	return &TrackingService{repo: r, wants: wants}
+func NewTrackingService(r *repo.Repository, wants *WantService, authz *AuthzService) *TrackingService {
+	return &TrackingService{repo: r, wants: wants, authz: authz}
 }
 
 func (s *TrackingService) Get(ctx context.Context, id uuid.UUID) (model.Tracking, error) {
@@ -203,10 +204,32 @@ func (s *TrackingService) GetByTmdbID(ctx context.Context, tmdbID int64, typ str
 // normalizes the tracking to 'canceled' to cover the all-terminal case where no
 // want needed canceling. 'available' wants and their files are deliberately left
 // intact — stop means "stop future acquisition + cancel in-flight", not delete.
-func (s *TrackingService) Cancel(ctx context.Context, trackingID uuid.UUID) (model.Tracking, error) {
+func (s *TrackingService) Cancel(ctx context.Context, userID, trackingID uuid.UUID) (model.Tracking, error) {
 	tracking, err := s.repo.GetTracking(ctx, trackingID) // 404 flows through
 	if err != nil {
 		return model.Tracking{}, err
+	}
+
+	// own/any gate: tracking.cancel.any cancels any tracking; tracking.cancel.own
+	// requires the caller to be one of the tracking's requesters. Ownership is
+	// membership in the requester set.
+	requesters, err := s.repo.ListRequestersByTracking(ctx, trackingID)
+	if err != nil {
+		return model.Tracking{}, err
+	}
+	isOwner := false
+	for _, r := range requesters {
+		if r.UserID == userID {
+			isOwner = true
+			break
+		}
+	}
+	ok, err := s.authz.CanOwnAny(ctx, userID, "tracking.cancel", isOwner)
+	if err != nil {
+		return model.Tracking{}, err
+	}
+	if !ok {
+		return model.Tracking{}, apperrors.Forbiddenf("insufficient permissions").Op("TrackingService.Cancel")
 	}
 
 	wants, err := s.repo.ListWantsByTracking(ctx, trackingID)

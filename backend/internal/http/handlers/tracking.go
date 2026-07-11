@@ -106,7 +106,11 @@ type TrackingCancelInput struct {
 }
 
 func (h *Tracking) Cancel(ctx context.Context, input *TrackingCancelInput) (*TrackingOutput, error) {
-	out, err := h.svc.Tracking.Cancel(ctx, input.ID)
+	userID, err := userIDFromCtx(ctx, "TrackingHandler.Cancel")
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.svc.Tracking.Cancel(ctx, userID, input.ID)
 	if err != nil {
 		return nil, err
 	}

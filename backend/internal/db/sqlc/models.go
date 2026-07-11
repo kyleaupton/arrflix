@@ -624,17 +624,20 @@ type QualitySizeDefault struct {
 }
 
 type Request struct {
-	ID                pgtype.UUID `json:"id"`
-	RequestedBy       pgtype.UUID `json:"requested_by"`
-	TmdbID            int64       `json:"tmdb_id"`
-	Type              string      `json:"type"`
-	Tier              string      `json:"tier"`
-	Status            string      `json:"status"`
-	SpawnedTrackingID pgtype.UUID `json:"spawned_tracking_id"`
-	DeniedReason      *string     `json:"denied_reason"`
-	CreatedAt         time.Time   `json:"created_at"`
-	UpdatedAt         time.Time   `json:"updated_at"`
-	ScopeRule         string      `json:"scope_rule"`
+	ID                pgtype.UUID        `json:"id"`
+	RequestedBy       pgtype.UUID        `json:"requested_by"`
+	TmdbID            int64              `json:"tmdb_id"`
+	Type              string             `json:"type"`
+	Tier              string             `json:"tier"`
+	Status            string             `json:"status"`
+	SpawnedTrackingID pgtype.UUID        `json:"spawned_tracking_id"`
+	DeniedReason      *string            `json:"denied_reason"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
+	ScopeRule         string             `json:"scope_rule"`
+	DecidedBy         pgtype.UUID        `json:"decided_by"`
+	DecidedAt         pgtype.Timestamptz `json:"decided_at"`
+	DecisionAuto      *bool              `json:"decision_auto"`
 }
 
 type Role struct {
@@ -709,13 +712,6 @@ type UserInvite struct {
 	InvitedBy pgtype.UUID        `json:"invited_by"`
 	CreatedAt time.Time          `json:"created_at"`
 	ClaimedAt pgtype.Timestamptz `json:"claimed_at"`
-}
-
-type UserPolicy struct {
-	UserID           pgtype.UUID `json:"user_id"`
-	AutoApproveMovie bool        `json:"auto_approve_movie"`
-	CreatedAt        time.Time   `json:"created_at"`
-	UpdatedAt        time.Time   `json:"updated_at"`
 }
 
 type UserRole struct {

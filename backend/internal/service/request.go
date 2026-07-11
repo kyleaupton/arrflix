@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/kyleaupton/arrflix/internal/authz"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -29,10 +30,12 @@ type RequestService struct {
 	quality    *QualityProfileService
 	enrichment *EnrichmentService
 	reconcile  *ReconcileService
+	authz      *AuthzService
+	wants      *WantService
 }
 
-func NewRequestService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, quality *QualityProfileService, enrichment *EnrichmentService, reconcile *ReconcileService) *RequestService {
-	return &RequestService{repo: r, log: l, tmdb: tmdb, quality: quality, enrichment: enrichment, reconcile: reconcile}
+func NewRequestService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, quality *QualityProfileService, enrichment *EnrichmentService, reconcile *ReconcileService, authz *AuthzService, wants *WantService) *RequestService {
+	return &RequestService{repo: r, log: l, tmdb: tmdb, quality: quality, enrichment: enrichment, reconcile: reconcile, authz: authz, wants: wants}
 }
 
 // CreateRequestInput is the writeable shape for a new request. Type is the
@@ -53,10 +56,11 @@ type CreateRequestInput struct {
 }
 
 // Create turns a request into a tracking. Validation and approval are shared
-// across domains; the spawn itself forks by domain. Approval gates the spawn: an
-// unapproved request is persisted as 'pending' with no tracking. An approved
-// request runs the full spawn, deduping onto an existing tracking when the media
-// is already tracked (a second requester joins).
+// across domains; the spawn itself forks by domain. Approval gates the spawn: a
+// request the caller can't auto-approve is persisted as 'pending' with no
+// tracking, for an operator to approve or deny later. An auto-approved request
+// runs the full spawn, deduping onto an existing tracking when the media is
+// already tracked (a second requester joins).
 //
 // Movie spawn produces its single want inside the transaction. Series spawn
 // persists only the tracking in the transaction and defers want production to a
@@ -95,19 +99,28 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 	in.Tier = string(tier)
 	in.ScopeRule, in.BackfillAutonomy, in.OngoingAutonomy = scopeRule, backfill, ongoing
 
-	// Read approval. A user with no policy row is not auto-approved (default-deny).
-	userPolicy, err := s.repo.GetUserPolicy(ctx, in.RequestedBy)
-	if apperrors.IsNotFound(err) {
-		userPolicy = model.UserPolicy{}
-	} else if err != nil {
+	// Exact per-type/per-tier gate. The middleware floor only cleared users who
+	// hold SOME create key; this is the precise requests.create:<type>:<tier>
+	// check against the parsed body the gate can't see (it runs pre-parse). The
+	// builder lowercases the tier to match the catalog keyspace.
+	if err := s.authz.Require(ctx, in.RequestedBy, authz.RequestCreate(model.MediaType(in.Type), string(tier)), nil); err != nil {
 		return model.Request{}, err
 	}
 
-	// Not approved: persist the request as pending, no spawn. Scope rides the
-	// row so an approval-time spawn honors the requester's choice; autonomy
+	// Auto-approval is the per-tier permission: a caller holding
+	// requests.auto_approve:<type>:<tier> spawns immediately; everyone else
+	// (default-deny) lands in the pending queue for an operator to decide.
+	autoApprove, err := s.authz.Can(ctx, in.RequestedBy,
+		authz.RequestAutoApprove(model.MediaType(in.Type), string(tier)), nil)
+	if err != nil {
+		return model.Request{}, err
+	}
+
+	// Not auto-approved: persist the request as pending, no spawn. Scope rides
+	// the row so an approval-time spawn honors the requester's choice; autonomy
 	// deliberately does not — it's the approving operator's call, not the
 	// requester's.
-	if !evaluateApproval(userPolicy) {
+	if !autoApprove {
 		return s.repo.CreateRequest(ctx, repo.CreateRequestParams{
 			RequestedBy: in.RequestedBy,
 			TmdbID:      in.TmdbID,
@@ -118,25 +131,62 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 		})
 	}
 
-	if in.Type == string(parsing.DomainSeries) {
-		return s.spawnSeries(ctx, in, tier)
+	// Auto path: create the request already approved, with self-decided
+	// provenance (decided_by = the requester, decision_auto = true), then spawn.
+	// SetRequestSpawned leaves the provenance intact, so the spawned row still
+	// reports it auto-approved.
+	now := time.Now()
+	decisionAuto := true
+	req, err := s.repo.CreateRequest(ctx, repo.CreateRequestParams{
+		RequestedBy:  in.RequestedBy,
+		TmdbID:       in.TmdbID,
+		Type:         in.Type,
+		Tier:         in.Tier,
+		Status:       string(model.RequestApproved),
+		ScopeRule:    in.ScopeRule,
+		DecidedBy:    &in.RequestedBy,
+		DecidedAt:    &now,
+		DecisionAuto: &decisionAuto,
+	})
+	if err != nil {
+		return model.Request{}, err
 	}
-	return s.spawnMovie(ctx, in, tier)
+	return s.spawnFor(ctx, req, tier, in.BackfillAutonomy, in.OngoingAutonomy)
+}
+
+// spawnFor runs the full spawn for an already-approved request row, forking by
+// media type. It is the shared tail of the auto-approve (Create) and manual
+// approve paths: the row already exists and is approved, so spawnFor only turns
+// it into a tracking (media_item → ensureTracking → AddRequester → want →
+// SetRequestSpawned). The autonomy pair is the operator's tracking config,
+// applied only when this spawn creates a fresh tracking (a join re-reads the
+// existing one and leaves its autonomy untouched).
+//
+// The request-status transition (create-as-approved, or SetRequestApproved) is
+// the caller's concern and commits before spawnFor's own transaction — a spawn
+// that fails leaves the request in the recoverable 'approved' state rather than
+// rolling back the decision.
+func (s *RequestService) spawnFor(ctx context.Context, req model.Request, tier qualityprofile.Tier, backfillAutonomy, ongoingAutonomy string) (model.Request, error) {
+	if req.Type == string(parsing.DomainSeries) {
+		return s.spawnSeries(ctx, req, tier, backfillAutonomy, ongoingAutonomy)
+	}
+	return s.spawnMovie(ctx, req, tier, backfillAutonomy, ongoingAutonomy)
 }
 
 // spawnMovie spawns an approved movie request into a tracking + want. Reads and
 // the TMDB fetch happen outside the transaction; every write is inside one InTx
 // so the spawn is atomic. The flow stops at "want row exists in pending" — the
-// row is the durable acquisition signal.
-func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, tier qualityprofile.Tier) (model.Request, error) {
+// row is the durable acquisition signal. The request row already exists and is
+// approved; spawnMovie transitions it to 'spawned'.
+func (s *RequestService) spawnMovie(ctx context.Context, req model.Request, tier qualityprofile.Tier, backfillAutonomy, ongoingAutonomy string) (model.Request, error) {
 	const op = "RequestService.spawnMovie"
 
 	// Outside the tx: fetch the full enrichment payload (release_dates appended
 	// for certification) so the spawn can apply metadata born-complete with no
 	// extra TMDB call — the same fetch the enrichment worker uses.
-	details, err := s.tmdb.GetMovieDetailsForEnrichment(ctx, in.TmdbID)
+	details, err := s.tmdb.GetMovieDetailsForEnrichment(ctx, req.TmdbID)
 	if err != nil {
-		return model.Request{}, apperrors.BadGatewayf("fetch tmdb movie %d: %v", in.TmdbID, err).Op(op)
+		return model.Request{}, apperrors.BadGatewayf("fetch tmdb movie %d: %v", req.TmdbID, err).Op(op)
 	}
 	title := details.Title
 	year := parseYear(details.ReleaseDate)
@@ -148,22 +198,10 @@ func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, 
 		return model.Request{}, err
 	}
 
-	tmdbID := in.TmdbID
+	tmdbID := req.TmdbID
 	var spawned model.Request
 	var mediaItem model.MediaItem
 	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
-		req, err := r.CreateRequest(ctx, repo.CreateRequestParams{
-			RequestedBy: in.RequestedBy,
-			TmdbID:      in.TmdbID,
-			Type:        in.Type,
-			Tier:        in.Tier,
-			Status:      string(model.RequestApproved),
-			ScopeRule:   in.ScopeRule,
-		})
-		if err != nil {
-			return err
-		}
-
 		mediaItem, err = r.UpsertMediaItem(ctx, repo.UpsertMediaItemParams{
 			Type:   string(parsing.DomainMovie),
 			Title:  title,
@@ -189,7 +227,7 @@ func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, 
 		// is single-valued, set from this request's tier on creation; two
 		// requesters at different tiers (HD vs 4K) on one movie is real
 		// multi-tier reconciliation, deferred — the first spawn wins the profile.
-		tracking, trackingCreated, err := ensureTracking(ctx, r, mediaItem.ID, profile.ID, in.BackfillAutonomy, in.OngoingAutonomy)
+		tracking, trackingCreated, err := ensureTracking(ctx, r, mediaItem.ID, profile.ID, backfillAutonomy, ongoingAutonomy)
 		if err != nil {
 			return err
 		}
@@ -198,8 +236,8 @@ func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, 
 		// existed; upsert on (tracking, user) refreshes the tier on re-request.
 		if _, err := r.AddRequester(ctx, repo.AddRequesterParams{
 			TrackingID: tracking.ID,
-			UserID:     in.RequestedBy,
-			Tier:       in.Tier,
+			UserID:     req.RequestedBy,
+			Tier:       req.Tier,
 			// Movie tracking is single-atom: scope is inert, so the requester
 			// carries the 'all' default and never consults it.
 			ScopeRule: string(scope.RuleAll),
@@ -248,21 +286,21 @@ func (s *RequestService) spawnMovie(ctx context.Context, in CreateRequestInput, 
 }
 
 // spawnSeries spawns an approved series request. The transaction persists only
-// the frozen request, the media_item, the imdb cross-ref, the tracking, and the
-// requester (scope 'all') — no want. Structure sync makes O(seasons) TMDB calls
-// and must not run inside a DB transaction, so it and the want-producing
-// reconcile happen post-commit. Both are best-effort: the reconciler is
-// re-runnable and idempotent, so a post-commit failure self-heals on a
-// re-request (or the enrichment trigger), and the tracking already exists, so the
-// request still returns spawned.
-func (s *RequestService) spawnSeries(ctx context.Context, in CreateRequestInput, tier qualityprofile.Tier) (model.Request, error) {
+// the media_item, the imdb cross-ref, the tracking, and the requester (scope
+// 'all') — no want — and transitions the already-approved request to 'spawned'.
+// Structure sync makes O(seasons) TMDB calls and must not run inside a DB
+// transaction, so it and the want-producing reconcile happen post-commit. Both
+// are best-effort: the reconciler is re-runnable and idempotent, so a post-commit
+// failure self-heals on a re-request (or the enrichment trigger), and the
+// tracking already exists, so the request still returns spawned.
+func (s *RequestService) spawnSeries(ctx context.Context, req model.Request, tier qualityprofile.Tier, backfillAutonomy, ongoingAutonomy string) (model.Request, error) {
 	const op = "RequestService.spawnSeries"
 
 	// Outside the tx: fetch series details for the media_item title/year and the
 	// season list the post-commit structure sync consumes.
-	details, err := s.tmdb.GetSeriesDetailsForEnrichment(ctx, in.TmdbID)
+	details, err := s.tmdb.GetSeriesDetailsForEnrichment(ctx, req.TmdbID)
 	if err != nil {
-		return model.Request{}, apperrors.BadGatewayf("fetch tmdb series %d: %v", in.TmdbID, err).Op(op)
+		return model.Request{}, apperrors.BadGatewayf("fetch tmdb series %d: %v", req.TmdbID, err).Op(op)
 	}
 	title := details.Name
 	year := parseYear(details.FirstAirDate)
@@ -273,23 +311,11 @@ func (s *RequestService) spawnSeries(ctx context.Context, in CreateRequestInput,
 		return model.Request{}, err
 	}
 
-	tmdbID := in.TmdbID
+	tmdbID := req.TmdbID
 	var spawned model.Request
 	var mediaItem model.MediaItem
 	var tracking model.Tracking
 	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
-		req, err := r.CreateRequest(ctx, repo.CreateRequestParams{
-			RequestedBy: in.RequestedBy,
-			TmdbID:      in.TmdbID,
-			Type:        in.Type,
-			Tier:        in.Tier,
-			Status:      string(model.RequestApproved),
-			ScopeRule:   in.ScopeRule,
-		})
-		if err != nil {
-			return err
-		}
-
 		mediaItem, err = r.UpsertMediaItem(ctx, repo.UpsertMediaItemParams{
 			Type:   string(parsing.DomainSeries),
 			Title:  title,
@@ -308,7 +334,7 @@ func (s *RequestService) spawnSeries(ctx context.Context, in CreateRequestInput,
 			return err
 		}
 
-		tracking, _, err = ensureTracking(ctx, r, mediaItem.ID, profile.ID, in.BackfillAutonomy, in.OngoingAutonomy)
+		tracking, _, err = ensureTracking(ctx, r, mediaItem.ID, profile.ID, backfillAutonomy, ongoingAutonomy)
 		if err != nil {
 			return err
 		}
@@ -318,9 +344,9 @@ func (s *RequestService) spawnSeries(ctx context.Context, in CreateRequestInput,
 		// to want; 'future_only' skips the aired back-catalog entirely.
 		if _, err := r.AddRequester(ctx, repo.AddRequesterParams{
 			TrackingID: tracking.ID,
-			UserID:     in.RequestedBy,
-			Tier:       in.Tier,
-			ScopeRule:  in.ScopeRule,
+			UserID:     req.RequestedBy,
+			Tier:       req.Tier,
+			ScopeRule:  req.ScopeRule,
 		}); err != nil {
 			return err
 		}
@@ -436,19 +462,192 @@ func rearmMovieWant(ctx context.Context, r *repo.Repository, tracking model.Trac
 	return nil
 }
 
-func (s *RequestService) Get(ctx context.Context, id uuid.UUID) (model.Request, error) {
-	return s.repo.GetRequest(ctx, id)
+// Get loads a request, gated own/any: a holder of requests.view.any reads any
+// request; otherwise the caller must be the requester. The middleware floor
+// already required one of the view keys; this refines it against the loaded
+// row's owner.
+func (s *RequestService) Get(ctx context.Context, userID, id uuid.UUID) (model.Request, error) {
+	req, err := s.repo.GetRequest(ctx, id)
+	if err != nil {
+		return model.Request{}, err
+	}
+	ok, err := s.authz.CanOwnAny(ctx, userID, "requests.view", req.RequestedBy == userID)
+	if err != nil {
+		return model.Request{}, err
+	}
+	if !ok {
+		return model.Request{}, apperrors.Forbiddenf("insufficient permissions").Op("RequestService.Get")
+	}
+	return req, nil
 }
 
-func (s *RequestService) List(ctx context.Context) ([]model.Request, error) {
-	return s.repo.ListRequests(ctx)
+// List returns requests scoped to the caller, optionally narrowed to a single
+// status. Ownership is applied first: a holder of requests.view.any sees all;
+// otherwise (the view.own floor the gate required) the list is filtered to the
+// caller's own requests. The approval queue is GET ?status=pending with
+// view.any. Status filtering is in-Go on the low-volume request set; a
+// ListRequestsByStatus query is the scale-up path if it ever matters.
+func (s *RequestService) List(ctx context.Context, userID uuid.UUID, status *string) ([]model.Request, error) {
+	all, err := s.repo.ListRequests(ctx)
+	if err != nil {
+		return nil, err
+	}
+	canAny, err := s.authz.Can(ctx, userID, authz.RequestViewAny, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Request, 0, len(all))
+	for _, r := range all {
+		if !canAny && r.RequestedBy != userID {
+			continue
+		}
+		if status != nil && r.Status != *status {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
-// evaluateApproval is the approval seam. For the PoC it is a one-line read of the
-// user's auto-approve-movie flag; the can_request_movie permission gate and the
-// full per-tier/per-type policy matrix fatten this function later.
-func evaluateApproval(p model.UserPolicy) bool {
-	return p.AutoApproveMovie
+// Approve turns a pending request into a tracking on an operator's decision.
+// It refines the coarse approve gate against the request's exact media type,
+// stamps the manual decision provenance (decided_by = the approver), then runs
+// the shared spawn. A request that isn't pending is a Conflict — only the
+// queued state is approvable. Autonomy defaults to auto/auto: the approving
+// operator didn't dial it, and the requester's choice deliberately doesn't ride
+// the row.
+func (s *RequestService) Approve(ctx context.Context, approverID, requestID uuid.UUID) (model.Request, error) {
+	const op = "RequestService.Approve"
+
+	req, err := s.repo.GetRequest(ctx, requestID)
+	if err != nil {
+		return model.Request{}, err
+	}
+	if req.Status != string(model.RequestPending) {
+		return model.Request{}, apperrors.Conflictf("request %s is not pending (status %q)", requestID, req.Status).Op(op)
+	}
+	if err := s.authz.Require(ctx, approverID, authz.RequestApprove(model.MediaType(req.Type)), nil); err != nil {
+		return model.Request{}, err
+	}
+	tier, ok := normalizeTier(req.Tier)
+	if !ok {
+		return model.Request{}, apperrors.Internalf("request %s has unknown tier %q", requestID, req.Tier).Op(op)
+	}
+
+	approved, err := s.repo.SetRequestApproved(ctx, requestID, approverID)
+	if err != nil {
+		return model.Request{}, err
+	}
+	return s.spawnFor(ctx, approved, tier, string(model.AutonomyAuto), string(model.AutonomyAuto))
+}
+
+// Deny rejects a pending request with an optional reason, refining the coarse
+// deny gate against the request's exact media type and stamping the decision
+// provenance (decided_by = the denier). A request that isn't pending is a
+// Conflict.
+func (s *RequestService) Deny(ctx context.Context, approverID, requestID uuid.UUID, reason *string) (model.Request, error) {
+	const op = "RequestService.Deny"
+
+	req, err := s.repo.GetRequest(ctx, requestID)
+	if err != nil {
+		return model.Request{}, err
+	}
+	if req.Status != string(model.RequestPending) {
+		return model.Request{}, apperrors.Conflictf("request %s is not pending (status %q)", requestID, req.Status).Op(op)
+	}
+	if err := s.authz.Require(ctx, approverID, authz.RequestDeny(model.MediaType(req.Type)), nil); err != nil {
+		return model.Request{}, err
+	}
+	return s.repo.SetRequestDenied(ctx, requestID, approverID, reason)
+}
+
+// Cancel withdraws a request, gated own/any: a holder of requests.cancel.any
+// cancels anyone's, requests.cancel.own only the caller's. A pending or
+// (transiently) approved request just flips to canceled — nothing spawned. A
+// spawned request cascades into the tracking (below). Terminal states are
+// idempotent (already canceled) or a Conflict (already denied).
+func (s *RequestService) Cancel(ctx context.Context, userID, requestID uuid.UUID) (model.Request, error) {
+	const op = "RequestService.Cancel"
+
+	req, err := s.repo.GetRequest(ctx, requestID)
+	if err != nil {
+		return model.Request{}, err
+	}
+
+	// own/any gate: ownership is being the requester. This closes the P2 gap —
+	// a requester holds requests.cancel.own and can withdraw their own request.
+	ok, err := s.authz.CanOwnAny(ctx, userID, "requests.cancel", req.RequestedBy == userID)
+	if err != nil {
+		return model.Request{}, err
+	}
+	if !ok {
+		return model.Request{}, apperrors.Forbiddenf("insufficient permissions").Op(op)
+	}
+
+	switch model.RequestStatus(req.Status) {
+	case model.RequestCanceled:
+		return req, nil // idempotent
+	case model.RequestDenied:
+		return model.Request{}, apperrors.Conflictf("request %s is already denied", requestID).Op(op)
+	case model.RequestSpawned:
+		return s.cancelSpawned(ctx, userID, req)
+	default:
+		// pending (nothing spawned) or the transient approved-without-tracking
+		// state: just mark canceled.
+		return s.repo.SetRequestCanceled(ctx, requestID, userID)
+	}
+}
+
+// cancelSpawned withdraws a spawned request from its tracking, mirroring
+// TrackingService.Cancel's non-transactional own/any + want-cancel cascade. The
+// requester drops out of the tracking's live set; only when they were the last
+// requester (tracking is shared under the dedup invariant) are the tracking's
+// non-terminal wants canceled and the tracking parked 'paused'. A non-last
+// withdrawal must NOT touch wants — the remaining requesters still want it.
+func (s *RequestService) cancelSpawned(ctx context.Context, userID uuid.UUID, req model.Request) (model.Request, error) {
+	canceled, err := s.repo.SetRequestCanceled(ctx, req.ID, userID)
+	if err != nil {
+		return model.Request{}, err
+	}
+
+	if req.SpawnedTrackingID == nil {
+		return canceled, nil // spawned status but no tracking recorded — nothing to cascade
+	}
+	tid := *req.SpawnedTrackingID
+
+	if err := s.repo.RemoveRequester(ctx, tid, req.RequestedBy); err != nil {
+		return model.Request{}, err
+	}
+	remaining, err := s.repo.ListRequestersByTracking(ctx, tid)
+	if err != nil {
+		return model.Request{}, err
+	}
+	if len(remaining) > 0 {
+		// Shared (deduped) tracking: other requesters still want this, so the
+		// wants stay live and the tracking stays active.
+		return canceled, nil
+	}
+
+	// Last requester withdrew: cancel every non-terminal want (and its in-flight
+	// download job) via the tested WantService cascade, then park the tracking.
+	// Ordering caveat: CancelWant mirrors the tracking to 'canceled', so 'paused'
+	// is set AFTER cancelling wants, or it gets clobbered.
+	wants, err := s.repo.ListWantsByTracking(ctx, tid)
+	if err != nil {
+		return model.Request{}, err
+	}
+	for _, w := range wants {
+		if model.WantStatus(w.Status).IsTerminal() {
+			continue
+		}
+		if _, err := s.wants.CancelWant(ctx, w.ID); err != nil {
+			return model.Request{}, err
+		}
+	}
+	if _, err := s.repo.SetTrackingState(ctx, tid, string(model.TrackingPaused)); err != nil {
+		return model.Request{}, err
+	}
+	return canceled, nil
 }
 
 // parseReleaseDate parses a TMDB "2006-01-02" date into a *time.Time, returning

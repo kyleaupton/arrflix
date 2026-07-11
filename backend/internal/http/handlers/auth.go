@@ -11,10 +11,12 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/kyleaupton/arrflix/internal/authz"
 	"github.com/kyleaupton/arrflix/internal/config"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/http/middlewares"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/plex"
 	"github.com/kyleaupton/arrflix/internal/service"
 )
@@ -206,11 +208,15 @@ func (h *Auth) Me(ctx context.Context, _ *AuthMeInput) (*AuthMeOutput, error) {
 		resp.Roles = append(resp.Roles, role.Name)
 	}
 
-	policy, err := h.svc.Users.GetPolicy(ctx, userID)
+	// A movie request omits the tier (requesters don't pick quality), defaulting
+	// to HD — so "can auto-approve a movie" is the HD-movie auto-approve grant.
+	// Phase 4 replaces this single bool with the full per-tier capability set.
+	canAuto, err := h.svc.Authz.Can(ctx, userID,
+		authz.RequestAutoApprove(model.MediaTypeMovie, "HD"), nil)
 	if err != nil {
 		return nil, err
 	}
-	resp.CanAutoApproveMovie = policy.AutoApproveMovie
+	resp.CanAutoApproveMovie = canAuto
 
 	return &AuthMeOutput{Body: resp}, nil
 }

@@ -7,13 +7,8 @@ select u.id, r.id
 from app_user u, role r
 where u.username = 'admin' and r.name = 'admin';
 
--- seed the admin's approval policy: normally UsersService.syncAutoApprovePolicy
--- upserts this when the admin role is assigned, but the seed assigns the role
--- via raw SQL and bypasses that path.
-insert into user_policy (user_id, auto_approve_movie)
-select u.id, true
-from app_user u
-where u.username = 'admin';
+-- The admin auto-approves via its role grants (requests.auto_approve:*); there
+-- is no per-user approval row to seed.
 
 -- mark the system initialized (normally flipped by the setup flow when the
 -- first admin is created; the seed creates the admin directly, so set it here)
