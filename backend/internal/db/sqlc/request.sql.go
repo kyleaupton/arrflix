@@ -13,28 +13,40 @@ import (
 
 const createRequest = `-- name: CreateRequest :one
 
-INSERT INTO request (requested_by, tmdb_id, type, tier, status, scope_rule)
+INSERT INTO request (
+  requested_by, tmdb_id, type, tier, status, scope_rule,
+  decided_by, decided_at, decision_auto
+)
 VALUES (
   $1,
   $2,
   $3,
   $4,
   $5,
-  $6
+  $6,
+  $7,
+  $8,
+  $9
 )
-RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule
+RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto
 `
 
 type CreateRequestParams struct {
-	RequestedBy pgtype.UUID `json:"requested_by"`
-	TmdbID      int64       `json:"tmdb_id"`
-	Type        string      `json:"type"`
-	Tier        string      `json:"tier"`
-	Status      string      `json:"status"`
-	ScopeRule   string      `json:"scope_rule"`
+	RequestedBy  pgtype.UUID        `json:"requested_by"`
+	TmdbID       int64              `json:"tmdb_id"`
+	Type         string             `json:"type"`
+	Tier         string             `json:"tier"`
+	Status       string             `json:"status"`
+	ScopeRule    string             `json:"scope_rule"`
+	DecidedBy    pgtype.UUID        `json:"decided_by"`
+	DecidedAt    pgtype.Timestamptz `json:"decided_at"`
+	DecisionAuto *bool              `json:"decision_auto"`
 }
 
 // Requests: the frozen user-intent artifact.
+// CreateRequest inserts a request in either the pending state (no decision yet)
+// or, on the auto-approve path, the approved state with decision provenance. The
+// decided_* args are NULL for a pending request and stamped for the auto path.
 func (q *Queries) CreateRequest(ctx context.Context, arg CreateRequestParams) (Request, error) {
 	row := q.db.QueryRow(ctx, createRequest,
 		arg.RequestedBy,
@@ -43,6 +55,9 @@ func (q *Queries) CreateRequest(ctx context.Context, arg CreateRequestParams) (R
 		arg.Tier,
 		arg.Status,
 		arg.ScopeRule,
+		arg.DecidedBy,
+		arg.DecidedAt,
+		arg.DecisionAuto,
 	)
 	var i Request
 	err := row.Scan(
@@ -57,12 +72,15 @@ func (q *Queries) CreateRequest(ctx context.Context, arg CreateRequestParams) (R
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ScopeRule,
+		&i.DecidedBy,
+		&i.DecidedAt,
+		&i.DecisionAuto,
 	)
 	return i, err
 }
 
 const getRequest = `-- name: GetRequest :one
-SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule FROM request
+SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto FROM request
 WHERE id = $1
 `
 
@@ -81,12 +99,15 @@ func (q *Queries) GetRequest(ctx context.Context, id pgtype.UUID) (Request, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ScopeRule,
+		&i.DecidedBy,
+		&i.DecidedAt,
+		&i.DecisionAuto,
 	)
 	return i, err
 }
 
 const listRequests = `-- name: ListRequests :many
-SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule FROM request
+SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto FROM request
 ORDER BY created_at DESC
 `
 
@@ -111,6 +132,9 @@ func (q *Queries) ListRequests(ctx context.Context) ([]Request, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ScopeRule,
+			&i.DecidedBy,
+			&i.DecidedAt,
+			&i.DecisionAuto,
 		); err != nil {
 			return nil, err
 		}
@@ -122,22 +146,24 @@ func (q *Queries) ListRequests(ctx context.Context) ([]Request, error) {
 	return items, nil
 }
 
-const setRequestDenied = `-- name: SetRequestDenied :one
+const setRequestApproved = `-- name: SetRequestApproved :one
 UPDATE request
-SET status = 'denied',
-    denied_reason = $1,
+SET status = 'approved',
+    decided_by = $1,
+    decided_at = now(),
+    decision_auto = false,
     updated_at = now()
 WHERE id = $2
-RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule
+RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto
 `
 
-type SetRequestDeniedParams struct {
-	DeniedReason *string     `json:"denied_reason"`
-	ID           pgtype.UUID `json:"id"`
+type SetRequestApprovedParams struct {
+	DecidedBy pgtype.UUID `json:"decided_by"`
+	ID        pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) SetRequestDenied(ctx context.Context, arg SetRequestDeniedParams) (Request, error) {
-	row := q.db.QueryRow(ctx, setRequestDenied, arg.DeniedReason, arg.ID)
+func (q *Queries) SetRequestApproved(ctx context.Context, arg SetRequestApprovedParams) (Request, error) {
+	row := q.db.QueryRow(ctx, setRequestApproved, arg.DecidedBy, arg.ID)
 	var i Request
 	err := row.Scan(
 		&i.ID,
@@ -151,6 +177,88 @@ func (q *Queries) SetRequestDenied(ctx context.Context, arg SetRequestDeniedPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ScopeRule,
+		&i.DecidedBy,
+		&i.DecidedAt,
+		&i.DecisionAuto,
+	)
+	return i, err
+}
+
+const setRequestCanceled = `-- name: SetRequestCanceled :one
+UPDATE request
+SET status = 'canceled',
+    decided_by = $1,
+    decided_at = now(),
+    updated_at = now()
+WHERE id = $2
+RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto
+`
+
+type SetRequestCanceledParams struct {
+	DecidedBy pgtype.UUID `json:"decided_by"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// SetRequestCanceled records a withdrawal: decision_auto is left NULL (a cancel
+// is neither an auto nor a manual approve/deny decision).
+func (q *Queries) SetRequestCanceled(ctx context.Context, arg SetRequestCanceledParams) (Request, error) {
+	row := q.db.QueryRow(ctx, setRequestCanceled, arg.DecidedBy, arg.ID)
+	var i Request
+	err := row.Scan(
+		&i.ID,
+		&i.RequestedBy,
+		&i.TmdbID,
+		&i.Type,
+		&i.Tier,
+		&i.Status,
+		&i.SpawnedTrackingID,
+		&i.DeniedReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScopeRule,
+		&i.DecidedBy,
+		&i.DecidedAt,
+		&i.DecisionAuto,
+	)
+	return i, err
+}
+
+const setRequestDenied = `-- name: SetRequestDenied :one
+UPDATE request
+SET status = 'denied',
+    denied_reason = $1,
+    decided_by = $2,
+    decided_at = now(),
+    decision_auto = false,
+    updated_at = now()
+WHERE id = $3
+RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto
+`
+
+type SetRequestDeniedParams struct {
+	DeniedReason *string     `json:"denied_reason"`
+	DecidedBy    pgtype.UUID `json:"decided_by"`
+	ID           pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) SetRequestDenied(ctx context.Context, arg SetRequestDeniedParams) (Request, error) {
+	row := q.db.QueryRow(ctx, setRequestDenied, arg.DeniedReason, arg.DecidedBy, arg.ID)
+	var i Request
+	err := row.Scan(
+		&i.ID,
+		&i.RequestedBy,
+		&i.TmdbID,
+		&i.Type,
+		&i.Tier,
+		&i.Status,
+		&i.SpawnedTrackingID,
+		&i.DeniedReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScopeRule,
+		&i.DecidedBy,
+		&i.DecidedAt,
+		&i.DecisionAuto,
 	)
 	return i, err
 }
@@ -161,7 +269,7 @@ SET status = 'spawned',
     spawned_tracking_id = $1,
     updated_at = now()
 WHERE id = $2
-RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule
+RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto
 `
 
 type SetRequestSpawnedParams struct {
@@ -184,6 +292,9 @@ func (q *Queries) SetRequestSpawned(ctx context.Context, arg SetRequestSpawnedPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ScopeRule,
+		&i.DecidedBy,
+		&i.DecidedAt,
+		&i.DecisionAuto,
 	)
 	return i, err
 }

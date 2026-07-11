@@ -36,10 +36,11 @@
       </div>
     </template>
 
-    <!-- Overflow actions. Shown to admins even when untracked, so manual search
-         stays reachable before anything is added; otherwise only once tracked. -->
+    <!-- Overflow actions. Shown to operators even when untracked, so manual
+         search stays reachable before anything is added; otherwise only once
+         tracked. -->
     <TrackingActionsMenu
-      v-if="auth.isAdmin || trackingId"
+      v-if="auth.canManageJobs || trackingId"
       type="movie"
       :tmdb-id="tmdbId"
       :tracking-id="trackingId"
@@ -112,7 +113,9 @@ const wantProgress = computed(() => {
   return jobs.value?.[0]?.progress ?? null
 })
 
-const primaryLabel = computed(() => (auth.canAutoApproveMovie ? 'Add to Library' : 'Request'))
+const primaryLabel = computed(() =>
+  auth.canAutoApprove('movie', tier.value) ? 'Add to Library' : 'Request',
+)
 
 const createRequest = useMutation({
   ...requestsCreateMutation(),

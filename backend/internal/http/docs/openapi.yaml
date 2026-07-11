@@ -3009,15 +3009,19 @@ components:
           format: uri
           readOnly: true
           type: string
-        canAutoApproveMovie:
-          description: Whether a movie request by this user auto-approves into a tracking
-          type: boolean
         email:
           description: Email from JWT claims
           type: string
         name:
           description: Username from JWT claims
           type: string
+        permissions:
+          description: Effective global permission keys the user holds
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         roles:
           description: Role names assigned to the user
           items:
@@ -3031,7 +3035,7 @@ components:
       required:
         - sub
         - roles
-        - canAutoApproveMovie
+        - permissions
       type: object
     MediaFields:
       additionalProperties: false
@@ -4146,6 +4150,17 @@ components:
         createdAt:
           format: date-time
           type: string
+        decidedAt:
+          format: date-time
+          type:
+            - string
+            - "null"
+        decidedBy:
+          type: string
+        decisionAuto:
+          type:
+            - boolean
+            - "null"
         deniedReason:
           type:
             - string
@@ -4180,6 +4195,9 @@ components:
         - status
         - spawnedTrackingId
         - deniedReason
+        - decidedBy
+        - decidedAt
+        - decisionAuto
         - createdAt
         - updatedAt
       type: object
@@ -4233,6 +4251,20 @@ components:
       required:
         - tmdbId
         - type
+      type: object
+    RequestsDenyInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/RequestsDenyInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        reason:
+          description: Optional reason shown to the requester
+          type: string
       type: object
     Resolved:
       additionalProperties: false
@@ -9450,6 +9482,21 @@ paths:
   /api/v1/requests:
     get:
       operationId: requests-list
+      parameters:
+        - description: Filter by request status
+          explode: false
+          in: query
+          name: status
+          schema:
+            description: Filter by request status
+            enum:
+              - ""
+              - pending
+              - approved
+              - spawned
+              - denied
+              - canceled
+            type: string
       responses:
         "200":
           content:
@@ -9471,7 +9518,7 @@ paths:
       tags:
         - requests
     post:
-      description: "Validates the body and resolves the title against TMDB, then runs the spawn: an approved movie request produces a tracking and a pending want; an unapproved one is persisted pending with no spawn."
+      description: "Validates the body and resolves the title against TMDB, then runs the spawn: an auto-approved request produces a tracking and a pending want; everyone else is persisted pending with no spawn, for an operator to approve or deny."
       operationId: requests-create
       requestBody:
         content:
@@ -9557,6 +9604,177 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: Get request
+      tags:
+        - requests
+  /api/v1/requests/{id}/approve:
+    post:
+      description: Approves a pending request and runs the spawn (tracking + want). Requires an approve permission for the request's media type. A non-pending request is a 409; an upstream TMDB failure is a 502.
+      operationId: requests-approve
+      parameters:
+        - description: Request ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Request ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Request"
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+      summary: Approve a pending request
+      tags:
+        - requests
+  /api/v1/requests/{id}/cancel:
+    post:
+      description: Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409; already-canceled is idempotent.
+      operationId: requests-cancel
+      parameters:
+        - description: Request ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Request ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Request"
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Cancel a request
+      tags:
+        - requests
+  /api/v1/requests/{id}/deny:
+    post:
+      description: Denies a pending request with an optional reason. Requires a deny permission for the request's media type. A non-pending request is a 409.
+      operationId: requests-deny
+      parameters:
+        - description: Request ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Request ID
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestsDenyInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Request"
+          description: OK
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Deny a pending request
       tags:
         - requests
   /api/v1/roles:

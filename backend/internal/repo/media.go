@@ -232,6 +232,16 @@ func pgTimestamptzFromTimePtr(t *time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: *t, Valid: true}
 }
 
+// timePtrFromPgTimestamptz converts a nullable pgtype.Timestamptz into a
+// *time.Time — nil for NULL. The read-side companion of pgTimestamptzFromTimePtr.
+func timePtrFromPgTimestamptz(ts pgtype.Timestamptz) *time.Time {
+	if !ts.Valid {
+		return nil
+	}
+	t := ts.Time
+	return &t
+}
+
 func (r *Repository) ListMediaItems(ctx context.Context) ([]model.MediaItem, error) {
 	rows, err := r.Q.ListMediaItems(ctx)
 	if err != nil {

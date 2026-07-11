@@ -161,8 +161,10 @@ func TestTracking_Cancel(t *testing.T) {
 		t.Fatalf("set download job downloading: %v", err)
 	}
 
-	// Stop tracking.
-	canceled, err := app.Services.Tracking.Cancel(ctx, tracking.ID)
+	// Stop tracking. Admin holds tracking.cancel.any, so the own/any gate passes
+	// even though this repo-built tracking has no requesters.
+	admin := adminUser(t, app, ctx)
+	canceled, err := app.Services.Tracking.Cancel(ctx, admin.ID, tracking.ID)
 	if err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}

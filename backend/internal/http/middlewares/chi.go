@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/service"
 )
@@ -43,6 +44,27 @@ func ClaimsFromContext(ctx context.Context) (jwt.MapClaims, bool) {
 // withClaims returns ctx with claims attached.
 func withClaims(ctx context.Context, claims jwt.MapClaims) context.Context {
 	return context.WithValue(ctx, claimsCtxKey, claims)
+}
+
+// UserIDFromContext extracts the caller's user id from the JWT subject claim
+// ChiJWT attached, parsing it as a UUID. It sits next to ClaimsFromContext
+// because both read the same context value the JWT middleware populated; the
+// authz gate and the handlers share this one implementation. The returned
+// errors are Unauthenticated (no op annotation — callers that want one wrap it).
+func UserIDFromContext(ctx context.Context) (uuid.UUID, error) {
+	claims, ok := ClaimsFromContext(ctx)
+	if !ok {
+		return uuid.Nil, apperrors.Unauthenticatedf("missing credentials")
+	}
+	sub, ok := claims["sub"].(string)
+	if !ok {
+		return uuid.Nil, apperrors.Unauthenticatedf("invalid token subject")
+	}
+	id, err := uuid.Parse(sub)
+	if err != nil {
+		return uuid.Nil, apperrors.Unauthenticatedf("invalid token")
+	}
+	return id, nil
 }
 
 // publicPathSet is the set of exact paths that bypass JWT validation in
@@ -82,6 +104,12 @@ var publicPathSet = map[string]struct{}{
 var publicPathPrefixes = []string{
 	"/dev/",
 }
+
+// IsPublicPath reports whether the given URL path bypasses JWT validation at
+// the chi layer. Exported for the authz coverage test, which asserts the
+// huma-layer Public classification (operationPerms) stays aligned with this
+// allowlist so the two gates never drift.
+func IsPublicPath(path string) bool { return isPublicPath(path) }
 
 // isPublicPath reports whether the given URL path bypasses JWT validation.
 // Anything outside /api/v1/* isn't the API surface, so we let it through to

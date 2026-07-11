@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/downloader"
+	"github.com/kyleaupton/arrflix/internal/http/authzgate"
 	"github.com/kyleaupton/arrflix/internal/http/handlers"
 	// Side-effect import: installs apperrors.ToProblem as huma's NewError so
 	// errors returned from humachi handlers render as RFC 9457 problem-details.
@@ -41,6 +42,12 @@ func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, servic
 	r.Use(middlewares.ChiJWT(cfg.JWTSecret))
 
 	api := humachi.New(r, humaConfig(cfg))
+
+	// Fail-closed authorization gate: maps each operation to its required
+	// permission and 403s the unentitled (and any unclassified op). Registered
+	// before the handlers so the middleware chain is in place; huma applies it
+	// to every operation regardless of registration order.
+	authzgate.Register(api, services.Authz)
 
 	deps := handlers.Deps{
 		Cfg:               cfg,

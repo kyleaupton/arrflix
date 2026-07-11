@@ -43,7 +43,7 @@
         <div :class="isImmersive ? 'px-6' : ''">
           <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
             <div class="flex flex-col gap-6">
-              <AttentionCard v-if="auth.isAdmin" :tmdb-id="id" type="series" />
+              <AttentionCard v-if="auth.canManageJobs" :tmdb-id="id" type="series" />
               <NextEpisodeBanner v-if="data.nextEpisodeToAir" :episode="data.nextEpisodeToAir" />
               <div v-if="data.seasons?.length" class="space-y-4">
                 <h2 class="text-xl font-semibold">Seasons</h2>

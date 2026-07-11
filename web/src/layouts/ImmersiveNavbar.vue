@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { KbdGroup, Kbd } from '@/components/ui/kbd'
 import { useScrollProgress } from '@/composables/useScrollProgress'
 import { isMac } from '@/lib/platform'
+import { useAuthStore } from '@/stores/auth'
 import ImmersiveNavUser from './ImmersiveNavUser.vue'
 
 const props = defineProps<{
@@ -17,6 +18,7 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
+const auth = useAuthStore()
 const { progress } = useScrollProgress(300)
 
 const navbarStyle = computed(() => {
@@ -48,11 +50,14 @@ const browseLinks: NavLink[] = [
   { label: 'Library', to: '/library' },
 ]
 
-const activityLinks: NavLink[] = [
+// Downloads is an operator view (jobs.read); hide it from users who can't reach
+// it so they don't see a door the router would bounce them from. Calendar and
+// Requests stay as disabled placeholders (Requests UI is the next plan).
+const activityLinks = computed<NavLink[]>(() => [
   { label: 'Calendar', disabled: true },
   { label: 'Requests', disabled: true },
-  { label: 'Downloads', to: '/downloads' },
-]
+  ...(auth.canViewJobs ? [{ label: 'Downloads', to: '/downloads' } as NavLink] : []),
+])
 
 const linkBase = 'px-3 py-1.5 rounded-md text-sm font-medium transition-colors'
 const linkActive = 'text-foreground bg-white/10'

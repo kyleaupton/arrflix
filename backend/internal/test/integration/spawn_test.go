@@ -54,10 +54,8 @@ func TestSpawn_HappyPathAndDedup(t *testing.T) {
 		t.Fatalf("seed defaults: %v", err)
 	}
 
+	// The admin auto-approves via its role grants (requests.auto_approve:*).
 	admin := adminUser(t, app, ctx)
-	if _, err := app.Repo.UpsertUserPolicy(ctx, admin.ID, true); err != nil {
-		t.Fatalf("upsert admin policy: %v", err)
-	}
 
 	// The HD movie profile the spawn should resolve and snapshot.
 	hdProfile, err := app.Services.QualityProfiles.ResolveByTier(ctx, qualityprofile.TierHD, parsing.DomainMovie)
@@ -133,8 +131,10 @@ func TestSpawn_HappyPathAndDedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create second user: %v", err)
 	}
-	if _, err := app.Repo.UpsertUserPolicy(ctx, second.ID, true); err != nil {
-		t.Fatalf("upsert second policy: %v", err)
+	// The second user must auto-approve to spawn-and-join; 'co_admin' holds both
+	// requests.create:movie:hd and requests.auto_approve:movie:hd.
+	if err := app.Services.Users.AssignRole(ctx, second.ID, "co_admin"); err != nil {
+		t.Fatalf("assign second co_admin role: %v", err)
 	}
 
 	req2, err := app.Services.Requests.Create(ctx, service.CreateRequestInput{
@@ -195,9 +195,6 @@ func TestSpawn_MovieBornWithMetadata(t *testing.T) {
 		t.Fatalf("seed defaults: %v", err)
 	}
 	admin := adminUser(t, app, ctx)
-	if _, err := app.Repo.UpsertUserPolicy(ctx, admin.ID, true); err != nil {
-		t.Fatalf("upsert admin policy: %v", err)
-	}
 
 	if _, err := app.Services.Requests.Create(ctx, service.CreateRequestInput{
 		RequestedBy: admin.ID,
@@ -271,9 +268,6 @@ func TestSpawn_Series(t *testing.T) {
 		t.Fatalf("seed defaults: %v", err)
 	}
 	admin := adminUser(t, app, ctx)
-	if _, err := app.Repo.UpsertUserPolicy(ctx, admin.ID, true); err != nil {
-		t.Fatalf("upsert admin policy: %v", err)
-	}
 
 	req, err := app.Services.Requests.Create(ctx, service.CreateRequestInput{
 		RequestedBy: admin.ID,
@@ -366,8 +360,9 @@ func TestSpawn_Series(t *testing.T) {
 	}
 }
 
-// TestSpawn_NotAutoApproved proves the default-deny branch: a requester without
-// auto-approval gets a pending request and no spawn.
+// TestSpawn_NotAutoApproved proves the default-deny branch: a requester (who
+// holds requests.create:movie:hd but not requests.auto_approve:movie:hd) gets a
+// pending request and no spawn.
 func TestSpawn_NotAutoApproved(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -384,13 +379,10 @@ func TestSpawn_NotAutoApproved(t *testing.T) {
 		t.Fatalf("seed defaults: %v", err)
 	}
 
-	admin := adminUser(t, app, ctx)
-	if _, err := app.Repo.UpsertUserPolicy(ctx, admin.ID, false); err != nil {
-		t.Fatalf("upsert admin policy: %v", err)
-	}
+	requester, _ := app.UserToken(t, ctx, "requester1", "requester")
 
 	req, err := app.Services.Requests.Create(ctx, service.CreateRequestInput{
-		RequestedBy: admin.ID,
+		RequestedBy: requester.ID,
 		TmdbID:      spawnTmdbID,
 		Type:        "movie",
 		Tier:        "HD",
@@ -428,9 +420,6 @@ func TestSpawn_UnboundTier(t *testing.T) {
 	ctx := context.Background()
 
 	admin := adminUser(t, app, ctx)
-	if _, err := app.Repo.UpsertUserPolicy(ctx, admin.ID, true); err != nil {
-		t.Fatalf("upsert admin policy: %v", err)
-	}
 
 	_, err := app.Services.Requests.Create(ctx, service.CreateRequestInput{
 		RequestedBy: admin.ID,

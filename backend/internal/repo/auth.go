@@ -32,6 +32,8 @@ type AuthRepo interface {
 	AssignRole(ctx context.Context, userID uuid.UUID, roleID uuid.UUID) error
 	UnassignAllRoles(ctx context.Context, userID uuid.UUID) error
 	CountUsersByRole(ctx context.Context, roleID uuid.UUID) (int64, error)
+	// Grants
+	ListUserGrants(ctx context.Context, userID uuid.UUID) ([]model.Grant, error)
 	// Identity
 	GetIdentityByProviderSubject(ctx context.Context, provider model.AuthProvider, subject string) (model.Identity, error)
 	UpsertIdentity(ctx context.Context, params UpsertIdentityParams) (model.Identity, error)
@@ -180,6 +182,23 @@ func toModelUserFromListRow(row dbgen.ListUsersRow) model.User {
 	}
 }
 
+// toModelGrant translates the persistence-shaped dbgen.PermissionGrant into
+// the domain-shaped model.Grant. ResourceType passes through as a *string;
+// ResourceID collapses the nullable pgtype into a *uuid.UUID. Both are nil for
+// a global (unscoped) grant.
+func toModelGrant(row dbgen.PermissionGrant) model.Grant {
+	return model.Grant{
+		ID:            uuidFromPgtype(row.ID),
+		SubjectType:   model.GrantSubject(row.SubjectType),
+		SubjectID:     uuidFromPgtype(row.SubjectID),
+		PermissionKey: row.PermissionKey,
+		ResourceType:  row.ResourceType,
+		ResourceID:    uuidPtrFromPgtype(row.ResourceID),
+		Effect:        model.GrantEffect(row.Effect),
+		CreatedAt:     row.CreatedAt,
+	}
+}
+
 // toModelIdentity translates the persistence-shaped dbgen.UserIdentity into
 // the domain-shaped model.Identity.
 func toModelIdentity(row dbgen.UserIdentity) model.Identity {
@@ -322,6 +341,18 @@ func (r *Repository) ListUserRoles(ctx context.Context, userID uuid.UUID) ([]mod
 	out := make([]model.Role, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, toModelRole(row))
+	}
+	return out, nil
+}
+
+func (r *Repository) ListUserGrants(ctx context.Context, userID uuid.UUID) ([]model.Grant, error) {
+	rows, err := r.Q.ListUserGrants(ctx, pgtypeFromUUID(userID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list grants for user %s", userID)
+	}
+	out := make([]model.Grant, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelGrant(row))
 	}
 	return out, nil
 }

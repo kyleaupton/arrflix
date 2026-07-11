@@ -1,14 +1,9 @@
--- Returns grants that apply to the user directly or via any of the user's roles
-SELECT g.*
-FROM permission_grant g
-WHERE
-  (
-    (g.subject_type = 'user' AND g.subject_id = $1)
-    OR
-    (g.subject_type = 'role' AND g.subject_id = ANY($2::uuid[]))
-  )
-  AND (g.permission_key = ANY($3::text[]))
-  AND (
-    (g.resource_type is null and g.resource_id is null) OR
-    (g.resource_type = $4 and g.resource_id = $5)
-  );
+-- name: ListUserGrants :many
+-- All grants that apply to the user: direct user-subject grants plus grants on
+-- any role the user holds. The user_role join is internal to the query, so the
+-- repo method takes just a user id.
+SELECT g.* FROM permission_grant g
+WHERE (g.subject_type = 'user' AND g.subject_id = @user_id)
+   OR (g.subject_type = 'role' AND g.subject_id IN (
+        SELECT ur.role_id FROM user_role ur WHERE ur.user_id = @user_id
+   ));

@@ -30,20 +30,14 @@ type userPasswordBody struct {
 	Password string `json:"password" required:"true" minLength:"8" doc:"New password (min 8 chars)"`
 }
 
-// userIDFromCtx pulls the JWT subject from the request context and parses
-// it as a UUID. Used by the profile endpoints which all key off the caller.
+// userIDFromCtx pulls the caller's user id from the request context, annotating
+// any auth failure with the caller's op. It delegates to
+// middlewares.UserIDFromContext (the shared implementation the authz gate also
+// uses); the op wrapper is what the profile endpoints want for their logs.
 func userIDFromCtx(ctx context.Context, op string) (uuid.UUID, error) {
-	claims, ok := middlewares.ClaimsFromContext(ctx)
-	if !ok {
-		return uuid.Nil, apperrors.Unauthenticatedf("missing credentials").Op(op)
-	}
-	userIDStr, ok := claims["sub"].(string)
-	if !ok {
-		return uuid.Nil, apperrors.Unauthenticatedf("invalid token subject").Op(op)
-	}
-	id, err := uuid.Parse(userIDStr)
+	id, err := middlewares.UserIDFromContext(ctx)
 	if err != nil {
-		return uuid.Nil, apperrors.Unauthenticatedf("invalid token").Op(op)
+		return uuid.Nil, apperrors.WithOp(err, op)
 	}
 	return id, nil
 }

@@ -113,7 +113,7 @@ func seedTwoSegmentTracking(t *testing.T, ctx context.Context, r *repo.Repositor
 }
 
 func newTrackingService(r *repo.Repository) *service.TrackingService {
-	return service.NewTrackingService(r, service.NewWantService(r, service.NewDownloadJobsService(r)))
+	return service.NewTrackingService(r, service.NewWantService(r, service.NewDownloadJobsService(r)), service.NewAuthzService(r))
 }
 
 // TestTrackingAutonomy_SetManualHoldsPendingWants proves the segment-scoped hold:
