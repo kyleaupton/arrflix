@@ -13,7 +13,9 @@ import (
 
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/notifications"
 	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/test/dbtest"
 )
 
@@ -213,6 +215,82 @@ func containsOutbox(rows []model.NotificationOutbox, id uuid.UUID) bool {
 		}
 	}
 	return false
+}
+
+// TestNotification_Enqueue proves the service turns a typed user-audience event
+// into one queued in_app outbox row (v1's only active channel), with the routing
+// metadata and template payload intact.
+func TestNotification_Enqueue(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	svc := service.NewNotificationService(r)
+	ctx := context.Background()
+
+	user := newNotifUser(t, ctx, r, "notif-enqueue@test.local")
+	if err := svc.Enqueue(ctx, notifications.WantAvailable{
+		Recipient: user.ID,
+		Media:     notifications.MediaRef{Title: "Sentinel", Year: 2024},
+		PlexLink:  "https://plex/watch/1",
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	due, err := r.ListDueOutbox(ctx, 100)
+	if err != nil {
+		t.Fatalf("list due: %v", err)
+	}
+	if len(due) != 1 {
+		t.Fatalf("enqueued rows = %d, want 1 (in_app only in v1)", len(due))
+	}
+	row := due[0]
+	if row.EventType != "want.available" || row.Audience != string(model.AudienceUser) || row.Channel != string(model.ChannelInApp) {
+		t.Fatalf("row = %q/%s/%s", row.EventType, row.Audience, row.Channel)
+	}
+	if row.RecipientUserID == nil || *row.RecipientUserID != user.ID {
+		t.Fatalf("recipient = %v, want %s", row.RecipientUserID, user.ID)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(row.Payload, &payload); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	if _, ok := payload["media"]; !ok {
+		t.Fatalf("payload missing media: %s", row.Payload)
+	}
+}
+
+// TestNotification_EnqueueRespectsDisabledPref proves preference resolution gates
+// enqueue: an event-scope row disabling in_app suppresses the row entirely.
+func TestNotification_EnqueueRespectsDisabledPref(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	svc := service.NewNotificationService(r)
+	ctx := context.Background()
+
+	user := newNotifUser(t, ctx, r, "notif-enqueue-off@test.local")
+	if _, err := r.UpsertPreference(ctx, repo.UpsertPreferenceParams{
+		UserID:  user.ID,
+		Scope:   string(model.PreferenceScopeEvent),
+		Value:   "want.available",
+		Channel: string(model.ChannelInApp),
+		Enabled: false,
+	}); err != nil {
+		t.Fatalf("upsert pref: %v", err)
+	}
+	if err := svc.Enqueue(ctx, notifications.WantAvailable{
+		Recipient: user.ID,
+		Media:     notifications.MediaRef{Title: "Sentinel"},
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	due, err := r.ListDueOutbox(ctx, 100)
+	if err != nil {
+		t.Fatalf("list due: %v", err)
+	}
+	if len(due) != 0 {
+		t.Fatalf("enqueued rows = %d, want 0 (channel disabled by pref)", len(due))
+	}
 }
 
 func sameJSON(t *testing.T, a, b json.RawMessage) bool {

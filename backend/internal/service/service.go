@@ -34,6 +34,7 @@ type Services struct {
 	MatchDecisions     *MatchDecisionsService
 	Media              *MediaService
 	NameTemplates      *NameTemplatesService
+	Notifications      *NotificationService
 	Proposals          *ProposalService
 	QualityProfiles    *QualityProfileService
 	Reconcile          *ReconcileService
@@ -138,6 +139,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		MatchDecisions:     matchDecisionsSvc,
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
+		Notifications:      NewNotificationService(r),
 		Proposals:          proposals,
 		QualityProfiles:    quality,
 		Reconcile:          reconcile,
