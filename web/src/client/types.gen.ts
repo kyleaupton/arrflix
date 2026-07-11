@@ -1215,10 +1215,6 @@ export type MeResponse = {
      */
     readonly $schema?: string;
     /**
-     * Whether a movie request by this user auto-approves into a tracking
-     */
-    canAutoApproveMovie: boolean;
-    /**
      * Email from JWT claims
      */
     email?: string;
@@ -1226,6 +1222,10 @@ export type MeResponse = {
      * Username from JWT claims
      */
     name?: string;
+    /**
+     * Effective global permission keys the user holds
+     */
+    permissions: Array<string> | null;
     /**
      * Role names assigned to the user
      */
@@ -2863,10 +2863,6 @@ export type MatchDecisionsGetResponseWritable = {
 
 export type MeResponseWritable = {
     /**
-     * Whether a movie request by this user auto-approves into a tracking
-     */
-    canAutoApproveMovie: boolean;
-    /**
      * Email from JWT claims
      */
     email?: string;
@@ -2874,6 +2870,10 @@ export type MeResponseWritable = {
      * Username from JWT claims
      */
     name?: string;
+    /**
+     * Effective global permission keys the user holds
+     */
+    permissions: Array<string> | null;
     /**
      * Role names assigned to the user
      */

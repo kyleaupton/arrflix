@@ -103,7 +103,7 @@ const modal = useModal()
 const queryClient = useQueryClient()
 
 const showAutomation = computed(() => props.type === 'series' && !!props.trackingId)
-const showManualSearch = computed(() => props.type === 'movie' && auth.isAdmin)
+const showManualSearch = computed(() => props.type === 'movie' && auth.canManageJobs)
 const showStop = computed(() => props.type === 'series' && !!props.trackingId)
 
 // Cancel is offered only while the movie's want is still in flight; terminal

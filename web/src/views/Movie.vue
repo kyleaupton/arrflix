@@ -38,7 +38,7 @@
             <div class="flex flex-col gap-10">
               <MovieStatusCard :movie="data" />
 
-              <AttentionCard v-if="auth.isAdmin" :tmdb-id="id" type="movie" />
+              <AttentionCard v-if="auth.canManageJobs" :tmdb-id="id" type="movie" />
 
               <div v-if="data.files?.length" class="bg-card rounded-lg border p-4 sm:p-6 space-y-4">
                 <h2 class="text-xl font-semibold">Local Files</h2>

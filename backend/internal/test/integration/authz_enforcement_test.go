@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"net/http"
+	"slices"
 	"testing"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
@@ -14,6 +15,16 @@ import (
 	"github.com/kyleaupton/arrflix/internal/test/testapp"
 	"github.com/kyleaupton/arrflix/internal/test/tmdbtest"
 )
+
+// meWire mirrors handlers.MeResponse for decoding. Per the integration CLAUDE.md,
+// we shadow a fresh handler wire type locally rather than import the handler
+// package; the fields asserted here are the contract, so a rename breaks the
+// test regardless.
+type meWire struct {
+	Sub         string   `json:"sub"`
+	Roles       []string `json:"roles"`
+	Permissions []string `json:"permissions"`
+}
 
 // roleSet is the set of role names that should clear a gate for a given op.
 func roleSet(names ...string) map[string]bool {
@@ -201,5 +212,41 @@ func TestAuthzFine_TrackingCancelOwnAny(t *testing.T) {
 	app.POST(t, "/api/v1/tracking/"+trackingID+"/cancel", nil, &canceled, http.StatusOK)
 	if canceled.State != string(model.TrackingCanceled) {
 		t.Errorf("canceled tracking state = %q, want canceled", canceled.State)
+	}
+}
+
+// TestAuthMe_EffectiveKeys pins the /auth/me capability contract the frontend
+// gates on: the effective global allow-key list, sharply different by role. An
+// admin holds the operator and per-tier auto-approve keys; a requester holds the
+// create + view.own keys but neither the admin nor auto-approve keys.
+func TestAuthMe_EffectiveKeys(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	app := testapp.New(t, pool)
+	ctx := context.Background()
+
+	_, requester := app.UserToken(t, ctx, "requester1", "requester")
+
+	// Admin: holds user-management and the HD-movie auto-approve grant.
+	var adminMe meWire
+	app.GET(t, "/api/v1/auth/me", &adminMe, http.StatusOK)
+	for _, want := range []string{"admin.users.manage", "requests.auto_approve:movie:hd"} {
+		if !slices.Contains(adminMe.Permissions, want) {
+			t.Errorf("admin /auth/me permissions missing %q; got %v", want, adminMe.Permissions)
+		}
+	}
+
+	// Requester: holds create + view.own, but not the admin or auto-approve keys.
+	var reqMe meWire
+	app.GETAs(t, requester, "/api/v1/auth/me", &reqMe, http.StatusOK)
+	for _, want := range []string{"requests.create:movie:hd", "requests.view.own"} {
+		if !slices.Contains(reqMe.Permissions, want) {
+			t.Errorf("requester /auth/me permissions missing %q; got %v", want, reqMe.Permissions)
+		}
+	}
+	for _, absent := range []string{"admin.users.manage", "requests.auto_approve:movie:hd"} {
+		if slices.Contains(reqMe.Permissions, absent) {
+			t.Errorf("requester /auth/me permissions should exclude %q; got %v", absent, reqMe.Permissions)
+		}
 	}
 }

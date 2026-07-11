@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
+import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import {
   SlidersHorizontal,
@@ -34,6 +35,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar'
 import { useInboxCount } from '@/composables/useInboxCount'
+import { useAuthStore } from '@/stores/auth'
 
 interface NavItem {
   label: string
@@ -52,17 +54,22 @@ interface NavGroup {
 }
 
 const route = useRoute()
+const auth = useAuthStore()
 const { count: unmatchedCount } = useInboxCount()
 
 // Sidebar groups mirror the V1 information architecture
 // (specs/patterns/navigation). Items without a `to` are planned areas rendered
 // as disabled placeholders so the full shape is previewable before they exist.
-const groups: NavGroup[] = [
+// Users needs admin.users.manage, which a co_admin (who holds admin.settings.read
+// and so reaches this layout) lacks — hide the tab from them.
+const groups = computed<NavGroup[]>(() => [
   { items: [{ label: 'General', to: '/settings/general', icon: SlidersHorizontal }] },
   {
     label: 'Users & Requests',
     items: [
-      { label: 'Users', to: '/settings/users', icon: Users },
+      ...(auth.canManageUsers
+        ? [{ label: 'Users', to: '/settings/users', icon: Users } as NavItem]
+        : []),
       { label: 'Requests', icon: Inbox, disabled: true },
     ],
   },
@@ -103,7 +110,7 @@ const groups: NavGroup[] = [
       { label: 'Notifications', icon: Bell, disabled: true },
     ],
   },
-]
+])
 
 const isActive = (to: string) => route.path === to || route.path.startsWith(`${to}/`)
 </script>

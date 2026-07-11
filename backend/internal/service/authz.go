@@ -76,6 +76,25 @@ func (s *AuthzService) Require(ctx context.Context, userID uuid.UUID, key string
 	return nil
 }
 
+// EffectiveKeys returns every catalog key the user holds at global scope
+// (nil resource). It is the capability list /auth/me hands the frontend so the
+// UI can gate controls without a second round-trip. Resource-scoped grants are
+// intentionally excluded — scoped checks stay server-side.
+func (s *AuthzService) EffectiveKeys(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	set, err := s.effectiveSet(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	all := authz.AllKeys()
+	out := make([]string, 0, len(all))
+	for _, k := range all {
+		if authz.Resolve(set, k, nil) {
+			out = append(out, k)
+		}
+	}
+	return out, nil
+}
+
 // CanOwnAny resolves an own/any permission pair: the user passes if they hold
 // base+".any", or they hold base+".own" and own the target. base is the
 // dotted stem (e.g. "requests.cancel"); the caller supplies isOwner because

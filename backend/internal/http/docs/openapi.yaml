@@ -3009,15 +3009,19 @@ components:
           format: uri
           readOnly: true
           type: string
-        canAutoApproveMovie:
-          description: Whether a movie request by this user auto-approves into a tracking
-          type: boolean
         email:
           description: Email from JWT claims
           type: string
         name:
           description: Username from JWT claims
           type: string
+        permissions:
+          description: Effective global permission keys the user holds
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         roles:
           description: Role names assigned to the user
           items:
@@ -3031,7 +3035,7 @@ components:
       required:
         - sub
         - roles
-        - canAutoApproveMovie
+        - permissions
       type: object
     MediaFields:
       additionalProperties: false

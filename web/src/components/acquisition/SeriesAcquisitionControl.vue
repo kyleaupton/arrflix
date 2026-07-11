@@ -89,7 +89,11 @@ const trackingId = computed(() => tracking.value?.tracking?.id ?? null)
 const availableCount = computed(() => props.availableCount ?? 0)
 const totalCount = computed(() => props.totalCount ?? 0)
 
-const primaryLabel = computed(() => (auth.canAutoApproveMovie ? 'Add to Library' : 'Request'))
+// Series picks its tier inside the track dialog, so the hero label keys off the
+// default HD grant rather than a selected tier.
+const primaryLabel = computed(() =>
+  auth.canAutoApprove('series', 'HD') ? 'Add to Library' : 'Request',
+)
 
 // The dialog owns quality/scope/autonomy selection and fires the create request
 // atomically, so the chosen config lands before any search runs. It invalidates
@@ -102,7 +106,7 @@ function openTrackDialog() {
       airedEpisodeCount: props.airedEpisodeCount ?? 0,
       seasonCount: props.seasonCount ?? 0,
       hasOngoing: props.hasOngoing ?? false,
-      isOperator: auth.canAutoApproveMovie,
+      isOperator: auth.canAutoApprove('series', 'HD'),
     },
   })
 }

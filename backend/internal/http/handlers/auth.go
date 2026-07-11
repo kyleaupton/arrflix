@@ -11,12 +11,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/kyleaupton/arrflix/internal/authz"
 	"github.com/kyleaupton/arrflix/internal/config"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/http/middlewares"
 	"github.com/kyleaupton/arrflix/internal/logger"
-	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/plex"
 	"github.com/kyleaupton/arrflix/internal/service"
 )
@@ -160,11 +158,11 @@ func (h *Auth) PlexExchange(ctx context.Context, input *PlexExchangeInput) (*Ple
 type AuthMeInput struct{}
 
 type MeResponse struct {
-	Sub                 string   `json:"sub" doc:"User id (UUID string from JWT subject)"`
-	Email               *string  `json:"email,omitempty" doc:"Email from JWT claims"`
-	Name                *string  `json:"name,omitempty" doc:"Username from JWT claims"`
-	Roles               []string `json:"roles" doc:"Role names assigned to the user"`
-	CanAutoApproveMovie bool     `json:"canAutoApproveMovie" doc:"Whether a movie request by this user auto-approves into a tracking"`
+	Sub         string   `json:"sub" doc:"User id (UUID string from JWT subject)"`
+	Email       *string  `json:"email,omitempty" doc:"Email from JWT claims"`
+	Name        *string  `json:"name,omitempty" doc:"Username from JWT claims"`
+	Roles       []string `json:"roles" doc:"Role names assigned to the user"`
+	Permissions []string `json:"permissions" doc:"Effective global permission keys the user holds"`
 }
 
 type AuthMeOutput struct {
@@ -172,8 +170,8 @@ type AuthMeOutput struct {
 }
 
 // Me returns the authenticated principal. Identity fields (email/name) come from
-// the JWT claims for free; roles and the auto-approve capability are loaded from
-// the DB so the frontend can gate admin-only controls and pick the
+// the JWT claims for free; roles and the effective permission-key list are
+// loaded from the DB so the frontend can gate controls and pick the
 // "Add to Library" vs "Request" face without a second round-trip.
 func (h *Auth) Me(ctx context.Context, _ *AuthMeInput) (*AuthMeOutput, error) {
 	claims, ok := middlewares.ClaimsFromContext(ctx)
@@ -192,7 +190,7 @@ func (h *Auth) Me(ctx context.Context, _ *AuthMeInput) (*AuthMeOutput, error) {
 			Op("AuthHandler.Me")
 	}
 
-	resp := MeResponse{Sub: sub, Roles: []string{}}
+	resp := MeResponse{Sub: sub, Roles: []string{}, Permissions: []string{}}
 	if v, ok := claims["email"].(string); ok && v != "" {
 		resp.Email = &v
 	}
@@ -208,15 +206,11 @@ func (h *Auth) Me(ctx context.Context, _ *AuthMeInput) (*AuthMeOutput, error) {
 		resp.Roles = append(resp.Roles, role.Name)
 	}
 
-	// A movie request omits the tier (requesters don't pick quality), defaulting
-	// to HD — so "can auto-approve a movie" is the HD-movie auto-approve grant.
-	// Phase 4 replaces this single bool with the full per-tier capability set.
-	canAuto, err := h.svc.Authz.Can(ctx, userID,
-		authz.RequestAutoApprove(model.MediaTypeMovie, "HD"), nil)
+	perms, err := h.svc.Authz.EffectiveKeys(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	resp.CanAutoApproveMovie = canAuto
+	resp.Permissions = perms
 
 	return &AuthMeOutput{Body: resp}, nil
 }

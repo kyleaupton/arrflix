@@ -41,6 +41,7 @@ const router = createRouter({
     {
       path: '/downloads',
       component: () => import('@/views/Downloads.vue'),
+      meta: { requires: 'jobs.read' },
     },
     {
       // Users moved under Settings; keep the old path working for bookmarks.
@@ -50,7 +51,7 @@ const router = createRouter({
     {
       path: '/settings',
       component: () => import('@/views/settings/SettingsLayout.vue'),
-      meta: { layout: 'sidebar' },
+      meta: { layout: 'sidebar', requires: 'admin.settings.read' },
       children: [
         {
           path: '',
@@ -87,6 +88,7 @@ const router = createRouter({
         {
           path: 'users',
           component: () => import('@/views/Users.vue'),
+          meta: { requires: 'admin.users.manage' },
         },
       ],
     },
@@ -180,6 +182,19 @@ router.beforeEach(async (to) => {
   // Require auth for protected routes
   if (!auth.isAuthenticated) {
     return { path: '/login', query: { redirect: to.fullPath } }
+  }
+
+  // Permission gate: a route (or any matched ancestor) may declare a required
+  // capability key. This is a UX guard, not a security boundary — the API is
+  // fail-closed, so this only avoids routing a user to a page that would 403.
+  // Permissions are loaded by now: beforeEach awaits appStore.isReady above,
+  // which main.ts sets only after fetchMe. meta.requires has no RouteMeta
+  // augmentation today, so it's read via a cast.
+  for (const record of to.matched) {
+    const requires = record.meta.requires as string | undefined
+    if (requires && !auth.can(requires)) {
+      return { path: '/' }
+    }
   }
 
   return true

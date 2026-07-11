@@ -11,7 +11,7 @@ interface AuthUser {
   email?: string | null
   name?: string | null
   roles: string[]
-  canAutoApproveMovie: boolean
+  permissions: string[]
 }
 
 const AUTH_TOKEN_KEY = 'arrflix.auth.token'
@@ -23,10 +23,23 @@ export const useAuthStore = defineStore('auth', () => {
   const errorMessage = ref<Nullable<string>>(null)
 
   const isAuthenticated = computed(() => Boolean(token.value))
-  // Admin gates operator-only controls (e.g. manual torrent search). Distinct
-  // from canAutoApproveMovie, which only decides the Add-vs-Request button face.
-  const isAdmin = computed(() => user.value?.roles.includes('admin') ?? false)
-  const canAutoApproveMovie = computed(() => user.value?.canAutoApproveMovie ?? false)
+
+  // The store is the one place that knows the permission-key grammar: /auth/me
+  // hands us the effective global allow-key list and everything else reads a
+  // named capability off it, never a role literal.
+  const permissionSet = computed(() => new Set(user.value?.permissions ?? []))
+  function can(key: string): boolean {
+    return permissionSet.value.has(key)
+  }
+  // Add-vs-Request: exact per-(type,tier) auto-approve grant. Tier is lowercased
+  // to match the key grammar ("HD" -> requests.auto_approve:movie:hd).
+  function canAutoApprove(type: 'movie' | 'series', tier: string): boolean {
+    return can(`requests.auto_approve:${type}:${tier.toLowerCase()}`)
+  }
+  const canManageJobs = computed(() => can('jobs.manage')) // operator actions
+  const canViewJobs = computed(() => can('jobs.read')) // downloads view
+  const canManageUsers = computed(() => can('admin.users.manage'))
+  const canManageSettings = computed(() => can('admin.settings.read'))
 
   function applyTokenToClient(nextToken: string | null) {
     // Put Authorization on all requests
@@ -64,7 +77,7 @@ export const useAuthStore = defineStore('auth', () => {
         email: res.data.email ?? null,
         name: res.data.name ?? null,
         roles: res.data.roles ?? [],
-        canAutoApproveMovie: res.data.canAutoApproveMovie ?? false,
+        permissions: res.data.permissions ?? [],
       }
     } catch {
       // Token likely invalid
@@ -85,8 +98,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * Set user state directly from bootstrap response data. Bootstrap carries
-   * only identity, so roles/policy default empty here; callers that need them
-   * (admin gating, Add-vs-Request) follow with fetchMe to enrich.
+   * only identity, so roles/permissions default empty here; callers that need
+   * them (capability gating, Add-vs-Request) follow with fetchMe to enrich.
    */
   function setUserFromBootstrap(u: {
     id: string
@@ -98,7 +111,7 @@ export const useAuthStore = defineStore('auth', () => {
       email: u.email,
       name: u.username,
       roles: [],
-      canAutoApproveMovie: false,
+      permissions: [],
     }
   }
 
@@ -183,8 +196,13 @@ export const useAuthStore = defineStore('auth', () => {
     isLoading,
     errorMessage,
     isAuthenticated,
-    isAdmin,
-    canAutoApproveMovie,
+    // capabilities
+    can,
+    canAutoApprove,
+    canManageJobs,
+    canViewJobs,
+    canManageUsers,
+    canManageSettings,
     // actions
     fetchMe,
     rehydrateToken,
