@@ -2,12 +2,10 @@
 import { computed, type Component } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { CalendarClock, Download, Film, Search, Sparkles } from 'lucide-vue-next'
-import {
-  trackingByTmdbOptions,
-  downloadJobsListForMovieOptions,
-} from '@/client/@tanstack/vue-query.gen'
+import { trackingByTmdbOptions } from '@/client/@tanstack/vue-query.gen'
 import type { MovieDetail, Want } from '@/client/types.gen'
 import { Progress } from '@/components/ui/progress'
+import { useDownloadJobs } from '@/composables/useDownloadJobs'
 import { formatBytes, formatSpeed, formatEta } from '@/lib/format'
 
 // Tells a not-yet-in-library movie's acquisition story so the page's main column
@@ -26,21 +24,17 @@ const availableLocally = computed(
   () => props.movie.files?.some((f) => f.status === 'available') ?? false,
 )
 
-// A 404 is the untracked signal, not an error — don't burn retries on it.
+// Untracked is a normal 200 with null tracking, read directly below.
 const { data: tracking } = useQuery(
-  computed(() => ({
-    ...trackingByTmdbOptions({ path: { tmdbId: tmdbId.value } }),
-    retry: false,
-  })),
+  computed(() => trackingByTmdbOptions({ path: { tmdbId: tmdbId.value } })),
 )
 const isTracked = computed(() => !!tracking.value?.tracking)
 const want = computed<Want | null>(() => tracking.value?.wants?.[0] ?? null)
 
-// Newest-first; the first entry is the job advancing the current want.
-const { data: jobs } = useQuery(
-  computed(() => downloadJobsListForMovieOptions({ path: { id: tmdbId.value } })),
-)
-const job = computed(() => jobs.value?.[0] ?? null)
+// The movie's in-flight job, read from the shared live jobs cache (SSE-patched)
+// rather than a second per-movie fetch, so the progress bar advances live.
+const { getMovieJob } = useDownloadJobs()
+const job = computed(() => getMovieJob(tmdbId.value) ?? null)
 
 const ACTIVE_JOB_STATUSES = new Set([
   'created',

@@ -5135,6 +5135,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        myRequest:
+          $ref: "#/components/schemas/Request"
         tracking:
           $ref: "#/components/schemas/Tracking"
         wants:
@@ -5144,7 +5146,6 @@ components:
             - array
             - "null"
       required:
-        - tracking
         - wants
       type: object
     TrackingRequester:
@@ -10794,7 +10795,7 @@ paths:
         - tracking
   /api/v1/tracking/by-tmdb/{tmdbId}:
     get:
-      description: Resolves a media item's acquisition state (tracking + wants) from its TMDB id and type. Returns 404 when the item is not tracked.
+      description: "Resolves a title's acquisition status from its TMDB id and type: the tracking and its wants, plus the caller's own pending request. Untracked / un-requested titles return null fields rather than 404."
       operationId: tracking-by-tmdb
       parameters:
         - description: TMDB id of the media item
@@ -10824,25 +10825,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/TrackingByTmdb"
           description: OK
-        "404":
+        default:
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
-          description: Not Found
-        "422":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Internal Server Error
-      summary: Get tracking by TMDB id
+          description: Error
+      summary: Get acquisition status by TMDB id
       tags:
         - tracking
   /api/v1/tracking/{id}:

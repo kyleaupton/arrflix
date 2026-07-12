@@ -25,6 +25,19 @@ RETURNING *;
 SELECT * FROM request
 WHERE id = $1;
 
+-- FindPendingRequestForUser returns the caller's still-pending request for a
+-- title (tmdb id + type), if any. The acquisition-status endpoint joins this so
+-- a focus page shows the Pending badge without pulling the user's whole request
+-- list. Most-recent first, at most one row.
+-- name: FindPendingRequestForUser :one
+SELECT * FROM request
+WHERE requested_by = sqlc.arg(requested_by)
+  AND tmdb_id = sqlc.arg(tmdb_id)
+  AND type = sqlc.arg(type)
+  AND status = 'pending'
+ORDER BY created_at DESC
+LIMIT 1;
+
 -- ListRequests joins app_user so the list carries the requester's display name.
 -- A co_admin approver lacks admin.users.manage and so can't resolve names via
 -- the users endpoint; the join makes the queue self-sufficient. Write-path

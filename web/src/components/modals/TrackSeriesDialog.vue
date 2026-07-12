@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, inject } from 'vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
-import { requestsCreateMutation, trackingByTmdbQueryKey } from '@/client/@tanstack/vue-query.gen'
+import {
+  requestsCreateMutation,
+  requestsListQueryKey,
+  trackingByTmdbQueryKey,
+} from '@/client/@tanstack/vue-query.gen'
 import { toast } from 'vue-sonner'
 import { Check } from 'lucide-vue-next'
 import BaseDialog from './BaseDialog.vue'
@@ -100,6 +104,9 @@ const createRequest = useMutation({
       toast.success('Requested — pending approval')
     }
     queryClient.invalidateQueries({ queryKey: trackingKey.value })
+    // Refresh the request list so a pending (await-approval) series request shows
+    // its status on the focus page without a reload.
+    queryClient.invalidateQueries({ queryKey: requestsListQueryKey({}) })
     dialogRef.value.close({ saved: true })
   },
   onError: (err) => {

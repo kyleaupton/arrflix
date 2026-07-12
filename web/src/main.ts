@@ -15,7 +15,15 @@ const app = createApp(App)
 
 // One QueryClient shared by the Vue Query plugin and the realtime bindings, so
 // SSE frames write the same cache the components read.
-const queryClient = new QueryClient()
+//
+// staleTime: the volatile server state (jobs, wants) is kept live by the realtime
+// bindings regardless, so a default staleTime here only affects the non-realtime
+// reads (media detail, lists) — it stops every navigation and window-focus from
+// refetching data seconds old, which was the bulk of the request volume. Focus
+// refetch stays on for genuinely-stale data so cross-actor list changes still land.
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 30_000 } },
+})
 
 app.use(createPinia())
 app.use(router)

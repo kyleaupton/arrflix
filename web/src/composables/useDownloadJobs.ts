@@ -59,11 +59,20 @@ export function useDownloadJobs() {
     return jobsById.value[id]
   }
 
+  // The in-flight job for a movie, read from the shared live list. A movie
+  // tracking is single-atom (one want, one job at a time), and `jobs` is
+  // newest-first, so the first match is the one advancing the current want.
+  // Callers get SSE-patched progress without a second per-movie fetch.
+  function getMovieJob(tmdbId: number): DownloadJob | undefined {
+    return jobs.value.find((j) => j.mediaType === 'movie' && j.tmdbId === tmdbId)
+  }
+
   return {
     isLoading: query.isLoading,
     jobs,
     jobsById,
     getJobById,
+    getMovieJob,
     activeJobs,
     needsAttentionJobs,
     completedJobs,

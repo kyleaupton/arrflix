@@ -2421,8 +2421,8 @@ export const trackingListOptions = (options?: Options<TrackingListData>) => {
 export const trackingByTmdbQueryKey = (options: Options<TrackingByTmdbData>) => createQueryKey('trackingByTmdb', options);
 
 /**
- * Get tracking by TMDB id
- * Resolves a media item's acquisition state (tracking + wants) from its TMDB id and type. Returns 404 when the item is not tracked.
+ * Get acquisition status by TMDB id
+ * Resolves a title's acquisition status from its TMDB id and type: the tracking and its wants, plus the caller's own pending request. Untracked / un-requested titles return null fields rather than 404.
  */
 export const trackingByTmdbOptions = (options: Options<TrackingByTmdbData>) => {
     return queryOptions({

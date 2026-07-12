@@ -65,8 +65,7 @@ import {
   trackingByTmdbOptions,
   trackingByTmdbQueryKey,
   requestsCreateMutation,
-  requestsListOptions,
-  downloadJobsListForMovieOptions,
+  requestsListQueryKey,
 } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
 import {
@@ -77,6 +76,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useAuthStore } from '@/stores/auth'
+import { useDownloadJobs } from '@/composables/useDownloadJobs'
 import { isProblem, problemMessage } from '@/lib/api'
 import WantStatusPill from './WantStatusPill.vue'
 import RequestStatusPill from './RequestStatusPill.vue'
@@ -96,47 +96,35 @@ const availableTiers = computed<('HD' | '4K')[]>(() =>
 )
 const tier = ref<'HD' | '4K'>(availableTiers.value[0] ?? 'HD')
 
-// An expected 404 ("not tracked") is the common case for most movies, so don't
-// burn retries on it; the 404 is read as the untracked state below, not an error.
+// Acquisition status for this movie: tracking + its want, plus the caller's own
+// pending request — one call. Untracked / un-requested is a normal 200 with null
+// fields (not a 404), so the branches below just read them.
 const {
   data: tracking,
   isLoading,
   error,
-} = useQuery(
-  computed(() => ({
-    ...trackingByTmdbOptions({ path: { tmdbId: props.tmdbId } }),
-    retry: false,
-  })),
-)
+} = useQuery(computed(() => trackingByTmdbOptions({ path: { tmdbId: props.tmdbId } })))
 
 const want = computed(() => tracking.value?.wants?.[0] ?? null)
 
 // Present only when the movie is tracked — gates the tracking-only kebab items.
 const trackingId = computed(() => tracking.value?.tracking?.id ?? null)
 
-// A pending request has no tracking yet, so it doesn't surface as a want; find
-// the caller's own pending request for this movie to show its status instead of
-// the Add button. denied/canceled fall through, so a re-request stays possible.
-const { data: myRequests } = useQuery(requestsListOptions({}))
-const myPending = computed(
-  () =>
-    (myRequests.value ?? []).find(
-      (r) => r.tmdbId === props.tmdbId && r.type === 'movie' && r.status === 'pending',
-    ) ?? null,
-)
+// The caller's own pending request rides along on the status payload, so the
+// pending badge needs no separate request-list fetch. The endpoint returns only a
+// pending request (denied/canceled never surface here), so a re-request stays open.
+const myPending = computed(() => tracking.value?.myRequest ?? null)
 
-// Download jobs for this movie, to correlate download progress onto the want.
-// A movie tracking is single-atom (one want, one in-flight job), and the list is
-// scoped to this movie and ordered newest-first, so the most recent job is the
-// one advancing the current want. The job↔want edge now lives in download_job_want
-// (M:N), so the job no longer carries a wantId to match on directly.
-const { data: jobs } = useQuery(
-  computed(() => downloadJobsListForMovieOptions({ path: { id: props.tmdbId } })),
-)
+// Correlate download progress onto the want from the shared live jobs cache
+// (SSE-patched) instead of a second per-movie fetch. A movie tracking is
+// single-atom — one want, one in-flight job — so the newest matching job advances
+// the current want. The job↔want edge lives in download_job_want (M:N), so the
+// job carries no wantId to match on directly.
+const { getMovieJob } = useDownloadJobs()
 
 const wantProgress = computed(() => {
   if (!want.value) return null
-  return jobs.value?.[0]?.progress ?? null
+  return getMovieJob(props.tmdbId)?.progress ?? null
 })
 
 const primaryLabel = computed(() =>
@@ -156,6 +144,9 @@ const createRequest = useMutation({
     queryClient.invalidateQueries({
       queryKey: trackingByTmdbQueryKey({ path: { tmdbId: props.tmdbId } }),
     })
+    // Also refresh the request list this control reads myPending from, so an
+    // await-approval submit flips the button to its Pending face without a reload.
+    queryClient.invalidateQueries({ queryKey: requestsListQueryKey({}) })
   },
   onError: (err) => {
     toast.error(problemMessage(err, 'Failed to add to library'))
@@ -166,10 +157,9 @@ function handleAdd() {
   createRequest.mutate({ body: { tmdbId: props.tmdbId, type: 'movie', tier: tier.value } })
 }
 
-// A 404 is the untracked signal, not an error; surface anything else.
+// Untracked is a normal 200, so any error here is a genuine load failure worth
+// showing rather than offering a stale Add.
 const loadError = computed(() =>
-  isProblem(error.value) && error.value.status !== 404
-    ? problemMessage(error.value, 'Failed to load acquisition state')
-    : null,
+  isProblem(error.value) ? problemMessage(error.value, 'Failed to load acquisition state') : null,
 )
 </script>

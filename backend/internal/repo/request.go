@@ -100,6 +100,22 @@ func (r *Repository) GetRequest(ctx context.Context, id uuid.UUID) (model.Reques
 	return toModelRequest(row), nil
 }
 
+// FindPendingRequestForUser returns the caller's still-pending request for a
+// title (tmdb id + type). Returns a NotFound error when none exists — callers
+// that treat "no pending request" as a normal state check the kind rather than
+// propagating.
+func (r *Repository) FindPendingRequestForUser(ctx context.Context, userID uuid.UUID, tmdbID int64, typ string) (model.Request, error) {
+	row, err := r.Q.FindPendingRequestForUser(ctx, dbgen.FindPendingRequestForUserParams{
+		RequestedBy: pgtypeFromUUID(userID),
+		TmdbID:      tmdbID,
+		Type:        typ,
+	})
+	if err != nil {
+		return model.Request{}, apperrors.FromPg(err, "pending request for tmdb id %d (type %s)", tmdbID, typ)
+	}
+	return toModelRequest(row), nil
+}
+
 func (r *Repository) ListRequests(ctx context.Context) ([]model.Request, error) {
 	rows, err := r.Q.ListRequests(ctx)
 	if err != nil {

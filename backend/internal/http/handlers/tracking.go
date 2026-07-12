@@ -79,12 +79,21 @@ type TrackingByTmdbInput struct {
 	Type   string `query:"type" enum:"movie,series" default:"movie" doc:"Media domain"`
 }
 
-// TrackingByTmdb is the acquisition state for a media item keyed by TMDB id: the
-// tracking plus its wants. A movie has one want; a series has one want per
-// in-scope episode.
+// TrackingByTmdb is a media item's acquisition status keyed by TMDB id: the
+// tracking plus its wants (a movie has one want, a series one per in-scope
+// episode), and the caller's own pending request. Every field is nullable —
+// absence is the untracked / un-requested state, not a 404 — so the focus page
+// renders every acquisition affordance (Add, Pending, tracking progress) from a
+// single call.
+// The nullable fields carry omitempty so a nil pointer is omitted from the JSON
+// (and typed optional in the client) rather than emitted as an ever-present
+// `null` the generated type would mislabel non-null — the untracked /
+// un-requested state is then a plain absent field the focus page guards with
+// optional chaining.
 type TrackingByTmdb struct {
-	Tracking model.Tracking `json:"tracking"`
-	Wants    []model.Want   `json:"wants"`
+	Tracking  *model.Tracking `json:"tracking,omitempty"`
+	Wants     []model.Want    `json:"wants"`
+	MyRequest *model.Request  `json:"myRequest,omitempty"`
 }
 
 type TrackingByTmdbOutput struct {
@@ -92,11 +101,15 @@ type TrackingByTmdbOutput struct {
 }
 
 func (h *Tracking) GetByTmdb(ctx context.Context, input *TrackingByTmdbInput) (*TrackingByTmdbOutput, error) {
-	tracking, wants, err := h.svc.Tracking.GetByTmdbID(ctx, input.TmdbID, input.Type)
+	userID, err := userIDFromCtx(ctx, "TrackingHandler.GetByTmdb")
 	if err != nil {
 		return nil, err
 	}
-	return &TrackingByTmdbOutput{Body: TrackingByTmdb{Tracking: tracking, Wants: wants}}, nil
+	tracking, wants, myRequest, err := h.svc.Tracking.GetByTmdbID(ctx, userID, input.TmdbID, input.Type)
+	if err != nil {
+		return nil, err
+	}
+	return &TrackingByTmdbOutput{Body: TrackingByTmdb{Tracking: tracking, Wants: wants, MyRequest: myRequest}}, nil
 }
 
 // ----- Cancel -----
@@ -211,10 +224,9 @@ func (h *Tracking) RegisterHumachi(api huma.API) {
 		OperationID: "tracking-by-tmdb",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/tracking/by-tmdb/{tmdbId}",
-		Summary:     "Get tracking by TMDB id",
-		Description: "Resolves a media item's acquisition state (tracking + wants) from its TMDB id and type. Returns 404 when the item is not tracked.",
+		Summary:     "Get acquisition status by TMDB id",
+		Description: "Resolves a title's acquisition status from its TMDB id and type: the tracking and its wants, plus the caller's own pending request. Untracked / un-requested titles return null fields rather than 404.",
 		Tags:        []string{"tracking"},
-		Errors:      errsRead,
 	}, h.GetByTmdb)
 
 	huma.Register(api, huma.Operation{

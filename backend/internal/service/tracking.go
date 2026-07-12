@@ -177,26 +177,43 @@ func (s *TrackingService) ListRequesters(ctx context.Context, trackingID uuid.UU
 	return s.repo.ListRequestersByTracking(ctx, trackingID)
 }
 
-// GetByTmdbID resolves the acquisition state for a media item the frontend
-// knows only by TMDB id and type: the media item, its tracking, and that
-// tracking's wants. A NotFound at either the media item (never requested) or the
-// tracking (media item exists but untracked) step surfaces unchanged as 404 —
-// the "this item is not tracked" signal. A series carries one want per in-scope
-// episode (each tagged with its episodeId); a movie carries one.
-func (s *TrackingService) GetByTmdbID(ctx context.Context, tmdbID int64, typ string) (model.Tracking, []model.Want, error) {
+// GetByTmdbID resolves a title's acquisition status for the caller: the tracking
+// and its wants (nil when untracked), plus the caller's own pending request
+// (nil when none). "Untracked" and "no request" are normal states, not errors —
+// a title absent from the library returns nils, not 404, so the focus page
+// renders its Add affordance from one call instead of catching a 404 and
+// separately pulling the caller's whole request list.
+func (s *TrackingService) GetByTmdbID(ctx context.Context, userID uuid.UUID, tmdbID int64, typ string) (*model.Tracking, []model.Want, *model.Request, error) {
+	var myRequest *model.Request
+	if req, err := s.repo.FindPendingRequestForUser(ctx, userID, tmdbID, typ); err == nil {
+		myRequest = &req
+	} else if !apperrors.IsNotFound(err) {
+		return nil, nil, nil, err
+	}
+
+	// No media item yet (never synced or requested) → untracked; still surface
+	// any pending request.
 	mediaItem, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, typ)
 	if err != nil {
-		return model.Tracking{}, nil, err
+		if apperrors.IsNotFound(err) {
+			return nil, nil, myRequest, nil
+		}
+		return nil, nil, nil, err
 	}
+
 	tracking, err := s.repo.FindTrackingByMediaItem(ctx, mediaItem.ID)
 	if err != nil {
-		return model.Tracking{}, nil, err
+		if apperrors.IsNotFound(err) {
+			return nil, nil, myRequest, nil
+		}
+		return nil, nil, nil, err
 	}
+
 	wants, err := s.repo.ListWantsByTracking(ctx, tracking.ID)
 	if err != nil {
-		return model.Tracking{}, nil, err
+		return nil, nil, nil, err
 	}
-	return tracking, wants, nil
+	return &tracking, wants, myRequest, nil
 }
 
 // Cancel stops tracking a media item: it cancels every non-terminal want (and
