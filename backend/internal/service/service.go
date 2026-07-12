@@ -22,6 +22,7 @@ type Services struct {
 	Authz              *AuthzService
 	Downloaders        *DownloadersService
 	DownloadCandidates *DownloadCandidatesService
+	EmailProvider      *EmailProviderService
 	DownloadJobs       *DownloadJobsService
 	Enrichment         *EnrichmentService
 	Invites            *InvitesService
@@ -126,6 +127,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Authz:              authz,
 		Downloaders:        NewDownloadersService(r),
 		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, routingSvc),
+		EmailProvider:      NewEmailProviderService(r),
 		DownloadJobs:       downloadJobs,
 		Enrichment:         enrichment,
 		Invites:            invites,

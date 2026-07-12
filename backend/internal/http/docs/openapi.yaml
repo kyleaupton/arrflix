@@ -1277,6 +1277,203 @@ components:
         - type
         - url
       type: object
+    EmailProviderResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/EmailProviderResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        auth:
+          type: boolean
+        configured:
+          type: boolean
+        createdAt:
+          format: date-time
+          type: string
+        enabled:
+          type: boolean
+        fromAddress:
+          type: string
+        fromName:
+          type: string
+        hasPassword:
+          type: boolean
+        host:
+          type: string
+        id:
+          type: string
+        port:
+          format: int64
+          type: integer
+        provider:
+          type: string
+        replyTo:
+          type: string
+        security:
+          type: string
+        skipTlsVerify:
+          type: boolean
+        updatedAt:
+          format: date-time
+          type: string
+        username:
+          type: string
+      required:
+        - id
+        - provider
+        - fromAddress
+        - auth
+        - hasPassword
+        - skipTlsVerify
+        - enabled
+        - configured
+        - createdAt
+        - updatedAt
+      type: object
+    EmailProviderTestBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/EmailProviderTestBody.json
+          format: uri
+          readOnly: true
+          type: string
+        to:
+          description: Recipient address for the test email
+          minLength: 1
+          type: string
+      required:
+        - to
+      type: object
+    EmailProviderTestConfigBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/EmailProviderTestConfigBody.json
+          format: uri
+          readOnly: true
+          type: string
+        auth:
+          description: Whether the server requires SMTP authentication
+          type: boolean
+        fromAddress:
+          description: From/envelope address
+          minLength: 1
+          type: string
+        fromName:
+          description: Optional display name for the From address
+          type: string
+        host:
+          description: SMTP server hostname
+          type: string
+        password:
+          description: SMTP password
+          type: string
+        port:
+          description: SMTP server port (1-65535)
+          format: int64
+          type: integer
+        provider:
+          description: Email provider implementation
+          enum:
+            - smtp
+          type: string
+        replyTo:
+          description: Optional Reply-To address
+          type: string
+        security:
+          description: Transport security mode
+          enum:
+            - starttls
+            - implicit_tls
+            - none
+          type: string
+        skipTlsVerify:
+          description: Skip TLS certificate verification (self-signed relays)
+          type: boolean
+        to:
+          description: Recipient address for the test email
+          minLength: 1
+          type: string
+        username:
+          description: SMTP username; required when auth is enabled
+          type: string
+      required:
+        - provider
+        - fromAddress
+        - auth
+        - skipTlsVerify
+        - to
+      type: object
+    EmailProviderWriteBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/EmailProviderWriteBody.json
+          format: uri
+          readOnly: true
+          type: string
+        auth:
+          description: Whether the server requires SMTP authentication
+          type: boolean
+        enabled:
+          description: Whether email sending is enabled
+          type: boolean
+        fromAddress:
+          description: From/envelope address
+          minLength: 1
+          type: string
+        fromName:
+          description: Optional display name for the From address
+          type: string
+        host:
+          description: SMTP server hostname
+          type: string
+        password:
+          description: SMTP password; empty preserves existing
+          type: string
+        port:
+          description: SMTP server port (1-65535)
+          format: int64
+          type: integer
+        provider:
+          description: Email provider implementation
+          enum:
+            - smtp
+          type: string
+        replyTo:
+          description: Optional Reply-To address
+          type: string
+        security:
+          description: Transport security mode
+          enum:
+            - starttls
+            - implicit_tls
+            - none
+          type: string
+        skipTlsVerify:
+          description: Skip TLS certificate verification (self-signed relays)
+          type: boolean
+        username:
+          description: SMTP username; required when auth is enabled
+          type: string
+      required:
+        - provider
+        - fromAddress
+        - auth
+        - skipTlsVerify
+        - enabled
+      type: object
     EncodeFields:
       additionalProperties: false
       properties:
@@ -10648,6 +10845,157 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: Update a setting
+      tags:
+        - settings
+  /api/v1/settings/email:
+    get:
+      operationId: email-provider-get
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailProviderResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Get email provider configuration
+      tags:
+        - settings
+    put:
+      operationId: email-provider-save
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailProviderWriteBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailProviderResponse"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Save email provider configuration
+      tags:
+        - settings
+  /api/v1/settings/email/test:
+    post:
+      operationId: email-provider-test
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailProviderTestBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+      summary: Send a test email using the stored configuration
+      tags:
+        - settings
+  /api/v1/settings/email/test-config:
+    post:
+      operationId: email-provider-test-config
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailProviderTestConfigBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+      summary: Send a test email using an unsaved configuration
       tags:
         - settings
   /api/v1/setup/initialize:

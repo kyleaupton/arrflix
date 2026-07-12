@@ -7,6 +7,7 @@ import (
 
 	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/downloader"
+	"github.com/kyleaupton/arrflix/internal/email"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
@@ -22,6 +23,7 @@ type Deps struct {
 	Pool              *pgxpool.Pool
 	Services          *service.Services
 	DownloaderManager *downloader.Manager
+	EmailManager      *email.Manager
 	Broker            *sse.Broker
 }
 
@@ -31,6 +33,7 @@ type Deps struct {
 func RegisterHumachiHandlers(api huma.API, deps Deps) {
 	NewLibraries(deps.Services).RegisterHumachi(api)
 	NewDownloaders(deps.Services, deps.DownloaderManager).RegisterHumachi(api)
+	NewEmailProvider(deps.Services, deps.EmailManager).RegisterHumachi(api)
 	NewNameTemplates(deps.Services).RegisterHumachi(api)
 	NewRouting(deps.Services).RegisterHumachi(api)
 	NewQualityProfiles(deps.Services).RegisterHumachi(api)

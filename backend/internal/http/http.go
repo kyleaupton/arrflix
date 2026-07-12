@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/downloader"
+	"github.com/kyleaupton/arrflix/internal/email"
 	"github.com/kyleaupton/arrflix/internal/http/authzgate"
 	"github.com/kyleaupton/arrflix/internal/http/handlers"
 	// Side-effect import: installs apperrors.ToProblem as huma's NewError so
@@ -35,7 +36,7 @@ type Server struct {
 	API    huma.API
 }
 
-func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, services *service.Services, repo *repo.Repository, downloaderManager *downloader.Manager, broker *sse.Broker) *Server {
+func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, services *service.Services, repo *repo.Repository, downloaderManager *downloader.Manager, emailManager *email.Manager, broker *sse.Broker) *Server {
 	r := chi.NewRouter()
 
 	r.Use(middlewares.ChiSetupMode(services))
@@ -55,6 +56,7 @@ func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, servic
 		Pool:              pool,
 		Services:          services,
 		DownloaderManager: downloaderManager,
+		EmailManager:      emailManager,
 		Broker:            broker,
 	}
 	handlers.RegisterHumachiHandlers(api, deps)

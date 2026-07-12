@@ -344,6 +344,25 @@ type Downloader struct {
 	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
+type EmailProvider struct {
+	ID            pgtype.UUID `json:"id"`
+	Provider      string      `json:"provider"`
+	FromAddress   string      `json:"from_address"`
+	FromName      *string     `json:"from_name"`
+	ReplyTo       *string     `json:"reply_to"`
+	Host          *string     `json:"host"`
+	Port          *int32      `json:"port"`
+	Security      *string     `json:"security"`
+	Auth          bool        `json:"auth"`
+	Username      *string     `json:"username"`
+	Password      *string     `json:"password"`
+	SkipTlsVerify bool        `json:"skip_tls_verify"`
+	ConfigJson    []byte      `json:"config_json"`
+	Enabled       bool        `json:"enabled"`
+	CreatedAt     time.Time   `json:"created_at"`
+	UpdatedAt     time.Time   `json:"updated_at"`
+}
+
 type File struct {
 	ID          pgtype.UUID        `json:"id"`
 	LibraryID   pgtype.UUID        `json:"library_id"`

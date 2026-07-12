@@ -12,6 +12,8 @@ import (
 	"github.com/kyleaupton/arrflix/internal/db"
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	"github.com/kyleaupton/arrflix/internal/downloader/qbittorrent"
+	"github.com/kyleaupton/arrflix/internal/email"
+	emailsmtp "github.com/kyleaupton/arrflix/internal/email/smtp"
 	"github.com/kyleaupton/arrflix/internal/http"
 	acquisitionworker "github.com/kyleaupton/arrflix/internal/jobs/acquisition"
 	downloadworker "github.com/kyleaupton/arrflix/internal/jobs/download"
@@ -76,9 +78,16 @@ func main() {
 		// Don't fatal - allow server to start even if downloaders fail
 	}
 
+	// Email Manager. Phase 1 wires the SMTP transport behind the seam; the
+	// manager builds transports on demand for the test-send flow only (no
+	// delivery worker yet — that's Phase 2).
+	emailRegistry := email.NewRegistry()
+	emailsmtp.Register(emailRegistry)
+	emailManager := email.NewManager(emailRegistry, repo)
+
 	// HTTP. NewServer wires chi (top-level) + humachi + Echo (catch-all);
 	// the chi router is what we bind to the listener.
-	srv := http.NewServer(cfg, logg, pool, services, repo, downloaderManager, broker)
+	srv := http.NewServer(cfg, logg, pool, services, repo, downloaderManager, emailManager, broker)
 	httpServer := &nethttp.Server{Addr: ":" + cfg.Port, Handler: srv.Router}
 	go func() {
 		logg.Info().Str("port", cfg.Port).Msg("http listen")

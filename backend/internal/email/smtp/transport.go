@@ -1,0 +1,121 @@
+// Package smtp is the SMTP Transport for the email seam. It maps the stored
+// SMTP fields onto wneessen/go-mail's client options: the three security modes
+// onto its TLS policy (STARTTLS / implicit-TLS / none), optional SMTP auth, a
+// send timeout, and the skip-verify toggle onto a custom tls.Config.
+package smtp
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"time"
+
+	"github.com/kyleaupton/arrflix/internal/email"
+	"github.com/wneessen/go-mail"
+)
+
+// transport holds the resolved SMTP settings. A fresh go-mail client is dialed
+// per Send so there's no long-lived connection to manage in Phase 1.
+type transport struct {
+	fromAddress   string
+	fromName      string
+	replyTo       string
+	host          string
+	port          int
+	security      string
+	auth          bool
+	username      string
+	password      string
+	skipTLSVerify bool
+}
+
+func (t *transport) Provider() email.Provider { return email.ProviderSMTP }
+
+// client builds a go-mail client from the transport settings. The TLS-port
+// policy sets a default port, so WithPort is applied last to let the operator's
+// explicit port win.
+func (t *transport) client() (*mail.Client, error) {
+	opts := []mail.Option{}
+
+	switch t.security {
+	case "implicit_tls":
+		opts = append(opts, mail.WithSSL())
+	case "none":
+		opts = append(opts, mail.WithTLSPortPolicy(mail.NoTLS))
+	default: // "starttls"
+		opts = append(opts, mail.WithTLSPortPolicy(mail.TLSMandatory))
+	}
+
+	if t.port > 0 {
+		opts = append(opts, mail.WithPort(t.port))
+	}
+
+	if t.auth {
+		opts = append(opts,
+			mail.WithSMTPAuth(mail.SMTPAuthAutoDiscover),
+			mail.WithUsername(t.username),
+			mail.WithPassword(t.password),
+		)
+	}
+
+	// Mirror go-mail's secure default (ServerName + TLS 1.2 floor) and layer the
+	// operator-opt-in skip-verify toggle on top. Driving InsecureSkipVerify from
+	// the field (not a literal true) keeps it honest: it's false unless the
+	// operator turned it on for a self-signed relay.
+	opts = append(opts, mail.WithTLSConfig(&tls.Config{
+		ServerName:         t.host,
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: t.skipTLSVerify,
+	}))
+
+	opts = append(opts, mail.WithTimeout(10*time.Second))
+
+	return mail.NewClient(t.host, opts...)
+}
+
+func (t *transport) buildMessage(msg email.Message) (*mail.Msg, error) {
+	m := mail.NewMsg()
+	if t.fromName != "" {
+		if err := m.FromFormat(t.fromName, t.fromAddress); err != nil {
+			return nil, fmt.Errorf("set from: %w", err)
+		}
+	} else if err := m.From(t.fromAddress); err != nil {
+		return nil, fmt.Errorf("set from: %w", err)
+	}
+	if err := m.To(msg.To...); err != nil {
+		return nil, fmt.Errorf("set recipients: %w", err)
+	}
+	if t.replyTo != "" {
+		if err := m.ReplyTo(t.replyTo); err != nil {
+			return nil, fmt.Errorf("set reply-to: %w", err)
+		}
+	}
+	m.Subject(msg.Subject)
+	m.SetBodyString(mail.TypeTextPlain, msg.TextBody)
+	if msg.HTMLBody != "" {
+		m.AddAlternativeString(mail.TypeTextHTML, msg.HTMLBody)
+	}
+	return m, nil
+}
+
+func (t *transport) Send(ctx context.Context, msg email.Message) error {
+	m, err := t.buildMessage(msg)
+	if err != nil {
+		return err
+	}
+	c, err := t.client()
+	if err != nil {
+		return err
+	}
+	// Verbatim: the connection/auth error the relay returns is surfaced to the
+	// operator by the handler, so the test-send UX shows the real failure.
+	return c.DialAndSendWithContext(ctx, m)
+}
+
+func (t *transport) Test(ctx context.Context, to string) error {
+	return t.Send(ctx, email.Message{
+		To:       []string{to},
+		Subject:  "Arrflix SMTP test",
+		TextBody: "This is a test email from Arrflix. If you received it, your SMTP configuration is working.",
+	})
+}

@@ -486,6 +486,150 @@ export type DownloadersTestConfigBody = {
     username?: string;
 };
 
+export type EmailProviderResponse = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    auth: boolean;
+    configured: boolean;
+    createdAt: string;
+    enabled: boolean;
+    fromAddress: string;
+    fromName?: string;
+    hasPassword: boolean;
+    host?: string;
+    id: string;
+    port?: number;
+    provider: string;
+    replyTo?: string;
+    security?: string;
+    skipTlsVerify: boolean;
+    updatedAt: string;
+    username?: string;
+};
+
+export type EmailProviderTestBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Recipient address for the test email
+     */
+    to: string;
+};
+
+export type EmailProviderTestConfigBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Whether the server requires SMTP authentication
+     */
+    auth: boolean;
+    /**
+     * From/envelope address
+     */
+    fromAddress: string;
+    /**
+     * Optional display name for the From address
+     */
+    fromName?: string;
+    /**
+     * SMTP server hostname
+     */
+    host?: string;
+    /**
+     * SMTP password
+     */
+    password?: string;
+    /**
+     * SMTP server port (1-65535)
+     */
+    port?: number;
+    /**
+     * Email provider implementation
+     */
+    provider: 'smtp';
+    /**
+     * Optional Reply-To address
+     */
+    replyTo?: string;
+    /**
+     * Transport security mode
+     */
+    security?: 'starttls' | 'implicit_tls' | 'none';
+    /**
+     * Skip TLS certificate verification (self-signed relays)
+     */
+    skipTlsVerify: boolean;
+    /**
+     * Recipient address for the test email
+     */
+    to: string;
+    /**
+     * SMTP username; required when auth is enabled
+     */
+    username?: string;
+};
+
+export type EmailProviderWriteBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Whether the server requires SMTP authentication
+     */
+    auth: boolean;
+    /**
+     * Whether email sending is enabled
+     */
+    enabled: boolean;
+    /**
+     * From/envelope address
+     */
+    fromAddress: string;
+    /**
+     * Optional display name for the From address
+     */
+    fromName?: string;
+    /**
+     * SMTP server hostname
+     */
+    host?: string;
+    /**
+     * SMTP password; empty preserves existing
+     */
+    password?: string;
+    /**
+     * SMTP server port (1-65535)
+     */
+    port?: number;
+    /**
+     * Email provider implementation
+     */
+    provider: 'smtp';
+    /**
+     * Optional Reply-To address
+     */
+    replyTo?: string;
+    /**
+     * Transport security mode
+     */
+    security?: 'starttls' | 'implicit_tls' | 'none';
+    /**
+     * Skip TLS certificate verification (self-signed relays)
+     */
+    skipTlsVerify: boolean;
+    /**
+     * SMTP username; required when auth is enabled
+     */
+    username?: string;
+};
+
 export type EncodeFields = {
     HardcodedSubs: FieldString;
     ReleaseGroup: FieldString;
@@ -2533,6 +2677,134 @@ export type DownloadersTestConfigBodyWritable = {
     url: string;
     /**
      * Optional username
+     */
+    username?: string;
+};
+
+export type EmailProviderResponseWritable = {
+    auth: boolean;
+    configured: boolean;
+    createdAt: string;
+    enabled: boolean;
+    fromAddress: string;
+    fromName?: string;
+    hasPassword: boolean;
+    host?: string;
+    id: string;
+    port?: number;
+    provider: string;
+    replyTo?: string;
+    security?: string;
+    skipTlsVerify: boolean;
+    updatedAt: string;
+    username?: string;
+};
+
+export type EmailProviderTestBodyWritable = {
+    /**
+     * Recipient address for the test email
+     */
+    to: string;
+};
+
+export type EmailProviderTestConfigBodyWritable = {
+    /**
+     * Whether the server requires SMTP authentication
+     */
+    auth: boolean;
+    /**
+     * From/envelope address
+     */
+    fromAddress: string;
+    /**
+     * Optional display name for the From address
+     */
+    fromName?: string;
+    /**
+     * SMTP server hostname
+     */
+    host?: string;
+    /**
+     * SMTP password
+     */
+    password?: string;
+    /**
+     * SMTP server port (1-65535)
+     */
+    port?: number;
+    /**
+     * Email provider implementation
+     */
+    provider: 'smtp';
+    /**
+     * Optional Reply-To address
+     */
+    replyTo?: string;
+    /**
+     * Transport security mode
+     */
+    security?: 'starttls' | 'implicit_tls' | 'none';
+    /**
+     * Skip TLS certificate verification (self-signed relays)
+     */
+    skipTlsVerify: boolean;
+    /**
+     * Recipient address for the test email
+     */
+    to: string;
+    /**
+     * SMTP username; required when auth is enabled
+     */
+    username?: string;
+};
+
+export type EmailProviderWriteBodyWritable = {
+    /**
+     * Whether the server requires SMTP authentication
+     */
+    auth: boolean;
+    /**
+     * Whether email sending is enabled
+     */
+    enabled: boolean;
+    /**
+     * From/envelope address
+     */
+    fromAddress: string;
+    /**
+     * Optional display name for the From address
+     */
+    fromName?: string;
+    /**
+     * SMTP server hostname
+     */
+    host?: string;
+    /**
+     * SMTP password; empty preserves existing
+     */
+    password?: string;
+    /**
+     * SMTP server port (1-65535)
+     */
+    port?: number;
+    /**
+     * Email provider implementation
+     */
+    provider: 'smtp';
+    /**
+     * Optional Reply-To address
+     */
+    replyTo?: string;
+    /**
+     * Transport security mode
+     */
+    security?: 'starttls' | 'implicit_tls' | 'none';
+    /**
+     * Skip TLS certificate verification (self-signed relays)
+     */
+    skipTlsVerify: boolean;
+    /**
+     * SMTP username; required when auth is enabled
      */
     username?: string;
 };
@@ -8043,6 +8315,150 @@ export type SettingsPatchResponses = {
 };
 
 export type SettingsPatchResponse = SettingsPatchResponses[keyof SettingsPatchResponses];
+
+export type EmailProviderGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/email';
+};
+
+export type EmailProviderGetErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type EmailProviderGetError = EmailProviderGetErrors[keyof EmailProviderGetErrors];
+
+export type EmailProviderGetResponses = {
+    /**
+     * OK
+     */
+    200: EmailProviderResponse;
+};
+
+export type EmailProviderGetResponse = EmailProviderGetResponses[keyof EmailProviderGetResponses];
+
+export type EmailProviderSaveData = {
+    body: EmailProviderWriteBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/email';
+};
+
+export type EmailProviderSaveErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type EmailProviderSaveError = EmailProviderSaveErrors[keyof EmailProviderSaveErrors];
+
+export type EmailProviderSaveResponses = {
+    /**
+     * OK
+     */
+    200: EmailProviderResponse;
+};
+
+export type EmailProviderSaveResponse = EmailProviderSaveResponses[keyof EmailProviderSaveResponses];
+
+export type EmailProviderTestData = {
+    body: EmailProviderTestBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/email/test';
+};
+
+export type EmailProviderTestErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+    /**
+     * Bad Gateway
+     */
+    502: ProblemDetails;
+};
+
+export type EmailProviderTestError = EmailProviderTestErrors[keyof EmailProviderTestErrors];
+
+export type EmailProviderTestResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type EmailProviderTestResponse = EmailProviderTestResponses[keyof EmailProviderTestResponses];
+
+export type EmailProviderTestConfigData = {
+    body: EmailProviderTestConfigBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/email/test-config';
+};
+
+export type EmailProviderTestConfigErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+    /**
+     * Bad Gateway
+     */
+    502: ProblemDetails;
+};
+
+export type EmailProviderTestConfigError = EmailProviderTestConfigErrors[keyof EmailProviderTestConfigErrors];
+
+export type EmailProviderTestConfigResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type EmailProviderTestConfigResponse = EmailProviderTestConfigResponses[keyof EmailProviderTestConfigResponses];
 
 export type SetupInitializeData = {
     body: SetupInitializeInputBodyWritable;

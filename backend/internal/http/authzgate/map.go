@@ -136,6 +136,7 @@ var operationPerms = map[string]requirement{
 	"name-templates-list":         perm(authz.AdminSettingsRead),
 	"name-templates-get":          perm(authz.AdminSettingsRead),
 	"name-templates-get-default":  perm(authz.AdminSettingsRead),
+	"email-provider-get":          perm(authz.AdminSettingsRead),
 
 	// ----- admin.settings.write -----
 	"settings-patch":               perm(authz.AdminSettingsWrite),
@@ -155,6 +156,9 @@ var operationPerms = map[string]requirement{
 	"name-templates-create":        perm(authz.AdminSettingsWrite),
 	"name-templates-update":        perm(authz.AdminSettingsWrite),
 	"name-templates-delete":        perm(authz.AdminSettingsWrite),
+	"email-provider-save":          perm(authz.AdminSettingsWrite),
+	"email-provider-test":          perm(authz.AdminSettingsWrite),
+	"email-provider-test-config":   perm(authz.AdminSettingsWrite),
 
 	// ----- admin.indexers.manage -----
 	"indexers-list-configured": perm(authz.AdminIndexersManage),
