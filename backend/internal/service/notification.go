@@ -137,6 +137,115 @@ func (s *NotificationService) NotifyWantAvailable(ctx context.Context, want mode
 	return nil
 }
 
+// SeedDefaults materializes a new user's default notification preferences: for
+// each user-audience bundle, one bundle-scope row per channel in that bundle's
+// Defaults, set to the default enablement. Callers invoke it best-effort from the
+// user-create paths; it is idempotent (UpsertPreference is an upsert), so a
+// re-run — or a partial prior run — converges rather than duplicating.
+//
+// Seeding is a materialization convenience, not a correctness requirement:
+// notifications.ChannelEnabled resolves the same in-code defaults with zero rows
+// present, so a user whose seed failed (or never ran) still routes correctly and
+// lazily writes rows the first time they toggle a channel. That is why the
+// bootstrap admin — created inside the serializable tx in repo.InitializeSystem,
+// which returns no user id — is intentionally left unseeded: its experience is
+// identical unseeded, and opening the prefs UI to toggle creates its rows lazily.
+func (s *NotificationService) SeedDefaults(ctx context.Context, userID uuid.UUID) error {
+	for _, bundle := range notifications.UserBundles() {
+		for ch, enabled := range bundle.Defaults {
+			if _, err := s.repo.UpsertPreference(ctx, repo.UpsertPreferenceParams{
+				UserID:  userID,
+				Scope:   string(model.PreferenceScopeBundle),
+				Value:   bundle.Name,
+				Channel: string(ch),
+				Enabled: enabled,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Preferences returns the user's bundle-scoped preference view: one
+// BundlePreference per user-audience bundle, each carrying the resolved
+// enablement of every deliverable channel (s.channels). Enablement comes from
+// ChannelEnabled with an empty event type, so the result is the bundle-level
+// answer (a stored bundle row, else the in-code default); event-scope overrides
+// don't leak into a view the v1 UI can't express. Available is left false — the
+// handler fills channel deliverability, since the email-provider read is its
+// concern, not the service's.
+func (s *NotificationService) Preferences(ctx context.Context, userID uuid.UUID) ([]model.BundlePreference, error) {
+	prefs, err := s.repo.ListPreferences(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	bundles := notifications.UserBundles()
+	out := make([]model.BundlePreference, 0, len(bundles))
+	for _, bundle := range bundles {
+		channels := make([]model.ChannelPreference, 0, len(s.channels))
+		for _, ch := range s.channels {
+			channels = append(channels, model.ChannelPreference{
+				Channel: string(ch),
+				Enabled: notifications.ChannelEnabled(prefs, "", bundle.Name, ch),
+			})
+		}
+		out = append(out, model.BundlePreference{Bundle: bundle.Name, Channels: channels})
+	}
+	return out, nil
+}
+
+// SetPreference writes one channel toggle for the user. v1 accepts bundle-scope
+// writes only: scope must be "bundle", value a user-audience bundle name, and
+// channel one of the deliverable channels (s.channels). Event-scope overrides are
+// resolution-ready but rejected here — the bundle-level v1 UI can't surface them,
+// so accepting one would strand an override the user can neither see nor clear.
+// Invalid input collects every field problem into one Validation error; a valid
+// write upserts (idempotent).
+func (s *NotificationService) SetPreference(ctx context.Context, userID uuid.UUID, scope, value, channel string, enabled bool) error {
+	var fields []apperrors.FieldError
+	if scope != string(model.PreferenceScopeBundle) {
+		fields = append(fields, apperrors.Field("body.scope", "must be 'bundle'"))
+	}
+	if !isUserBundle(value) {
+		fields = append(fields, apperrors.Field("body.value", "must be a known bundle"))
+	}
+	if !s.isDeliverableChannel(channel) {
+		fields = append(fields, apperrors.Field("body.channel", "must be a deliverable channel"))
+	}
+	if len(fields) > 0 {
+		return apperrors.Validation("invalid preference", fields...).Op("NotificationService.SetPreference")
+	}
+	_, err := s.repo.UpsertPreference(ctx, repo.UpsertPreferenceParams{
+		UserID:  userID,
+		Scope:   scope,
+		Value:   value,
+		Channel: channel,
+		Enabled: enabled,
+	})
+	return err
+}
+
+// isUserBundle reports whether name is a known user-audience bundle.
+func isUserBundle(name string) bool {
+	for _, b := range notifications.UserBundles() {
+		if b.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// isDeliverableChannel reports whether channel is one this service enqueues to.
+func (s *NotificationService) isDeliverableChannel(channel string) bool {
+	for _, ch := range s.channels {
+		if string(ch) == channel {
+			return true
+		}
+	}
+	return false
+}
+
 // Enqueue writes outbox rows for an event: one per (recipient, channel) the
 // recipient is subscribed to. It is the single entry point producers use — there
 // is no path to the outbox that doesn't go through a typed Event.

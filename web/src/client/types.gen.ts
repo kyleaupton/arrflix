@@ -74,6 +74,11 @@ export type BootstrapUser = {
     username: string | null;
 };
 
+export type BundlePreference = {
+    bundle: string;
+    channels: Array<ChannelPreference> | null;
+};
+
 export type CandidateFields = {
     Age: number;
     AgeHours: number;
@@ -115,6 +120,12 @@ export type Categories = {
     id: number;
     name: string;
     subCategories: Array<Categories> | null;
+};
+
+export type ChannelPreference = {
+    available: boolean;
+    channel: string;
+    enabled: boolean;
 };
 
 export type Credits = {
@@ -1533,6 +1544,40 @@ export type NextEpisode = {
     seasonNumber: number;
     stillPath?: string;
     title: string;
+};
+
+export type NotificationsPrefsBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Per-bundle channel preferences, one entry per user-facing bundle
+     */
+    bundles: Array<BundlePreference> | null;
+};
+
+export type NotificationsPrefsSetBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Deliverable channel: 'in_app' or 'email'
+     */
+    channel: string;
+    /**
+     * Whether the channel is enabled for the bundle
+     */
+    enabled: boolean;
+    /**
+     * Preference scope; v1 accepts 'bundle' only
+     */
+    scope: string;
+    /**
+     * Bundle name the toggle applies to
+     */
+    value: string;
 };
 
 export type NotificationsUnreadBody = {
@@ -3244,6 +3289,32 @@ export type NameTemplateWriteBodyWritable = {
      * Template type
      */
     type: 'movie' | 'series';
+};
+
+export type NotificationsPrefsBodyWritable = {
+    /**
+     * Per-bundle channel preferences, one entry per user-facing bundle
+     */
+    bundles: Array<BundlePreference> | null;
+};
+
+export type NotificationsPrefsSetBodyWritable = {
+    /**
+     * Deliverable channel: 'in_app' or 'email'
+     */
+    channel: string;
+    /**
+     * Whether the channel is enabled for the bundle
+     */
+    enabled: boolean;
+    /**
+     * Preference scope; v1 accepts 'bundle' only
+     */
+    scope: string;
+    /**
+     * Bundle name the toggle applies to
+     */
+    value: string;
 };
 
 export type NotificationsUnreadBodyWritable = {
@@ -6833,6 +6904,64 @@ export type NotificationsListResponses = {
 };
 
 export type NotificationsListResponse = NotificationsListResponses[keyof NotificationsListResponses];
+
+export type NotificationPreferencesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/preferences';
+};
+
+export type NotificationPreferencesGetErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type NotificationPreferencesGetError = NotificationPreferencesGetErrors[keyof NotificationPreferencesGetErrors];
+
+export type NotificationPreferencesGetResponses = {
+    /**
+     * OK
+     */
+    200: NotificationsPrefsBody;
+};
+
+export type NotificationPreferencesGetResponse = NotificationPreferencesGetResponses[keyof NotificationPreferencesGetResponses];
+
+export type NotificationPreferencesSetData = {
+    body: NotificationsPrefsSetBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/preferences';
+};
+
+export type NotificationPreferencesSetErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type NotificationPreferencesSetError = NotificationPreferencesSetErrors[keyof NotificationPreferencesSetErrors];
+
+export type NotificationPreferencesSetResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type NotificationPreferencesSetResponse = NotificationPreferencesSetResponses[keyof NotificationPreferencesSetResponses];
 
 export type NotificationsMarkAllReadData = {
     body?: never;

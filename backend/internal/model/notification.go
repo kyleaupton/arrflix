@@ -78,6 +78,25 @@ type InboxNotification struct {
 	ReadAt    *time.Time      `json:"readAt,omitempty"`
 }
 
+// BundlePreference is the prefs read view for one preference bundle: the bundle
+// name and its per-channel toggle state. It is a resolved projection (row value
+// or in-code default) over the deliverable channels, not a stored row — the prefs
+// UI renders one card per bundle with a switch per channel.
+type BundlePreference struct {
+	Bundle   string              `json:"bundle"`
+	Channels []ChannelPreference `json:"channels"`
+}
+
+// ChannelPreference is one channel's state within a BundlePreference. Enabled is
+// the resolved toggle (a stored row wins over the in-code default); Available is
+// whether the channel can actually deliver right now (email ⇐ SMTP configured),
+// so the UI can render an enabled-but-undeliverable channel distinctly.
+type ChannelPreference struct {
+	Channel   string `json:"channel"`
+	Enabled   bool   `json:"enabled"`
+	Available bool   `json:"available"`
+}
+
 // NotificationPreference is the domain shape for a notification_preference row —
 // one channel toggle at bundle or event scope. Value is a bundle name when
 // Scope is 'bundle', an event-type string when 'event'. Mirrors

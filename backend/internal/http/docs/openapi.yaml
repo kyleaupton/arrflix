@@ -104,6 +104,21 @@ components:
         - email
         - username
       type: object
+    BundlePreference:
+      additionalProperties: false
+      properties:
+        bundle:
+          type: string
+        channels:
+          items:
+            $ref: "#/components/schemas/ChannelPreference"
+          type:
+            - array
+            - "null"
+      required:
+        - bundle
+        - channels
+      type: object
     CandidateFields:
       additionalProperties: false
       properties:
@@ -260,6 +275,20 @@ components:
         - id
         - name
         - subCategories
+      type: object
+    ChannelPreference:
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+        channel:
+          type: string
+        enabled:
+          type: boolean
+      required:
+        - channel
+        - enabled
+        - available
       type: object
     Credits:
       additionalProperties: false
@@ -3639,6 +3668,57 @@ components:
         - seasonNumber
         - episodeNumber
         - title
+      type: object
+    NotificationsPrefsBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/NotificationsPrefsBody.json
+          format: uri
+          readOnly: true
+          type: string
+        bundles:
+          description: Per-bundle channel preferences, one entry per user-facing bundle
+          items:
+            $ref: "#/components/schemas/BundlePreference"
+          type:
+            - array
+            - "null"
+      required:
+        - bundles
+      type: object
+    NotificationsPrefsSetBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/NotificationsPrefsSetBody.json
+          format: uri
+          readOnly: true
+          type: string
+        channel:
+          description: "Deliverable channel: 'in_app' or 'email'"
+          minLength: 1
+          type: string
+        enabled:
+          description: Whether the channel is enabled for the bundle
+          type: boolean
+        scope:
+          description: Preference scope; v1 accepts 'bundle' only
+          minLength: 1
+          type: string
+        value:
+          description: Bundle name the toggle applies to
+          minLength: 1
+          type: string
+      required:
+        - scope
+        - value
+        - channel
+        - enabled
       type: object
     NotificationsUnreadBody:
       additionalProperties: false
@@ -9166,6 +9246,59 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Error
       summary: List my notifications
+      tags:
+        - notifications
+  /api/v1/notifications/preferences:
+    get:
+      description: Returns the caller's per-bundle channel preferences (resolved enablement) plus whether each channel can deliver right now.
+      operationId: notification-preferences-get
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationsPrefsBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Get my notification preferences
+      tags:
+        - notifications
+    put:
+      description: Toggles one channel for one bundle for the caller. v1 accepts bundle-scope writes only.
+      operationId: notification-preferences-set
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationsPrefsSetBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Set a notification preference
       tags:
         - notifications
   /api/v1/notifications/read-all:

@@ -92,7 +92,11 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	routingSvc := NewRoutingService(r)
 	quality := NewQualityProfileService(r)
 	authz := NewAuthzService(r)
-	users := NewUsersService(r, authz)
+	// notifications is hoisted to a local because two of its consumers (Users and
+	// Auth) seed a new user's default preferences at account creation. Its own
+	// Services entry reuses this instance.
+	notifications := NewNotificationService(r)
+	users := NewUsersService(r, authz, notifications)
 	invites := NewInvitesService(r)
 	reconcile := NewReconcileService(r, l)
 	scheduler := NewSchedulerService(r, l)
@@ -123,7 +127,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 
 	return &Services{
 		Acquisition:        NewAcquisitionService(r, l, indexerSource, routingSvc, quality, proposals),
-		Auth:               NewAuthService(r, cfg, settings, invites),
+		Auth:               NewAuthService(r, cfg, settings, invites, notifications),
 		Authz:              authz,
 		Downloaders:        NewDownloadersService(r),
 		DownloadCandidates: NewDownloadCandidatesService(r, l, indexerSource, media, routingSvc),
@@ -141,7 +145,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		MatchDecisions:     matchDecisionsSvc,
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
-		Notifications:      NewNotificationService(r),
+		Notifications:      notifications,
 		Proposals:          proposals,
 		QualityProfiles:    quality,
 		Reconcile:          reconcile,

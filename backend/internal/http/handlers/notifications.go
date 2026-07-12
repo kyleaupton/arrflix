@@ -103,6 +103,78 @@ func (h *Notifications) MarkAllRead(ctx context.Context, _ *NotificationsMarkAll
 	return &NotificationsMarkAllReadOutput{}, nil
 }
 
+// ----- Preferences (get) -----
+
+type NotificationsPrefsGetInput struct{}
+
+type notificationsPrefsBody struct {
+	Bundles []model.BundlePreference `json:"bundles" doc:"Per-bundle channel preferences, one entry per user-facing bundle"`
+}
+
+type NotificationsPrefsGetOutput struct {
+	Body notificationsPrefsBody
+}
+
+func (h *Notifications) PreferencesGet(ctx context.Context, _ *NotificationsPrefsGetInput) (*NotificationsPrefsGetOutput, error) {
+	userID, err := userIDFromCtx(ctx, "NotificationsHandler.PreferencesGet")
+	if err != nil {
+		return nil, err
+	}
+	bundles, err := h.svc.Notifications.Preferences(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fill per-channel deliverability. in_app is always available; email delivers
+	// only when an enabled SMTP provider is configured. Reading the provider here
+	// is an internal service call (not the admin-gated HTTP op), so a non-admin
+	// learns whether email can deliver without seeing the config itself.
+	cfg, found, err := h.svc.EmailProvider.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	emailAvailable := found && cfg.Enabled
+	for i := range bundles {
+		for j := range bundles[i].Channels {
+			switch bundles[i].Channels[j].Channel {
+			case string(model.ChannelInApp):
+				bundles[i].Channels[j].Available = true
+			case string(model.ChannelEmail):
+				bundles[i].Channels[j].Available = emailAvailable
+			}
+		}
+	}
+
+	return &NotificationsPrefsGetOutput{Body: notificationsPrefsBody{Bundles: bundles}}, nil
+}
+
+// ----- Preferences (set) -----
+
+type notificationsPrefsSetBody struct {
+	Scope   string `json:"scope" required:"true" minLength:"1" doc:"Preference scope; v1 accepts 'bundle' only"`
+	Value   string `json:"value" required:"true" minLength:"1" doc:"Bundle name the toggle applies to"`
+	Channel string `json:"channel" required:"true" minLength:"1" doc:"Deliverable channel: 'in_app' or 'email'"`
+	Enabled bool   `json:"enabled" doc:"Whether the channel is enabled for the bundle"`
+}
+
+type NotificationsPrefsSetInput struct {
+	Body notificationsPrefsSetBody
+}
+
+type NotificationsPrefsSetOutput struct{}
+
+func (h *Notifications) PreferencesSet(ctx context.Context, input *NotificationsPrefsSetInput) (*NotificationsPrefsSetOutput, error) {
+	userID, err := userIDFromCtx(ctx, "NotificationsHandler.PreferencesSet")
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Notifications.SetPreference(ctx, userID,
+		input.Body.Scope, input.Body.Value, input.Body.Channel, input.Body.Enabled); err != nil {
+		return nil, err
+	}
+	return &NotificationsPrefsSetOutput{}, nil
+}
+
 // ----- Register -----
 
 func (h *Notifications) RegisterHumachi(api huma.API) {
@@ -141,4 +213,24 @@ func (h *Notifications) RegisterHumachi(api huma.API) {
 		Tags:          []string{"notifications"},
 		DefaultStatus: http.StatusNoContent,
 	}, h.MarkAllRead)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "notification-preferences-get",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/notifications/preferences",
+		Summary:     "Get my notification preferences",
+		Description: "Returns the caller's per-bundle channel preferences (resolved enablement) plus whether each channel can deliver right now.",
+		Tags:        []string{"notifications"},
+	}, h.PreferencesGet)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "notification-preferences-set",
+		Method:        http.MethodPut,
+		Path:          "/api/v1/notifications/preferences",
+		Summary:       "Set a notification preference",
+		Description:   "Toggles one channel for one bundle for the caller. v1 accepts bundle-scope writes only.",
+		Tags:          []string{"notifications"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        []int{http.StatusBadRequest, http.StatusUnprocessableEntity},
+	}, h.PreferencesSet)
 }

@@ -41,6 +41,8 @@ var operationPerms = map[string]requirement{
 	"notifications-unread-count":    authUser(),
 	"notifications-mark-read":       authUser(),
 	"notifications-mark-all-read":   authUser(),
+	"notification-preferences-get":  authUser(),
+	"notification-preferences-set":  authUser(),
 
 	// ----- admin.users.manage -----
 	"users-list":            perm(authz.AdminUsersManage),

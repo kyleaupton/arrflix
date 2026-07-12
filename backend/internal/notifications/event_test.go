@@ -50,6 +50,28 @@ func TestChannelEnabled(t *testing.T) {
 	}
 }
 
+// TestUserBundles proves the seeding/read source of truth returns exactly the two
+// user-audience bundles in stable (name-sorted) order and excludes the admin
+// bundles.
+func TestUserBundles(t *testing.T) {
+	t.Parallel()
+
+	got := UserBundles()
+	// Sorted by name: "library_activity" < "my_requests".
+	want := []string{BundleLibraryActivity, BundleMyRequests}
+	if len(got) != len(want) {
+		t.Fatalf("UserBundles() = %d bundles, want %d: %+v", len(got), len(want), got)
+	}
+	for i, name := range want {
+		if got[i].Name != name {
+			t.Fatalf("UserBundles()[%d] = %q, want %q (stable name order)", i, got[i].Name, name)
+		}
+		if got[i].Audience != model.AudienceUser {
+			t.Fatalf("UserBundles()[%d] audience = %q, want user", i, got[i].Audience)
+		}
+	}
+}
+
 // TestWantAvailable_EventContract checks the event metadata and that Payload
 // marshals to just the template variables — the routing-only Recipient field is
 // excluded.

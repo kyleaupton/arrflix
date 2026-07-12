@@ -11,6 +11,8 @@
 package notifications
 
 import (
+	"sort"
+
 	"github.com/google/uuid"
 
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -59,6 +61,23 @@ var bundles = map[string]Bundle{
 			model.ChannelEmail: false,
 		},
 	},
+}
+
+// UserBundles returns the user-audience bundles in a stable (name-sorted) order.
+// It is the single source of truth for "which preference groups does a v1 user
+// toggle?" — both SeedDefaults (materializing a new user's default rows) and the
+// prefs read API iterate it, so a bundle added to the catalog with AudienceUser
+// is seeded and surfaced without touching either caller. Admin-audience bundles
+// are excluded until the admin audience lands (v1.1).
+func UserBundles() []Bundle {
+	out := make([]Bundle, 0, len(bundles))
+	for _, b := range bundles {
+		if b.Audience == model.AudienceUser {
+			out = append(out, b)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // Event is the typed unit a producer hands NotificationService.Enqueue. Each
