@@ -17,6 +17,7 @@ import {
   Clapperboard,
   Captions,
   Bell,
+  Mail,
   Users,
 } from 'lucide-vue-next'
 import {
@@ -107,6 +108,7 @@ const groups = computed<NavGroup[]>(() => [
       { label: 'Media Servers', icon: MonitorPlay, disabled: true },
       { label: 'Metadata', icon: Clapperboard, disabled: true },
       { label: 'Subtitles', icon: Captions, disabled: true },
+      { label: 'Email', to: '/settings/email', icon: Mail },
       { label: 'Notifications', icon: Bell, disabled: true },
     ],
   },

@@ -54,6 +54,13 @@ const router = createRouter({
       redirect: '/settings/users',
     },
     {
+      // Per-user preferences — every authenticated role, no capability gate
+      // (unlike the admin-only /settings tree). Notifications is the only
+      // section today.
+      path: '/preferences',
+      component: () => import('@/views/Preferences.vue'),
+    },
+    {
       path: '/settings',
       component: () => import('@/views/settings/SettingsLayout.vue'),
       meta: { layout: 'sidebar', requires: 'admin.settings.read' },
@@ -89,6 +96,10 @@ const router = createRouter({
         {
           path: 'quality-profiles',
           component: () => import('@/views/settings/QualityProfilesSettings.vue'),
+        },
+        {
+          path: 'email',
+          component: () => import('@/views/settings/EmailSettings.vue'),
         },
         {
           path: 'users',
