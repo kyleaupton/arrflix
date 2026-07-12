@@ -72,7 +72,7 @@ const onPageAfterLeave = () => {
             :key="resolvedRoute.matched[0]?.path ?? resolvedRoute.path"
             :class="
               !['immersive', 'sidebar'].includes(resolvedRoute.meta.layout as string) &&
-              'pt-20 px-4 pb-4'
+              'px-4 pb-4 pt-[calc(env(safe-area-inset-top)_+_5rem)]'
             "
           >
             <component :is="Component" />

@@ -20,7 +20,11 @@ const props = defineProps<{
   availableCount: number
   totalCount: number
   airedTotalCount: number
+  // Jobs in flight (season packs + singles) — drives the download-vs-search icon.
   activeDownloadCount: number
+  // Episodes in flight, counted from the wants — what the subline reports, since a
+  // requester thinks in episodes rather than the packs behind activeDownloadCount.
+  episodesDownloading: number
 }>()
 
 type CardState = 'requested' | 'inProgress' | 'caughtUp'
@@ -95,7 +99,9 @@ const subline = computed(() => {
       }
     case 'inProgress':
       return [
-        downloading.value ? `${props.activeDownloadCount} downloading` : null,
+        props.episodesDownloading > 0
+          ? `${props.episodesDownloading} episode${props.episodesDownloading === 1 ? '' : 's'} downloading`
+          : null,
         `${props.availableCount} of ${props.totalCount} available`,
       ]
         .filter(Boolean)

@@ -1,7 +1,11 @@
 <template>
   <section
     class="feed-hero relative"
-    :class="fullBleed ? 'h-[56vh] min-h-[400px] pt-14' : 'h-80 -mx-4 -mt-4 overflow-hidden'"
+    :class="
+      fullBleed
+        ? 'h-[56vh] min-h-[400px] pt-[calc(env(safe-area-inset-top)_+_3.5rem)]'
+        : 'h-80 -mx-4 -mt-4 overflow-hidden'
+    "
   >
     <div class="backdrop">
       <img :src="`https://image.tmdb.org/t/p/original${hero.backdropPath}`" :alt="hero.title" />

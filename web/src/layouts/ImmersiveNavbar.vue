@@ -72,8 +72,14 @@ const isLinkActive = (to: string) => {
 </script>
 
 <template>
+  <!-- The bar's background/blur fills up into the safe-area (notch/status bar)
+       while its content sits below it via pt, so the iOS status bar reads as part
+       of the bar rather than a separate band above it. The content zone is a
+       compact 2.75rem (iOS's native nav-bar height) on mobile, widening to the
+       desktop h-14. On mobile it carries just the logo — the bottom tab bar owns
+       navigation. -->
   <header
-    class="fixed top-0 left-0 right-0 z-50 h-14 flex items-center px-6 transition-colors"
+    class="fixed top-0 left-0 right-0 z-50 flex h-[calc(env(safe-area-inset-top)_+_2.75rem)] items-center px-6 pt-[env(safe-area-inset-top)] transition-colors sm:h-14"
     :class="{ 'border-b border-border/50': opaque }"
     :style="navbarStyle"
   >

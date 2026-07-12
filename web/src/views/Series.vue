@@ -57,6 +57,7 @@
                 :total-count="totalEpisodeCount"
                 :aired-total-count="airedEpisodeCount"
                 :active-download-count="activeJobsForSeries.length"
+                :episodes-downloading="episodesDownloading"
               />
               <AttentionCard v-if="auth.canManageJobs" :tmdb-id="id" type="series" />
               <NextEpisodeBanner v-if="data.nextEpisodeToAir" :episode="data.nextEpisodeToAir" />
@@ -341,7 +342,7 @@ import NextEpisodeBanner from '@/components/media/NextEpisodeBanner.vue'
 import { useModal } from '@/composables/useModal'
 import { buildMetadataSubtitle, formatRuntime } from '@/lib/utils'
 import { statusLabel } from '@/lib/mediaStatus'
-import { useDownloadJobs, type DownloadJob } from '@/composables/useDownloadJobs'
+import { useDownloadJobs, isJobActive, type DownloadJob } from '@/composables/useDownloadJobs'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
 import SeriesAcquisitionControl from '@/components/acquisition/SeriesAcquisitionControl.vue'
 import SeriesStatusCard from '@/components/acquisition/SeriesStatusCard.vue'
@@ -412,6 +413,19 @@ const availableEpisodeCount = computed(
 const totalEpisodeCount = computed(
   () => data.value?.seasons?.reduce((sum, s) => sum + (s.episodes?.length ?? 0), 0) ?? 0,
 )
+
+// Episodes in flight, counted from the wants rather than the download jobs: one
+// grabbed season pack is many episodes, and a requester thinks in episodes, not
+// jobs. Want-derived, so it's requester-safe and stays live via want_updated.
+// 'grabbed' is the handed-to-downloader state; import ('imported') reads as
+// available-imminent, so it's excluded from the "downloading" count.
+const episodesDownloading = computed(() => {
+  let n = 0
+  for (const w of wantByEpisode.value.values()) {
+    if (w.status === 'grabbed') n++
+  }
+  return n
+})
 
 // Aired episodes are the back-catalog the tracking would backfill. Counting them
 // (air date on-or-before now, specials excluded — scope presets never select
@@ -631,17 +645,6 @@ const activeJobsForSeries = computed(() => {
     (job) => job.mediaType === 'series' && job.tmdbId === data.value?.tmdbId && isJobActive(job),
   )
 })
-
-// Check if a job is considered "active" (not in a terminal state)
-function isJobActive(job: DownloadJob): boolean {
-  // Active download states
-  const activeDownloadStates = ['created', 'enqueued', 'downloading']
-  if (activeDownloadStates.includes(job.status)) return true
-  // Active import states (download completed but still importing)
-  const activeImportStates = ['awaiting_import', 'importing']
-  if (activeImportStates.includes(job.importStatus)) return true
-  return false
-}
 
 // Get season pack job (if any) for a season - season packs have no episode_id
 function getSeasonPackJob(seasonNumber: number): DownloadJob | undefined {

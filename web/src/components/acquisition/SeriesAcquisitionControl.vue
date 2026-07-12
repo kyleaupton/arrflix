@@ -13,7 +13,7 @@
       </span>
 
       <TrackingActionsMenu
-        v-if="trackingId"
+        v-if="trackingId && auth.canManageJobs"
         type="series"
         :tmdb-id="tmdbId"
         :tracking-id="trackingId"

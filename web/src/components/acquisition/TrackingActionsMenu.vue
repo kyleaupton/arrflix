@@ -18,7 +18,11 @@
         Search manually
       </DropdownMenuItem>
 
-      <DropdownMenuItem v-if="trackingId" :disabled="retry.isPending.value" @click="handleRetry">
+      <DropdownMenuItem
+        v-if="trackingId && auth.canManageJobs"
+        :disabled="retry.isPending.value"
+        @click="handleRetry"
+      >
         <RotateCw class="mr-2 size-4" />
         {{ retry.isPending.value ? 'Retrying…' : 'Retry search' }}
       </DropdownMenuItem>
@@ -102,15 +106,24 @@ const auth = useAuthStore()
 const modal = useModal()
 const queryClient = useQueryClient()
 
-const showAutomation = computed(() => props.type === 'series' && !!props.trackingId)
+// Every item here is an operator action, so each is gated on canManageJobs.
+// This is belt-and-braces: both parent controls already hide the whole menu from
+// non-operators, but gating here keeps the component safe wherever it's mounted.
+const showAutomation = computed(
+  () => props.type === 'series' && !!props.trackingId && auth.canManageJobs,
+)
 const showManualSearch = computed(() => props.type === 'movie' && auth.canManageJobs)
-const showStop = computed(() => props.type === 'series' && !!props.trackingId)
+const showStop = computed(() => props.type === 'series' && !!props.trackingId && auth.canManageJobs)
 
 // Cancel is offered only while the movie's want is still in flight; terminal
 // states ('available', 'failed', 'canceled') have nothing to stop.
 const CANCELABLE_STATUSES = new Set(['pending', 'searching', 'grabbed', 'downloading', 'imported'])
 const showCancel = computed(
-  () => props.type === 'movie' && !!props.want && CANCELABLE_STATUSES.has(props.want.status),
+  () =>
+    props.type === 'movie' &&
+    auth.canManageJobs &&
+    !!props.want &&
+    CANCELABLE_STATUSES.has(props.want.status),
 )
 
 function openAutomation() {

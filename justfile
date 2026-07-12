@@ -140,6 +140,11 @@ backend-sqlc: _ensure-up
 # defaulting to 'admin'. The TMDB api key is seeded from TMDB_API_KEY when set
 # (omitted otherwise). Only touches the arrflix DB — Prowlarr's DBs are left
 # alone.
+#
+# Finishes by restarting the backend: the default quality profiles and tier
+# bindings are seeded in Go on startup (QualityProfileService.SeedDefaults),
+# not by SQL, so the drop-schema step wipes them and only a fresh process
+# re-creates them. SeedDefaults is idempotent, so the restart is safe.
 [group('backend')]
 db-reseed: _ensure-up
     #!/usr/bin/env bash
@@ -155,6 +160,8 @@ db-reseed: _ensure-up
     {{backend-exec}} go run ./cmd/migrate
     echo "→ seeding"
     {{backend-exec}} psql '{{db-url}}' -v ON_ERROR_STOP=1 "${seed_vars[@]}" -f internal/db/seed/seed_dev.sql
+    echo "→ restarting backend (re-seeds quality profiles)"
+    {{backend-exec}} s6-svc -r /run/service/backend
     echo "✓ db reseeded"
 
 # --- frontend (in-container) -------------------------------------------------

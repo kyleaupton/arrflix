@@ -1,9 +1,20 @@
 <!doctype html>
-<html lang="">
+<html lang="" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover is required for env(safe-area-inset-*) to report real
+         values in an iOS standalone PWA. Without it every inset is 0, so the
+         tab-bar / notch safe-area padding throughout the app silently no-ops. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Standalone chrome: a translucent status bar lets hero art bleed up under
+         the notch (white status text over the always-dark app). theme-color
+         paints Android's status bar to match. -->
+    <meta name="theme-color" content="#0b0b0f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Arrflix" />
     <title>Arrflix</title>
   </head>
   <body>

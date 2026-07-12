@@ -10,6 +10,18 @@ where u.username = 'admin' and r.name = 'admin';
 -- The admin auto-approves via its role grants (requests.auto_approve:*); there
 -- is no per-user approval row to seed.
 
+-- seed a standard requesting user (user@example.com / user, password 'password')
+-- with the built-in 'requester' role: browse + requests.create (HD), manage own,
+-- but no requests.auto_approve — so its requests land pending for approval rather
+-- than auto-spawning like the admin's.
+insert into app_user (email, username, password_hash, is_active)
+values ('user@example.com', 'user', 'v1:bcrypt:$2a$12$OYTuipyBYdhjKmNKrGOSAegP1/OW9YNMXDg3q1tu5pm0V3x4/qU6W', true);
+
+insert into user_role (user_id, role_id)
+select u.id, r.id
+from app_user u, role r
+where u.username = 'user' and r.name = 'requester';
+
 -- mark the system initialized (normally flipped by the setup flow when the
 -- first admin is created; the seed creates the admin directly, so set it here)
 update app_setting set value_json = 'true'::jsonb where key = 'system.initialized';
