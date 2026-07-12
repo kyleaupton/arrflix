@@ -278,6 +278,41 @@ func (q *Queries) MarkInboxRead(ctx context.Context, arg MarkInboxReadParams) er
 	return err
 }
 
+const markOutboxAwaitingConfig = `-- name: MarkOutboxAwaitingConfig :one
+UPDATE notification_outbox
+SET status = 'awaiting_config'
+WHERE id = $1 AND status = 'queued'
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at
+`
+
+// MarkOutboxAwaitingConfig parks a queued row whose channel adapter isn't
+// configured yet (email without SMTP). Guarded by status='queued' so the
+// transition is a compare-and-set mirroring MarkOutboxDelivering: a row another
+// worker already moved matches nothing and surfaces as NotFound. ListDueOutbox
+// filters status='queued', so a parked row naturally waits until RequeueAwaitingConfig
+// returns it to the queue.
+func (q *Queries) MarkOutboxAwaitingConfig(ctx context.Context, id pgtype.UUID) (NotificationOutbox, error) {
+	row := q.db.QueryRow(ctx, markOutboxAwaitingConfig, id)
+	var i NotificationOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.EventType,
+		&i.Audience,
+		&i.RecipientUserID,
+		&i.Channel,
+		&i.Payload,
+		&i.DedupKey,
+		&i.Status,
+		&i.Attempts,
+		&i.NextAttemptAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.DeliveredAt,
+		&i.ReadAt,
+	)
+	return i, err
+}
+
 const markOutboxDead = `-- name: MarkOutboxDead :one
 UPDATE notification_outbox
 SET status = 'dead',
@@ -374,6 +409,25 @@ func (q *Queries) MarkOutboxDelivering(ctx context.Context, id pgtype.UUID) (Not
 		&i.ReadAt,
 	)
 	return i, err
+}
+
+const requeueAwaitingConfig = `-- name: RequeueAwaitingConfig :execrows
+UPDATE notification_outbox
+SET status = 'queued', next_attempt_at = now()
+WHERE status = 'awaiting_config' AND created_at >= $1
+`
+
+// RequeueAwaitingConfig drains parked rows back to the queue once a channel
+// becomes configured — called best-effort after an email provider is saved
+// enabled. Scoped to rows parked since @since (a bounded recent window) so a
+// save doesn't resurrect ancient parked mail. next_attempt_at resets to now so
+// the next drain picks them up immediately. Returns the number requeued.
+func (q *Queries) RequeueAwaitingConfig(ctx context.Context, since time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, requeueAwaitingConfig, since)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const rescheduleOutbox = `-- name: RescheduleOutbox :one

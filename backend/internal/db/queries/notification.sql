@@ -45,6 +45,28 @@ SET status = 'delivered', delivered_at = now()
 WHERE id = sqlc.arg(id)
 RETURNING *;
 
+-- MarkOutboxAwaitingConfig parks a queued row whose channel adapter isn't
+-- configured yet (email without SMTP). Guarded by status='queued' so the
+-- transition is a compare-and-set mirroring MarkOutboxDelivering: a row another
+-- worker already moved matches nothing and surfaces as NotFound. ListDueOutbox
+-- filters status='queued', so a parked row naturally waits until RequeueAwaitingConfig
+-- returns it to the queue.
+-- name: MarkOutboxAwaitingConfig :one
+UPDATE notification_outbox
+SET status = 'awaiting_config'
+WHERE id = sqlc.arg(id) AND status = 'queued'
+RETURNING *;
+
+-- RequeueAwaitingConfig drains parked rows back to the queue once a channel
+-- becomes configured — called best-effort after an email provider is saved
+-- enabled. Scoped to rows parked since @since (a bounded recent window) so a
+-- save doesn't resurrect ancient parked mail. next_attempt_at resets to now so
+-- the next drain picks them up immediately. Returns the number requeued.
+-- name: RequeueAwaitingConfig :execrows
+UPDATE notification_outbox
+SET status = 'queued', next_attempt_at = now()
+WHERE status = 'awaiting_config' AND created_at >= sqlc.arg(since);
+
 -- RescheduleOutbox returns a transiently-failed row to the queue with an
 -- incremented attempt count and a future next_attempt_at (the worker computes the
 -- backoff). last_error keeps the most recent failure reason for history/debugging.

@@ -102,6 +102,27 @@ func (r *Repository) MarkOutboxDelivered(ctx context.Context, id uuid.UUID) (mod
 	return toModelOutbox(row), nil
 }
 
+// MarkOutboxAwaitingConfig parks a queued row awaiting channel configuration.
+// A missing row (already claimed elsewhere) surfaces as NotFound, which the
+// worker treats as "another worker beat me to it" and skips.
+func (r *Repository) MarkOutboxAwaitingConfig(ctx context.Context, id uuid.UUID) (model.NotificationOutbox, error) {
+	row, err := r.Q.MarkOutboxAwaitingConfig(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.NotificationOutbox{}, apperrors.FromPg(err, "notification %s not found", id)
+	}
+	return toModelOutbox(row), nil
+}
+
+// RequeueAwaitingConfig returns awaiting_config rows parked since `since` to the
+// queue and reports how many were requeued.
+func (r *Repository) RequeueAwaitingConfig(ctx context.Context, since time.Time) (int64, error) {
+	n, err := r.Q.RequeueAwaitingConfig(ctx, since)
+	if err != nil {
+		return 0, apperrors.FromPg(err, "requeue awaiting-config notifications")
+	}
+	return n, nil
+}
+
 // RescheduleOutboxParams is the domain-shaped input for RescheduleOutbox — the
 // transient-retry transition. NextAttemptAt is the worker-computed backoff time.
 type RescheduleOutboxParams struct {

@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	htmltemplate "html/template"
 	"io/fs"
 	"strings"
 	"text/template"
@@ -26,23 +27,38 @@ var Registered = []Event{
 
 // textParts are the template files a text channel (in_app, push) renders — a
 // title and a body, executed independently, since push systems treat them as
-// distinct fields. Email's subject/HTML parts differ and are verified separately
-// when that channel lands.
+// distinct fields.
 var textParts = []string{"title", "body"}
+
+// emailParts are the template files the email channel renders: a plain-text
+// subject line and an auto-escaped HTML body. "subject" lives in the text map
+// (no escaping needed); "body.html" lives in the html map (its key ends in
+// ".html", which hasTemplate/render routing keys on). The parts differ from a
+// text channel's title/body, so Verify demands them separately.
+var emailParts = []string{"subject", "body.html"}
 
 // Renderer holds the parsed notification templates, keyed by
 // "<event_path>/<channel>.<part>" (e.g. "want/available/in_app.title"). It is
 // built once at startup from the embedded template tree; templates are pure
 // functions of an event's payload, so one Renderer is safe to share.
+//
+// Text templates (title, body, email subject) parse with text/template;
+// email HTML bodies parse with html/template so a payload value landing in an
+// HTML context is contextually auto-escaped. The two maps share the key scheme;
+// a key ending in ".html" belongs to htmlTemplates.
 type Renderer struct {
-	templates map[string]*template.Template
+	templates     map[string]*template.Template
+	htmlTemplates map[string]*htmltemplate.Template
 }
 
 // NewRenderer parses every embedded .tmpl file. A malformed template is a hard
 // error the caller turns into a loud startup failure — the spec's "missing or
 // bad template is a startup error, not a silent skip."
 func NewRenderer() (*Renderer, error) {
-	r := &Renderer{templates: map[string]*template.Template{}}
+	r := &Renderer{
+		templates:     map[string]*template.Template{},
+		htmlTemplates: map[string]*htmltemplate.Template{},
+	}
 	err := fs.WalkDir(templateFS, "templates", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -55,6 +71,17 @@ func NewRenderer() (*Renderer, error) {
 			return err
 		}
 		key := strings.TrimSuffix(strings.TrimPrefix(path, "templates/"), ".tmpl")
+		// A ".html.tmpl" file is an HTML body: parse with html/template so its
+		// payload interpolations are contextually auto-escaped. Everything else
+		// (title, body, email subject) is text/template.
+		if strings.HasSuffix(path, ".html.tmpl") {
+			t, err := htmltemplate.New(key).Parse(string(content))
+			if err != nil {
+				return fmt.Errorf("parse notification html template %q: %w", key, err)
+			}
+			r.htmlTemplates[key] = t
+			return nil
+		}
 		t, err := template.New(key).Parse(string(content))
 		if err != nil {
 			return fmt.Errorf("parse notification template %q: %w", key, err)
@@ -117,17 +144,66 @@ func (r *Renderer) render(eventType string, ch model.NotificationChannel, part s
 	return strings.TrimSpace(buf.String()), nil
 }
 
-// Verify confirms every event has the text templates each wired channel needs.
-// It is the startup guard the spec requires: a registered event missing a
-// template for a channel the worker will deliver on fails here, not at first
-// delivery. Callers pass the channels their adapters actually serve, so v1
-// (in_app only) doesn't demand push/email templates that don't exist yet.
+// RenderEmail executes the email subject (text) and HTML body (auto-escaped)
+// templates for an event against its stored JSON payload. The subject comes
+// from the text map (<event>/email.subject); the body from the html map
+// (<event>/email.body.html), where html/template contextually escapes any
+// payload value so a title containing < or & can't break the markup.
+func (r *Renderer) RenderEmail(eventType string, payload []byte) (subject, htmlBody string, err error) {
+	var data any
+	if len(payload) > 0 {
+		if err := json.Unmarshal(payload, &data); err != nil {
+			return "", "", fmt.Errorf("decode %q payload: %w", eventType, err)
+		}
+	}
+	if subject, err = r.render(eventType, model.ChannelEmail, "subject", data); err != nil {
+		return "", "", err
+	}
+	if htmlBody, err = r.renderHTML(eventType, model.ChannelEmail, "body.html", data); err != nil {
+		return "", "", err
+	}
+	return subject, htmlBody, nil
+}
+
+func (r *Renderer) renderHTML(eventType string, ch model.NotificationChannel, part string, data any) (string, error) {
+	key := templateKey(eventType, ch, part)
+	t, ok := r.htmlTemplates[key]
+	if !ok {
+		return "", fmt.Errorf("no notification html template %q", key)
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("render notification html template %q: %w", key, err)
+	}
+	return strings.TrimSpace(buf.String()), nil
+}
+
+// hasTemplate reports whether a parsed template exists for a key, routing to the
+// html map for ".html" keys (email bodies) and the text map otherwise. Verify
+// uses it so one loop can span both maps.
+func (r *Renderer) hasTemplate(key string) bool {
+	if strings.HasSuffix(key, ".html") {
+		return r.htmlTemplates[key] != nil
+	}
+	return r.templates[key] != nil
+}
+
+// Verify confirms every event has the templates each wired channel needs. It is
+// the startup guard the spec requires: a registered event missing a template for
+// a channel the worker will deliver on fails here, not at first delivery.
+// Callers pass the channels their adapters actually serve, so a channel with no
+// adapter wired (push in v1) never demands templates that don't exist yet. The
+// email channel requires a subject + HTML body; other channels a title + body.
 func (r *Renderer) Verify(events []Event, channels []model.NotificationChannel) error {
 	var missing []string
 	for _, ev := range events {
 		for _, ch := range channels {
-			for _, part := range textParts {
-				if key := templateKey(ev.EventType(), ch, part); r.templates[key] == nil {
+			parts := textParts
+			if ch == model.ChannelEmail {
+				parts = emailParts
+			}
+			for _, part := range parts {
+				if key := templateKey(ev.EventType(), ch, part); !r.hasTemplate(key) {
 					missing = append(missing, key)
 				}
 			}

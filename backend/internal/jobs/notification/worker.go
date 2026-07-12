@@ -112,6 +112,18 @@ func (w *Worker) handle(ctx context.Context, row model.NotificationOutbox) bool 
 		return false
 	}
 
+	// The channel's adapter may not be configured yet (email without SMTP). Park
+	// the row as awaiting_config rather than claiming it: ListDueOutbox skips
+	// non-queued rows, so it waits until a provider save requeues it. This also
+	// covers config removed after enqueue. Checked before the claim so an
+	// unconfigured row never enters the delivering state.
+	if !adapter.IsConfigured(ctx) {
+		if _, err := w.repo.MarkOutboxAwaitingConfig(ctx, row.ID); err != nil && !apperrors.IsNotFound(err) {
+			w.log.Error().Err(err).Str("id", row.ID.String()).Msg("park notification awaiting_config failed")
+		}
+		return false
+	}
+
 	// Claim the row with a CAS on status='queued'. A NotFound means another
 	// worker beat us to it between poll and claim — skip without touching it.
 	claimed, err := w.repo.MarkOutboxDelivering(ctx, row.ID)

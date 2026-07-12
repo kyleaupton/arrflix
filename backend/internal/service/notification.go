@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -12,6 +13,13 @@ import (
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
+// AwaitingConfigDrainWindow bounds how far back an email-provider save reaches
+// when requeuing parked mail: rows parked within the last week are drained,
+// older ones are left. It caps the blast radius of enabling SMTP so a first-time
+// setup doesn't resurrect a long-accumulated backlog. The interactive
+// "drain N since <date>?" prompt is a later UI slice.
+const AwaitingConfigDrainWindow = 7 * 24 * time.Hour
+
 // NotificationService is the enqueue half of the notification system: it turns a
 // typed notifications.Event into outbox rows. It resolves recipients (v1: the
 // user-audience recipients the event carries), checks each recipient's per-channel
@@ -20,9 +28,12 @@ import (
 // internal/notifications; delivery (draining the outbox) is the worker's job.
 type NotificationService struct {
 	repo *repo.Repository
-	// channels is the set of channels enqueue considers. v1 is in_app only; push
-	// and email join when their adapters land, at which point this becomes
-	// adapter-driven rather than a fixed list.
+	// channels is the set of channels enqueue considers. in_app and email are
+	// active; push joins when its adapter lands, at which point this becomes
+	// adapter-driven rather than a fixed list. Email rows are written only for
+	// users who opt in (email defaults off in the bundle catalog), so lighting
+	// up the channel here is safe: an unconfigured SMTP relay parks those rows
+	// at the worker rather than failing them.
 	channels []model.NotificationChannel
 	// renderer renders the bell-icon read projection (title + body). The worker
 	// holds its own renderer for delivery-side needs; this one serves the read
@@ -33,9 +44,18 @@ type NotificationService struct {
 func NewNotificationService(r *repo.Repository) *NotificationService {
 	return &NotificationService{
 		repo:     r,
-		channels: []model.NotificationChannel{model.ChannelInApp},
+		channels: []model.NotificationChannel{model.ChannelInApp, model.ChannelEmail},
 		renderer: notifications.MustNewRenderer(),
 	}
+}
+
+// RequeueAwaitingConfig returns notification rows parked as awaiting_config
+// (their channel was unconfigured at delivery time) to the queue, scoped to rows
+// created at or after `since`. It is called best-effort after an email provider
+// is saved enabled, so a just-configured SMTP relay drains the recent backlog of
+// email that piled up unconfigured. Returns the number requeued.
+func (s *NotificationService) RequeueAwaitingConfig(ctx context.Context, since time.Time) (int64, error) {
+	return s.repo.RequeueAwaitingConfig(ctx, since)
 }
 
 // Inbox returns a user's delivered in_app notifications, newest first, each with

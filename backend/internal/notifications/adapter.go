@@ -19,11 +19,16 @@ import (
 // NotRetryable failure (a malformed subscription, a rejected address) dies.
 //
 // A text-transmitting adapter (push, email) renders the row's payload through a
-// Renderer it holds; in_app renders nothing at delivery time. IsConfigured and
-// the awaiting_config parking it gates arrive with the email adapter (v1.3),
-// where a channel can be un-configured — v1's channels always can deliver.
+// Renderer it holds; in_app renders nothing at delivery time.
+//
+// IsConfigured gates delivery on a channel that can be un-configured: the email
+// adapter reports false until SMTP is set up. The worker parks a due row for an
+// unconfigured channel as awaiting_config (rather than delivering or killing it),
+// so it waits for the operator to configure the channel. A channel that can
+// always deliver (in_app) returns true unconditionally.
 type ChannelAdapter interface {
 	Name() model.NotificationChannel
+	IsConfigured(ctx context.Context) bool
 	Deliver(ctx context.Context, row model.NotificationOutbox) error
 }
 
@@ -34,6 +39,10 @@ type ChannelAdapter interface {
 type InAppAdapter struct{}
 
 func (InAppAdapter) Name() model.NotificationChannel { return model.ChannelInApp }
+
+// IsConfigured is always true: the in_app channel needs no external setup — the
+// outbox row itself is the delivered notification.
+func (InAppAdapter) IsConfigured(context.Context) bool { return true }
 
 func (InAppAdapter) Deliver(context.Context, model.NotificationOutbox) error { return nil }
 

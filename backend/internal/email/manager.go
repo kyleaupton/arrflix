@@ -42,6 +42,20 @@ func (m *Manager) BuildFromConfig(rec ConfigRecord) (Transport, error) {
 	return m.registry.Build(rec)
 }
 
+// IsConfigured reports whether a usable provider is set up: a row exists and is
+// enabled. It keeps provider-config knowledge in the email package so the
+// notification worker can gate delivery on it (parking mail as awaiting_config
+// until SMTP is configured) without reaching into the provider schema. A load
+// error resolves false — the channel is treated as not-ready rather than
+// silently delivering.
+func (m *Manager) IsConfigured(ctx context.Context) bool {
+	cfg, found, err := m.repo.GetEmailProvider(ctx)
+	if err != nil {
+		return false
+	}
+	return found && cfg.Enabled
+}
+
 // recordFromModel flattens the stored provider into the transport-agnostic
 // ConfigRecord, dereferencing nullable SMTP columns to their zero value.
 func recordFromModel(cfg model.EmailProvider) ConfigRecord {

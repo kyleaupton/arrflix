@@ -174,6 +174,15 @@ func (h *EmailProvider) Save(ctx context.Context, input *EmailProviderSaveInput)
 	if err != nil {
 		return nil, err
 	}
+
+	// Now that a usable relay exists, drain the recent backlog of email parked as
+	// awaiting_config while SMTP was unconfigured. Best-effort (mirrors the
+	// downloader InitializeDownloader hook): a drain failure never fails the save,
+	// and the worker requeues on its next poll regardless.
+	if cfg.Enabled {
+		_, _ = h.svc.Notifications.RequeueAwaitingConfig(ctx, time.Now().Add(-service.AwaitingConfigDrainWindow))
+	}
+
 	return &EmailProviderSaveOutput{Body: toEmailProviderResponse(cfg)}, nil
 }
 

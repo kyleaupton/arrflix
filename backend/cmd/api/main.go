@@ -22,6 +22,7 @@ import (
 	notificationworker "github.com/kyleaupton/arrflix/internal/jobs/notification"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/notifications"
+	"github.com/kyleaupton/arrflix/internal/notifications/emailadapter"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
@@ -103,10 +104,13 @@ func main() {
 	impWorker := importworker.New(repo, downloaderManager, logg, broker, services.Notifications)
 	enrichWorker := enrichmentworker.New(services.Enrichment, logg)
 	acqWorker := acquisitionworker.New(repo, services.Acquisition, services.Scheduler, logg, broker)
-	// The notification worker drains the outbox. v1 serves the in_app channel
-	// only; a template missing for a wired channel fails construction here, so a
-	// bad template tree is a startup fatal, not a first-delivery surprise.
-	notifWorker, err := notificationworker.New(repo, logg, notifications.InAppAdapter{})
+	// The notification worker drains the outbox over the in_app and email
+	// channels. Wiring the email adapter makes template Verify demand the email
+	// subject/HTML templates at construction — a missing one is a startup fatal,
+	// not a first-delivery surprise. The email adapter parks mail as
+	// awaiting_config until SMTP is set up (see Manager.IsConfigured).
+	emailAdapter := emailadapter.New(emailManager, notifications.MustNewRenderer(), repo)
+	notifWorker, err := notificationworker.New(repo, logg, notifications.InAppAdapter{}, emailAdapter)
 	if err != nil {
 		logg.Fatal().Err(err).Msg("failed to build notification worker")
 	}

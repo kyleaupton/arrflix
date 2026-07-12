@@ -24,6 +24,7 @@ import (
 type stubAdapter struct{ err error }
 
 func (stubAdapter) Name() model.NotificationChannel                           { return model.ChannelInApp }
+func (stubAdapter) IsConfigured(context.Context) bool                         { return true }
 func (s stubAdapter) Deliver(context.Context, model.NotificationOutbox) error { return s.err }
 
 // enqueueInApp writes one queued in_app row for a fresh user and returns both.
