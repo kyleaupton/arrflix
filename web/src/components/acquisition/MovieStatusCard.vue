@@ -1,21 +1,33 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
-import { CalendarClock, Download, Film, Search, Sparkles } from 'lucide-vue-next'
+import {
+  CalendarClock,
+  CircleCheck,
+  Clock,
+  Download,
+  Film,
+  Search,
+  Sparkles,
+} from 'lucide-vue-next'
 import { trackingByTmdbOptions } from '@/client/@tanstack/vue-query.gen'
-import type { MovieDetail, Want } from '@/client/types.gen'
+import type { MovieDetail, Request, Want } from '@/client/types.gen'
 import { Progress } from '@/components/ui/progress'
-import { useDownloadJobs } from '@/composables/useDownloadJobs'
+import { useDownloadJobs, isJobActive } from '@/composables/useDownloadJobs'
+import { useAuthStore } from '@/stores/auth'
 import { formatBytes, formatSpeed, formatEta } from '@/lib/format'
 
-// Tells a not-yet-in-library movie's acquisition story so the page's main column
-// is never empty. State-adaptive and requester-first (visible to everyone): a
-// download in flight, an active want, a suggestion awaiting review, a title not
-// yet obtainable (still in its theatrical window), or simply absent from the
-// library. Acquisition state is fetched here — the same query keys the page's
+// Tells a movie's acquisition story so the page's main column is never empty.
+// State-adaptive and requester-first (visible to everyone): a download in flight,
+// an active want, a suggestion awaiting review, a title not yet obtainable (still
+// in its theatrical window), or simply absent from the library. Once the movie is
+// on disk the card yields to the operator's Local Files table, but requesters have
+// no such table, so they instead get a plain "in your library" confirmation.
+// Acquisition state is fetched here — the same query keys the page's
 // AcquisitionControl uses, so TanStack dedupes them.
 const props = defineProps<{ movie: MovieDetail }>()
 
+const auth = useAuthStore()
 const tmdbId = computed(() => props.movie.tmdbId)
 
 // On disk = at least one real (non-predicted) file. Predicted in-flight entries
@@ -31,33 +43,44 @@ const { data: tracking } = useQuery(
 const isTracked = computed(() => !!tracking.value?.tracking)
 const want = computed<Want | null>(() => tracking.value?.wants?.[0] ?? null)
 
+// The caller's own pending request rides along on the status payload — surfaces the
+// requested state before anything is tracked, so a fresh request isn't rendered as
+// "Not in your library".
+const myRequest = computed<Request | null>(() => tracking.value?.myRequest ?? null)
+
 // The movie's in-flight job, read from the shared live jobs cache (SSE-patched)
 // rather than a second per-movie fetch, so the progress bar advances live.
 const { getMovieJob } = useDownloadJobs()
 const job = computed(() => getMovieJob(tmdbId.value) ?? null)
 
-const ACTIVE_JOB_STATUSES = new Set([
-  'created',
-  'enqueued',
-  'downloading',
-  'awaiting_import',
-  'importing',
-])
-const jobActive = computed(() => !!job.value && ACTIVE_JOB_STATUSES.has(job.value.status))
+const jobActive = computed(() => !!job.value && isJobActive(job.value))
 
 function isProposed(w: Want): boolean {
   return w.hold === 'proposed' && (w.status === 'pending' || w.status === 'searching')
 }
 
-type CardState = 'downloading' | 'wanted' | 'proposed' | 'unobtainable' | 'notInLibrary'
+type CardState =
+  | 'available'
+  | 'downloading'
+  | 'wanted'
+  | 'proposed'
+  | 'requested'
+  | 'unobtainable'
+  | 'notInLibrary'
 
-const state = computed<CardState>(() => {
+const state = computed<CardState | null>(() => {
+  if (availableLocally.value) {
+    // Operators read the Local Files table instead, so their card stays hidden;
+    // requesters have no table, so give them a plain "it's here" confirmation.
+    return auth.canViewJobs ? null : 'available'
+  }
   if (isTracked.value) {
     if (jobActive.value) return 'downloading'
     const w = want.value
     if (w) return isProposed(w) ? 'proposed' : 'wanted'
     // Tracked with no want is unexpected — fall through to obtainability.
   }
+  if (myRequest.value?.status === 'pending') return 'requested'
   return obtainable.value ? 'notInLibrary' : 'unobtainable'
 })
 
@@ -84,12 +107,16 @@ const obtainable = computed(
 
 const icon = computed<Component>(() => {
   switch (state.value) {
+    case 'available':
+      return CircleCheck
     case 'downloading':
       return Download
     case 'wanted':
       return Search
     case 'proposed':
       return Sparkles
+    case 'requested':
+      return Clock
     case 'unobtainable':
       return CalendarClock
     default:
@@ -99,10 +126,18 @@ const icon = computed<Component>(() => {
 
 const headline = computed(() => {
   switch (state.value) {
+    case 'available':
+      return 'In your library'
     case 'downloading':
-      return job.value?.candidateTitle || 'Downloading'
+      // The release name is operator detail; requesters get a generic line so the
+      // torrent title never surfaces in the requester lens.
+      return auth.canViewJobs
+        ? job.value?.candidateTitle || 'Downloading'
+        : `Getting ${props.movie.title}`
     case 'proposed':
       return 'A download suggestion is waiting for review'
+    case 'requested':
+      return 'Your request is awaiting approval'
     case 'unobtainable':
       return 'Not available yet'
     case 'notInLibrary':
@@ -116,10 +151,14 @@ const headline = computed(() => {
 
 const subline = computed(() => {
   switch (state.value) {
+    case 'available':
+      return 'Available to watch'
     case 'downloading':
       return 'Downloading now'
     case 'proposed':
       return 'A release was found and is awaiting approval.'
+    case 'requested':
+      return myRequest.value?.tier ?? ''
     case 'unobtainable':
       return unobtainableLine.value
     case 'notInLibrary':
@@ -162,6 +201,11 @@ const downloadPct = computed(() => Math.round((job.value?.progress ?? 0) * 100))
 const downloadMeta = computed(() => {
   const j = job.value
   if (!j) return ''
+  // Requesters get progress + ETA only — the agreed floor. Speed and total size
+  // are operator detail, so they're dropped from the requester line.
+  if (!auth.canViewJobs) {
+    return [`${downloadPct.value}%`, formatEta(j.etaSeconds)].filter(Boolean).join(' · ')
+  }
   return [
     `${downloadPct.value}%`,
     formatSpeed(j.downloadSpeed),
@@ -196,7 +240,7 @@ function formatDate(iso?: string): string {
 </script>
 
 <template>
-  <div v-if="!availableLocally" class="rounded-lg border bg-card p-4">
+  <div v-if="state" class="rounded-lg border bg-card p-4">
     <div class="flex items-start gap-3">
       <component :is="icon" class="mt-0.5 size-5 shrink-0 text-muted-foreground" />
       <div class="min-w-0 flex-1">

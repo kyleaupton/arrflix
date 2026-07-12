@@ -1,7 +1,9 @@
 <template>
   <section
     class="media-hero relative min-h-[24rem] md:min-h-[28rem] lg:min-h-[32rem] flex flex-col justify-end"
-    :class="fullBleed ? 'pt-14' : '-mx-4 -my-4 overflow-hidden'"
+    :class="
+      fullBleed ? 'pt-[calc(env(safe-area-inset-top)_+_3.5rem)]' : '-mx-4 -my-4 overflow-hidden'
+    "
   >
     <div class="backdrop" :class="{ 'has-image': !!backdropUrl }">
       <img v-if="backdropUrl" :src="backdropUrl" alt="" aria-hidden="true" />

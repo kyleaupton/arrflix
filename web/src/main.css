@@ -117,6 +117,13 @@
   body {
     @apply bg-background text-foreground;
   }
+  :root {
+    /* Bottom clearance for the fixed mobile tab bar: the home-indicator safe area,
+       trimmed by 0.5rem since the nav items already carry their own vertical
+       padding. Shared so the bar's pad and the content's bottom clearance stay in
+       sync. Floors at 0.5rem so it stays sane where the inset is 0 (Android/desktop). */
+    --tabbar-inset-bottom: max(0.5rem, calc(env(safe-area-inset-bottom) - 0.5rem));
+  }
 }
 
 /* Skeleton shimmer */

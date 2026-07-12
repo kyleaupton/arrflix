@@ -23,31 +23,25 @@
       <RequestStatusPill :status="myPending.status" />
     </template>
 
-    <!-- Not tracked: initiate the autonomous flow. The button face depends on
-         whether this user auto-approves; the tier select offers only tiers the
-         caller can request (a user with no movie-create grant sees nothing). -->
+    <!-- Not tracked: initiate the autonomous flow. One held tier is a one-click
+         add; more than one opens AddMovieDialog to pick quality. A user with no
+         movie-create grant has no available tier and sees nothing here. -->
     <template v-else-if="!isLoading && availableTiers.length">
-      <div class="flex w-full sm:w-auto items-center gap-2">
-        <Button class="grow sm:grow-0" :disabled="createRequest.isPending.value" @click="handleAdd">
-          <Plus class="mr-2 size-4" />
-          {{ createRequest.isPending.value ? 'Adding…' : primaryLabel }}
-        </Button>
-        <Select v-model="tier">
-          <SelectTrigger class="w-20" aria-label="Quality tier">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="t in availableTiers" :key="t" :value="t">{{ t }}</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <Button
+        class="w-full sm:w-auto"
+        :disabled="createRequest.isPending.value"
+        @click="handlePrimary"
+      >
+        <Plus class="mr-2 size-4" />
+        {{ createRequest.isPending.value ? 'Adding…' : primaryLabel }}
+      </Button>
     </template>
 
-    <!-- Overflow actions. Shown to operators even when untracked, so manual
-         search stays reachable before anything is added; otherwise only once
-         tracked. -->
+    <!-- Overflow actions are all operator actions (manual search, retry, cancel),
+         so the whole menu is operator-only — shown even when untracked so manual
+         search stays reachable before anything is added. -->
     <TrackingActionsMenu
-      v-if="auth.canManageJobs || trackingId"
+      v-if="auth.canManageJobs"
       type="movie"
       :tmdb-id="tmdbId"
       :tracking-id="trackingId"
@@ -57,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Plus } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
@@ -68,33 +62,32 @@ import {
   requestsListQueryKey,
 } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { useAuthStore } from '@/stores/auth'
+import { useModal } from '@/composables/useModal'
 import { useDownloadJobs } from '@/composables/useDownloadJobs'
 import { isProblem, problemMessage } from '@/lib/api'
+import AddMovieDialog from '@/components/modals/AddMovieDialog.vue'
 import WantStatusPill from './WantStatusPill.vue'
 import RequestStatusPill from './RequestStatusPill.vue'
 import TrackingActionsMenu from './TrackingActionsMenu.vue'
 
-// tmdbId doubles as the movie route id the download-jobs endpoint is keyed on.
-const props = defineProps<{ tmdbId: number }>()
+// tmdbId doubles as the movie route id the download-jobs endpoint is keyed on;
+// title feeds the AddMovieDialog header.
+const props = defineProps<{ tmdbId: number; title: string }>()
 
 const auth = useAuthStore()
 const queryClient = useQueryClient()
+const modal = useModal()
 
-// The caller sees only the tiers they hold a create grant for, so they can't
-// pick one the API would 403. tier defaults to the first available (or HD when
-// the caller has no grant — the add block is hidden in that case anyway).
+// The caller sees only the tiers they hold a create grant for, so they can't pick
+// one the API would 403. Empty for a user with no create grant — the add block is
+// hidden in that case anyway.
 const availableTiers = computed<('HD' | '4K')[]>(() =>
   (['HD', '4K'] as const).filter((t) => auth.can(`requests.create:movie:${t.toLowerCase()}`)),
 )
-const tier = ref<'HD' | '4K'>(availableTiers.value[0] ?? 'HD')
+// The one-click tier and the label's basis; the dialog resolves the precise tier
+// when the caller holds more than one.
+const defaultTier = computed<'HD' | '4K'>(() => availableTiers.value[0] ?? 'HD')
 
 // Acquisition status for this movie: tracking + its want, plus the caller's own
 // pending request — one call. Untracked / un-requested is a normal 200 with null
@@ -128,7 +121,7 @@ const wantProgress = computed(() => {
 })
 
 const primaryLabel = computed(() =>
-  auth.canAutoApprove('movie', tier.value) ? 'Add to Library' : 'Request',
+  auth.canAutoApprove('movie', defaultTier.value) ? 'Add to Library' : 'Request',
 )
 
 const createRequest = useMutation({
@@ -153,8 +146,16 @@ const createRequest = useMutation({
   },
 })
 
-function handleAdd() {
-  createRequest.mutate({ body: { tmdbId: props.tmdbId, type: 'movie', tier: tier.value } })
+function handlePrimary() {
+  // More than one held tier is a real choice → open the dialog. Exactly one leaves
+  // nothing to decide, so fire the request straight away.
+  if (availableTiers.value.length > 1) {
+    modal.open(AddMovieDialog, {
+      props: { tmdbId: props.tmdbId, title: props.title, availableTiers: availableTiers.value },
+    })
+    return
+  }
+  createRequest.mutate({ body: { tmdbId: props.tmdbId, type: 'movie', tier: defaultTier.value } })
 }
 
 // Untracked is a normal 200, so any error here is a genuine load failure worth

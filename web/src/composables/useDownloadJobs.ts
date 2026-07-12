@@ -8,6 +8,7 @@ import {
   downloadJobsRetryMutation,
 } from '@/client/@tanstack/vue-query.gen'
 import type { DownloadJobWithSummary } from '@/client/types.gen'
+import { useAuthStore } from '@/stores/auth'
 
 export type DownloadJob = DownloadJobWithSummary
 
@@ -18,10 +19,13 @@ const COMPLETED_STATUSES = ['fully_imported', 'download_cancelled']
 
 const listKey = downloadJobsListQueryKey()
 
-// isJobActive reports whether a job is still in flight, for the "is this media
-// downloading" badges on the Movie page.
+// isJobActive reports whether a job is still in flight — the single predicate
+// behind every "is this media downloading" badge and status card. importStatus is
+// the derived summary that folds both phases into one axis: 'download_pending'
+// covers the raw download (created/enqueued/downloading), and awaiting_import /
+// importing cover the post-download import. Terminal summaries fall through.
 export function isJobActive(job: DownloadJob): boolean {
-  return job.importStatus === 'download_pending'
+  return ACTIVE_STATUSES.includes(job.importStatus)
 }
 
 // useDownloadJobs reads the download-jobs list from TanStack Query. The list is
@@ -30,7 +34,14 @@ export function isJobActive(job: DownloadJob): boolean {
 // what's mounted — so this composable carries no SSE wiring and is safe to call
 // from multiple components (the query dedupes by key).
 export function useDownloadJobs() {
-  const query = useQuery(downloadJobsListOptions())
+  // The jobs list is a jobs.read resource, so requesters would 403 on the fetch.
+  // Gate it off for them: the realtime bindings still upsert download_job_updated
+  // deltas into this key (from an empty cache), so live progress survives without
+  // the initial REST read.
+  const auth = useAuthStore()
+  const query = useQuery(
+    computed(() => ({ ...downloadJobsListOptions(), enabled: auth.canViewJobs })),
+  )
 
   // Stable sort by createdAt (newest first) so rows never reorder mid-progress.
   const jobs = computed(() =>

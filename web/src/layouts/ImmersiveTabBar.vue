@@ -26,8 +26,12 @@ const itemIdle = 'text-foreground/55'
 </script>
 
 <template>
+  <!-- Fixed to the bottom of the screen. pb clears the home indicator via the
+       safe-area inset. On iOS standalone this anchors correctly while the window is
+       scrollable; short, non-scrolling pages are kept scrollable by the layout so
+       the bar doesn't drift up. -->
   <nav
-    class="fixed inset-x-0 bottom-0 z-50 flex border-t border-border/60 bg-background/95 backdrop-blur-lg pb-[env(safe-area-inset-bottom)] sm:hidden"
+    class="fixed inset-x-0 bottom-0 z-50 flex border-t border-border/60 bg-background/95 backdrop-blur-lg pb-[var(--tabbar-inset-bottom)] sm:hidden"
     aria-label="Primary"
   >
     <RouterLink to="/" :class="[itemBase, isActive('/') ? itemActive : itemIdle]">

@@ -35,7 +35,7 @@
             <RatingBadge source="tmdb" :score="data.voteAverage" :vote-count="data.voteCount" />
           </template>
           <template #actions>
-            <AcquisitionControl :tmdb-id="id" />
+            <AcquisitionControl :tmdb-id="id" :title="data.title" />
           </template>
         </MediaHero>
 
@@ -46,7 +46,10 @@
 
               <AttentionCard v-if="auth.canManageJobs" :tmdb-id="id" type="movie" />
 
-              <div v-if="data.files?.length" class="bg-card rounded-lg border p-4 sm:p-6 space-y-4">
+              <div
+                v-if="auth.canViewJobs && data.files?.length"
+                class="bg-card rounded-lg border p-4 sm:p-6 space-y-4"
+              >
                 <h2 class="text-xl font-semibold">Local Files</h2>
                 <DataTable
                   :data="filesWithProgress"
@@ -119,7 +122,7 @@ import type { FileInfo } from '@/client/types.gen'
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
 const auth = useAuthStore()
-const { getJobById } = useDownloadJobs()
+const { getJobById, getMovieJob } = useDownloadJobs()
 
 const id = computed(() => {
   const castAttept = Number(Array.isArray(route.params.id) ? route.params.id[0] : route.params.id)
@@ -236,15 +239,14 @@ const filesWithProgress = computed(() => {
   })
 })
 
-// Check if movie has any active downloads
+// Whether the poster shows the downloading treatment. Read live from the shared
+// jobs cache by tmdbId rather than the file→job link on the detail payload: that
+// link is captured at page load, so a freshly-started download (no file row yet)
+// wouldn't light it. The jobs cache is SSE-patched, so this tracks the download
+// as it starts and finishes without a reload.
 const isDownloading = computed(() => {
-  if (!data.value?.files) return false
-
-  return data.value.files.some((file) => {
-    if (!file.downloadJobId) return false
-    const job = getJobById(file.downloadJobId)
-    return job ? isJobActive(job) : false
-  })
+  const job = getMovieJob(id.value)
+  return !!job && isJobActive(job)
 })
 
 // Map download job status to file status

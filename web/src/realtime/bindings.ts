@@ -63,7 +63,22 @@ export function installRealtime(qc: QueryClient) {
   const refreshImportTasks = coalesce(() =>
     qc.invalidateQueries({ queryKey: [{ _id: 'downloadJobsListImportTasks' }] }),
   )
-  on('import_task_updated', refreshImportTasks)
+
+  // The media-detail payload (files[], per-episode availability, download-job
+  // links) has no direct SSE delta, so it freezes at page load. Refetch it on the
+  // events that change what's on disk — an import task moving, or a want reaching a
+  // terminal-availability status — so files flip to "Available" without a reload.
+  // Deliberately NOT fired on download_job_updated: those tick per second and the
+  // jobs cache already carries live progress, so refetching the whole detail on
+  // each tick would be pure waste. Coalesced like the other invalidations.
+  const refreshMedia = coalesce(() => {
+    qc.invalidateQueries({ queryKey: [{ _id: 'mediaGetMovie' }] })
+    qc.invalidateQueries({ queryKey: [{ _id: 'mediaGetSeries' }] })
+  })
+  on('import_task_updated', () => {
+    refreshImportTasks()
+    refreshMedia()
+  })
 
   // Want lifecycle delta — the full want, carrying trackingId. Patch it straight
   // into every cached trackingByTmdb entry whose tracking matches, exactly like
@@ -77,6 +92,10 @@ export function installRealtime(qc: QueryClient) {
       if (!prev?.tracking || prev.tracking.id !== want.trackingId) return prev
       return { ...prev, wants: upsertWant(prev.wants ?? [], want) }
     })
+    // A want reaching the library flips file/episode availability the media-detail
+    // query can't learn from this patch alone — refetch it (coalesced) so the page
+    // lands on "Available" even if the import-task event is dropped.
+    if (want.status === 'imported' || want.status === 'available') refreshMedia()
   })
 
   // Proposal delta (kick-only, keyed by trackingId). The want side is already

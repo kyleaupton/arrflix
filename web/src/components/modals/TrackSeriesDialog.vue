@@ -11,14 +11,8 @@ import { Check } from 'lucide-vue-next'
 import BaseDialog from './BaseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import AutonomySegmentedControl from '@/components/acquisition/AutonomySegmentedControl.vue'
+import TierSegmentedControl from '@/components/acquisition/TierSegmentedControl.vue'
 import { cn } from '@/lib/utils'
 import { problemMessage } from '@/lib/api'
 
@@ -58,6 +52,7 @@ const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => v
 const queryClient = useQueryClient()
 
 const tier = ref<'HD' | '4K'>(props.defaultTier)
+const tierOptions: ('HD' | '4K')[] = ['HD', '4K']
 const scopeRule = ref<ScopeRule>(props.defaultScope)
 const backfill = ref<Autonomy>(props.defaultBackfill)
 const ongoing = ref<Autonomy>(props.defaultOngoing)
@@ -181,15 +176,7 @@ function handleSubmit() {
 
       <div v-if="isOperator" class="flex items-center justify-between gap-4">
         <Label>Quality</Label>
-        <Select v-model="tier">
-          <SelectTrigger class="w-40" aria-label="Quality tier">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="HD">HD</SelectItem>
-            <SelectItem value="4K">4K</SelectItem>
-          </SelectContent>
-        </Select>
+        <TierSegmentedControl v-model="tier" :options="tierOptions" label="Quality tier" />
       </div>
 
       <div v-if="showBackfill || showOngoing" class="flex flex-col gap-3 border-t pt-4">
