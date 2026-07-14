@@ -14,8 +14,15 @@ export default defineConfig({
     vue(),
     tailwindcss(),
     VitePWA({
+      // injectManifest: we own the service worker (src/sw.ts) so it can handle
+      // Web Push + notificationclick alongside Workbox precaching. The plugin
+      // injects the precache manifest into self.__WB_MANIFEST at build time.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       // Silent update: a new build's service worker activates and reloads
-      // without prompting. Icons come from pwa-assets.config.ts.
+      // without prompting (sw.ts calls skipWaiting + clientsClaim). Icons come
+      // from pwa-assets.config.ts.
       registerType: 'autoUpdate',
       pwaAssets: { config: true, overrideManifestIcons: true },
       manifest: {
@@ -27,14 +34,18 @@ export default defineConfig({
         display: 'standalone',
         start_url: '/',
       },
-      workbox: {
+      injectManifest: {
         // Precache the app shell for instant repeat loads. The API is never
-        // cached or shadowed — navigation fallback stops at /api so requests
-        // pass through to the network as normal.
+        // cached or shadowed — the SW's navigation fallback stops at /api so
+        // requests pass through to the network as normal.
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api/],
-        cleanupOutdatedCaches: true,
+      },
+      // Enable the SW in dev so push can be exercised over http://localhost (a
+      // secure context). type:'module' matches the sw.ts ESM source.
+      devOptions: {
+        enabled: true,
+        type: 'module',
+        navigateFallback: 'index.html',
       },
     }),
   ],

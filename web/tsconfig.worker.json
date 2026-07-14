@@ -1,0 +1,19 @@
+{
+  "extends": "@vue/tsconfig/tsconfig.json",
+  "include": ["src/sw.ts"],
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.worker.tsbuildinfo",
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    // The service worker runs in a WebWorker global, not the DOM. Isolating its
+    // lib here (instead of adding WebWorker to the app's DOM lib) avoids the
+    // Window-vs-ServiceWorkerGlobalScope global collisions that a merged lib set
+    // produces.
+    "lib": ["ESNext", "WebWorker"],
+    "types": []
+  }
+}

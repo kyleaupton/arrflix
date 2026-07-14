@@ -141,6 +141,12 @@ func (h *Notifications) PreferencesGet(ctx context.Context, _ *NotificationsPref
 				bundles[i].Channels[j].Available = true
 			case string(model.ChannelEmail):
 				bundles[i].Channels[j].Available = emailAvailable
+			case string(model.ChannelPush):
+				// Push self-configures (the VAPID keypair always exists), so the
+				// channel can always deliver — to zero devices is a no-op, just
+				// like in_app when the bell is never opened. Whether this browser
+				// is subscribed is surfaced separately by the devices card.
+				bundles[i].Channels[j].Available = true
 			}
 		}
 	}

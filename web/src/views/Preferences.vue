@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
-import { Bell, Mail } from 'lucide-vue-next'
+import { Bell, Mail, Smartphone } from 'lucide-vue-next'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import PushDevicesCard from '@/components/notifications/PushDevicesCard.vue'
 import { useNotificationPreferences } from '@/composables/useNotificationPreferences'
 import { useAuthStore } from '@/stores/auth'
 
@@ -26,6 +27,7 @@ const BUNDLE_META: Record<string, { title: string; description: string }> = {
 const CHANNEL_META: Record<string, { label: string; description: string; icon: unknown }> = {
   in_app: { label: 'In-app', description: 'Show in the notifications bell.', icon: Bell },
   email: { label: 'Email', description: 'Send to your email address.', icon: Mail },
+  push: { label: 'Push', description: 'Send to your devices.', icon: Smartphone },
 }
 
 function bundleTitle(key: string) {
@@ -45,6 +47,10 @@ function channelMeta(key: string) {
       <h1 class="text-2xl font-semibold">Notifications</h1>
       <p class="text-muted-foreground">Choose how you want to be notified.</p>
     </header>
+
+    <!-- Device management for the push transport — independent of the per-bundle
+         channel toggles below, which route events to push once a device exists. -->
+    <PushDevicesCard />
 
     <div v-if="isLoading" class="space-y-4">
       <Skeleton class="h-40 w-full rounded-xl" />
