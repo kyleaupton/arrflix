@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { BellRing, Laptop, Send, Trash2, MonitorSmartphone } from 'lucide-vue-next'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import EnablePushDialog from './EnablePushDialog.vue'
@@ -123,7 +124,7 @@ function deviceLabel(ua: string | null): string {
         v-else-if="isThisDeviceSubscribed"
         class="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"
       >
-        <BellRing class="size-4 text-primary" />
+        <BellRing class="size-4 shrink-0 text-primary" />
         This device is set up to receive push notifications.
       </div>
 
@@ -163,15 +164,16 @@ function deviceLabel(ua: string | null): string {
               class="size-5 shrink-0 text-muted-foreground"
             />
             <div class="min-w-0 flex-1">
-              <p class="flex items-center gap-2 text-sm font-medium">
-                {{ deviceLabel(device.userAgent) }}
-                <span
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
+                <span>{{ deviceLabel(device.userAgent) }}</span>
+                <Badge
                   v-if="isCurrentDevice(device)"
-                  class="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-normal text-primary"
+                  variant="secondary"
+                  class="bg-primary/10 font-normal text-primary"
                 >
                   This device
-                </span>
-              </p>
+                </Badge>
+              </div>
               <p class="text-xs text-muted-foreground">
                 Subscribed {{ timeAgo(device.createdAt) }}
               </p>
