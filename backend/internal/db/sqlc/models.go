@@ -639,6 +639,17 @@ type ProposalWant struct {
 	CreatedAt  time.Time   `json:"created_at"`
 }
 
+type PushSubscription struct {
+	ID         pgtype.UUID `json:"id"`
+	UserID     pgtype.UUID `json:"user_id"`
+	Endpoint   string      `json:"endpoint"`
+	P256dh     string      `json:"p256dh"`
+	Auth       string      `json:"auth"`
+	UserAgent  *string     `json:"user_agent"`
+	CreatedAt  time.Time   `json:"created_at"`
+	LastUsedAt time.Time   `json:"last_used_at"`
+}
+
 type QualityProfile struct {
 	ID            pgtype.UUID `json:"id"`
 	Name          string      `json:"name"`
@@ -764,6 +775,15 @@ type UserRole struct {
 	UserID    pgtype.UUID `json:"user_id"`
 	RoleID    pgtype.UUID `json:"role_id"`
 	GrantedAt time.Time   `json:"granted_at"`
+}
+
+type VapidConfig struct {
+	ID         pgtype.UUID `json:"id"`
+	PublicKey  string      `json:"public_key"`
+	PrivateKey string      `json:"private_key"`
+	Subject    string      `json:"subject"`
+	CreatedAt  time.Time   `json:"created_at"`
+	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
 type Want struct {

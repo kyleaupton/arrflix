@@ -28,12 +28,12 @@ const AwaitingConfigDrainWindow = 7 * 24 * time.Hour
 // internal/notifications; delivery (draining the outbox) is the worker's job.
 type NotificationService struct {
 	repo *repo.Repository
-	// channels is the set of channels enqueue considers. in_app and email are
-	// active; push joins when its adapter lands, at which point this becomes
-	// adapter-driven rather than a fixed list. Email rows are written only for
-	// users who opt in (email defaults off in the bundle catalog), so lighting
-	// up the channel here is safe: an unconfigured SMTP relay parks those rows
-	// at the worker rather than failing them.
+	// channels is the set of channels enqueue considers. Email rows are written
+	// only for users who opt in (email defaults off in the bundle catalog); push
+	// defaults on for my_requests, but a recipient with no registered
+	// subscription is a delivery no-op at the adapter, so lighting up either
+	// channel here is safe — an unconfigured SMTP relay parks mail as
+	// awaiting_config, and a subscription-less push settles delivered.
 	channels []model.NotificationChannel
 	// renderer renders the bell-icon read projection (title + body). The worker
 	// holds its own renderer for delivery-side needs; this one serves the read
@@ -44,9 +44,36 @@ type NotificationService struct {
 func NewNotificationService(r *repo.Repository) *NotificationService {
 	return &NotificationService{
 		repo:     r,
-		channels: []model.NotificationChannel{model.ChannelInApp, model.ChannelEmail},
+		channels: []model.NotificationChannel{model.ChannelInApp, model.ChannelEmail, model.ChannelPush},
 		renderer: notifications.MustNewRenderer(),
 	}
+}
+
+// RegisterPushSubscription records (or refreshes) a browser's Web Push
+// subscription for a user. Idempotent on the endpoint (the natural key): a
+// re-subscribe from the same browser refreshes its keys/owner rather than
+// duplicating.
+func (s *NotificationService) RegisterPushSubscription(ctx context.Context, userID uuid.UUID, endpoint, p256dh, auth string, userAgent *string) error {
+	const op = "NotificationService.RegisterPushSubscription"
+	if endpoint == "" || p256dh == "" || auth == "" {
+		return apperrors.Validation("push subscription requires endpoint, p256dh, and auth").Op(op)
+	}
+	_, err := s.repo.UpsertPushSubscription(ctx, repo.UpsertPushSubscriptionParams{
+		UserID:    userID,
+		Endpoint:  endpoint,
+		P256dh:    p256dh,
+		Auth:      auth,
+		UserAgent: userAgent,
+	})
+	return err
+}
+
+// UnregisterPushSubscription removes one of the caller's subscriptions by
+// endpoint, scoped to the owner. Idempotent — a missing row is not an error (the
+// browser may have already been pruned server-side after a 410).
+func (s *NotificationService) UnregisterPushSubscription(ctx context.Context, userID uuid.UUID, endpoint string) error {
+	_, err := s.repo.DeletePushSubscriptionForUser(ctx, userID, endpoint)
+	return err
 }
 
 // RequeueAwaitingConfig returns notification rows parked as awaiting_config

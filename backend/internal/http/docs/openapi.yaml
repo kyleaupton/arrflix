@@ -4030,6 +4030,66 @@ components:
         - createdAt
         - updatedAt
       type: object
+    PushPublicKeyBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/PushPublicKeyBody.json
+          format: uri
+          readOnly: true
+          type: string
+        publicKey:
+          description: VAPID application server public key (base64url); pass to pushManager.subscribe
+          type: string
+      required:
+        - publicKey
+      type: object
+    PushSubscribeBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/PushSubscribeBody.json
+          format: uri
+          readOnly: true
+          type: string
+        auth:
+          description: Client auth secret (base64url)
+          minLength: 1
+          type: string
+        endpoint:
+          description: Push service endpoint URL
+          minLength: 1
+          type: string
+        p256dh:
+          description: Client ECDH public key (base64url)
+          minLength: 1
+          type: string
+      required:
+        - endpoint
+        - p256dh
+        - auth
+      type: object
+    PushUnsubscribeBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/PushUnsubscribeBody.json
+          format: uri
+          readOnly: true
+          type: string
+        endpoint:
+          description: Push service endpoint URL to remove
+          minLength: 1
+          type: string
+      required:
+        - endpoint
+      type: object
     QualityBinOption:
       additionalProperties: false
       properties:
@@ -9299,6 +9359,88 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: Set a notification preference
+      tags:
+        - notifications
+  /api/v1/notifications/push/public-key:
+    get:
+      description: Returns the server's VAPID application server key, used by the browser to create a push subscription.
+      operationId: push-public-key
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushPublicKeyBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Get the VAPID public key
+      tags:
+        - notifications
+  /api/v1/notifications/push/subscriptions:
+    delete:
+      description: Removes the caller's Web Push subscription for the given endpoint. Idempotent.
+      operationId: push-unsubscribe
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushUnsubscribeBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Remove a push subscription
+      tags:
+        - notifications
+    post:
+      description: Stores (or refreshes) the caller's Web Push subscription for this browser. Idempotent on the endpoint.
+      operationId: push-subscribe
+      parameters:
+        - description: Device label, captured server-side
+          in: header
+          name: User-Agent
+          schema:
+            description: Device label, captured server-side
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscribeBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Register a push subscription
       tags:
         - notifications
   /api/v1/notifications/read-all:

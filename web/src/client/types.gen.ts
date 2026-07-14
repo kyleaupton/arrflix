@@ -1722,6 +1722,47 @@ export type ProposalView = {
     updatedAt: string;
 };
 
+export type PushPublicKeyBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * VAPID application server public key (base64url); pass to pushManager.subscribe
+     */
+    publicKey: string;
+};
+
+export type PushSubscribeBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Client auth secret (base64url)
+     */
+    auth: string;
+    /**
+     * Push service endpoint URL
+     */
+    endpoint: string;
+    /**
+     * Client ECDH public key (base64url)
+     */
+    p256dh: string;
+};
+
+export type PushUnsubscribeBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Push service endpoint URL to remove
+     */
+    endpoint: string;
+};
+
 export type QualityBinOption = {
     bin: BinKey;
     /**
@@ -3364,6 +3405,35 @@ export type ProblemDetailsWritable = {
     status: number;
     title: string;
     type: string;
+};
+
+export type PushPublicKeyBodyWritable = {
+    /**
+     * VAPID application server public key (base64url); pass to pushManager.subscribe
+     */
+    publicKey: string;
+};
+
+export type PushSubscribeBodyWritable = {
+    /**
+     * Client auth secret (base64url)
+     */
+    auth: string;
+    /**
+     * Push service endpoint URL
+     */
+    endpoint: string;
+    /**
+     * Client ECDH public key (base64url)
+     */
+    p256dh: string;
+};
+
+export type PushUnsubscribeBodyWritable = {
+    /**
+     * Push service endpoint URL to remove
+     */
+    endpoint: string;
 };
 
 export type QualityBindTierBodyWritable = {
@@ -6962,6 +7032,95 @@ export type NotificationPreferencesSetResponses = {
 };
 
 export type NotificationPreferencesSetResponse = NotificationPreferencesSetResponses[keyof NotificationPreferencesSetResponses];
+
+export type PushPublicKeyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/push/public-key';
+};
+
+export type PushPublicKeyErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type PushPublicKeyError = PushPublicKeyErrors[keyof PushPublicKeyErrors];
+
+export type PushPublicKeyResponses = {
+    /**
+     * OK
+     */
+    200: PushPublicKeyBody;
+};
+
+export type PushPublicKeyResponse = PushPublicKeyResponses[keyof PushPublicKeyResponses];
+
+export type PushUnsubscribeData = {
+    body: PushUnsubscribeBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/push/subscriptions';
+};
+
+export type PushUnsubscribeErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type PushUnsubscribeError = PushUnsubscribeErrors[keyof PushUnsubscribeErrors];
+
+export type PushUnsubscribeResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PushUnsubscribeResponse = PushUnsubscribeResponses[keyof PushUnsubscribeResponses];
+
+export type PushSubscribeData = {
+    body: PushSubscribeBodyWritable;
+    headers?: {
+        /**
+         * Device label, captured server-side
+         */
+        'User-Agent'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/push/subscriptions';
+};
+
+export type PushSubscribeErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type PushSubscribeError = PushSubscribeErrors[keyof PushSubscribeErrors];
+
+export type PushSubscribeResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PushSubscribeResponse = PushSubscribeResponses[keyof PushSubscribeResponses];
 
 export type NotificationsMarkAllReadData = {
     body?: never;

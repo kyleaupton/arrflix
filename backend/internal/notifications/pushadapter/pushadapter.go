@@ -1,0 +1,138 @@
+// Package pushadapter is the Web Push ChannelAdapter: it renders a due outbox
+// row into a title + body, then fans the message out to every push subscription
+// the recipient has registered (one per device/browser).
+//
+// It lives outside the pure internal/notifications core because it needs the
+// subscription store, a push Sender, and a Renderer — dependencies the
+// registry/routing core deliberately excludes. It depends on narrow surfaces so
+// it can be unit-tested with fakes.
+package pushadapter
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+
+	"github.com/google/uuid"
+
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/notifications"
+	"github.com/kyleaupton/arrflix/internal/push"
+)
+
+// subscriptionStore is the narrow persistence surface the adapter needs: the
+// recipient's live subscriptions, and a way to prune a dead endpoint.
+// *repo.Repository satisfies it; a test passes a fake.
+type subscriptionStore interface {
+	ListPushSubscriptionsByUser(ctx context.Context, userID uuid.UUID) ([]model.PushSubscription, error)
+	DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) (int64, error)
+}
+
+// senderBuilder builds a push.Sender bound to the stored VAPID identity.
+// *push.Manager satisfies it; a test passes a fake returning a canned Sender.
+type senderBuilder interface {
+	BuildSender(ctx context.Context) (push.Sender, error)
+}
+
+// Adapter delivers notifications over Web Push.
+type Adapter struct {
+	subs     subscriptionStore
+	push     senderBuilder
+	renderer *notifications.Renderer
+}
+
+// New builds the push adapter. The renderer is passed in (rather than parsed
+// here) so it renders from the same embedded template tree the worker verified
+// at startup.
+func New(subs subscriptionStore, push senderBuilder, renderer *notifications.Renderer) *Adapter {
+	return &Adapter{subs: subs, push: push, renderer: renderer}
+}
+
+func (a *Adapter) Name() model.NotificationChannel { return model.ChannelPush }
+
+// IsConfigured is always true: the VAPID keypair self-generates at boot, so push
+// never needs operator setup and the worker never parks a push row as
+// awaiting_config. A recipient with no subscriptions is handled in Deliver as a
+// success no-op, not an unconfigured channel.
+func (a *Adapter) IsConfigured(context.Context) bool { return true }
+
+// pushMessage is the wire contract the service worker parses on the `push`
+// event: a title and body it passes to showNotification.
+type pushMessage struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+// Deliver renders the row and fans it out to the recipient's subscriptions.
+//
+// Fan-out rollup — one outbox row maps to N devices but the worker acts on a
+// single returned error, so the policy avoids duplicate re-sends on retry:
+//   - a 404/410 endpoint is pruned and ignored (the browser unsubscribed);
+//   - if any device was delivered, the row is done (nil) — a sibling that failed
+//     transiently misses this one notification rather than every delivered device
+//     getting it twice on retry;
+//   - if nothing was delivered, a transient failure is returned (the worker
+//     retries the whole row; pruned endpoints are already gone so no re-hit),
+//     else a permanent failure marks the row dead;
+//   - no subscriptions at all is a success no-op — there is nothing to deliver,
+//     and a later subscribe does not resurrect past notifications.
+func (a *Adapter) Deliver(ctx context.Context, row model.NotificationOutbox) error {
+	const op = "PushAdapter.Deliver"
+
+	if row.RecipientUserID == nil {
+		return apperrors.Validation("push notification has no recipient user").Op(op)
+	}
+
+	title, body, err := a.renderer.Render(row.EventType, model.ChannelPush, row.Payload)
+	if err != nil {
+		return apperrors.Internalf("render push for %q: %v", row.EventType, err).NotRetryable().Op(op)
+	}
+	payload, err := json.Marshal(pushMessage{Title: title, Body: body})
+	if err != nil {
+		return apperrors.Internalf("marshal push message: %v", err).NotRetryable().Op(op)
+	}
+
+	subs, err := a.subs.ListPushSubscriptionsByUser(ctx, *row.RecipientUserID)
+	if err != nil {
+		return err // DB blip is retryable; propagate verbatim.
+	}
+	if len(subs) == 0 {
+		return nil // No devices — nothing to deliver.
+	}
+
+	sender, err := a.push.BuildSender(ctx)
+	if err != nil {
+		return err
+	}
+
+	var delivered int
+	var lastRetryable, lastPermanent error
+	for _, sub := range subs {
+		switch sendErr := sender.Send(ctx, sub, payload); {
+		case sendErr == nil:
+			delivered++
+		case errors.Is(sendErr, push.ErrSubscriptionGone):
+			// Endpoint dead: prune it. Best-effort — a failed prune just retries
+			// next delivery, so it does not fail the row.
+			_, _ = a.subs.DeletePushSubscriptionByEndpoint(ctx, sub.Endpoint)
+		case apperrors.IsRetryable(sendErr):
+			lastRetryable = sendErr
+		default:
+			lastPermanent = sendErr
+		}
+	}
+
+	switch {
+	case delivered > 0:
+		return nil
+	case lastRetryable != nil:
+		return lastRetryable
+	case lastPermanent != nil:
+		return lastPermanent
+	default:
+		return nil // Every subscription was gone (and pruned); nothing left to send.
+	}
+}
+
+var _ notifications.ChannelAdapter = (*Adapter)(nil)

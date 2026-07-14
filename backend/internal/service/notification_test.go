@@ -30,7 +30,6 @@ func TestSetPreference_ValidationRejects(t *testing.T) {
 	}{
 		{"event scope rejected", string(model.PreferenceScopeEvent), notifications.BundleMyRequests, string(model.ChannelInApp), "body.scope"},
 		{"unknown bundle rejected", string(model.PreferenceScopeBundle), "not_a_bundle", string(model.ChannelInApp), "body.value"},
-		{"push not deliverable yet", string(model.PreferenceScopeBundle), notifications.BundleMyRequests, string(model.ChannelPush), "body.channel"},
 		{"garbage channel rejected", string(model.PreferenceScopeBundle), notifications.BundleMyRequests, "carrier-pigeon", "body.channel"},
 	}
 	for _, c := range cases {

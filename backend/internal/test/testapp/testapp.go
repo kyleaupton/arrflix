@@ -35,6 +35,7 @@ import (
 	internalhttp "github.com/kyleaupton/arrflix/internal/http"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/push"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
@@ -134,7 +135,12 @@ func New(t *testing.T, pool *pgxpool.Pool, opts ...Option) *App {
 		t.Fatalf("testapp: issue token: %v", err)
 	}
 
-	srv := internalhttp.NewServer(cfg, logg, pool, services, r, dm, em, broker)
+	pm := push.NewManager(r)
+	if _, err := pm.EnsureConfig(ctx); err != nil {
+		t.Fatalf("testapp: ensure vapid config: %v", err)
+	}
+
+	srv := internalhttp.NewServer(cfg, logg, pool, services, r, dm, em, pm, broker)
 
 	httpSrv := httptest.NewServer(srv.Router)
 	t.Cleanup(httpSrv.Close)

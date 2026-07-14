@@ -23,6 +23,8 @@ import (
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/notifications"
 	"github.com/kyleaupton/arrflix/internal/notifications/emailadapter"
+	"github.com/kyleaupton/arrflix/internal/notifications/pushadapter"
+	"github.com/kyleaupton/arrflix/internal/push"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
@@ -86,9 +88,18 @@ func main() {
 	emailsmtp.Register(emailRegistry)
 	emailManager := email.NewManager(emailRegistry, repo)
 
+	// Push (Web Push): the VAPID identity self-generates on first boot, so push
+	// needs no operator setup. EnsureConfig makes the keypair a startup invariant
+	// (generated exactly once — regenerating would invalidate every subscription).
+	// A failure degrades push only; the rest of the app keeps running.
+	pushManager := push.NewManager(repo)
+	if _, err := pushManager.EnsureConfig(ctx); err != nil {
+		logg.Error().Err(err).Msg("failed to initialize VAPID config; push disabled")
+	}
+
 	// HTTP. NewServer wires chi (top-level) + humachi + Echo (catch-all);
 	// the chi router is what we bind to the listener.
-	srv := http.NewServer(cfg, logg, pool, services, repo, downloaderManager, emailManager, broker)
+	srv := http.NewServer(cfg, logg, pool, services, repo, downloaderManager, emailManager, pushManager, broker)
 	httpServer := &nethttp.Server{Addr: ":" + cfg.Port, Handler: srv.Router}
 	go func() {
 		logg.Info().Str("port", cfg.Port).Msg("http listen")
@@ -104,13 +115,14 @@ func main() {
 	impWorker := importworker.New(repo, downloaderManager, logg, broker, services.Notifications)
 	enrichWorker := enrichmentworker.New(services.Enrichment, logg)
 	acqWorker := acquisitionworker.New(repo, services.Acquisition, services.Scheduler, logg, broker)
-	// The notification worker drains the outbox over the in_app and email
-	// channels. Wiring the email adapter makes template Verify demand the email
-	// subject/HTML templates at construction — a missing one is a startup fatal,
-	// not a first-delivery surprise. The email adapter parks mail as
-	// awaiting_config until SMTP is set up (see Manager.IsConfigured).
+	// The notification worker drains the outbox over the in_app, email, and push
+	// channels. Wiring an adapter makes template Verify demand that channel's
+	// templates at construction — a missing one is a startup fatal, not a
+	// first-delivery surprise. The email adapter parks mail as awaiting_config
+	// until SMTP is set up (see Manager.IsConfigured); push self-configures.
 	emailAdapter := emailadapter.New(emailManager, notifications.MustNewRenderer(), repo)
-	notifWorker, err := notificationworker.New(repo, logg, notifications.InAppAdapter{}, emailAdapter)
+	pushAdapter := pushadapter.New(repo, pushManager, notifications.MustNewRenderer())
+	notifWorker, err := notificationworker.New(repo, logg, notifications.InAppAdapter{}, emailAdapter, pushAdapter)
 	if err != nil {
 		logg.Fatal().Err(err).Msg("failed to build notification worker")
 	}

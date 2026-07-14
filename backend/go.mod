@@ -3,6 +3,7 @@ module github.com/kyleaupton/arrflix
 go 1.25.0
 
 require (
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/cyruzin/golang-tmdb v1.8.2
 	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/dlclark/regexp2 v1.12.0
@@ -46,6 +47,7 @@ require (
 	github.com/go-openapi/jsonpointer v0.22.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.25.1 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

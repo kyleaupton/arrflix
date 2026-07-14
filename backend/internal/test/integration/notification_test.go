@@ -218,8 +218,9 @@ func containsOutbox(rows []model.NotificationOutbox, id uuid.UUID) bool {
 }
 
 // TestNotification_Enqueue proves the service turns a typed user-audience event
-// into one queued in_app outbox row (v1's only active channel), with the routing
-// metadata and template payload intact.
+// into queued outbox rows on the my_requests default channels (in_app + push;
+// email defaults off), with the routing metadata and template payload intact on
+// the in_app row.
 func TestNotification_Enqueue(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -240,12 +241,26 @@ func TestNotification_Enqueue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list due: %v", err)
 	}
-	if len(due) != 1 {
-		t.Fatalf("enqueued rows = %d, want 1 (in_app only in v1)", len(due))
+	// in_app + push, one each; email off by default → no email row.
+	if len(due) != 2 {
+		t.Fatalf("enqueued rows = %d, want 2 (in_app + push)", len(due))
 	}
-	row := due[0]
-	if row.EventType != "want.available" || row.Audience != string(model.AudienceUser) || row.Channel != string(model.ChannelInApp) {
-		t.Fatalf("row = %q/%s/%s", row.EventType, row.Audience, row.Channel)
+	channels := map[string]model.NotificationOutbox{}
+	for _, row := range due {
+		if row.Channel == string(model.ChannelEmail) {
+			t.Fatalf("unexpected email row — email defaults off for my_requests")
+		}
+		channels[row.Channel] = row
+	}
+	row, ok := channels[string(model.ChannelInApp)]
+	if !ok {
+		t.Fatalf("no in_app row among %v", channels)
+	}
+	if _, ok := channels[string(model.ChannelPush)]; !ok {
+		t.Fatalf("no push row among %v", channels)
+	}
+	if row.EventType != "want.available" || row.Audience != string(model.AudienceUser) {
+		t.Fatalf("row = %q/%s", row.EventType, row.Audience)
 	}
 	if row.RecipientUserID == nil || *row.RecipientUserID != user.ID {
 		t.Fatalf("recipient = %v, want %s", row.RecipientUserID, user.ID)
@@ -260,7 +275,8 @@ func TestNotification_Enqueue(t *testing.T) {
 }
 
 // TestNotification_EnqueueRespectsDisabledPref proves preference resolution gates
-// enqueue: an event-scope row disabling in_app suppresses the row entirely.
+// enqueue: event-scope rows disabling every active default channel suppress the
+// notification entirely.
 func TestNotification_EnqueueRespectsDisabledPref(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -269,14 +285,17 @@ func TestNotification_EnqueueRespectsDisabledPref(t *testing.T) {
 	ctx := context.Background()
 
 	user := newNotifUser(t, ctx, r, "notif-enqueue-off@test.local")
-	if _, err := r.UpsertPreference(ctx, repo.UpsertPreferenceParams{
-		UserID:  user.ID,
-		Scope:   string(model.PreferenceScopeEvent),
-		Value:   "want.available",
-		Channel: string(model.ChannelInApp),
-		Enabled: false,
-	}); err != nil {
-		t.Fatalf("upsert pref: %v", err)
+	// my_requests defaults on for in_app + push; disable both so nothing enqueues.
+	for _, ch := range []model.NotificationChannel{model.ChannelInApp, model.ChannelPush} {
+		if _, err := r.UpsertPreference(ctx, repo.UpsertPreferenceParams{
+			UserID:  user.ID,
+			Scope:   string(model.PreferenceScopeEvent),
+			Value:   "want.available",
+			Channel: string(ch),
+			Enabled: false,
+		}); err != nil {
+			t.Fatalf("upsert pref %s: %v", ch, err)
+		}
 	}
 	if err := svc.Enqueue(ctx, notifications.WantAvailable{
 		Recipient: user.ID,
@@ -289,7 +308,7 @@ func TestNotification_EnqueueRespectsDisabledPref(t *testing.T) {
 		t.Fatalf("list due: %v", err)
 	}
 	if len(due) != 0 {
-		t.Fatalf("enqueued rows = %d, want 0 (channel disabled by pref)", len(due))
+		t.Fatalf("enqueued rows = %d, want 0 (channels disabled by pref)", len(due))
 	}
 }
 

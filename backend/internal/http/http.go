@@ -24,6 +24,7 @@ import (
 	_ "github.com/kyleaupton/arrflix/internal/http/humaerr"
 	"github.com/kyleaupton/arrflix/internal/http/middlewares"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/push"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
@@ -36,7 +37,7 @@ type Server struct {
 	API    huma.API
 }
 
-func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, services *service.Services, repo *repo.Repository, downloaderManager *downloader.Manager, emailManager *email.Manager, broker *sse.Broker) *Server {
+func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, services *service.Services, repo *repo.Repository, downloaderManager *downloader.Manager, emailManager *email.Manager, pushManager *push.Manager, broker *sse.Broker) *Server {
 	r := chi.NewRouter()
 
 	r.Use(middlewares.ChiSetupMode(services))
@@ -57,6 +58,7 @@ func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, servic
 		Services:          services,
 		DownloaderManager: downloaderManager,
 		EmailManager:      emailManager,
+		PushManager:       pushManager,
 		Broker:            broker,
 	}
 	handlers.RegisterHumachiHandlers(api, deps)

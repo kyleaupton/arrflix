@@ -9,6 +9,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	"github.com/kyleaupton/arrflix/internal/email"
 	"github.com/kyleaupton/arrflix/internal/logger"
+	"github.com/kyleaupton/arrflix/internal/push"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
@@ -24,6 +25,7 @@ type Deps struct {
 	Services          *service.Services
 	DownloaderManager *downloader.Manager
 	EmailManager      *email.Manager
+	PushManager       *push.Manager
 	Broker            *sse.Broker
 }
 
@@ -61,6 +63,7 @@ func RegisterHumachiHandlers(api huma.API, deps Deps) {
 	NewProposals(deps.Services).RegisterHumachi(api)
 	NewWants(deps.Services).RegisterHumachi(api)
 	NewNotifications(deps.Services).RegisterHumachi(api)
+	NewPush(deps.Services, deps.PushManager).RegisterHumachi(api)
 }
 
 // RegisterChiRoutes wires plain-chi routes that don't fit humachi's typed

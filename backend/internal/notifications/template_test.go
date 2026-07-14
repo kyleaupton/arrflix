@@ -149,9 +149,9 @@ func TestRenderer_VerifyEmail(t *testing.T) {
 	}
 }
 
-// TestRenderer_Verify proves the build-time guard: every registered event has
-// in_app templates, but demanding a channel with no templates (push, not shipped
-// in v1) reports the exact missing keys.
+// TestRenderer_Verify proves the build-time guard for the text channels: every
+// registered event ships in_app and push templates (a title + body each), and a
+// missing one is reported by name.
 func TestRenderer_Verify(t *testing.T) {
 	t.Parallel()
 
@@ -162,11 +162,14 @@ func TestRenderer_Verify(t *testing.T) {
 	if err := r.Verify(Registered, []model.NotificationChannel{model.ChannelInApp}); err != nil {
 		t.Fatalf("verify in_app: %v", err)
 	}
-	err = r.Verify(Registered, []model.NotificationChannel{model.ChannelPush})
-	if err == nil {
-		t.Fatalf("verify push should fail — no push templates in v1")
+	if err := r.Verify(Registered, []model.NotificationChannel{model.ChannelPush}); err != nil {
+		t.Fatalf("verify push should pass with templates present: %v", err)
 	}
-	if !strings.Contains(err.Error(), "want/available/push.title") {
-		t.Fatalf("verify error = %v, want it to name the missing push template", err)
+
+	// Drop the push body → verify names it missing.
+	delete(r.templates, "want/available/push.body")
+	if err := r.Verify(Registered, []model.NotificationChannel{model.ChannelPush}); err == nil ||
+		!strings.Contains(err.Error(), "want/available/push.body") {
+		t.Fatalf("verify should flag the missing push body, got %v", err)
 	}
 }

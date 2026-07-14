@@ -87,16 +87,29 @@ func TestNotification_NotifyWantAvailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list due: %v", err)
 	}
-	if len(due) != 2 {
-		t.Fatalf("enqueued rows = %d, want 2 (one per requester)", len(due))
+	// With no seeded prefs, my_requests defaults route to in_app + push (email
+	// off), so each of the two requesters gets one row per active default
+	// channel: 2 requesters × {in_app, push} = 4 rows, none on email.
+	if len(due) != 4 {
+		t.Fatalf("enqueued rows = %d, want 4 (in_app + push per requester)", len(due))
 	}
-	recipients := map[string]bool{}
+	byChannel := map[string]map[string]bool{
+		string(model.ChannelInApp): {},
+		string(model.ChannelPush):  {},
+	}
 	for _, row := range due {
-		if row.EventType != "want.available" || row.Channel != string(model.ChannelInApp) {
-			t.Fatalf("row = %q/%s, want want.available/in_app", row.EventType, row.Channel)
+		if row.EventType != "want.available" {
+			t.Fatalf("row event = %q, want want.available", row.EventType)
+		}
+		if row.Channel == string(model.ChannelEmail) {
+			t.Fatalf("unexpected email row — email defaults off for my_requests")
+		}
+		recips, ok := byChannel[row.Channel]
+		if !ok {
+			t.Fatalf("unexpected channel %q", row.Channel)
 		}
 		if row.RecipientUserID != nil {
-			recipients[row.RecipientUserID.String()] = true
+			recips[row.RecipientUserID.String()] = true
 		}
 		var payload struct {
 			Media struct {
@@ -111,7 +124,10 @@ func TestNotification_NotifyWantAvailable(t *testing.T) {
 			t.Fatalf("payload media = %+v, want The Matrix (1999)", payload.Media)
 		}
 	}
-	if !recipients[alice.ID.String()] || !recipients[bob.ID.String()] {
-		t.Fatalf("recipients = %v, want both alice and bob", recipients)
+	// Both requesters are addressed on each active default channel.
+	for ch, recips := range byChannel {
+		if !recips[alice.ID.String()] || !recips[bob.ID.String()] {
+			t.Fatalf("channel %s recipients = %v, want both alice and bob", ch, recips)
+		}
 	}
 }
