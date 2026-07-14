@@ -169,9 +169,12 @@ func (s *NotificationService) NotifyWantAvailable(ctx context.Context, want mode
 		return err
 	}
 
-	media := notifications.MediaRef{Title: item.Title}
+	media := notifications.MediaRef{Title: item.Title, Type: model.MediaType(item.Type)}
 	if item.Year != nil {
 		media.Year = int(*item.Year)
+	}
+	if item.TmdbID != nil {
+		media.TmdbID = *item.TmdbID
 	}
 	if item.PosterPath != nil {
 		media.PosterPath = *item.PosterPath

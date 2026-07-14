@@ -15,7 +15,9 @@ import (
 // safe to expose — the browser needs it as applicationServerKey to subscribe.
 //
 // Subject is the VAPID `sub` contact URI (mailto:/https:); see the migration
-// comment for why it need not be a working inbox.
+// comment for why it need not be a working inbox. It must name a routable
+// domain even so: Apple 403s a JWT whose sub is something like admin@host.local,
+// taking down iOS push while Chrome — which does not validate sub — stays green.
 type VAPIDConfig struct {
 	ID         uuid.UUID `json:"id"`
 	PublicKey  string    `json:"publicKey"`

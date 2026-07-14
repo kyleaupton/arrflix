@@ -11,8 +11,9 @@
 --
 -- subject is the VAPID `sub` claim: a mailto:/https: contact URI a push service
 -- may use to reach the operator. It is NOT an address we send mail to and need
--- not be a working inbox; push services essentially never contact it. Defaulted
--- from the admin email when present, else a placeholder, and operator-editable.
+-- not be a working inbox; push services essentially never contact it. It must
+-- still name a routable domain — Apple rejects the JWT outright otherwise (see
+-- 0028) — so it defaults to the project URL and is operator-editable.
 CREATE TABLE IF NOT EXISTS vapid_config (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   public_key TEXT NOT NULL,

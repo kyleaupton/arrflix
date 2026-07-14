@@ -67,7 +67,7 @@ func sub(endpoint string) model.PushSubscription {
 func wantAvailableRow(t *testing.T, recipient *uuid.UUID) model.NotificationOutbox {
 	t.Helper()
 	payload, err := json.Marshal(map[string]any{
-		"media": map[string]any{"title": "Sentinel", "year": 2024},
+		"media": map[string]any{"title": "Sentinel", "year": 2024, "tmdbId": 693134, "type": "movie"},
 	})
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
@@ -121,6 +121,103 @@ func TestAdapter_DeliverFansOut(t *testing.T) {
 	}
 	if msg.Body == "" {
 		t.Fatal("body is empty, want the rendered body")
+	}
+	// The media identity rides along so the service worker can deep-link the tap.
+	if msg.Media == nil || msg.Media.TmdbID != 693134 || msg.Media.Type != "movie" {
+		t.Fatalf("media = %+v, want the payload's tmdb id and type", msg.Media)
+	}
+}
+
+// TestAdapter_TagIsPerNotification proves the tray-collapse rule: two rows carry
+// distinct tags, so two titles becoming available stack instead of overwriting
+// each other — the bug a single app-wide tag caused.
+func TestAdapter_TagIsPerNotification(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	id := uuid.New()
+
+	fs := &fakeSender{byEndpoint: map[string]error{"e1": nil}}
+	store := &fakeStore{subs: []model.PushSubscription{sub("e1")}}
+	a := New(store, fakeBuilder{sender: fs}, notifications.MustNewRenderer())
+
+	first, second := wantAvailableRow(t, &id), wantAvailableRow(t, &id)
+	for _, row := range []model.NotificationOutbox{first, second} {
+		if err := a.Deliver(ctx, row); err != nil {
+			t.Fatalf("deliver: %v", err)
+		}
+	}
+
+	tags := make([]string, 0, 2)
+	for _, p := range fs.payloads {
+		var msg push.Message
+		if err := json.Unmarshal(p, &msg); err != nil {
+			t.Fatalf("unmarshal payload: %v", err)
+		}
+		tags = append(tags, msg.Tag)
+	}
+	if tags[0] == tags[1] {
+		t.Fatalf("both notifications tagged %q — they would collapse to one in the tray", tags[0])
+	}
+	if tags[0] != first.ID.String() {
+		t.Fatalf("tag = %q, want the outbox row id %q", tags[0], first.ID)
+	}
+}
+
+// TestAdapter_DedupKeyIsTheTag proves an event that declares a coalescing
+// identity uses it as the tag, so re-emissions replace rather than stack.
+func TestAdapter_DedupKeyIsTheTag(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	id := uuid.New()
+
+	fs := &fakeSender{byEndpoint: map[string]error{"e1": nil}}
+	store := &fakeStore{subs: []model.PushSubscription{sub("e1")}}
+	a := New(store, fakeBuilder{sender: fs}, notifications.MustNewRenderer())
+
+	row := wantAvailableRow(t, &id)
+	key := "want.available:693134"
+	row.DedupKey = &key
+
+	if err := a.Deliver(ctx, row); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	var msg push.Message
+	if err := json.Unmarshal(fs.payloads[0], &msg); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if msg.Tag != key {
+		t.Fatalf("tag = %q, want the row's dedup key %q", msg.Tag, key)
+	}
+}
+
+// TestAdapter_MediaOmittedWhenUnroutable proves a payload the worker can't build
+// a route from still delivers — the notification lands and opens the app root
+// rather than being held back over a missing deep link.
+func TestAdapter_MediaOmittedWhenUnroutable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	id := uuid.New()
+
+	payload, err := json.Marshal(map[string]any{"media": map[string]any{"title": "Sentinel"}})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	row := wantAvailableRow(t, &id)
+	row.Payload = payload
+
+	fs := &fakeSender{byEndpoint: map[string]error{"e1": nil}}
+	store := &fakeStore{subs: []model.PushSubscription{sub("e1")}}
+	a := New(store, fakeBuilder{sender: fs}, notifications.MustNewRenderer())
+
+	if err := a.Deliver(ctx, row); err != nil {
+		t.Fatalf("a title with no tmdb id should still deliver, got %v", err)
+	}
+	var msg push.Message
+	if err := json.Unmarshal(fs.payloads[0], &msg); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if msg.Media != nil {
+		t.Fatalf("media = %+v, want nil so the worker opens the app root", msg.Media)
 	}
 }
 

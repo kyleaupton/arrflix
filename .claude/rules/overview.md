@@ -57,7 +57,7 @@ Repo converts pg errors (`FromPg`); services/workers pass them through or constr
 ### Frontend conventions
 
 - Vue 3 + TS. **All API access goes through the generated SDK** (`@/client/sdk.gen` / `@/client/@tanstack/vue-query.gen`) — never a hardcoded URL.
-- **Server state → TanStack Query; non-API global state → Pinia.** (See [[feedback_frontend_state]].)
+- **Server state → TanStack Query; non-API global state → Pinia** (auth, layout, dialogs, events-connection state).
 - Errors arrive as typed `ProblemDetails`; surface them via `problemMessage(err, fallback)`, never `err instanceof Error`.
 
 ### Data & codegen flow

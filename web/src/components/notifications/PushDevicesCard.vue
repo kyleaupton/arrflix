@@ -172,7 +172,9 @@ function deviceLabel(ua: string | null): string {
                   This device
                 </span>
               </p>
-              <p class="text-xs text-muted-foreground">Subscribed {{ timeAgo(device.createdAt) }}</p>
+              <p class="text-xs text-muted-foreground">
+                Subscribed {{ timeAgo(device.createdAt) }}
+              </p>
             </div>
             <Button
               variant="ghost"

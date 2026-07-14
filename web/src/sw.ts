@@ -40,12 +40,22 @@ clientsClaim()
 
 // ----- Web Push -----
 
-// The wire contract the backend marshals (push.Message): a title + body the
-// notification renders. Kept as a local type so the worker stays decoupled from
-// the app bundle.
+// The wire contract the backend marshals (push.Message): the notification text
+// plus the metadata this worker needs to group and route it. Kept as a local
+// type so the worker stays decoupled from the app bundle.
 interface PushMessage {
   title: string
   body: string
+  tag?: string
+  media?: { tmdbId: number; type: string }
+}
+
+// The app path a notification opens. The backend sends the title's identity
+// rather than a URL, so route shapes live here alongside the router that
+// defines them. Anything without media — a test send — opens the root.
+function pathFor(msg: PushMessage): string {
+  if (!msg.media?.tmdbId) return '/'
+  return msg.media.type === 'series' ? `/series/${msg.media.tmdbId}` : `/movie/${msg.media.tmdbId}`
 }
 
 self.addEventListener('push', (event: PushEvent) => {
@@ -64,23 +74,39 @@ self.addEventListener('push', (event: PushEvent) => {
       body: msg.body,
       icon: '/pwa-192x192.png',
       badge: '/pwa-64x64.png',
-      // A later notification replaces an earlier one rather than stacking.
-      tag: 'arrflix',
+      // The backend scopes the tag to one logical notification, so a re-delivery
+      // replaces its earlier self while unrelated titles stack. An absent tag
+      // never collapses, which is the safe default for an unparsed payload.
+      tag: msg.tag,
+      data: { url: pathFor(msg) },
     }),
   )
 })
 
 self.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.notification.close()
-  // Focus an already-open app window if there is one, else open a new one.
-  // Deep-linking to the specific title is deferred until the push payload
-  // carries a tmdbId (same gap as the in-app bell).
+
+  const url = (event.notification.data as { url?: string } | undefined)?.url ?? '/'
+  const target = new URL(url, self.location.origin)
+
+  // Reuse an open app window rather than piling up duplicates: focus it, and
+  // navigate only when it isn't already on the target — navigating reloads the
+  // SPA, so skipping the no-op keeps a tap on the page you're already reading
+  // from throwing away its state.
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if ('focus' in client) return client.focus()
+        if (!('focus' in client)) continue
+        if (new URL(client.url).pathname === target.pathname) return client.focus()
+        // navigate() rejects on a client this worker doesn't control, which
+        // matchAll includes; surfacing the app still beats a tap that does
+        // nothing, so fall back to a plain focus.
+        return client
+          .navigate(target.href)
+          .then((navigated) => (navigated ?? client).focus())
+          .catch(() => client.focus())
       }
-      return self.clients.openWindow('/')
+      return self.clients.openWindow(target.href)
     }),
   )
 })

@@ -11,6 +11,7 @@
 package notifications
 
 import (
+	"encoding/json"
 	"sort"
 
 	"github.com/google/uuid"
@@ -168,8 +169,27 @@ func channelOverride(p *model.NotificationPreference, ch model.NotificationChann
 
 // MediaRef is the compact media descriptor events embed for templates and the
 // bell-icon UI — enough to render a title line and a thumbnail without a lookup.
+// TmdbID and Type together identify the title, which is what lets a client route
+// to it: the app's media routes are keyed by TMDB id (/movie/:id, /series/:id),
+// so a notification can deep-link without resolving anything server-side.
 type MediaRef struct {
-	Title      string `json:"title"`
-	Year       int    `json:"year,omitempty"`
-	PosterPath string `json:"posterPath,omitempty"`
+	Title      string          `json:"title"`
+	Year       int             `json:"year,omitempty"`
+	TmdbID     int64           `json:"tmdbId,omitempty"`
+	Type       model.MediaType `json:"type,omitempty"`
+	PosterPath string          `json:"posterPath,omitempty"`
+}
+
+// MediaRefFrom extracts the media envelope from a stored event payload. Every
+// event about a title embeds MediaRef under the "media" key; ok is false when a
+// payload has none, so a caller that deep-links or renders a thumbnail degrades
+// rather than guesses.
+func MediaRefFrom(payload []byte) (MediaRef, bool) {
+	var envelope struct {
+		Media *MediaRef `json:"media"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil || envelope.Media == nil {
+		return MediaRef{}, false
+	}
+	return *envelope.Media, true
 }

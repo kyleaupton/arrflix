@@ -82,7 +82,12 @@ func (a *Adapter) Deliver(ctx context.Context, row model.NotificationOutbox) err
 	if err != nil {
 		return apperrors.Internalf("render push for %q: %v", row.EventType, err).NotRetryable().Op(op)
 	}
-	payload, err := json.Marshal(push.Message{Title: title, Body: body})
+	payload, err := json.Marshal(push.Message{
+		Title: title,
+		Body:  body,
+		Tag:   tagFor(row),
+		Media: mediaFor(row.Payload),
+	})
 	if err != nil {
 		return apperrors.Internalf("marshal push message: %v", err).NotRetryable().Op(op)
 	}
@@ -130,6 +135,31 @@ func (a *Adapter) Deliver(ctx context.Context, row model.NotificationOutbox) err
 	default:
 		return nil // Every subscription was gone (and pruned); nothing left to send.
 	}
+}
+
+// tagFor gives a notification its tray identity, keyed to one logical
+// notification rather than to the app. An event that declares a dedup key has
+// already named its own coalescing identity, so re-emissions of it replace in
+// the tray; otherwise the outbox row id makes each notification distinct, which
+// is what keeps two titles becoming available from overwriting each other.
+func tagFor(row model.NotificationOutbox) string {
+	if row.DedupKey != nil && *row.DedupKey != "" {
+		return *row.DedupKey
+	}
+	return row.ID.String()
+}
+
+// mediaFor extracts the routing slice of the payload's media envelope so the
+// service worker can deep-link the tap. Best-effort by design: a payload with no
+// media, or one whose media has no TMDB id (unmatched title), yields nil and the
+// worker falls back to opening the app root — a notification that lands and
+// opens the app beats one held back over a missing link.
+func mediaFor(payload []byte) *push.MessageMedia {
+	ref, ok := notifications.MediaRefFrom(payload)
+	if !ok || ref.TmdbID == 0 {
+		return nil
+	}
+	return &push.MessageMedia{TmdbID: ref.TmdbID, Type: string(ref.Type)}
 }
 
 var _ notifications.ChannelAdapter = (*Adapter)(nil)
