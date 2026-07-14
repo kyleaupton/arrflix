@@ -29,13 +29,18 @@ type VAPIDConfig struct {
 // may hold several (one per device). Endpoint is the push service's delivery URL
 // and the natural key; P256dh/Auth are the client's ECDH public key and auth
 // secret the adapter encrypts each payload with.
+// LastUsedAt is when the browser last (re)subscribed/refreshed this registration;
+// LastNotifiedAt is when the push adapter last successfully delivered to it, nil
+// until the first push. The devices UI shows "last notified" from the latter — the
+// former overstated activity for a device that had only ever subscribed.
 type PushSubscription struct {
-	ID         uuid.UUID `json:"id"`
-	UserID     uuid.UUID `json:"userId"`
-	Endpoint   string    `json:"endpoint"`
-	P256dh     string    `json:"p256dh"`
-	Auth       string    `json:"auth"`
-	UserAgent  *string   `json:"userAgent"`
-	CreatedAt  time.Time `json:"createdAt"`
-	LastUsedAt time.Time `json:"lastUsedAt"`
+	ID             uuid.UUID  `json:"id"`
+	UserID         uuid.UUID  `json:"userId"`
+	Endpoint       string     `json:"endpoint"`
+	P256dh         string     `json:"p256dh"`
+	Auth           string     `json:"auth"`
+	UserAgent      *string    `json:"userAgent"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	LastUsedAt     time.Time  `json:"lastUsedAt"`
+	LastNotifiedAt *time.Time `json:"lastNotifiedAt"`
 }

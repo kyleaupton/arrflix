@@ -125,10 +125,12 @@ func (h *Notifications) PreferencesGet(ctx context.Context, _ *NotificationsPref
 		return nil, err
 	}
 
-	// Fill per-channel deliverability. in_app is always available; email delivers
-	// only when an enabled SMTP provider is configured. Reading the provider here
-	// is an internal service call (not the admin-gated HTTP op), so a non-admin
-	// learns whether email can deliver without seeing the config itself.
+	// Fill outbound-channel deliverability. email delivers only when an enabled
+	// SMTP provider is configured; push self-configures (the VAPID keypair always
+	// exists, and zero devices is a no-op). Reading the provider here is an
+	// internal service call (not the admin-gated HTTP op), so a non-admin learns
+	// whether email can deliver without seeing the config itself. in_app has no
+	// entry — being subscribed IS the bell, and it is always deliverable.
 	cfg, found, err := h.svc.EmailProvider.Get(ctx)
 	if err != nil {
 		return nil, err
@@ -137,15 +139,9 @@ func (h *Notifications) PreferencesGet(ctx context.Context, _ *NotificationsPref
 	for i := range bundles {
 		for j := range bundles[i].Channels {
 			switch bundles[i].Channels[j].Channel {
-			case string(model.ChannelInApp):
-				bundles[i].Channels[j].Available = true
 			case string(model.ChannelEmail):
 				bundles[i].Channels[j].Available = emailAvailable
 			case string(model.ChannelPush):
-				// Push self-configures (the VAPID keypair always exists), so the
-				// channel can always deliver — to zero devices is a no-op, just
-				// like in_app when the bell is never opened. Whether this browser
-				// is subscribed is surfaced separately by the devices card.
 				bundles[i].Channels[j].Available = true
 			}
 		}
@@ -157,10 +153,9 @@ func (h *Notifications) PreferencesGet(ctx context.Context, _ *NotificationsPref
 // ----- Preferences (set) -----
 
 type notificationsPrefsSetBody struct {
-	Scope   string `json:"scope" required:"true" minLength:"1" doc:"Preference scope; v1 accepts 'bundle' only"`
-	Value   string `json:"value" required:"true" minLength:"1" doc:"Bundle name the toggle applies to"`
-	Channel string `json:"channel" required:"true" minLength:"1" doc:"Deliverable channel: 'in_app' or 'email'"`
-	Enabled bool   `json:"enabled" doc:"Whether the channel is enabled for the bundle"`
+	Bundle  string `json:"bundle" required:"true" minLength:"1" doc:"Bundle the preference applies to"`
+	Target  string `json:"target" required:"true" minLength:"1" doc:"What to toggle: 'subscribed' (the master — in-app follows it), 'email', or 'push'"`
+	Enabled bool   `json:"enabled" doc:"Whether the target is enabled for the bundle"`
 }
 
 type NotificationsPrefsSetInput struct {
@@ -175,7 +170,7 @@ func (h *Notifications) PreferencesSet(ctx context.Context, input *Notifications
 		return nil, err
 	}
 	if err := h.svc.Notifications.SetPreference(ctx, userID,
-		input.Body.Scope, input.Body.Value, input.Body.Channel, input.Body.Enabled); err != nil {
+		input.Body.Bundle, input.Body.Target, input.Body.Enabled); err != nil {
 		return nil, err
 	}
 	return &NotificationsPrefsSetOutput{}, nil
@@ -225,7 +220,7 @@ func (h *Notifications) RegisterHumachi(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/notifications/preferences",
 		Summary:     "Get my notification preferences",
-		Description: "Returns the caller's per-bundle channel preferences (resolved enablement) plus whether each channel can deliver right now.",
+		Description: "Returns the caller's per-bundle preferences: whether they're subscribed (the master — in-app follows it) and the resolved enablement plus deliverability of each outbound channel (email, push).",
 		Tags:        []string{"notifications"},
 	}, h.PreferencesGet)
 
@@ -234,7 +229,7 @@ func (h *Notifications) RegisterHumachi(api huma.API) {
 		Method:        http.MethodPut,
 		Path:          "/api/v1/notifications/preferences",
 		Summary:       "Set a notification preference",
-		Description:   "Toggles one channel for one bundle for the caller. v1 accepts bundle-scope writes only.",
+		Description:   "Toggles one target for one bundle for the caller: the subscription master ('subscribed', which governs in-app), or an outbound channel ('email'/'push').",
 		Tags:          []string{"notifications"},
 		DefaultStatus: http.StatusNoContent,
 		Errors:        []int{http.StatusBadRequest, http.StatusUnprocessableEntity},

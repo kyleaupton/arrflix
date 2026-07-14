@@ -71,7 +71,7 @@ func (q *Queries) DeletePushSubscriptionByIDForUser(ctx context.Context, arg Del
 }
 
 const getPushSubscriptionByIDForUser = `-- name: GetPushSubscriptionByIDForUser :one
-select id, user_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at from push_subscription
+select id, user_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at, last_notified_at from push_subscription
 where id = $1 and user_id = $2
 `
 
@@ -95,6 +95,7 @@ func (q *Queries) GetPushSubscriptionByIDForUser(ctx context.Context, arg GetPus
 		&i.UserAgent,
 		&i.CreatedAt,
 		&i.LastUsedAt,
+		&i.LastNotifiedAt,
 	)
 	return i, err
 }
@@ -121,7 +122,7 @@ func (q *Queries) GetVAPIDConfig(ctx context.Context) (VapidConfig, error) {
 }
 
 const listPushSubscriptionsByUser = `-- name: ListPushSubscriptionsByUser :many
-select id, user_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at from push_subscription
+select id, user_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at, last_notified_at from push_subscription
 where user_id = $1
 order by created_at
 `
@@ -144,6 +145,7 @@ func (q *Queries) ListPushSubscriptionsByUser(ctx context.Context, userID pgtype
 			&i.UserAgent,
 			&i.CreatedAt,
 			&i.LastUsedAt,
+			&i.LastNotifiedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -155,14 +157,18 @@ func (q *Queries) ListPushSubscriptionsByUser(ctx context.Context, userID pgtype
 	return items, nil
 }
 
-const touchPushSubscription = `-- name: TouchPushSubscription :exec
+const markPushSubscriptionNotified = `-- name: MarkPushSubscriptionNotified :exec
 update push_subscription
-set last_used_at = now()
+set last_notified_at = now()
 where endpoint = $1
 `
 
-func (q *Queries) TouchPushSubscription(ctx context.Context, endpoint string) error {
-	_, err := q.db.Exec(ctx, touchPushSubscription, endpoint)
+// MarkPushSubscriptionNotified stamps last_notified_at when the push adapter
+// successfully sends to this endpoint. Best-effort (a lost stamp only means the
+// devices UI shows a slightly stale "last notified"); keyed by endpoint, the natural
+// key the adapter has in hand per send.
+func (q *Queries) MarkPushSubscriptionNotified(ctx context.Context, endpoint string) error {
+	_, err := q.db.Exec(ctx, markPushSubscriptionNotified, endpoint)
 	return err
 }
 
@@ -202,7 +208,7 @@ set user_id = excluded.user_id,
     auth = excluded.auth,
     user_agent = excluded.user_agent,
     last_used_at = now()
-returning id, user_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at
+returning id, user_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at, last_notified_at
 `
 
 type UpsertPushSubscriptionParams struct {
@@ -236,6 +242,7 @@ func (q *Queries) UpsertPushSubscription(ctx context.Context, arg UpsertPushSubs
 		&i.UserAgent,
 		&i.CreatedAt,
 		&i.LastUsedAt,
+		&i.LastNotifiedAt,
 	)
 	return i, err
 }

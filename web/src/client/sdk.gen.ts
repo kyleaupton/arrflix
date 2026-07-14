@@ -922,7 +922,7 @@ export const notificationsList = <ThrowOnError extends boolean = false>(options?
 
 /**
  * Get my notification preferences
- * Returns the caller's per-bundle channel preferences (resolved enablement) plus whether each channel can deliver right now.
+ * Returns the caller's per-bundle preferences: whether they're subscribed (the master — in-app follows it) and the resolved enablement plus deliverability of each outbound channel (email, push).
  */
 export const notificationPreferencesGet = <ThrowOnError extends boolean = false>(options?: Options<NotificationPreferencesGetData, ThrowOnError>) => {
     return (options?.client ?? client).get<NotificationPreferencesGetResponses, NotificationPreferencesGetErrors, ThrowOnError>({
@@ -933,7 +933,7 @@ export const notificationPreferencesGet = <ThrowOnError extends boolean = false>
 
 /**
  * Set a notification preference
- * Toggles one channel for one bundle for the caller. v1 accepts bundle-scope writes only.
+ * Toggles one target for one bundle for the caller: the subscription master ('subscribed', which governs in-app), or an outbound channel ('email'/'push').
  */
 export const notificationPreferencesSet = <ThrowOnError extends boolean = false>(options: Options<NotificationPreferencesSetData, ThrowOnError>) => {
     return (options.client ?? client).put<NotificationPreferencesSetResponses, NotificationPreferencesSetErrors, ThrowOnError>({

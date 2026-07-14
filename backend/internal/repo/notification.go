@@ -37,13 +37,13 @@ func toModelOutbox(row dbgen.NotificationOutbox) model.NotificationOutbox {
 // into the domain-shaped model.NotificationPreference.
 func toModelPreference(row dbgen.NotificationPreference) model.NotificationPreference {
 	return model.NotificationPreference{
-		UserID:    uuidFromPgtype(row.UserID),
-		Scope:     row.Scope,
-		Value:     row.Value,
-		Channel:   row.Channel,
-		Enabled:   row.Enabled,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		UserID:     uuidFromPgtype(row.UserID),
+		Bundle:     row.Bundle,
+		Subscribed: row.Subscribed,
+		Email:      row.Email,
+		Push:       row.Push,
+		CreatedAt:  row.CreatedAt,
+		UpdatedAt:  row.UpdatedAt,
 	}
 }
 
@@ -194,29 +194,26 @@ func (r *Repository) MarkAllInboxRead(ctx context.Context, userID uuid.UUID) err
 		"mark all inbox read for user %s", userID)
 }
 
-// UpsertPreferenceParams is the domain-shaped input for UpsertPreference. Mirrors
-// the full notification_preference key plus the toggle it sets.
-type UpsertPreferenceParams struct {
-	UserID  uuid.UUID
-	Scope   string
-	Value   string
-	Channel string
-	Enabled bool
-}
-
-func (r *Repository) UpsertPreference(ctx context.Context, params UpsertPreferenceParams) (model.NotificationPreference, error) {
-	row, err := r.Q.UpsertPreference(ctx, dbgen.UpsertPreferenceParams{
-		UserID:  pgtypeFromUUID(params.UserID),
-		Scope:   params.Scope,
-		Value:   params.Value,
-		Channel: params.Channel,
-		Enabled: params.Enabled,
-	})
-	if err != nil {
-		return model.NotificationPreference{}, apperrors.FromPg(err,
-			"upsert %q preference for user %s", params.Value, params.UserID)
+// SetBundlePreference upserts one column of a (user, bundle) preference row: the
+// subscription master ("subscribed") or an outbound channel ("email"/"push"). Only
+// the targeted column is written, so the others keep their value (or stay NULL =
+// defer to the registry default). The service validates target before calling, so
+// an unknown target here is a programming error surfaced as an Internal error.
+func (r *Repository) SetBundlePreference(ctx context.Context, userID uuid.UUID, bundle, target string, enabled bool) error {
+	uid := pgtypeFromUUID(userID)
+	flag := &enabled
+	var err error
+	switch target {
+	case "subscribed":
+		_, err = r.Q.SetBundleSubscribed(ctx, dbgen.SetBundleSubscribedParams{UserID: uid, Bundle: bundle, Subscribed: flag})
+	case string(model.ChannelEmail):
+		_, err = r.Q.SetBundleEmail(ctx, dbgen.SetBundleEmailParams{UserID: uid, Bundle: bundle, Email: flag})
+	case string(model.ChannelPush):
+		_, err = r.Q.SetBundlePush(ctx, dbgen.SetBundlePushParams{UserID: uid, Bundle: bundle, Push: flag})
+	default:
+		return apperrors.Internalf("unknown preference target %q", target).Op("Repository.SetBundlePreference")
 	}
-	return toModelPreference(row), nil
+	return apperrors.FromPg(err, "set %q preference on bundle %q for user %s", target, bundle, userID)
 }
 
 func (r *Repository) ListPreferences(ctx context.Context, userID uuid.UUID) ([]model.NotificationPreference, error) {

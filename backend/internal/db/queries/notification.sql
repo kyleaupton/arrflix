@@ -125,20 +125,33 @@ WHERE recipient_user_id = sqlc.arg(user_id)
   AND status = 'delivered'
   AND read_at IS NULL;
 
--- UpsertPreference sets one (user, scope, value, channel) toggle — used both to seed
--- a new user's bundle defaults and to persist a later change; ON CONFLICT updates the
--- flag in place.
--- name: UpsertPreference :one
-INSERT INTO notification_preference (user_id, scope, value, channel, enabled)
-VALUES (
-  sqlc.arg(user_id),
-  sqlc.arg(scope),
-  sqlc.arg(value),
-  sqlc.arg(channel),
-  sqlc.arg(enabled)
-)
-ON CONFLICT (user_id, scope, value, channel)
-DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()
+-- Preference writes are one column at a time: the caller toggles exactly one of a
+-- bundle's flags (subscribed / email / push), and the other columns must keep their
+-- value (or stay NULL = "defer to the registry default"). Each query inserts the row
+-- with just its column set — the rest default to NULL — and on conflict updates only
+-- that column, so a push toggle never freezes the email default and vice versa. This
+-- is what makes the lazy model lazy: an untouched flag stays NULL and keeps tracking
+-- the in-code default.
+
+-- name: SetBundleSubscribed :one
+INSERT INTO notification_preference (user_id, bundle, subscribed)
+VALUES (sqlc.arg(user_id), sqlc.arg(bundle), sqlc.arg(subscribed))
+ON CONFLICT (user_id, bundle)
+DO UPDATE SET subscribed = EXCLUDED.subscribed, updated_at = now()
+RETURNING *;
+
+-- name: SetBundleEmail :one
+INSERT INTO notification_preference (user_id, bundle, email)
+VALUES (sqlc.arg(user_id), sqlc.arg(bundle), sqlc.arg(email))
+ON CONFLICT (user_id, bundle)
+DO UPDATE SET email = EXCLUDED.email, updated_at = now()
+RETURNING *;
+
+-- name: SetBundlePush :one
+INSERT INTO notification_preference (user_id, bundle, push)
+VALUES (sqlc.arg(user_id), sqlc.arg(bundle), sqlc.arg(push))
+ON CONFLICT (user_id, bundle)
+DO UPDATE SET push = EXCLUDED.push, updated_at = now()
 RETURNING *;
 
 -- name: ListPreferences :many

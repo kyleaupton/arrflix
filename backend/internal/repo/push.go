@@ -21,6 +21,7 @@ type PushRepo interface {
 	GetPushSubscriptionByIDForUser(ctx context.Context, userID, id uuid.UUID) (model.PushSubscription, bool, error)
 	DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) (int64, error)
 	DeletePushSubscriptionByIDForUser(ctx context.Context, userID, id uuid.UUID) (int64, error)
+	MarkPushSubscriptionNotified(ctx context.Context, endpoint string) error
 }
 
 // UpsertPushSubscriptionParams is the domain-shaped input for registering a
@@ -46,14 +47,15 @@ func toModelVAPIDConfig(row dbgen.VapidConfig) model.VAPIDConfig {
 
 func toModelPushSubscription(row dbgen.PushSubscription) model.PushSubscription {
 	return model.PushSubscription{
-		ID:         uuidFromPgtype(row.ID),
-		UserID:     uuidFromPgtype(row.UserID),
-		Endpoint:   row.Endpoint,
-		P256dh:     row.P256dh,
-		Auth:       row.Auth,
-		UserAgent:  row.UserAgent,
-		CreatedAt:  row.CreatedAt,
-		LastUsedAt: row.LastUsedAt,
+		ID:             uuidFromPgtype(row.ID),
+		UserID:         uuidFromPgtype(row.UserID),
+		Endpoint:       row.Endpoint,
+		P256dh:         row.P256dh,
+		Auth:           row.Auth,
+		UserAgent:      row.UserAgent,
+		CreatedAt:      row.CreatedAt,
+		LastUsedAt:     row.LastUsedAt,
+		LastNotifiedAt: timePtrFromPgTimestamptz(row.LastNotifiedAt),
 	}
 }
 
@@ -147,6 +149,14 @@ func (r *Repository) DeletePushSubscriptionByEndpoint(ctx context.Context, endpo
 		return 0, apperrors.FromPg(err, "delete push subscription")
 	}
 	return n, nil
+}
+
+// MarkPushSubscriptionNotified stamps last_notified_at on a subscription after a
+// successful push delivery. Best-effort by design — the push adapter ignores the
+// error (a lost stamp only means the devices UI shows a slightly stale "last
+// notified"), so this never fails a delivery.
+func (r *Repository) MarkPushSubscriptionNotified(ctx context.Context, endpoint string) error {
+	return apperrors.FromPg(r.Q.MarkPushSubscriptionNotified(ctx, endpoint), "mark push subscription notified")
 }
 
 // DeletePushSubscriptionByIDForUser removes one of the caller's own devices by

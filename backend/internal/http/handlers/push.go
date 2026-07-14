@@ -100,11 +100,12 @@ func (h *Push) Subscribe(ctx context.Context, input *PushSubscribeInput) (*PushS
 // so the browser can match it against its own subscription to badge "this
 // device" in the management UI.
 type pushSubscriptionView struct {
-	ID         uuid.UUID `json:"id" format:"uuid" doc:"Subscription id; use it to remove or test this device"`
-	Endpoint   string    `json:"endpoint" doc:"Push service endpoint URL; the browser matches this against its own subscription to identify the current device"`
-	UserAgent  *string   `json:"userAgent" doc:"Device label captured at registration (User-Agent), null if unknown"`
-	CreatedAt  time.Time `json:"createdAt" doc:"When this device first subscribed"`
-	LastUsedAt time.Time `json:"lastUsedAt" doc:"When this subscription was last refreshed"`
+	ID             uuid.UUID  `json:"id" format:"uuid" doc:"Subscription id; use it to remove or test this device"`
+	Endpoint       string     `json:"endpoint" doc:"Push service endpoint URL; the browser matches this against its own subscription to identify the current device"`
+	UserAgent      *string    `json:"userAgent" doc:"Device label captured at registration (User-Agent), null if unknown"`
+	CreatedAt      time.Time  `json:"createdAt" doc:"When this device first subscribed"`
+	LastUsedAt     time.Time  `json:"lastUsedAt" doc:"When this subscription was last (re)subscribed/refreshed"`
+	LastNotifiedAt *time.Time `json:"lastNotifiedAt" doc:"When a push was last successfully delivered to this device; null if never notified yet"`
 }
 
 type PushListInput struct{}
@@ -125,11 +126,12 @@ func (h *Push) List(ctx context.Context, _ *PushListInput) (*PushListOutput, err
 	views := make([]pushSubscriptionView, 0, len(subs))
 	for _, s := range subs {
 		views = append(views, pushSubscriptionView{
-			ID:         s.ID,
-			Endpoint:   s.Endpoint,
-			UserAgent:  s.UserAgent,
-			CreatedAt:  s.CreatedAt,
-			LastUsedAt: s.LastUsedAt,
+			ID:             s.ID,
+			Endpoint:       s.Endpoint,
+			UserAgent:      s.UserAgent,
+			CreatedAt:      s.CreatedAt,
+			LastUsedAt:     s.LastUsedAt,
+			LastNotifiedAt: s.LastNotifiedAt,
 		})
 	}
 	return &PushListOutput{Body: views}, nil

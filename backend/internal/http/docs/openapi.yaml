@@ -115,8 +115,11 @@ components:
           type:
             - array
             - "null"
+        subscribed:
+          type: boolean
       required:
         - bundle
+        - subscribed
         - channels
       type: object
     CandidateFields:
@@ -3699,25 +3702,20 @@ components:
           format: uri
           readOnly: true
           type: string
-        channel:
-          description: "Deliverable channel: 'in_app' or 'email'"
+        bundle:
+          description: Bundle the preference applies to
           minLength: 1
           type: string
         enabled:
-          description: Whether the channel is enabled for the bundle
+          description: Whether the target is enabled for the bundle
           type: boolean
-        scope:
-          description: Preference scope; v1 accepts 'bundle' only
-          minLength: 1
-          type: string
-        value:
-          description: Bundle name the toggle applies to
+        target:
+          description: "What to toggle: 'subscribed' (the master — in-app follows it), 'email', or 'push'"
           minLength: 1
           type: string
       required:
-        - scope
-        - value
-        - channel
+        - bundle
+        - target
         - enabled
       type: object
     NotificationsUnreadBody:
@@ -4087,8 +4085,14 @@ components:
           description: Subscription id; use it to remove or test this device
           format: uuid
           type: string
+        lastNotifiedAt:
+          description: When a push was last successfully delivered to this device; null if never notified yet
+          format: date-time
+          type:
+            - string
+            - "null"
         lastUsedAt:
-          description: When this subscription was last refreshed
+          description: When this subscription was last (re)subscribed/refreshed
           format: date-time
           type: string
         userAgent:
@@ -4102,6 +4106,7 @@ components:
         - userAgent
         - createdAt
         - lastUsedAt
+        - lastNotifiedAt
       type: object
     QualityBinOption:
       additionalProperties: false
@@ -9323,7 +9328,7 @@ paths:
         - notifications
   /api/v1/notifications/preferences:
     get:
-      description: Returns the caller's per-bundle channel preferences (resolved enablement) plus whether each channel can deliver right now.
+      description: "Returns the caller's per-bundle preferences: whether they're subscribed (the master — in-app follows it) and the resolved enablement plus deliverability of each outbound channel (email, push)."
       operationId: notification-preferences-get
       responses:
         "200":
@@ -9342,7 +9347,7 @@ paths:
       tags:
         - notifications
     put:
-      description: Toggles one channel for one bundle for the caller. v1 accepts bundle-scope writes only.
+      description: "Toggles one target for one bundle for the caller: the subscription master ('subscribed', which governs in-app), or an outbound channel ('email'/'push')."
       operationId: notification-preferences-set
       requestBody:
         content:

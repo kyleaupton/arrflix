@@ -7,17 +7,20 @@ import (
 	"github.com/google/uuid"
 )
 
-// Notification audiences, channels, delivery statuses, and preference scopes. The
-// DB stores each as TEXT + CHECK; these typed consts give services and tests safe
-// names. The full vocabulary lives here even though v1 exercises only the `user`
-// audience, the `in_app` channel, and the queued→delivering→delivered/dead
-// statuses — later slices (admin audience, push, email, the resolution lifecycle)
-// light up the rest.
+// Notification audiences, channels, and delivery statuses. The DB stores each as
+// TEXT + CHECK; these typed consts give services and tests safe names. The full
+// vocabulary lives here even though v1 exercises only the `user` audience and the
+// queued→delivering→delivered/dead statuses — later slices (admin audience, the
+// resolution lifecycle) light up the rest.
+//
+// ChannelInApp is deliberately NOT a preference the user toggles: it is the
+// inherent face of a bundle subscription (see BundlePreference). It remains a
+// delivery channel (the bell's outbox rows carry channel='in_app') and an adapter
+// name, but preferences model it as "subscribed", not as a switchable channel.
 type (
 	NotificationAudience string
 	NotificationChannel  string
 	NotificationStatus   string
-	PreferenceScope      string
 )
 
 const (
@@ -36,9 +39,6 @@ const (
 	OutboxDead           NotificationStatus = "dead"
 	OutboxAwaitingConfig NotificationStatus = "awaiting_config"
 	OutboxSuperseded     NotificationStatus = "superseded"
-
-	PreferenceScopeBundle PreferenceScope = "bundle"
-	PreferenceScopeEvent  PreferenceScope = "event"
 )
 
 // NotificationOutbox is the domain shape for a notification_outbox row — one
@@ -78,19 +78,23 @@ type InboxNotification struct {
 	ReadAt    *time.Time      `json:"readAt,omitempty"`
 }
 
-// BundlePreference is the prefs read view for one preference bundle: the bundle
-// name and its per-channel toggle state. It is a resolved projection (row value
-// or in-code default) over the deliverable channels, not a stored row — the prefs
-// UI renders one card per bundle with a switch per channel.
+// BundlePreference is the prefs read view for one preference bundle: whether the
+// user is subscribed (the master — in-app follows it), plus the resolved state of
+// the outbound amplifier channels (email, push). It is a resolved projection (row
+// value or in-code default), not a stored row — the prefs UI renders one card per
+// bundle with a master switch and a row per outbound channel. in_app is not a
+// channel here; being subscribed IS being in the bell.
 type BundlePreference struct {
-	Bundle   string              `json:"bundle"`
-	Channels []ChannelPreference `json:"channels"`
+	Bundle     string              `json:"bundle"`
+	Subscribed bool                `json:"subscribed"`
+	Channels   []ChannelPreference `json:"channels"`
 }
 
-// ChannelPreference is one channel's state within a BundlePreference. Enabled is
-// the resolved toggle (a stored row wins over the in-code default); Available is
-// whether the channel can actually deliver right now (email ⇐ SMTP configured),
-// so the UI can render an enabled-but-undeliverable channel distinctly.
+// ChannelPreference is one outbound channel's state within a BundlePreference.
+// Enabled is the resolved toggle (a stored row wins over the in-code default);
+// Available is whether the channel can actually deliver right now (email ⇐ SMTP
+// configured), so the UI can render an enabled-but-undeliverable channel
+// distinctly.
 type ChannelPreference struct {
 	Channel   string `json:"channel"`
 	Enabled   bool   `json:"enabled"`
@@ -98,15 +102,17 @@ type ChannelPreference struct {
 }
 
 // NotificationPreference is the domain shape for a notification_preference row —
-// one channel toggle at bundle or event scope. Value is a bundle name when
-// Scope is 'bundle', an event-type string when 'event'. Mirrors
+// one row per (user, bundle) carrying the columnar toggles. Each flag is a *bool:
+// nil means "no override, defer to the bundle's in-code registry default", so
+// retuning a default reaches every user who never set that flag. Subscribed is the
+// master (in-app follows it); Email/Push are the outbound amplifiers. Mirrors
 // dbgen.NotificationPreference.
 type NotificationPreference struct {
-	UserID    uuid.UUID `json:"userId"`
-	Scope     string    `json:"scope"`
-	Value     string    `json:"value"`
-	Channel   string    `json:"channel"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	UserID     uuid.UUID `json:"userId"`
+	Bundle     string    `json:"bundle"`
+	Subscribed *bool     `json:"subscribed"`
+	Email      *bool     `json:"email"`
+	Push       *bool     `json:"push"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 }

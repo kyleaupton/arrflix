@@ -77,6 +77,7 @@ export type BootstrapUser = {
 export type BundlePreference = {
     bundle: string;
     channels: Array<ChannelPreference> | null;
+    subscribed: boolean;
 };
 
 export type CandidateFields = {
@@ -1563,21 +1564,17 @@ export type NotificationsPrefsSetBody = {
      */
     readonly $schema?: string;
     /**
-     * Deliverable channel: 'in_app' or 'email'
+     * Bundle the preference applies to
      */
-    channel: string;
+    bundle: string;
     /**
-     * Whether the channel is enabled for the bundle
+     * Whether the target is enabled for the bundle
      */
     enabled: boolean;
     /**
-     * Preference scope; v1 accepts 'bundle' only
+     * What to toggle: 'subscribed' (the master — in-app follows it), 'email', or 'push'
      */
-    scope: string;
-    /**
-     * Bundle name the toggle applies to
-     */
-    value: string;
+    target: string;
 };
 
 export type NotificationsUnreadBody = {
@@ -1766,7 +1763,11 @@ export type PushSubscriptionView = {
      */
     id: string;
     /**
-     * When this subscription was last refreshed
+     * When a push was last successfully delivered to this device; null if never notified yet
+     */
+    lastNotifiedAt: string | null;
+    /**
+     * When this subscription was last (re)subscribed/refreshed
      */
     lastUsedAt: string;
     /**
@@ -3353,21 +3354,17 @@ export type NotificationsPrefsBodyWritable = {
 
 export type NotificationsPrefsSetBodyWritable = {
     /**
-     * Deliverable channel: 'in_app' or 'email'
+     * Bundle the preference applies to
      */
-    channel: string;
+    bundle: string;
     /**
-     * Whether the channel is enabled for the bundle
+     * Whether the target is enabled for the bundle
      */
     enabled: boolean;
     /**
-     * Preference scope; v1 accepts 'bundle' only
+     * What to toggle: 'subscribed' (the master — in-app follows it), 'email', or 'push'
      */
-    scope: string;
-    /**
-     * Bundle name the toggle applies to
-     */
-    value: string;
+    target: string;
 };
 
 export type NotificationsUnreadBodyWritable = {

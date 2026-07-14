@@ -166,9 +166,10 @@ func TestNotification_DedupIndex(t *testing.T) {
 	}
 }
 
-// TestNotification_Preferences proves the preference upsert is a true upsert:
-// re-setting the same (user, scope, value, channel) key flips the flag in place
-// rather than inserting a second row.
+// TestNotification_Preferences proves the columnar preference writes: one row per
+// (user, bundle), each write touches only its own column (so email doesn't clobber
+// push), untouched columns stay NULL (defer to defaults), and re-setting a column
+// flips it in place rather than inserting a second row.
 func TestNotification_Preferences(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -176,35 +177,46 @@ func TestNotification_Preferences(t *testing.T) {
 	ctx := context.Background()
 
 	user := newNotifUser(t, ctx, r, "notif-prefs@test.local")
-	set := func(enabled bool) model.NotificationPreference {
-		p, err := r.UpsertPreference(ctx, repo.UpsertPreferenceParams{
-			UserID:  user.ID,
-			Scope:   string(model.PreferenceScopeBundle),
-			Value:   "my_requests",
-			Channel: string(model.ChannelInApp),
-			Enabled: enabled,
-		})
-		if err != nil {
-			t.Fatalf("upsert preference: %v", err)
-		}
-		return p
+
+	// Two column writes to the same bundle must land in one row without clobbering.
+	if err := r.SetBundlePreference(ctx, user.ID, "my_requests", string(model.ChannelPush), true); err != nil {
+		t.Fatalf("set push: %v", err)
+	}
+	if err := r.SetBundlePreference(ctx, user.ID, "my_requests", string(model.ChannelEmail), true); err != nil {
+		t.Fatalf("set email: %v", err)
 	}
 
-	if p := set(true); !p.Enabled {
-		t.Fatalf("initial preference should be enabled")
-	}
-	if p := set(false); p.Enabled {
-		t.Fatalf("re-upsert should flip enabled to false")
-	}
 	prefs, err := r.ListPreferences(ctx, user.ID)
 	if err != nil {
 		t.Fatalf("list preferences: %v", err)
 	}
 	if len(prefs) != 1 {
-		t.Fatalf("preferences = %d rows, want 1 (upsert, not insert)", len(prefs))
+		t.Fatalf("preferences = %d rows, want 1 (one per bundle)", len(prefs))
 	}
-	if prefs[0].Enabled {
-		t.Fatalf("stored preference should be the updated (disabled) value")
+	p := prefs[0]
+	if p.Push == nil || !*p.Push {
+		t.Fatalf("push should be set true, got %v", p.Push)
+	}
+	if p.Email == nil || !*p.Email {
+		t.Fatalf("email should be set true (not clobbered by the push write), got %v", p.Email)
+	}
+	if p.Subscribed != nil {
+		t.Fatalf("subscribed was never written; want NULL (defer to default), got %v", *p.Subscribed)
+	}
+
+	// Re-setting push flips it in place — still one row.
+	if err := r.SetBundlePreference(ctx, user.ID, "my_requests", string(model.ChannelPush), false); err != nil {
+		t.Fatalf("flip push: %v", err)
+	}
+	prefs, err = r.ListPreferences(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("list preferences: %v", err)
+	}
+	if len(prefs) != 1 {
+		t.Fatalf("preferences = %d rows after flip, want 1 (upsert, not insert)", len(prefs))
+	}
+	if prefs[0].Push == nil || *prefs[0].Push {
+		t.Fatalf("push should now be false, got %v", prefs[0].Push)
 	}
 }
 
@@ -274,9 +286,9 @@ func TestNotification_Enqueue(t *testing.T) {
 	}
 }
 
-// TestNotification_EnqueueRespectsDisabledPref proves preference resolution gates
-// enqueue: event-scope rows disabling every active default channel suppress the
-// notification entirely.
+// TestNotification_EnqueueRespectsDisabledPref proves the subscription master gates
+// enqueue: unsubscribing the event's bundle suppresses every channel — in_app
+// included — so nothing enqueues.
 func TestNotification_EnqueueRespectsDisabledPref(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -285,17 +297,8 @@ func TestNotification_EnqueueRespectsDisabledPref(t *testing.T) {
 	ctx := context.Background()
 
 	user := newNotifUser(t, ctx, r, "notif-enqueue-off@test.local")
-	// my_requests defaults on for in_app + push; disable both so nothing enqueues.
-	for _, ch := range []model.NotificationChannel{model.ChannelInApp, model.ChannelPush} {
-		if _, err := r.UpsertPreference(ctx, repo.UpsertPreferenceParams{
-			UserID:  user.ID,
-			Scope:   string(model.PreferenceScopeEvent),
-			Value:   "want.available",
-			Channel: string(ch),
-			Enabled: false,
-		}); err != nil {
-			t.Fatalf("upsert pref %s: %v", ch, err)
-		}
+	if err := r.SetBundlePreference(ctx, user.ID, notifications.BundleMyRequests, "subscribed", false); err != nil {
+		t.Fatalf("unsubscribe: %v", err)
 	}
 	if err := svc.Enqueue(ctx, notifications.WantAvailable{
 		Recipient: user.ID,
@@ -308,7 +311,7 @@ func TestNotification_EnqueueRespectsDisabledPref(t *testing.T) {
 		t.Fatalf("list due: %v", err)
 	}
 	if len(due) != 0 {
-		t.Fatalf("enqueued rows = %d, want 0 (channels disabled by pref)", len(due))
+		t.Fatalf("enqueued rows = %d, want 0 (unsubscribed)", len(due))
 	}
 }
 

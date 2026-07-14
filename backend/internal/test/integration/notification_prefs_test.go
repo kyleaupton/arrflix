@@ -18,43 +18,49 @@ type prefsBody struct {
 	Bundles []model.BundlePreference `json:"bundles"`
 }
 
-// setPrefBody mirrors the PUT /notifications/preferences request.
+// setPrefBody mirrors the PUT /notifications/preferences request: one target
+// ("subscribed"/"email"/"push") on one bundle.
 type setPrefBody struct {
-	Scope   string `json:"scope"`
-	Value   string `json:"value"`
-	Channel string `json:"channel"`
+	Bundle  string `json:"bundle"`
+	Target  string `json:"target"`
 	Enabled bool   `json:"enabled"`
 }
 
-// channelPref returns a bundle's channel entry from a prefs response, failing the
-// test if it isn't present.
-func channelPref(t *testing.T, bundles []model.BundlePreference, bundle, channel string) model.ChannelPreference {
+// bundlePref returns a bundle's entry from a prefs response, failing if absent.
+func bundlePref(t *testing.T, bundles []model.BundlePreference, bundle string) model.BundlePreference {
 	t.Helper()
 	for _, b := range bundles {
-		if b.Bundle != bundle {
-			continue
+		if b.Bundle == bundle {
+			return b
 		}
-		for _, c := range b.Channels {
-			if c.Channel == channel {
-				return c
-			}
+	}
+	t.Fatalf("bundle %q not found: %+v", bundle, bundles)
+	return model.BundlePreference{}
+}
+
+// channelPref returns a bundle's outbound-channel entry from a prefs response,
+// failing the test if it isn't present.
+func channelPref(t *testing.T, bundles []model.BundlePreference, bundle, channel string) model.ChannelPreference {
+	t.Helper()
+	for _, c := range bundlePref(t, bundles, bundle).Channels {
+		if c.Channel == channel {
+			return c
 		}
 	}
 	t.Fatalf("channel %q not found in bundle %q: %+v", channel, bundle, bundles)
 	return model.ChannelPreference{}
 }
 
-// TestNotificationPrefs_SeededOnCreate proves the user-create flow materializes a
-// new user's default preferences: creating a user through UsersService writes
-// bundle-scope rows matching the catalog defaults (my_requests: in_app on,
-// email off).
-func TestNotificationPrefs_SeededOnCreate(t *testing.T) {
+// TestNotificationPrefs_LazyDefaultsNoSeed proves the lazy model: creating a user
+// writes NO preference rows, yet resolution still yields the catalog defaults
+// (my_requests subscribed, email off) from zero stored rows.
+func TestNotificationPrefs_LazyDefaultsNoSeed(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
 	app := testapp.New(t, pool)
 	ctx := context.Background()
 
-	user, err := app.Services.Users.Create(ctx, "seeded@test.local", "seeded", "test-password-123", "requester", true)
+	user, err := app.Services.Users.Create(ctx, "lazy@test.local", "lazy", "test-password-123", "requester", true)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -63,30 +69,27 @@ func TestNotificationPrefs_SeededOnCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list preferences: %v", err)
 	}
-	if len(prefs) == 0 {
-		t.Fatalf("no preferences seeded for new user")
+	if len(prefs) != 0 {
+		t.Fatalf("lazy model must not seed rows on create, got %d: %+v", len(prefs), prefs)
 	}
 
-	byKey := map[string]bool{}
-	for _, p := range prefs {
-		if p.Scope != string(model.PreferenceScopeBundle) {
-			t.Fatalf("seeded a non-bundle-scope row: %+v", p)
-		}
-		byKey[p.Value+"|"+p.Channel] = p.Enabled
+	// Resolution reconstructs the defaults with no rows present.
+	bundles, err := app.Services.Notifications.Preferences(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("preferences: %v", err)
 	}
-
-	if got, ok := byKey[notifications.BundleMyRequests+"|"+string(model.ChannelInApp)]; !ok || !got {
-		t.Fatalf("my_requests/in_app = %v (present=%v), want enabled", got, ok)
+	if !bundlePref(t, bundles, notifications.BundleMyRequests).Subscribed {
+		t.Fatalf("my_requests should default subscribed")
 	}
-	if got, ok := byKey[notifications.BundleMyRequests+"|"+string(model.ChannelEmail)]; !ok || got {
-		t.Fatalf("my_requests/email = %v (present=%v), want disabled", got, ok)
+	if channelPref(t, bundles, notifications.BundleMyRequests, string(model.ChannelEmail)).Enabled {
+		t.Fatalf("email should default off")
 	}
 }
 
-// TestNotificationPrefs_GetReflectsState drives GET /notifications/preferences as
-// a normal user: in_app is enabled and available; email is disabled and
-// unavailable while SMTP is unconfigured; once an enabled SMTP provider is saved,
-// email reads available (still disabled — availability is not enablement).
+// TestNotificationPrefs_GetReflectsState drives GET /notifications/preferences as a
+// normal user: subscribed by default; email disabled and unavailable while SMTP is
+// unconfigured; once an enabled SMTP provider is saved, email reads available (still
+// disabled — availability is not enablement).
 func TestNotificationPrefs_GetReflectsState(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -98,9 +101,8 @@ func TestNotificationPrefs_GetReflectsState(t *testing.T) {
 	var body prefsBody
 	app.GETAs(t, token, "/api/v1/notifications/preferences", &body, http.StatusOK)
 
-	inApp := channelPref(t, body.Bundles, notifications.BundleMyRequests, string(model.ChannelInApp))
-	if !inApp.Enabled || !inApp.Available {
-		t.Fatalf("in_app = %+v, want enabled+available", inApp)
+	if !bundlePref(t, body.Bundles, notifications.BundleMyRequests).Subscribed {
+		t.Fatalf("my_requests should be subscribed by default")
 	}
 	email := channelPref(t, body.Bundles, notifications.BundleMyRequests, string(model.ChannelEmail))
 	if email.Enabled || email.Available {
@@ -122,9 +124,9 @@ func TestNotificationPrefs_GetReflectsState(t *testing.T) {
 }
 
 // TestNotificationPrefs_OptInLightsUpEmail is the slice's payoff: with email off
-// (the default) enqueue writes no email row; after the user opts in via PUT,
-// enqueue writes an email-channel outbox row for that user. This is what makes the
-// email channel non-inert.
+// (the default) enqueue writes no email row; after the user opts in via PUT, enqueue
+// writes an email-channel outbox row for that user. This is what makes the email
+// channel non-inert.
 func TestNotificationPrefs_OptInLightsUpEmail(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -163,9 +165,8 @@ func TestNotificationPrefs_OptInLightsUpEmail(t *testing.T) {
 
 	// Opt in over HTTP, then configure a deliverable SMTP provider.
 	app.DoAs(t, token, http.MethodPut, "/api/v1/notifications/preferences", setPrefBody{
-		Scope:   string(model.PreferenceScopeBundle),
-		Value:   notifications.BundleMyRequests,
-		Channel: string(model.ChannelEmail),
+		Bundle:  notifications.BundleMyRequests,
+		Target:  string(model.ChannelEmail),
 		Enabled: true,
 	}, nil, http.StatusNoContent)
 	seedEmailProvider(t, ctx, app.Repo, "localhost", 2525, true)
@@ -174,6 +175,41 @@ func TestNotificationPrefs_OptInLightsUpEmail(t *testing.T) {
 	enqueue()
 	if n := emailRows(); n != 1 {
 		t.Fatalf("email rows after opt-in = %d, want 1", n)
+	}
+}
+
+// TestNotificationPrefs_UnsubscribeSilences proves the master: unsubscribing a
+// bundle suppresses every channel — in_app included — for that user's events.
+func TestNotificationPrefs_UnsubscribeSilences(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	app := testapp.New(t, pool)
+	ctx := context.Background()
+
+	user, token := app.UserToken(t, ctx, "unsub", "viewer")
+
+	// Unsubscribe from my_requests via HTTP.
+	app.DoAs(t, token, http.MethodPut, "/api/v1/notifications/preferences", setPrefBody{
+		Bundle:  notifications.BundleMyRequests,
+		Target:  "subscribed",
+		Enabled: false,
+	}, nil, http.StatusNoContent)
+
+	if err := app.Services.Notifications.Enqueue(ctx, notifications.WantAvailable{
+		Recipient: user.ID,
+		Media:     notifications.MediaRef{Title: "Sentinel"},
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	due, err := app.Repo.ListDueOutbox(ctx, 100)
+	if err != nil {
+		t.Fatalf("list due: %v", err)
+	}
+	for _, row := range due {
+		if row.RecipientUserID != nil && *row.RecipientUserID == user.ID {
+			t.Fatalf("unsubscribed user got a %q row; want silence", row.Channel)
+		}
 	}
 }
 
@@ -191,9 +227,8 @@ func TestNotificationPrefs_ScopedToCaller(t *testing.T) {
 
 	// A enables email on my_requests.
 	app.DoAs(t, tokenA, http.MethodPut, "/api/v1/notifications/preferences", setPrefBody{
-		Scope:   string(model.PreferenceScopeBundle),
-		Value:   notifications.BundleMyRequests,
-		Channel: string(model.ChannelEmail),
+		Bundle:  notifications.BundleMyRequests,
+		Target:  string(model.ChannelEmail),
 		Enabled: true,
 	}, nil, http.StatusNoContent)
 
@@ -232,9 +267,8 @@ func TestNotificationPrefs_RequiresAuth(t *testing.T) {
 		t.Fatalf("unauthenticated GET = %d, want 401", code)
 	}
 	if code := app.Status(t, "", http.MethodPut, "/api/v1/notifications/preferences", setPrefBody{
-		Scope:   string(model.PreferenceScopeBundle),
-		Value:   notifications.BundleMyRequests,
-		Channel: string(model.ChannelInApp),
+		Bundle:  notifications.BundleMyRequests,
+		Target:  "subscribed",
 		Enabled: false,
 	}); code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated PUT = %d, want 401", code)

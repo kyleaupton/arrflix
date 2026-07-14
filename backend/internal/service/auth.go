@@ -14,15 +14,14 @@ import (
 )
 
 type AuthService struct {
-	repo          *repo.Repository
-	jwtSecret     string
-	settings      *SettingsService
-	invites       *InvitesService
-	notifications *NotificationService
+	repo      *repo.Repository
+	jwtSecret string
+	settings  *SettingsService
+	invites   *InvitesService
 }
 
-func NewAuthService(r *repo.Repository, cfg *cfg, settings *SettingsService, invites *InvitesService, notifications *NotificationService) *AuthService {
-	return &AuthService{repo: r, jwtSecret: cfg.jwtSecret, settings: settings, invites: invites, notifications: notifications}
+func NewAuthService(r *repo.Repository, cfg *cfg, settings *SettingsService, invites *InvitesService) *AuthService {
+	return &AuthService{repo: r, jwtSecret: cfg.jwtSecret, settings: settings, invites: invites}
 }
 
 // IssueToken generates a JWT for the given user.
@@ -119,11 +118,6 @@ func (s *AuthService) LoginWithPlex(ctx context.Context, plexSubject, email, use
 	if err != nil {
 		return "", err
 	}
-
-	// Seed default notification preferences for the just-created account. This is
-	// the create branch only — the returning-user branches above must not reseed
-	// and clobber a user's toggles. Best-effort: falls back to in-code defaults.
-	_ = s.notifications.SeedDefaults(ctx, user.ID)
 
 	// Assign default role
 	role, err := s.repo.GetRoleByName(ctx, "requester")

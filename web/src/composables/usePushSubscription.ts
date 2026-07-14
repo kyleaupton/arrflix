@@ -135,7 +135,7 @@ export function usePushSubscription() {
 
       // Opt the push channel in so enabling actually delivers something.
       await notificationPreferencesSet({
-        body: { scope: 'bundle', value: PUSH_BUNDLE, channel: 'push', enabled: true },
+        body: { bundle: PUSH_BUNDLE, target: 'push', enabled: true },
       })
 
       currentEndpoint.value = sub.endpoint

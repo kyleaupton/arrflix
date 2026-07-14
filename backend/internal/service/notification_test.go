@@ -41,10 +41,10 @@ func TestRegisterPushSubscription_ValidationRejects(t *testing.T) {
 	}
 }
 
-// TestSetPreference_ValidationRejects locks the v1 write gate: only a bundle-scope
-// write to a known user bundle on a deliverable channel is accepted. A bad scope,
-// value, or channel is a Validation error naming the offending field. The
-// rejection paths never reach the repo, so a nil repo is safe here.
+// TestSetPreference_ValidationRejects locks the write gate: only a write to a known
+// user bundle targeting the subscription master or a known outbound channel is
+// accepted. A bad bundle or target is a Validation error naming the offending field.
+// The rejection paths never reach the repo, so a nil repo is safe here.
 func TestSetPreference_ValidationRejects(t *testing.T) {
 	t.Parallel()
 
@@ -52,20 +52,19 @@ func TestSetPreference_ValidationRejects(t *testing.T) {
 	ctx := context.Background()
 
 	cases := []struct {
-		name    string
-		scope   string
-		value   string
-		channel string
-		field   string
+		name   string
+		bundle string
+		target string
+		field  string
 	}{
-		{"event scope rejected", string(model.PreferenceScopeEvent), notifications.BundleMyRequests, string(model.ChannelInApp), "body.scope"},
-		{"unknown bundle rejected", string(model.PreferenceScopeBundle), "not_a_bundle", string(model.ChannelInApp), "body.value"},
-		{"garbage channel rejected", string(model.PreferenceScopeBundle), notifications.BundleMyRequests, "carrier-pigeon", "body.channel"},
+		{"unknown bundle rejected", "not_a_bundle", "subscribed", "body.bundle"},
+		{"garbage target rejected", notifications.BundleMyRequests, "carrier-pigeon", "body.target"},
+		{"in_app is not a target", notifications.BundleMyRequests, string(model.ChannelInApp), "body.target"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			err := svc.SetPreference(ctx, uuid.New(), c.scope, c.value, c.channel, true)
+			err := svc.SetPreference(ctx, uuid.New(), c.bundle, c.target, true)
 			if err == nil {
 				t.Fatalf("expected a validation error, got nil")
 			}

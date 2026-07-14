@@ -18,11 +18,10 @@ import (
 	"github.com/kyleaupton/arrflix/internal/model"
 )
 
-// Preference bundle names group event types for channel toggling. They are stable
-// strings (stored in notification_preference.value at scope='bundle'); renaming one
-// is a data migration, so treat them as frozen. v1 ships the two user-audience
-// bundles; the admin bundles are declared for forward reference and light up with
-// the admin audience (v1.1).
+// Preference bundle names group event types for toggling. They are stable strings
+// (stored in notification_preference.bundle); renaming one is a data migration, so
+// treat them as frozen. v1 ships the two user-audience bundles; the admin bundles
+// are declared for forward reference and light up with the admin audience (v1.1).
 const (
 	BundleMyRequests      = "my_requests"
 	BundleLibraryActivity = "library_activity"
@@ -30,33 +29,38 @@ const (
 	BundleAdminSummaries  = "admin_summaries"
 )
 
-// Bundle is a static preference group: the audience it belongs to and its default
-// channel enablement for a brand-new user who hasn't toggled anything. Defaults are
-// the floor of the resolution chain (event pref → bundle pref → these).
+// Bundle is a static preference group. Subscribed is whether a brand-new user is
+// subscribed to the bundle before touching anything — the master toggle's default,
+// and the floor for in-app (subscribed ⇒ the bell shows it). Defaults holds the
+// per-outbound-channel default (email, push) for a subscribed user; in_app is not a
+// channel here. Both are the floor of the resolution chain (stored override → these).
 type Bundle struct {
-	Name     string
-	Audience model.NotificationAudience
-	Defaults map[model.NotificationChannel]bool
+	Name       string
+	Audience   model.NotificationAudience
+	Subscribed bool
+	Defaults   map[model.NotificationChannel]bool
 }
 
-// bundles is the static bundle catalog. Defaults follow the spec: my_requests
-// pushes by default, everything is on in-app, and email defaults off (inert until
-// SMTP is configured). Only user-audience bundles are populated in v1.
+// bundles is the static bundle catalog. Every user-audience bundle is subscribed by
+// default (a new user is in the bell for it). Outbound defaults follow the spec:
+// my_requests pushes by default; library_activity does not; email defaults off
+// everywhere (inert until SMTP is configured). Only user-audience bundles are
+// populated in v1.
 var bundles = map[string]Bundle{
 	BundleMyRequests: {
-		Name:     BundleMyRequests,
-		Audience: model.AudienceUser,
+		Name:       BundleMyRequests,
+		Audience:   model.AudienceUser,
+		Subscribed: true,
 		Defaults: map[model.NotificationChannel]bool{
-			model.ChannelInApp: true,
 			model.ChannelPush:  true,
 			model.ChannelEmail: false,
 		},
 	},
 	BundleLibraryActivity: {
-		Name:     BundleLibraryActivity,
-		Audience: model.AudienceUser,
+		Name:       BundleLibraryActivity,
+		Audience:   model.AudienceUser,
+		Subscribed: true,
 		Defaults: map[model.NotificationChannel]bool{
-			model.ChannelInApp: true,
 			model.ChannelPush:  false,
 			model.ChannelEmail: false,
 		},
@@ -65,10 +69,9 @@ var bundles = map[string]Bundle{
 
 // UserBundles returns the user-audience bundles in a stable (name-sorted) order.
 // It is the single source of truth for "which preference groups does a v1 user
-// toggle?" — both SeedDefaults (materializing a new user's default rows) and the
-// prefs read API iterate it, so a bundle added to the catalog with AudienceUser
-// is seeded and surfaced without touching either caller. Admin-audience bundles
-// are excluded until the admin audience lands (v1.1).
+// toggle?" — the prefs read API iterates it, so a bundle added to the catalog with
+// AudienceUser is surfaced without touching the caller. Admin-audience bundles are
+// excluded until the admin audience lands (v1.1).
 func UserBundles() []Bundle {
 	out := make([]Bundle, 0, len(bundles))
 	for _, b := range bundles {
@@ -103,33 +106,64 @@ type Event interface {
 	Payload() any
 }
 
-// ChannelEnabled resolves whether an event routes to a channel for a user, given
-// that user's stored preferences. Precedence: an event-scope row wins outright;
-// else a bundle-scope row; else the bundle's in-code default. An unknown bundle
-// (no catalog entry) resolves false — fail closed rather than spam.
-func ChannelEnabled(prefs []model.NotificationPreference, eventType, bundle string, ch model.NotificationChannel) bool {
-	channel := string(ch)
-	var bundleRow *bool
+// prefFor returns the user's stored row for a bundle, or nil if they've never
+// overridden anything in it (the lazy case — resolution falls back to defaults).
+func prefFor(prefs []model.NotificationPreference, bundle string) *model.NotificationPreference {
 	for i := range prefs {
-		p := prefs[i]
-		if p.Channel != channel {
-			continue
-		}
-		switch {
-		case p.Scope == string(model.PreferenceScopeEvent) && p.Value == eventType:
-			return p.Enabled // event-scope override wins outright
-		case p.Scope == string(model.PreferenceScopeBundle) && p.Value == bundle:
-			enabled := p.Enabled
-			bundleRow = &enabled
+		if prefs[i].Bundle == bundle {
+			return &prefs[i]
 		}
 	}
-	if bundleRow != nil {
-		return *bundleRow
+	return nil
+}
+
+// Subscribed resolves whether the user is subscribed to a bundle — the master
+// toggle, and the floor for in-app (subscribed ⇒ the bell shows the bundle's
+// events). Precedence: a stored subscribed override, else the bundle's in-code
+// default. An unknown bundle resolves false — fail closed rather than spam.
+func Subscribed(prefs []model.NotificationPreference, bundle string) bool {
+	b, ok := bundles[bundle]
+	if !ok {
+		return false
 	}
-	if b, ok := bundles[bundle]; ok {
-		return b.Defaults[ch]
+	if p := prefFor(prefs, bundle); p != nil && p.Subscribed != nil {
+		return *p.Subscribed
 	}
-	return false
+	return b.Subscribed
+}
+
+// ChannelEnabled resolves whether an outbound channel (email or push) is enabled
+// for a bundle. Precedence: a stored per-channel override, else the bundle's
+// in-code default. It is the amplifier question only — in_app is governed by
+// Subscribed, not here — and an unknown bundle resolves false (fail closed).
+//
+// This is orthogonal to Subscribed: a channel can read enabled while the bundle is
+// unsubscribed (the stored toggle is remembered), so Enqueue must gate on Subscribed
+// first, then consult ChannelEnabled for the outbound fan-out.
+func ChannelEnabled(prefs []model.NotificationPreference, bundle string, ch model.NotificationChannel) bool {
+	b, ok := bundles[bundle]
+	if !ok {
+		return false
+	}
+	if p := prefFor(prefs, bundle); p != nil {
+		if v := channelOverride(p, ch); v != nil {
+			return *v
+		}
+	}
+	return b.Defaults[ch]
+}
+
+// channelOverride returns the stored *bool for an outbound channel column, or nil
+// (no override) for a nil column or a non-outbound channel.
+func channelOverride(p *model.NotificationPreference, ch model.NotificationChannel) *bool {
+	switch ch {
+	case model.ChannelEmail:
+		return p.Email
+	case model.ChannelPush:
+		return p.Push
+	default:
+		return nil
+	}
 }
 
 // MediaRef is the compact media descriptor events embed for templates and the

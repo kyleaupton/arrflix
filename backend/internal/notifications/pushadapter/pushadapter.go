@@ -22,11 +22,12 @@ import (
 )
 
 // subscriptionStore is the narrow persistence surface the adapter needs: the
-// recipient's live subscriptions, and a way to prune a dead endpoint.
-// *repo.Repository satisfies it; a test passes a fake.
+// recipient's live subscriptions, a way to prune a dead endpoint, and a way to
+// stamp a successful delivery. *repo.Repository satisfies it; a test passes a fake.
 type subscriptionStore interface {
 	ListPushSubscriptionsByUser(ctx context.Context, userID uuid.UUID) ([]model.PushSubscription, error)
 	DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) (int64, error)
+	MarkPushSubscriptionNotified(ctx context.Context, endpoint string) error
 }
 
 // senderBuilder builds a push.Sender bound to the stored VAPID identity.
@@ -105,6 +106,9 @@ func (a *Adapter) Deliver(ctx context.Context, row model.NotificationOutbox) err
 		switch sendErr := sender.Send(ctx, sub, payload); {
 		case sendErr == nil:
 			delivered++
+			// Best-effort: stamp last_notified_at for the devices UI. A lost stamp
+			// only leaves the UI slightly stale, so it never fails the row.
+			_ = a.subs.MarkPushSubscriptionNotified(ctx, sub.Endpoint)
 		case errors.Is(sendErr, push.ErrSubscriptionGone):
 			// Endpoint dead: prune it. Best-effort — a failed prune just retries
 			// next delivery, so it does not fail the row.

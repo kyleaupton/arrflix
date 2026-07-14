@@ -33,16 +33,18 @@ export function useNotificationPreferences() {
       qc.setQueryData<PrefsResponse>(prefsKey, (prev) => {
         if (!prev?.bundles) return prev
         return {
-          bundles: prev.bundles.map((b) =>
-            b.bundle !== body.value
-              ? b
-              : {
-                  ...b,
-                  channels: (b.channels ?? []).map((c) =>
-                    c.channel === body.channel ? { ...c, enabled: body.enabled } : c,
-                  ),
-                },
-          ),
+          bundles: prev.bundles.map((b) => {
+            if (b.bundle !== body.bundle) return b
+            // 'subscribed' is the master (in-app follows it); 'email'/'push' are the
+            // outbound channels within the bundle.
+            if (body.target === 'subscribed') return { ...b, subscribed: body.enabled }
+            return {
+              ...b,
+              channels: (b.channels ?? []).map((c) =>
+                c.channel === body.target ? { ...c, enabled: body.enabled } : c,
+              ),
+            }
+          }),
         }
       })
     },
@@ -55,7 +57,8 @@ export function useNotificationPreferences() {
     bundles,
     isLoading: computed(() => query.isLoading.value),
     isError: computed(() => query.isError.value),
-    setPreference: (bundle: string, channel: string, enabled: boolean) =>
-      setM.mutate({ body: { scope: 'bundle', value: bundle, channel, enabled } }),
+    // target is 'subscribed' (the master) or an outbound channel ('email'/'push').
+    setPreference: (bundle: string, target: string, enabled: boolean) =>
+      setM.mutate({ body: { bundle, target, enabled } }),
   }
 }

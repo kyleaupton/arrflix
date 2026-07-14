@@ -24,10 +24,12 @@ const BUNDLE_META: Record<string, { title: string; description: string }> = {
   },
 }
 
+// Only the outbound amplifier channels are per-channel toggles. In-app isn't here:
+// it's the inherent face of a subscription (the master switch), always on while
+// subscribed.
 const CHANNEL_META: Record<string, { label: string; description: string; icon: unknown }> = {
-  in_app: { label: 'In-app', description: 'Show in the notifications bell.', icon: Bell },
-  email: { label: 'Email', description: 'Send to your email address.', icon: Mail },
-  push: { label: 'Push', description: 'Send to your devices.', icon: Smartphone },
+  email: { label: 'Email', description: 'Also send to your email address.', icon: Mail },
+  push: { label: 'Push', description: 'Also send to your devices.', icon: Smartphone },
 }
 
 function bundleTitle(key: string) {
@@ -67,48 +69,76 @@ function channelMeta(key: string) {
     <template v-else>
       <Card v-for="bundle in bundles" :key="bundle.bundle">
         <CardHeader>
-          <CardTitle>{{ bundleTitle(bundle.bundle) }}</CardTitle>
-          <CardDescription>{{ bundleDescription(bundle.bundle) }}</CardDescription>
-        </CardHeader>
-        <CardContent class="flex flex-col divide-y">
-          <div
-            v-for="channel in bundle.channels ?? []"
-            :key="channel.channel"
-            class="flex items-center gap-4 py-3 first:pt-0 last:pb-0"
-          >
-            <component
-              :is="channelMeta(channel.channel).icon"
-              class="size-4 text-muted-foreground"
-            />
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium">{{ channelMeta(channel.channel).label }}</p>
-              <p class="text-xs text-muted-foreground">
-                {{ channelMeta(channel.channel).description }}
-              </p>
-              <!-- Opting in ahead of setup is allowed (availability ≠ enablement),
-                   so we warn rather than block when a channel can't deliver yet. -->
-              <p
-                v-if="channel.enabled && !channel.available"
-                class="mt-1 text-xs text-amber-600 dark:text-amber-500"
-              >
-                <template v-if="channel.channel === 'email'">
-                  Email isn't set up yet, so these won't be delivered.
-                  <RouterLink
-                    v-if="auth.canManageSettings"
-                    to="/settings/email"
-                    class="underline underline-offset-2 hover:text-foreground"
-                  >
-                    Set up email
-                  </RouterLink>
-                </template>
-                <template v-else>This channel can't deliver right now.</template>
-              </p>
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex min-w-0 flex-col gap-1.5">
+              <CardTitle>{{ bundleTitle(bundle.bundle) }}</CardTitle>
+              <CardDescription>{{ bundleDescription(bundle.bundle) }}</CardDescription>
             </div>
+            <!-- The master. On = subscribed: it shows in the bell, and the outbound
+                 channels below become available. Off = silent everywhere. -->
             <Switch
-              :model-value="channel.enabled"
-              :aria-label="`${channelMeta(channel.channel).label} for ${bundleTitle(bundle.bundle)}`"
-              @update:model-value="(v: boolean) => setPreference(bundle.bundle, channel.channel, v)"
+              :model-value="bundle.subscribed"
+              :aria-label="`Notify me about ${bundleTitle(bundle.bundle)}`"
+              @update:model-value="(v: boolean) => setPreference(bundle.bundle, 'subscribed', v)"
             />
+          </div>
+        </CardHeader>
+        <CardContent class="flex flex-col gap-3">
+          <p class="flex items-center gap-2 text-xs text-muted-foreground">
+            <Bell class="size-3.5" />
+            <span v-if="bundle.subscribed"
+              >Shown in your notifications bell. Add email or push below.</span
+            >
+            <span v-else>Turn on to get these in your notifications bell.</span>
+          </p>
+
+          <div
+            class="flex flex-col divide-y transition-opacity"
+            :class="{ 'pointer-events-none opacity-50': !bundle.subscribed }"
+          >
+            <div
+              v-for="channel in bundle.channels ?? []"
+              :key="channel.channel"
+              class="flex items-center gap-4 py-3 first:pt-0 last:pb-0"
+            >
+              <component
+                :is="channelMeta(channel.channel).icon"
+                class="size-4 text-muted-foreground"
+              />
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium">{{ channelMeta(channel.channel).label }}</p>
+                <p class="text-xs text-muted-foreground">
+                  {{ channelMeta(channel.channel).description }}
+                </p>
+                <!-- Opting in ahead of setup is allowed (availability ≠ enablement),
+                     so we warn rather than block when a channel can't deliver yet.
+                     Only while subscribed — an off bundle delivers nothing anyway. -->
+                <p
+                  v-if="bundle.subscribed && channel.enabled && !channel.available"
+                  class="mt-1 text-xs text-amber-600 dark:text-amber-500"
+                >
+                  <template v-if="channel.channel === 'email'">
+                    Email isn't set up yet, so these won't be delivered.
+                    <RouterLink
+                      v-if="auth.canManageSettings"
+                      to="/settings/email"
+                      class="underline underline-offset-2 hover:text-foreground"
+                    >
+                      Set up email
+                    </RouterLink>
+                  </template>
+                  <template v-else>This channel can't deliver right now.</template>
+                </p>
+              </div>
+              <Switch
+                :model-value="channel.enabled"
+                :disabled="!bundle.subscribed"
+                :aria-label="`${channelMeta(channel.channel).label} for ${bundleTitle(bundle.bundle)}`"
+                @update:model-value="
+                  (v: boolean) => setPreference(bundle.bundle, channel.channel, v)
+                "
+              />
+            </div>
           </div>
         </CardContent>
       </Card>

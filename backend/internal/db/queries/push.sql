@@ -54,7 +54,11 @@ where endpoint = sqlc.arg(endpoint);
 delete from push_subscription
 where id = sqlc.arg(id) and user_id = sqlc.arg(user_id);
 
--- name: TouchPushSubscription :exec
+-- MarkPushSubscriptionNotified stamps last_notified_at when the push adapter
+-- successfully sends to this endpoint. Best-effort (a lost stamp only means the
+-- devices UI shows a slightly stale "last notified"); keyed by endpoint, the natural
+-- key the adapter has in hand per send.
+-- name: MarkPushSubscriptionNotified :exec
 update push_subscription
-set last_used_at = now()
+set last_notified_at = now()
 where endpoint = sqlc.arg(endpoint);

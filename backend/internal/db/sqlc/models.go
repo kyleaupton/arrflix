@@ -581,13 +581,13 @@ type NotificationOutbox struct {
 }
 
 type NotificationPreference struct {
-	UserID    pgtype.UUID `json:"user_id"`
-	Scope     string      `json:"scope"`
-	Value     string      `json:"value"`
-	Channel   string      `json:"channel"`
-	Enabled   bool        `json:"enabled"`
-	CreatedAt time.Time   `json:"created_at"`
-	UpdatedAt time.Time   `json:"updated_at"`
+	UserID     pgtype.UUID `json:"user_id"`
+	Bundle     string      `json:"bundle"`
+	Subscribed *bool       `json:"subscribed"`
+	Email      *bool       `json:"email"`
+	Push       *bool       `json:"push"`
+	CreatedAt  time.Time   `json:"created_at"`
+	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
 type Permission struct {
@@ -640,14 +640,15 @@ type ProposalWant struct {
 }
 
 type PushSubscription struct {
-	ID         pgtype.UUID `json:"id"`
-	UserID     pgtype.UUID `json:"user_id"`
-	Endpoint   string      `json:"endpoint"`
-	P256dh     string      `json:"p256dh"`
-	Auth       string      `json:"auth"`
-	UserAgent  *string     `json:"user_agent"`
-	CreatedAt  time.Time   `json:"created_at"`
-	LastUsedAt time.Time   `json:"last_used_at"`
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Endpoint       string             `json:"endpoint"`
+	P256dh         string             `json:"p256dh"`
+	Auth           string             `json:"auth"`
+	UserAgent      *string            `json:"user_agent"`
+	CreatedAt      time.Time          `json:"created_at"`
+	LastUsedAt     time.Time          `json:"last_used_at"`
+	LastNotifiedAt pgtype.Timestamptz `json:"last_notified_at"`
 }
 
 type QualityProfile struct {

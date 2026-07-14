@@ -217,13 +217,7 @@ func TestNotification_EnqueueEmailWhenOptedIn(t *testing.T) {
 	ctx := context.Background()
 
 	user := newNotifUser(t, ctx, r, "notif-email-optin@test.local")
-	if _, err := r.UpsertPreference(ctx, repo.UpsertPreferenceParams{
-		UserID:  user.ID,
-		Scope:   string(model.PreferenceScopeBundle),
-		Value:   notifications.BundleMyRequests,
-		Channel: string(model.ChannelEmail),
-		Enabled: true,
-	}); err != nil {
+	if err := r.SetBundlePreference(ctx, user.ID, notifications.BundleMyRequests, string(model.ChannelEmail), true); err != nil {
 		t.Fatalf("opt into email: %v", err)
 	}
 	if err := svc.Enqueue(ctx, notifications.WantAvailable{

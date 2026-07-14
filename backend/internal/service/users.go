@@ -12,13 +12,12 @@ import (
 )
 
 type UsersService struct {
-	repo          *repo.Repository
-	authz         *AuthzService
-	notifications *NotificationService
+	repo  *repo.Repository
+	authz *AuthzService
 }
 
-func NewUsersService(r *repo.Repository, authz *AuthzService, notifications *NotificationService) *UsersService {
-	return &UsersService{repo: r, authz: authz, notifications: notifications}
+func NewUsersService(r *repo.Repository, authz *AuthzService) *UsersService {
+	return &UsersService{repo: r, authz: authz}
 }
 
 // List returns all users with their roles
@@ -73,12 +72,6 @@ func (s *UsersService) Create(ctx context.Context, email, username, password str
 	if err != nil {
 		return model.User{}, err
 	}
-
-	// Materialize the new user's default notification preferences. Best-effort:
-	// a seed failure degrades to in-code defaults (ChannelEnabled resolves them
-	// without rows), so it never blocks account creation — same posture as the
-	// role assignment below.
-	_ = s.notifications.SeedDefaults(ctx, user.ID)
 
 	// Assign role
 	role, err := s.repo.GetRoleByName(ctx, roleName)

@@ -13,11 +13,13 @@ import (
 	"github.com/kyleaupton/arrflix/internal/push"
 )
 
-// fakeStore returns canned subscriptions and records which endpoints were pruned.
+// fakeStore returns canned subscriptions and records which endpoints were pruned
+// and which were stamped notified.
 type fakeStore struct {
-	subs    []model.PushSubscription
-	listErr error
-	pruned  []string
+	subs     []model.PushSubscription
+	listErr  error
+	pruned   []string
+	notified []string
 }
 
 func (s *fakeStore) ListPushSubscriptionsByUser(context.Context, uuid.UUID) ([]model.PushSubscription, error) {
@@ -27,6 +29,11 @@ func (s *fakeStore) ListPushSubscriptionsByUser(context.Context, uuid.UUID) ([]m
 func (s *fakeStore) DeletePushSubscriptionByEndpoint(_ context.Context, endpoint string) (int64, error) {
 	s.pruned = append(s.pruned, endpoint)
 	return 1, nil
+}
+
+func (s *fakeStore) MarkPushSubscriptionNotified(_ context.Context, endpoint string) error {
+	s.notified = append(s.notified, endpoint)
+	return nil
 }
 
 // fakeSender maps each subscription endpoint to a canned Send result and records
@@ -98,6 +105,10 @@ func TestAdapter_DeliverFansOut(t *testing.T) {
 	}
 	if len(fs.sent) != 2 {
 		t.Fatalf("sent to %d devices, want 2", len(fs.sent))
+	}
+	// Every successful send stamps last_notified_at for that endpoint.
+	if len(store.notified) != 2 {
+		t.Fatalf("notified %d endpoints, want 2 (one per delivered device)", len(store.notified))
 	}
 	// The wire payload the adapter marshaled is the {title, body} contract the
 	// service worker parses — assert what the sender actually received.

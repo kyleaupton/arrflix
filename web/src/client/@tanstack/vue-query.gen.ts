@@ -1581,7 +1581,7 @@ export const notificationPreferencesGetQueryKey = (options?: Options<Notificatio
 
 /**
  * Get my notification preferences
- * Returns the caller's per-bundle channel preferences (resolved enablement) plus whether each channel can deliver right now.
+ * Returns the caller's per-bundle preferences: whether they're subscribed (the master — in-app follows it) and the resolved enablement plus deliverability of each outbound channel (email, push).
  */
 export const notificationPreferencesGetOptions = (options?: Options<NotificationPreferencesGetData>) => {
     return queryOptions({
@@ -1600,7 +1600,7 @@ export const notificationPreferencesGetOptions = (options?: Options<Notification
 
 /**
  * Set a notification preference
- * Toggles one channel for one bundle for the caller. v1 accepts bundle-scope writes only.
+ * Toggles one target for one bundle for the caller: the subscription master ('subscribed', which governs in-app), or an outbound channel ('email'/'push').
  */
 export const notificationPreferencesSetMutation = (options?: Partial<Options<NotificationPreferencesSetData>>): UseMutationOptions<NotificationPreferencesSetResponse, NotificationPreferencesSetError, Options<NotificationPreferencesSetData>> => {
     const mutationOptions: UseMutationOptions<NotificationPreferencesSetResponse, NotificationPreferencesSetError, Options<NotificationPreferencesSetData>> = {

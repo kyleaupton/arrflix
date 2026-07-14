@@ -211,7 +211,7 @@ func (q *Queries) ListInbox(ctx context.Context, arg ListInboxParams) ([]Notific
 }
 
 const listPreferences = `-- name: ListPreferences :many
-SELECT user_id, scope, value, channel, enabled, created_at, updated_at FROM notification_preference
+SELECT user_id, bundle, subscribed, email, push, created_at, updated_at FROM notification_preference
 WHERE user_id = $1
 `
 
@@ -226,10 +226,10 @@ func (q *Queries) ListPreferences(ctx context.Context, userID pgtype.UUID) ([]No
 		var i NotificationPreference
 		if err := rows.Scan(
 			&i.UserID,
-			&i.Scope,
-			&i.Value,
-			&i.Channel,
-			&i.Enabled,
+			&i.Bundle,
+			&i.Subscribed,
+			&i.Email,
+			&i.Push,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -471,46 +471,95 @@ func (q *Queries) RescheduleOutbox(ctx context.Context, arg RescheduleOutboxPara
 	return i, err
 }
 
-const upsertPreference = `-- name: UpsertPreference :one
-INSERT INTO notification_preference (user_id, scope, value, channel, enabled)
-VALUES (
-  $1,
-  $2,
-  $3,
-  $4,
-  $5
-)
-ON CONFLICT (user_id, scope, value, channel)
-DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()
-RETURNING user_id, scope, value, channel, enabled, created_at, updated_at
+const setBundleEmail = `-- name: SetBundleEmail :one
+INSERT INTO notification_preference (user_id, bundle, email)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id, bundle)
+DO UPDATE SET email = EXCLUDED.email, updated_at = now()
+RETURNING user_id, bundle, subscribed, email, push, created_at, updated_at
 `
 
-type UpsertPreferenceParams struct {
-	UserID  pgtype.UUID `json:"user_id"`
-	Scope   string      `json:"scope"`
-	Value   string      `json:"value"`
-	Channel string      `json:"channel"`
-	Enabled bool        `json:"enabled"`
+type SetBundleEmailParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Bundle string      `json:"bundle"`
+	Email  *bool       `json:"email"`
 }
 
-// UpsertPreference sets one (user, scope, value, channel) toggle — used both to seed
-// a new user's bundle defaults and to persist a later change; ON CONFLICT updates the
-// flag in place.
-func (q *Queries) UpsertPreference(ctx context.Context, arg UpsertPreferenceParams) (NotificationPreference, error) {
-	row := q.db.QueryRow(ctx, upsertPreference,
-		arg.UserID,
-		arg.Scope,
-		arg.Value,
-		arg.Channel,
-		arg.Enabled,
-	)
+func (q *Queries) SetBundleEmail(ctx context.Context, arg SetBundleEmailParams) (NotificationPreference, error) {
+	row := q.db.QueryRow(ctx, setBundleEmail, arg.UserID, arg.Bundle, arg.Email)
 	var i NotificationPreference
 	err := row.Scan(
 		&i.UserID,
-		&i.Scope,
-		&i.Value,
-		&i.Channel,
-		&i.Enabled,
+		&i.Bundle,
+		&i.Subscribed,
+		&i.Email,
+		&i.Push,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setBundlePush = `-- name: SetBundlePush :one
+INSERT INTO notification_preference (user_id, bundle, push)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id, bundle)
+DO UPDATE SET push = EXCLUDED.push, updated_at = now()
+RETURNING user_id, bundle, subscribed, email, push, created_at, updated_at
+`
+
+type SetBundlePushParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Bundle string      `json:"bundle"`
+	Push   *bool       `json:"push"`
+}
+
+func (q *Queries) SetBundlePush(ctx context.Context, arg SetBundlePushParams) (NotificationPreference, error) {
+	row := q.db.QueryRow(ctx, setBundlePush, arg.UserID, arg.Bundle, arg.Push)
+	var i NotificationPreference
+	err := row.Scan(
+		&i.UserID,
+		&i.Bundle,
+		&i.Subscribed,
+		&i.Email,
+		&i.Push,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setBundleSubscribed = `-- name: SetBundleSubscribed :one
+
+INSERT INTO notification_preference (user_id, bundle, subscribed)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id, bundle)
+DO UPDATE SET subscribed = EXCLUDED.subscribed, updated_at = now()
+RETURNING user_id, bundle, subscribed, email, push, created_at, updated_at
+`
+
+type SetBundleSubscribedParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	Bundle     string      `json:"bundle"`
+	Subscribed *bool       `json:"subscribed"`
+}
+
+// Preference writes are one column at a time: the caller toggles exactly one of a
+// bundle's flags (subscribed / email / push), and the other columns must keep their
+// value (or stay NULL = "defer to the registry default"). Each query inserts the row
+// with just its column set — the rest default to NULL — and on conflict updates only
+// that column, so a push toggle never freezes the email default and vice versa. This
+// is what makes the lazy model lazy: an untouched flag stays NULL and keeps tracking
+// the in-code default.
+func (q *Queries) SetBundleSubscribed(ctx context.Context, arg SetBundleSubscribedParams) (NotificationPreference, error) {
+	row := q.db.QueryRow(ctx, setBundleSubscribed, arg.UserID, arg.Bundle, arg.Subscribed)
+	var i NotificationPreference
+	err := row.Scan(
+		&i.UserID,
+		&i.Bundle,
+		&i.Subscribed,
+		&i.Email,
+		&i.Push,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
