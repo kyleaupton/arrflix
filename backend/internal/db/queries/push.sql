@@ -37,15 +37,22 @@ select * from push_subscription
 where user_id = sqlc.arg(user_id)
 order by created_at;
 
+-- GetPushSubscriptionByIDForUser loads one of the caller's own devices by id.
+-- Scoping the read to the owner means a test-send or delete can never address
+-- another user's subscription by guessing an id.
+-- name: GetPushSubscriptionByIDForUser :one
+select * from push_subscription
+where id = sqlc.arg(id) and user_id = sqlc.arg(user_id);
+
 -- name: DeletePushSubscriptionByEndpoint :execrows
 delete from push_subscription
 where endpoint = sqlc.arg(endpoint);
 
--- DeletePushSubscriptionForUser scopes deletion to the owner so one user cannot
--- unsubscribe another's device by guessing an endpoint.
--- name: DeletePushSubscriptionForUser :execrows
+-- DeletePushSubscriptionByIDForUser removes one of the caller's own devices by
+-- id, scoped to the owner so a user cannot delete another's subscription.
+-- name: DeletePushSubscriptionByIDForUser :execrows
 delete from push_subscription
-where endpoint = sqlc.arg(endpoint) and user_id = sqlc.arg(user_id);
+where id = sqlc.arg(id) and user_id = sqlc.arg(user_id);
 
 -- name: TouchPushSubscription :exec
 update push_subscription

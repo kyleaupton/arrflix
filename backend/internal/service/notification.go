@@ -68,11 +68,33 @@ func (s *NotificationService) RegisterPushSubscription(ctx context.Context, user
 	return err
 }
 
-// UnregisterPushSubscription removes one of the caller's subscriptions by
-// endpoint, scoped to the owner. Idempotent — a missing row is not an error (the
-// browser may have already been pruned server-side after a 410).
-func (s *NotificationService) UnregisterPushSubscription(ctx context.Context, userID uuid.UUID, endpoint string) error {
-	_, err := s.repo.DeletePushSubscriptionForUser(ctx, userID, endpoint)
+// ListPushSubscriptions returns the caller's registered devices, oldest first.
+// The models carry the ECDH secrets (p256dh/auth) for the delivery path; the
+// handler maps to a secret-free view before it reaches the wire.
+func (s *NotificationService) ListPushSubscriptions(ctx context.Context, userID uuid.UUID) ([]model.PushSubscription, error) {
+	return s.repo.ListPushSubscriptionsByUser(ctx, userID)
+}
+
+// GetPushSubscription loads one of the caller's own devices by id, returning a
+// NotFound when the id isn't theirs (or doesn't exist) — the owner scope is
+// enforced in the query, so this never reveals another user's subscription.
+func (s *NotificationService) GetPushSubscription(ctx context.Context, userID, id uuid.UUID) (model.PushSubscription, error) {
+	sub, found, err := s.repo.GetPushSubscriptionByIDForUser(ctx, userID, id)
+	if err != nil {
+		return model.PushSubscription{}, err
+	}
+	if !found {
+		return model.PushSubscription{}, apperrors.NotFoundf("push subscription %s not found", id).
+			Op("NotificationService.GetPushSubscription")
+	}
+	return sub, nil
+}
+
+// RemovePushSubscription deletes one of the caller's devices by id, scoped to the
+// owner. Idempotent — a missing row is not an error (the browser may have already
+// been pruned server-side after a 410, or removed from another device).
+func (s *NotificationService) RemovePushSubscription(ctx context.Context, userID, id uuid.UUID) error {
+	_, err := s.repo.DeletePushSubscriptionByIDForUser(ctx, userID, id)
 	return err
 }
 

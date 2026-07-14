@@ -2,6 +2,7 @@ package push
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -72,4 +73,22 @@ func (m *Manager) BuildSender(ctx context.Context) (Sender, error) {
 		return nil, apperrors.Internalf("vapid config not initialized").NotRetryable()
 	}
 	return &vapidSender{cfg: cfg, client: &http.Client{Timeout: sendTimeout}}, nil
+}
+
+// SendTest delivers the canned TestMessage to one subscription synchronously —
+// the diagnostic behind a "send a test to this device" button. It bypasses the
+// outbox worker on purpose: the caller wants an immediate delivered/failed
+// answer for this exact browser, not an eventually-drained queue row. Errors
+// propagate verbatim so the handler can translate ErrSubscriptionGone (prune the
+// dead row) apart from a transient/permanent push-service failure.
+func (m *Manager) SendTest(ctx context.Context, sub model.PushSubscription) error {
+	sender, err := m.BuildSender(ctx)
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(TestMessage)
+	if err != nil {
+		return apperrors.Internalf("marshal push test message: %v", err).NotRetryable()
+	}
+	return sender.Send(ctx, sub, payload)
 }

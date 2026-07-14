@@ -45,7 +45,9 @@ var operationPerms = map[string]requirement{
 	"notification-preferences-set":  authUser(),
 	"push-public-key":               authUser(),
 	"push-subscribe":                authUser(),
-	"push-unsubscribe":              authUser(),
+	"push-list":                     authUser(),
+	"push-remove":                   authUser(),
+	"push-test":                     authUser(),
 
 	// ----- admin.users.manage -----
 	"users-list":            perm(authz.AdminUsersManage),

@@ -4073,22 +4073,35 @@ components:
         - p256dh
         - auth
       type: object
-    PushUnsubscribeBody:
+    PushSubscriptionView:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - https://example.com/schemas/PushUnsubscribeBody.json
-          format: uri
-          readOnly: true
+        createdAt:
+          description: When this device first subscribed
+          format: date-time
           type: string
         endpoint:
-          description: Push service endpoint URL to remove
-          minLength: 1
+          description: Push service endpoint URL; the browser matches this against its own subscription to identify the current device
           type: string
+        id:
+          description: Subscription id; use it to remove or test this device
+          format: uuid
+          type: string
+        lastUsedAt:
+          description: When this subscription was last refreshed
+          format: date-time
+          type: string
+        userAgent:
+          description: Device label captured at registration (User-Agent), null if unknown
+          type:
+            - string
+            - "null"
       required:
+        - id
         - endpoint
+        - userAgent
+        - createdAt
+        - lastUsedAt
       type: object
     QualityBinOption:
       additionalProperties: false
@@ -9382,25 +9395,27 @@ paths:
       tags:
         - notifications
   /api/v1/notifications/push/subscriptions:
-    delete:
-      description: Removes the caller's Web Push subscription for the given endpoint. Idempotent.
-      operationId: push-unsubscribe
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PushUnsubscribeBody"
-        required: true
+    get:
+      description: Returns the caller's registered Web Push devices (secrets omitted). Match each endpoint against the browser's own subscription to identify the current device.
+      operationId: push-list
       responses:
-        "204":
-          description: No Content
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/PushSubscriptionView"
+                type:
+                  - array
+                  - "null"
+          description: OK
         default:
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Error
-      summary: Remove a push subscription
+      summary: List my push devices
       tags:
         - notifications
     post:
@@ -9441,6 +9456,68 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: Register a push subscription
+      tags:
+        - notifications
+  /api/v1/notifications/push/subscriptions/{id}:
+    delete:
+      description: Removes one of the caller's registered Web Push devices by id. Idempotent.
+      operationId: push-remove
+      parameters:
+        - description: Subscription id to remove
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Subscription id to remove
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Remove a push device
+      tags:
+        - notifications
+  /api/v1/notifications/push/subscriptions/{id}/test:
+    post:
+      description: Sends a canned test notification to one of the caller's registered devices to verify it can receive pushes. Prunes and 404s a device the push service reports gone.
+      operationId: push-test
+      parameters:
+        - description: Subscription id to send a test push to
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Subscription id to send a test push to
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Send a test push to a device
       tags:
         - notifications
   /api/v1/notifications/read-all:

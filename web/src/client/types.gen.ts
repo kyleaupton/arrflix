@@ -1752,15 +1752,27 @@ export type PushSubscribeBody = {
     p256dh: string;
 };
 
-export type PushUnsubscribeBody = {
+export type PushSubscriptionView = {
     /**
-     * A URL to the JSON Schema for this object.
+     * When this device first subscribed
      */
-    readonly $schema?: string;
+    createdAt: string;
     /**
-     * Push service endpoint URL to remove
+     * Push service endpoint URL; the browser matches this against its own subscription to identify the current device
      */
     endpoint: string;
+    /**
+     * Subscription id; use it to remove or test this device
+     */
+    id: string;
+    /**
+     * When this subscription was last refreshed
+     */
+    lastUsedAt: string;
+    /**
+     * Device label captured at registration (User-Agent), null if unknown
+     */
+    userAgent: string | null;
 };
 
 export type QualityBinOption = {
@@ -3427,13 +3439,6 @@ export type PushSubscribeBodyWritable = {
      * Client ECDH public key (base64url)
      */
     p256dh: string;
-};
-
-export type PushUnsubscribeBodyWritable = {
-    /**
-     * Push service endpoint URL to remove
-     */
-    endpoint: string;
 };
 
 export type QualityBindTierBodyWritable = {
@@ -7058,30 +7063,30 @@ export type PushPublicKeyResponses = {
 
 export type PushPublicKeyResponse = PushPublicKeyResponses[keyof PushPublicKeyResponses];
 
-export type PushUnsubscribeData = {
-    body: PushUnsubscribeBodyWritable;
+export type PushListData = {
+    body?: never;
     path?: never;
     query?: never;
     url: '/api/v1/notifications/push/subscriptions';
 };
 
-export type PushUnsubscribeErrors = {
+export type PushListErrors = {
     /**
      * Error
      */
     default: ProblemDetails;
 };
 
-export type PushUnsubscribeError = PushUnsubscribeErrors[keyof PushUnsubscribeErrors];
+export type PushListError = PushListErrors[keyof PushListErrors];
 
-export type PushUnsubscribeResponses = {
+export type PushListResponses = {
     /**
-     * No Content
+     * OK
      */
-    204: void;
+    200: Array<PushSubscriptionView> | null;
 };
 
-export type PushUnsubscribeResponse = PushUnsubscribeResponses[keyof PushUnsubscribeResponses];
+export type PushListResponse = PushListResponses[keyof PushListResponses];
 
 export type PushSubscribeData = {
     body: PushSubscribeBodyWritable;
@@ -7121,6 +7126,74 @@ export type PushSubscribeResponses = {
 };
 
 export type PushSubscribeResponse = PushSubscribeResponses[keyof PushSubscribeResponses];
+
+export type PushRemoveData = {
+    body?: never;
+    path: {
+        /**
+         * Subscription id to remove
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/notifications/push/subscriptions/{id}';
+};
+
+export type PushRemoveErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type PushRemoveError = PushRemoveErrors[keyof PushRemoveErrors];
+
+export type PushRemoveResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PushRemoveResponse = PushRemoveResponses[keyof PushRemoveResponses];
+
+export type PushTestData = {
+    body?: never;
+    path: {
+        /**
+         * Subscription id to send a test push to
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/notifications/push/subscriptions/{id}/test';
+};
+
+export type PushTestErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type PushTestError = PushTestErrors[keyof PushTestErrors];
+
+export type PushTestResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PushTestResponse = PushTestResponses[keyof PushTestResponses];
 
 export type NotificationsMarkAllReadData = {
     body?: never;

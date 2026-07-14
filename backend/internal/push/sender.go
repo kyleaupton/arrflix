@@ -37,7 +37,7 @@ func (s *vapidSender) Send(ctx context.Context, sub model.PushSubscription, payl
 		// Transport-level failure (DNS, connection, timeout): transient → retry.
 		return apperrors.BadGatewayf("push send to %s: %v", sub.Endpoint, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return classify(resp.StatusCode)
 }
 

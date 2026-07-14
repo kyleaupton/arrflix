@@ -17,6 +17,14 @@ import (
 	"github.com/kyleaupton/arrflix/internal/model"
 )
 
+// TestMessage is the canned diagnostic a user's "send a test to this device"
+// action delivers: it round-trips the full VAPID sign → encrypt → push-service
+// path so a green toast proves this specific browser can actually receive pushes.
+var TestMessage = Message{
+	Title: "arrflix",
+	Body:  "Push notifications are working on this device 🎉",
+}
+
 // DefaultSubject is the VAPID `sub` claim used when none is set: a syntactically
 // valid contact URI, not a mailbox we send to. A push service may use it to
 // reach the operator about abuse/issues but essentially never does. The settings
@@ -28,6 +36,16 @@ const DefaultSubject = "mailto:admin@arrflix.local"
 // dead row and does not count it as a delivery failure. It is a sentinel, not an
 // apperror: check it with errors.Is before consulting apperrors.IsRetryable.
 var ErrSubscriptionGone = errors.New("push subscription gone")
+
+// Message is the wire contract the service worker parses on the browser `push`
+// event: a title and body it hands to showNotification. Both the delivery
+// adapter (rendered from an event template) and the diagnostic test-send
+// (a canned message) marshal this exact shape, so the service worker parses one
+// schema regardless of origin.
+type Message struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
 
 // Sender transmits one payload to one subscription. Return values:
 //

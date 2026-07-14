@@ -101,9 +101,9 @@ func TestAdapter_DeliverFansOut(t *testing.T) {
 	}
 	// The wire payload the adapter marshaled is the {title, body} contract the
 	// service worker parses — assert what the sender actually received.
-	var msg pushMessage
+	var msg push.Message
 	if err := json.Unmarshal(fs.payloads[0], &msg); err != nil {
-		t.Fatalf("payload is not valid pushMessage json: %v", err)
+		t.Fatalf("payload is not valid push.Message json: %v", err)
 	}
 	if msg.Title != "Sentinel is ready to watch" {
 		t.Fatalf("title = %q", msg.Title)

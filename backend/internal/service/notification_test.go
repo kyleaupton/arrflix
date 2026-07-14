@@ -11,6 +11,36 @@ import (
 	"github.com/kyleaupton/arrflix/internal/notifications"
 )
 
+// TestRegisterPushSubscription_ValidationRejects locks the create gate: a
+// subscription missing any of endpoint/p256dh/auth is a Validation error and
+// never reaches the repo, so a nil repo is safe here.
+func TestRegisterPushSubscription_ValidationRejects(t *testing.T) {
+	t.Parallel()
+
+	svc := NewNotificationService(nil)
+	ctx := context.Background()
+
+	cases := []struct {
+		name     string
+		endpoint string
+		p256dh   string
+		auth     string
+	}{
+		{"empty endpoint", "", "key", "secret"},
+		{"empty p256dh", "https://push.test/x", "", "secret"},
+		{"empty auth", "https://push.test/x", "key", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			err := svc.RegisterPushSubscription(ctx, uuid.New(), c.endpoint, c.p256dh, c.auth, nil)
+			if !apperrors.IsValidation(err) {
+				t.Fatalf("expected KindValidation, got %v", err)
+			}
+		})
+	}
+}
+
 // TestSetPreference_ValidationRejects locks the v1 write gate: only a bundle-scope
 // write to a known user bundle on a deliverable channel is accepted. A bad scope,
 // value, or channel is a Validation error naming the offending field. The

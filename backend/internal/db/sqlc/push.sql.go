@@ -50,24 +50,53 @@ func (q *Queries) DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint
 	return result.RowsAffected(), nil
 }
 
-const deletePushSubscriptionForUser = `-- name: DeletePushSubscriptionForUser :execrows
+const deletePushSubscriptionByIDForUser = `-- name: DeletePushSubscriptionByIDForUser :execrows
 delete from push_subscription
-where endpoint = $1 and user_id = $2
+where id = $1 and user_id = $2
 `
 
-type DeletePushSubscriptionForUserParams struct {
-	Endpoint string      `json:"endpoint"`
-	UserID   pgtype.UUID `json:"user_id"`
+type DeletePushSubscriptionByIDForUserParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
-// DeletePushSubscriptionForUser scopes deletion to the owner so one user cannot
-// unsubscribe another's device by guessing an endpoint.
-func (q *Queries) DeletePushSubscriptionForUser(ctx context.Context, arg DeletePushSubscriptionForUserParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deletePushSubscriptionForUser, arg.Endpoint, arg.UserID)
+// DeletePushSubscriptionByIDForUser removes one of the caller's own devices by
+// id, scoped to the owner so a user cannot delete another's subscription.
+func (q *Queries) DeletePushSubscriptionByIDForUser(ctx context.Context, arg DeletePushSubscriptionByIDForUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deletePushSubscriptionByIDForUser, arg.ID, arg.UserID)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getPushSubscriptionByIDForUser = `-- name: GetPushSubscriptionByIDForUser :one
+select id, user_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at from push_subscription
+where id = $1 and user_id = $2
+`
+
+type GetPushSubscriptionByIDForUserParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// GetPushSubscriptionByIDForUser loads one of the caller's own devices by id.
+// Scoping the read to the owner means a test-send or delete can never address
+// another user's subscription by guessing an id.
+func (q *Queries) GetPushSubscriptionByIDForUser(ctx context.Context, arg GetPushSubscriptionByIDForUserParams) (PushSubscription, error) {
+	row := q.db.QueryRow(ctx, getPushSubscriptionByIDForUser, arg.ID, arg.UserID)
+	var i PushSubscription
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Endpoint,
+		&i.P256dh,
+		&i.Auth,
+		&i.UserAgent,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+	)
+	return i, err
 }
 
 const getVAPIDConfig = `-- name: GetVAPIDConfig :one

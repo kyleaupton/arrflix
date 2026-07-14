@@ -18,8 +18,9 @@ type PushRepo interface {
 
 	UpsertPushSubscription(ctx context.Context, params UpsertPushSubscriptionParams) (model.PushSubscription, error)
 	ListPushSubscriptionsByUser(ctx context.Context, userID uuid.UUID) ([]model.PushSubscription, error)
+	GetPushSubscriptionByIDForUser(ctx context.Context, userID, id uuid.UUID) (model.PushSubscription, bool, error)
 	DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) (int64, error)
-	DeletePushSubscriptionForUser(ctx context.Context, userID uuid.UUID, endpoint string) (int64, error)
+	DeletePushSubscriptionByIDForUser(ctx context.Context, userID, id uuid.UUID) (int64, error)
 }
 
 // UpsertPushSubscriptionParams is the domain-shaped input for registering a
@@ -119,6 +120,24 @@ func (r *Repository) ListPushSubscriptionsByUser(ctx context.Context, userID uui
 	return subs, nil
 }
 
+// GetPushSubscriptionByIDForUser loads one of the caller's own devices by id.
+// The bool reports existence: false (no row, or a row owned by someone else) is
+// the not-found state, not an error — the caller maps it to a 404 rather than
+// leaking whether the id exists under another owner.
+func (r *Repository) GetPushSubscriptionByIDForUser(ctx context.Context, userID, id uuid.UUID) (model.PushSubscription, bool, error) {
+	row, err := r.Q.GetPushSubscriptionByIDForUser(ctx, dbgen.GetPushSubscriptionByIDForUserParams{
+		ID:     pgtypeFromUUID(id),
+		UserID: pgtypeFromUUID(userID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.PushSubscription{}, false, nil
+		}
+		return model.PushSubscription{}, false, apperrors.FromPg(err, "get push subscription %s", id)
+	}
+	return toModelPushSubscription(row), true, nil
+}
+
 // DeletePushSubscriptionByEndpoint prunes a dead endpoint (a 404/410 from the
 // push service). Returns the number of rows removed; 0 is not an error (the row
 // may already be gone).
@@ -130,15 +149,17 @@ func (r *Repository) DeletePushSubscriptionByEndpoint(ctx context.Context, endpo
 	return n, nil
 }
 
-// DeletePushSubscriptionForUser unsubscribes one of the caller's own devices,
-// scoped to the owner so a user cannot remove another's subscription.
-func (r *Repository) DeletePushSubscriptionForUser(ctx context.Context, userID uuid.UUID, endpoint string) (int64, error) {
-	n, err := r.Q.DeletePushSubscriptionForUser(ctx, dbgen.DeletePushSubscriptionForUserParams{
-		Endpoint: endpoint,
-		UserID:   pgtypeFromUUID(userID),
+// DeletePushSubscriptionByIDForUser removes one of the caller's own devices by
+// id, scoped to the owner so a user cannot remove another's subscription.
+// Returns the rows removed; 0 is not an error (idempotent — already gone, or
+// never the caller's).
+func (r *Repository) DeletePushSubscriptionByIDForUser(ctx context.Context, userID, id uuid.UUID) (int64, error) {
+	n, err := r.Q.DeletePushSubscriptionByIDForUser(ctx, dbgen.DeletePushSubscriptionByIDForUserParams{
+		ID:     pgtypeFromUUID(id),
+		UserID: pgtypeFromUUID(userID),
 	})
 	if err != nil {
-		return 0, apperrors.FromPg(err, "delete push subscription for user %s", userID)
+		return 0, apperrors.FromPg(err, "delete push subscription %s for user %s", id, userID)
 	}
 	return n, nil
 }

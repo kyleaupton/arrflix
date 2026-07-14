@@ -57,13 +57,6 @@ func (a *Adapter) Name() model.NotificationChannel { return model.ChannelPush }
 // success no-op, not an unconfigured channel.
 func (a *Adapter) IsConfigured(context.Context) bool { return true }
 
-// pushMessage is the wire contract the service worker parses on the `push`
-// event: a title and body it passes to showNotification.
-type pushMessage struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-}
-
 // Deliver renders the row and fans it out to the recipient's subscriptions.
 //
 // Fan-out rollup — one outbox row maps to N devices but the worker acts on a
@@ -88,7 +81,7 @@ func (a *Adapter) Deliver(ctx context.Context, row model.NotificationOutbox) err
 	if err != nil {
 		return apperrors.Internalf("render push for %q: %v", row.EventType, err).NotRetryable().Op(op)
 	}
-	payload, err := json.Marshal(pushMessage{Title: title, Body: body})
+	payload, err := json.Marshal(push.Message{Title: title, Body: body})
 	if err != nil {
 		return apperrors.Internalf("marshal push message: %v", err).NotRetryable().Op(op)
 	}
