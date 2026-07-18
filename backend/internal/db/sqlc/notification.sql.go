@@ -40,7 +40,7 @@ VALUES (
   $5,
   $6
 )
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at
 `
 
 type EnqueueOutboxParams struct {
@@ -83,12 +83,13 @@ func (q *Queries) EnqueueOutbox(ctx context.Context, arg EnqueueOutboxParams) (N
 		&i.CreatedAt,
 		&i.DeliveredAt,
 		&i.ReadAt,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
 
 const getOutbox = `-- name: GetOutbox :one
-SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at FROM notification_outbox WHERE id = $1
+SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at FROM notification_outbox WHERE id = $1
 `
 
 func (q *Queries) GetOutbox(ctx context.Context, id pgtype.UUID) (NotificationOutbox, error) {
@@ -109,12 +110,13 @@ func (q *Queries) GetOutbox(ctx context.Context, id pgtype.UUID) (NotificationOu
 		&i.CreatedAt,
 		&i.DeliveredAt,
 		&i.ReadAt,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
 
 const listDueOutbox = `-- name: ListDueOutbox :many
-SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at FROM notification_outbox
+SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at FROM notification_outbox
 WHERE status = 'queued' AND next_attempt_at <= now()
 ORDER BY created_at
 LIMIT $1
@@ -148,6 +150,7 @@ func (q *Queries) ListDueOutbox(ctx context.Context, batchSize int32) ([]Notific
 			&i.CreatedAt,
 			&i.DeliveredAt,
 			&i.ReadAt,
+			&i.ClaimedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -160,7 +163,7 @@ func (q *Queries) ListDueOutbox(ctx context.Context, batchSize int32) ([]Notific
 }
 
 const listInbox = `-- name: ListInbox :many
-SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at FROM notification_outbox
+SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at FROM notification_outbox
 WHERE recipient_user_id = $1
   AND channel = 'in_app'
   AND status = 'delivered'
@@ -199,6 +202,7 @@ func (q *Queries) ListInbox(ctx context.Context, arg ListInboxParams) ([]Notific
 			&i.CreatedAt,
 			&i.DeliveredAt,
 			&i.ReadAt,
+			&i.ClaimedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -282,7 +286,7 @@ const markOutboxAwaitingConfig = `-- name: MarkOutboxAwaitingConfig :one
 UPDATE notification_outbox
 SET status = 'awaiting_config'
 WHERE id = $1 AND status = 'queued'
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at
 `
 
 // MarkOutboxAwaitingConfig parks a queued row whose channel adapter isn't
@@ -309,6 +313,7 @@ func (q *Queries) MarkOutboxAwaitingConfig(ctx context.Context, id pgtype.UUID) 
 		&i.CreatedAt,
 		&i.DeliveredAt,
 		&i.ReadAt,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
@@ -319,7 +324,7 @@ SET status = 'dead',
     attempts = attempts + 1,
     last_error = $1
 WHERE id = $2
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at
 `
 
 type MarkOutboxDeadParams struct {
@@ -345,6 +350,7 @@ func (q *Queries) MarkOutboxDead(ctx context.Context, arg MarkOutboxDeadParams) 
 		&i.CreatedAt,
 		&i.DeliveredAt,
 		&i.ReadAt,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
@@ -353,7 +359,7 @@ const markOutboxDelivered = `-- name: MarkOutboxDelivered :one
 UPDATE notification_outbox
 SET status = 'delivered', delivered_at = now()
 WHERE id = $1
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at
 `
 
 func (q *Queries) MarkOutboxDelivered(ctx context.Context, id pgtype.UUID) (NotificationOutbox, error) {
@@ -374,21 +380,25 @@ func (q *Queries) MarkOutboxDelivered(ctx context.Context, id pgtype.UUID) (Noti
 		&i.CreatedAt,
 		&i.DeliveredAt,
 		&i.ReadAt,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
 
 const markOutboxDelivering = `-- name: MarkOutboxDelivering :one
 UPDATE notification_outbox
-SET status = 'delivering'
+SET status = 'delivering',
+    claimed_at = now()
 WHERE id = $1 AND status = 'queued'
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at
 `
 
 // MarkOutboxDelivering is the worker's claim: it flips a queued row to
 // delivering, guarded by status so the transition is a compare-and-set. A row
 // another worker already claimed (status no longer 'queued') matches nothing and
 // returns no row, which the repo surfaces as NotFound — the caller skips it.
+// claimed_at stamps the claim so ReclaimStaleDelivering can spot the row if this
+// worker dies before settling it.
 func (q *Queries) MarkOutboxDelivering(ctx context.Context, id pgtype.UUID) (NotificationOutbox, error) {
 	row := q.db.QueryRow(ctx, markOutboxDelivering, id)
 	var i NotificationOutbox
@@ -407,8 +417,75 @@ func (q *Queries) MarkOutboxDelivering(ctx context.Context, id pgtype.UUID) (Not
 		&i.CreatedAt,
 		&i.DeliveredAt,
 		&i.ReadAt,
+		&i.ClaimedAt,
 	)
 	return i, err
+}
+
+const reclaimStaleDelivering = `-- name: ReclaimStaleDelivering :many
+UPDATE notification_outbox
+SET status = 'queued',
+    attempts = attempts + 1,
+    next_attempt_at = now(),
+    last_error = $1,
+    claimed_at = NULL
+WHERE status = 'delivering'
+  AND claimed_at < $2
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at
+`
+
+type ReclaimStaleDeliveringParams struct {
+	LastError   *string            `json:"last_error"`
+	StaleBefore pgtype.Timestamptz `json:"stale_before"`
+}
+
+// ReclaimStaleDelivering returns rows wedged in 'delivering' past the cutoff to
+// the queue — the self-heal for a crash between MarkOutboxDelivering's claim and
+// a terminal transition. Without it such a row is stranded for good: ListDueOutbox
+// selects only 'queued', so nothing ever looks at it again.
+//
+// attempts is incremented rather than left alone (where the want reaper resets
+// free). The row *was* handed to an adapter and the delivery may have completed
+// before the crash — an SMTP relay that accepted the message, a push service that
+// returned 201 — so a reclaim is an honest at-least-once retry. It also keeps a
+// row that wedges the worker on every pass from cycling forever: attempts climbs
+// until the worker's retry budget kills it.
+//
+// The cutoff is passed from Go for testability.
+func (q *Queries) ReclaimStaleDelivering(ctx context.Context, arg ReclaimStaleDeliveringParams) ([]NotificationOutbox, error) {
+	rows, err := q.db.Query(ctx, reclaimStaleDelivering, arg.LastError, arg.StaleBefore)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NotificationOutbox
+	for rows.Next() {
+		var i NotificationOutbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventType,
+			&i.Audience,
+			&i.RecipientUserID,
+			&i.Channel,
+			&i.Payload,
+			&i.DedupKey,
+			&i.Status,
+			&i.Attempts,
+			&i.NextAttemptAt,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.DeliveredAt,
+			&i.ReadAt,
+			&i.ClaimedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const requeueAwaitingConfig = `-- name: RequeueAwaitingConfig :execrows
@@ -437,7 +514,7 @@ SET status = 'queued',
     next_attempt_at = $1,
     last_error = $2
 WHERE id = $3
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at
 `
 
 type RescheduleOutboxParams struct {
@@ -467,6 +544,7 @@ func (q *Queries) RescheduleOutbox(ctx context.Context, arg RescheduleOutboxPara
 		&i.CreatedAt,
 		&i.DeliveredAt,
 		&i.ReadAt,
+		&i.ClaimedAt,
 	)
 	return i, err
 }

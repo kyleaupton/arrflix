@@ -59,7 +59,8 @@ func (a *Adapter) IsConfigured(ctx context.Context) bool { return a.manager.IsCo
 // A missing recipient or empty address is a permanent (Validation → non-retryable)
 // failure the worker marks dead; a render error is likewise permanent; a
 // transport/send failure propagates verbatim so apperrors.IsRetryable governs
-// retry-vs-dead (a connection blip retries, a rejected address dies).
+// retry-vs-dead (a connection blip retries, a 5xx-rejected address dies — the
+// transport classifies the relay's reply, see smtp.classify).
 func (a *Adapter) Deliver(ctx context.Context, row model.NotificationOutbox) error {
 	const op = "EmailAdapter.Deliver"
 

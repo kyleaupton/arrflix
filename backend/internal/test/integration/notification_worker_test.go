@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	notificationworker "github.com/kyleaupton/arrflix/internal/jobs/notification"
@@ -144,6 +145,103 @@ func TestNotificationWorker_KillsPermanent(t *testing.T) {
 	}
 	if got.LastError == nil {
 		t.Fatalf("last_error should record the failure")
+	}
+}
+
+// TestNotificationWorker_ReclaimsStaleDelivering proves the crash-window reaper:
+// a row claimed by a worker that died before settling it is stranded in
+// 'delivering' (ListDueOutbox only selects 'queued'), and a later drain returns
+// it to the queue and delivers it rather than losing the notification forever.
+func TestNotificationWorker_ReclaimsStaleDelivering(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	user, row := enqueueInApp(t, ctx, r, "notif-worker-reap@test.local")
+
+	// Claim the row the way the worker does, then abandon it — the state a crash
+	// between the claim and a terminal transition leaves behind.
+	if _, err := r.MarkOutboxDelivering(ctx, row.ID); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if due, _ := r.ListDueOutbox(ctx, 10); containsOutbox(due, row.ID) {
+		t.Fatalf("a claimed row must not be due — the reaper is what recovers it")
+	}
+	// Age the claim past the reap window so it reads as wedged rather than in
+	// flight (the worker's window is 5 minutes).
+	staleClaim(t, ctx, pool, row.ID, "10 minutes")
+
+	w, err := notificationworker.New(r, logger.New(false), notifications.InAppAdapter{})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+	// One pass reaps the row back to queued and delivers it in the same drain.
+	if n, err := w.Drain(ctx); err != nil || n != 1 {
+		t.Fatalf("drain = %d (err %v), want 1 delivered after reclaim", n, err)
+	}
+
+	got := fetchOutbox(t, ctx, r, row.ID)
+	if got.Status != string(model.OutboxDelivered) {
+		t.Fatalf("status = %q, want delivered", got.Status)
+	}
+	// The reclaim counts as an attempt: the row was handed to an adapter once
+	// already and may even have been sent before the crash.
+	if got.Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1 (the reclaim)", got.Attempts)
+	}
+	inbox, err := r.ListInbox(ctx, user.ID, 10)
+	if err != nil {
+		t.Fatalf("list inbox: %v", err)
+	}
+	if len(inbox) != 1 || inbox[0].ID != row.ID {
+		t.Fatalf("inbox = %+v, want the reclaimed row", inbox)
+	}
+}
+
+// TestNotificationWorker_LeavesFreshDelivering proves the reaper respects the
+// lease: a row claimed moments ago is genuinely in flight, and reclaiming it
+// would hand the same notification to a second adapter while the first is still
+// sending it.
+func TestNotificationWorker_LeavesFreshDelivering(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	_, row := enqueueInApp(t, ctx, r, "notif-worker-fresh-claim@test.local")
+
+	if _, err := r.MarkOutboxDelivering(ctx, row.ID); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	w, err := notificationworker.New(r, logger.New(false), notifications.InAppAdapter{})
+	if err != nil {
+		t.Fatalf("new worker: %v", err)
+	}
+	if n, err := w.Drain(ctx); err != nil || n != 0 {
+		t.Fatalf("drain = %d (err %v), want 0 — a fresh claim is in flight", n, err)
+	}
+
+	got := fetchOutbox(t, ctx, r, row.ID)
+	if got.Status != string(model.OutboxDelivering) {
+		t.Fatalf("status = %q, want delivering (untouched)", got.Status)
+	}
+	if got.Attempts != 0 {
+		t.Fatalf("attempts = %d, want 0 — an in-flight row was not reclaimed", got.Attempts)
+	}
+}
+
+// staleClaim backdates a claimed row's claimed_at by a Postgres interval, so a
+// test can age a claim past the reap window without waiting or reaching into the
+// worker's unexported lease.
+func staleClaim(t *testing.T, ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, interval string) {
+	t.Helper()
+	if _, err := pool.Exec(ctx,
+		"UPDATE notification_outbox SET claimed_at = now() - $2::interval WHERE id = $1",
+		id, interval,
+	); err != nil {
+		t.Fatalf("backdate claimed_at: %v", err)
 	}
 }
 

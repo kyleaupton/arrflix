@@ -7,10 +7,12 @@ package smtp
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/kyleaupton/arrflix/internal/email"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/wneessen/go-mail"
 )
 
@@ -107,9 +109,47 @@ func (t *transport) Send(ctx context.Context, msg email.Message) error {
 	if err != nil {
 		return err
 	}
-	// Verbatim: the connection/auth error the relay returns is surfaced to the
-	// operator by the handler, so the test-send UX shows the real failure.
-	return c.DialAndSendWithContext(ctx, m)
+	// The relay's own error text rides along in every classify branch, so the
+	// test-send UX still shows the operator the real failure.
+	return classify(c.DialAndSendWithContext(ctx, m))
+}
+
+// classify maps a go-mail delivery failure onto the typed-error model the
+// notification worker retries on (apperrors.IsRetryable). Without it every SMTP
+// failure reaches the worker untyped, and an untyped error is retryable by
+// default — so a permanently-rejected address would burn the row's whole attempt
+// budget over hours before dying.
+//
+// go-mail reports a server rejection as *mail.SendError carrying the SMTP reply
+// code: 5xx is a permanent refusal (unknown mailbox, message rejected, relay
+// denied) that retrying cannot fix, so it is NotRetryable. Everything else stays
+// retryable, which is the safe default and covers the cases that genuinely do
+// heal on their own:
+//
+//   - 4xx replies (greylisting, "try again later", rate limits) — SendError with
+//     a 4xx code;
+//   - failures go-mail generates itself rather than reading off the wire (dial,
+//     DNS, TLS, timeouts, a cancelled context) — these are plain wrapped errors,
+//     not *mail.SendError, and ErrorCode would read 0 for them anyway;
+//   - auth rejections, which surface as a plain error from the dial path. Wrong
+//     credentials won't heal by themselves, but the operator fixing them mid-
+//     backoff makes the queued row succeed on its next attempt — better than
+//     killing the notification outright.
+//
+// A rejection is BadGateway rather than Internal so the relay's reason reaches
+// the caller — Internal hides its detail from the wire, which renders a bad
+// mailbox as a bare 500 with nothing to act on. Mirrors push's classify.
+func classify(err error) error {
+	if err == nil {
+		return nil
+	}
+	var sendErr *mail.SendError
+	if errors.As(err, &sendErr) {
+		if code := sendErr.ErrorCode(); code >= 500 && code < 600 {
+			return apperrors.BadGatewayf("smtp relay rejected the message: %v", err).NotRetryable()
+		}
+	}
+	return apperrors.BadGatewayf("smtp send failed: %v", err)
 }
 
 func (t *transport) Test(ctx context.Context, to string) error {

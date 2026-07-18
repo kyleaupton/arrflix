@@ -28,7 +28,19 @@ const (
 	// maxBackoff plateaus the exponential retry delay so an extended outage backs
 	// off to a steady ceiling rather than a delay measured in days.
 	maxBackoff = time.Hour
+	// defaultReapAfter is how long a row may sit in 'delivering' before the reaper
+	// returns it to the queue — the crash-window self-heal, matching the
+	// AcquisitionWorker's window for wants wedged in 'searching'. It sits well
+	// beyond any legitimate delivery: the push and SMTP transports each cap a
+	// single send at 10s, so a row still 'delivering' minutes later means the
+	// process died mid-flight rather than that the adapter is slow.
+	defaultReapAfter = 5 * time.Minute
 )
+
+// staleDeliveringError is the last_error the reaper stamps on a row it heals, so
+// an operator reading the row can tell a crash-window reclaim apart from an
+// adapter's own failure.
+const staleDeliveringError = "reset from stale 'delivering' (crash-window reaper)"
 
 // Worker drains the outbox on a fixed cadence.
 type Worker struct {
@@ -37,6 +49,7 @@ type Worker struct {
 	log          *logger.Logger
 	pollInterval time.Duration
 	batchSize    int32
+	reapAfter    time.Duration
 }
 
 // New builds the worker, parsing and verifying templates up front: a missing or
@@ -63,6 +76,7 @@ func New(r *repo.Repository, log *logger.Logger, adapters ...notifications.Chann
 		log:          log,
 		pollInterval: defaultPollInterval,
 		batchSize:    defaultBatchSize,
+		reapAfter:    defaultReapAfter,
 	}, nil
 }
 
@@ -89,6 +103,12 @@ func (w *Worker) Run(ctx context.Context) {
 // Drain processes one batch of due rows and returns how many it delivered.
 // Exposed so tests can drive a single pass without the ticker.
 func (w *Worker) Drain(ctx context.Context) (int, error) {
+	// Reap first: MarkOutboxDelivering flips a claimed row to 'delivering', and a
+	// crash before it settles wedges the row there — ListDueOutbox only selects
+	// 'queued', so nothing would ever look at it again. The reaper's WHERE makes
+	// it a cheap no-op when nothing is stale, so running it every pass is fine.
+	w.reap(ctx)
+
 	rows, err := w.repo.ListDueOutbox(ctx, w.batchSize)
 	if err != nil {
 		return 0, err
@@ -100,6 +120,29 @@ func (w *Worker) Drain(ctx context.Context) (int, error) {
 		}
 	}
 	return delivered, nil
+}
+
+// reap returns rows wedged in 'delivering' past the reapAfter window to the
+// queue so the next claim picks them up. A reclaim is at-least-once: the adapter
+// may have completed the send before the crash, so the recipient can see the
+// notification twice. That is the deliberate trade — the alternative is losing it
+// outright, and delivery has been at-least-once since the first retry.
+//
+// A reap failure is logged and swallowed: it is a self-heal, and failing the
+// drain over it would block the rows that are fine.
+func (w *Worker) reap(ctx context.Context) {
+	reclaimed, err := w.repo.ReclaimStaleDelivering(ctx, time.Now().Add(-w.reapAfter), staleDeliveringError)
+	if err != nil {
+		w.log.Error().Err(err).Msg("failed to reclaim stale delivering notifications")
+		return
+	}
+	for _, row := range reclaimed {
+		w.log.Warn().
+			Str("id", row.ID.String()).
+			Str("channel", row.Channel).
+			Int32("attempts", row.Attempts).
+			Msg("reclaimed stale delivering notification")
+	}
 }
 
 // handle drives one row through its adapter and reports whether it was delivered.

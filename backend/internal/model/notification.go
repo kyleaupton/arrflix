@@ -45,7 +45,9 @@ const (
 // delivery attempt and, once delivered on the in_app channel, one bell-icon
 // history entry. RecipientUserID is nil only for the system-audience literal-email
 // recipients v1 doesn't yet produce. DeliveredAt/ReadAt are nil until the worker
-// delivers and the user reads. Mirrors dbgen.NotificationOutbox.
+// delivers and the user reads. ClaimedAt is the worker's claim stamp, meaningful
+// only while Status is 'delivering' — it is how the crash-window reaper spots a
+// row whose worker died mid-delivery. Mirrors dbgen.NotificationOutbox.
 type NotificationOutbox struct {
 	ID              uuid.UUID       `json:"id"`
 	EventType       string          `json:"eventType"`
@@ -59,6 +61,7 @@ type NotificationOutbox struct {
 	NextAttemptAt   time.Time       `json:"nextAttemptAt"`
 	LastError       *string         `json:"lastError"`
 	CreatedAt       time.Time       `json:"createdAt"`
+	ClaimedAt       *time.Time      `json:"claimedAt"`
 	DeliveredAt     *time.Time      `json:"deliveredAt"`
 	ReadAt          *time.Time      `json:"readAt"`
 }

@@ -38,15 +38,26 @@ type capturedEmail struct {
 type smtpCatcher struct {
 	ln       net.Listener
 	received chan capturedEmail
+	// rcptReply is the verbatim reply to RCPT TO, letting a test make the relay
+	// refuse a recipient (5xx permanent, 4xx transient) instead of accepting it.
+	// Fixed at construction so the serve goroutine never races a test setting it.
+	rcptReply string
 }
 
 func newSMTPCatcher(t *testing.T) *smtpCatcher {
+	t.Helper()
+	return newSMTPCatcherWithRcptReply(t, "250 2.0.0 OK\r\n")
+}
+
+// newSMTPCatcherWithRcptReply builds a catcher that answers RCPT TO with the
+// given reply — the seam for exercising relay rejections.
+func newSMTPCatcherWithRcptReply(t *testing.T, rcptReply string) *smtpCatcher {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	c := &smtpCatcher{ln: ln, received: make(chan capturedEmail, 4)}
+	c := &smtpCatcher{ln: ln, received: make(chan capturedEmail, 4), rcptReply: rcptReply}
 	go c.serve()
 	t.Cleanup(func() { _ = ln.Close() })
 	return c
@@ -91,7 +102,7 @@ func (c *smtpCatcher) handle(conn net.Conn) {
 			write("250 2.0.0 OK\r\n")
 		case strings.HasPrefix(upper, "RCPT TO"):
 			msg.to = append(msg.to, trimmed)
-			write("250 2.0.0 OK\r\n")
+			write(c.rcptReply)
 		case strings.HasPrefix(upper, "DATA"):
 			write("354 End data with <CR><LF>.<CR><LF>\r\n")
 			var body strings.Builder
@@ -361,5 +372,67 @@ func TestNotificationWorker_EmailRequeueDrains(t *testing.T) {
 	catcher.waitForEmail(t)
 	if got := fetchOutbox(t, ctx, r, row.ID); got.Status != string(model.OutboxDelivered) {
 		t.Fatalf("status = %q, want delivered", got.Status)
+	}
+}
+
+// TestEmailDelivery_PermanentRejectionDies pins the transport's error
+// classification. go-mail reports a relay refusal as an ordinary error value, and
+// the typed-error model treats an untyped error as retryable — so without
+// smtp.classify a permanently-refused address would burn the row's whole attempt
+// budget over hours of backoff before dying. A 5xx must kill it on the first pass.
+func TestEmailDelivery_PermanentRejectionDies(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	catcher := newSMTPCatcherWithRcptReply(t, "550 5.1.1 no such mailbox\r\n")
+	host, port := catcher.addr()
+	seedEmailProvider(t, ctx, r, host, port, true)
+	_, row := enqueueEmail(t, ctx, r, "nobody@test.local")
+
+	w := newEmailWorker(t, r)
+	if n, err := w.Drain(ctx); err != nil || n != 0 {
+		t.Fatalf("drain = %d (err %v), want 0 delivered", n, err)
+	}
+
+	got := fetchOutbox(t, ctx, r, row.ID)
+	if got.Status != string(model.OutboxDead) {
+		t.Fatalf("status = %q, want dead — a 5xx refusal must not consume the retry budget", got.Status)
+	}
+	// The relay's own reason is what makes the dead row diagnosable.
+	if got.LastError == nil || !strings.Contains(*got.LastError, "no such mailbox") {
+		t.Fatalf("last_error = %v, want the relay's reason", got.LastError)
+	}
+}
+
+// TestEmailDelivery_TransientRejectionRetries is the other half of the split: a
+// 4xx (greylisting, rate limiting) is exactly what retrying is for, so the row
+// must requeue with backoff rather than die alongside the permanent refusals.
+func TestEmailDelivery_TransientRejectionRetries(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	catcher := newSMTPCatcherWithRcptReply(t, "451 4.7.1 greylisted, try again later\r\n")
+	host, port := catcher.addr()
+	seedEmailProvider(t, ctx, r, host, port, true)
+	_, row := enqueueEmail(t, ctx, r, "greylisted@test.local")
+
+	w := newEmailWorker(t, r)
+	if n, err := w.Drain(ctx); err != nil || n != 0 {
+		t.Fatalf("drain = %d (err %v), want 0 delivered", n, err)
+	}
+
+	got := fetchOutbox(t, ctx, r, row.ID)
+	if got.Status != string(model.OutboxQueued) {
+		t.Fatalf("status = %q, want queued — a 4xx is retryable", got.Status)
+	}
+	if got.Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", got.Attempts)
+	}
+	if !got.NextAttemptAt.After(row.NextAttemptAt) {
+		t.Fatalf("next_attempt_at = %v, want backed off past %v", got.NextAttemptAt, row.NextAttemptAt)
 	}
 }

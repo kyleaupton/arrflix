@@ -578,6 +578,7 @@ type NotificationOutbox struct {
 	CreatedAt       time.Time          `json:"created_at"`
 	DeliveredAt     pgtype.Timestamptz `json:"delivered_at"`
 	ReadAt          pgtype.Timestamptz `json:"read_at"`
+	ClaimedAt       pgtype.Timestamptz `json:"claimed_at"`
 }
 
 type NotificationPreference struct {

@@ -28,6 +28,7 @@ func toModelOutbox(row dbgen.NotificationOutbox) model.NotificationOutbox {
 		NextAttemptAt:   row.NextAttemptAt,
 		LastError:       row.LastError,
 		CreatedAt:       row.CreatedAt,
+		ClaimedAt:       timePtrFromPgTimestamptz(row.ClaimedAt),
 		DeliveredAt:     timePtrFromPgTimestamptz(row.DeliveredAt),
 		ReadAt:          timePtrFromPgTimestamptz(row.ReadAt),
 	}
@@ -111,6 +112,25 @@ func (r *Repository) MarkOutboxAwaitingConfig(ctx context.Context, id uuid.UUID)
 		return model.NotificationOutbox{}, apperrors.FromPg(err, "notification %s not found", id)
 	}
 	return toModelOutbox(row), nil
+}
+
+// ReclaimStaleDelivering returns rows wedged in 'delivering' since before
+// staleBefore to the queue, stamping lastError as the reason. The crash-window
+// reaper's entry point; the reclaimed rows are returned so the worker can log
+// what it healed.
+func (r *Repository) ReclaimStaleDelivering(ctx context.Context, staleBefore time.Time, lastError string) ([]model.NotificationOutbox, error) {
+	rows, err := r.Q.ReclaimStaleDelivering(ctx, dbgen.ReclaimStaleDeliveringParams{
+		LastError:   &lastError,
+		StaleBefore: pgTimestamptzFromTimePtr(&staleBefore),
+	})
+	if err != nil {
+		return nil, apperrors.FromPg(err, "reclaim stale delivering notifications")
+	}
+	out := make([]model.NotificationOutbox, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelOutbox(row))
+	}
+	return out, nil
 }
 
 // RequeueAwaitingConfig returns awaiting_config rows parked since `since` to the

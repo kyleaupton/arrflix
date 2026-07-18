@@ -33,10 +33,37 @@ FOR UPDATE SKIP LOCKED;
 -- delivering, guarded by status so the transition is a compare-and-set. A row
 -- another worker already claimed (status no longer 'queued') matches nothing and
 -- returns no row, which the repo surfaces as NotFound — the caller skips it.
+-- claimed_at stamps the claim so ReclaimStaleDelivering can spot the row if this
+-- worker dies before settling it.
 -- name: MarkOutboxDelivering :one
 UPDATE notification_outbox
-SET status = 'delivering'
+SET status = 'delivering',
+    claimed_at = now()
 WHERE id = sqlc.arg(id) AND status = 'queued'
+RETURNING *;
+
+-- ReclaimStaleDelivering returns rows wedged in 'delivering' past the cutoff to
+-- the queue — the self-heal for a crash between MarkOutboxDelivering's claim and
+-- a terminal transition. Without it such a row is stranded for good: ListDueOutbox
+-- selects only 'queued', so nothing ever looks at it again.
+--
+-- attempts is incremented rather than left alone (where the want reaper resets
+-- free). The row *was* handed to an adapter and the delivery may have completed
+-- before the crash — an SMTP relay that accepted the message, a push service that
+-- returned 201 — so a reclaim is an honest at-least-once retry. It also keeps a
+-- row that wedges the worker on every pass from cycling forever: attempts climbs
+-- until the worker's retry budget kills it.
+--
+-- The cutoff is passed from Go for testability.
+-- name: ReclaimStaleDelivering :many
+UPDATE notification_outbox
+SET status = 'queued',
+    attempts = attempts + 1,
+    next_attempt_at = now(),
+    last_error = sqlc.arg(last_error),
+    claimed_at = NULL
+WHERE status = 'delivering'
+  AND claimed_at < sqlc.arg(stale_before)
 RETURNING *;
 
 -- name: MarkOutboxDelivered :one
