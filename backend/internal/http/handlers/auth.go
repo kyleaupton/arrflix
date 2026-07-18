@@ -32,10 +32,57 @@ func NewAuth(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, svc *ser
 	return &Auth{cfg: cfg, log: log, pool: pool, svc: svc}
 }
 
+// ----- Session cookie helpers -----
+
+// refreshCookieName is the HttpOnly cookie carrying the session refresh token.
+// It's Path-scoped to the auth routes so it rides only the refresh/logout
+// requests, never every API call.
+const refreshCookieName = "arrflix_rt"
+
+// refreshCookie builds the Set-Cookie for a live refresh token. Secure is gated on
+// prod: in dev the app is served over http://localhost, where a Secure cookie is
+// dropped, so requiring it would break the dev refresh flow.
+func (h *Auth) refreshCookie(value string) http.Cookie {
+	return http.Cookie{
+		Name:     refreshCookieName,
+		Value:    value,
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		Secure:   h.cfg.Env == "prod",
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(h.cfg.SessionTTL.Seconds()),
+	}
+}
+
+// clearRefreshCookie expires the refresh cookie on logout.
+func (h *Auth) clearRefreshCookie() http.Cookie {
+	return http.Cookie{
+		Name:     refreshCookieName,
+		Value:    "",
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		Secure:   h.cfg.Env == "prod",
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	}
+}
+
+// sessionMeta captures best-effort device context for a new session: the
+// User-Agent header for a device label and the client ip (from ChiClientIP) for
+// the last-seen address. Either may be absent.
+func sessionMeta(userAgent string, ip *string) service.SessionMeta {
+	var ua *string
+	if userAgent != "" {
+		ua = &userAgent
+	}
+	return service.SessionMeta{UserAgent: ua, IP: ip}
+}
+
 // ----- Login -----
 
 type LoginInput struct {
-	Body struct {
+	UserAgent string `header:"User-Agent" doc:"Device label, captured server-side"`
+	Body      struct {
 		Login    string `json:"login" required:"true" minLength:"1" doc:"Username or email"`
 		Password string `json:"password" required:"true" minLength:"1" doc:"Password"`
 	}
@@ -46,15 +93,23 @@ type LoginResponse struct {
 }
 
 type LoginOutput struct {
-	Body LoginResponse
+	Body      LoginResponse
+	SetCookie http.Cookie `header:"Set-Cookie"`
 }
 
 func (h *Auth) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
-	signed, err := h.svc.Auth.Login(ctx, input.Body.Login, input.Body.Password)
+	user, err := h.svc.Auth.Login(ctx, input.Body.Login, input.Body.Password)
 	if err != nil {
 		return nil, err
 	}
-	return &LoginOutput{Body: LoginResponse{Token: signed}}, nil
+	issued, err := h.svc.Sessions.Create(ctx, user, sessionMeta(input.UserAgent, middlewares.ClientIPFromContext(ctx)))
+	if err != nil {
+		return nil, err
+	}
+	return &LoginOutput{
+		Body:      LoginResponse{Token: issued.AccessToken},
+		SetCookie: h.refreshCookie(issued.RefreshToken),
+	}, nil
 }
 
 // ----- Signup -----
@@ -102,7 +157,8 @@ func (h *Auth) Signup(ctx context.Context, input *SignupInput) (*SignupOutput, e
 // ----- Plex Exchange -----
 
 type PlexExchangeInput struct {
-	Body struct {
+	UserAgent string `header:"User-Agent" doc:"Device label, captured server-side"`
+	Body      struct {
 		PinID int `json:"pin_id" required:"true" minimum:"1" doc:"Plex pin id returned from /auth/plex/start"`
 	}
 }
@@ -112,7 +168,8 @@ type PlexExchangeResponse struct {
 }
 
 type PlexExchangeOutput struct {
-	Body PlexExchangeResponse
+	Body      PlexExchangeResponse
+	SetCookie http.Cookie `header:"Set-Cookie"`
 }
 
 // PlexExchange polls Plex for the PIN's auth token and, if claimed,
@@ -146,11 +203,18 @@ func (h *Auth) PlexExchange(ctx context.Context, input *PlexExchangeInput) (*Ple
 	raw, _ := json.Marshal(plexUser)
 	plexSubject := strconv.Itoa(plexUser.ID)
 
-	signed, err := h.svc.Auth.LoginWithPlex(ctx, plexSubject, plexUser.Email, plexUser.Username, pin.AuthToken, raw)
+	user, err := h.svc.Auth.LoginWithPlex(ctx, plexSubject, plexUser.Email, plexUser.Username, pin.AuthToken, raw)
 	if err != nil {
 		return nil, err
 	}
-	return &PlexExchangeOutput{Body: PlexExchangeResponse{Token: signed}}, nil
+	issued, err := h.svc.Sessions.Create(ctx, user, sessionMeta(input.UserAgent, middlewares.ClientIPFromContext(ctx)))
+	if err != nil {
+		return nil, err
+	}
+	return &PlexExchangeOutput{
+		Body:      PlexExchangeResponse{Token: issued.AccessToken},
+		SetCookie: h.refreshCookie(issued.RefreshToken),
+	}, nil
 }
 
 // ----- Me -----
@@ -248,6 +312,55 @@ func (h *Auth) PlexStart(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
+// ----- Refresh -----
+
+type RefreshInput struct {
+	Cookie http.Cookie `cookie:"arrflix_rt"`
+}
+
+type RefreshResponse struct {
+	Token string `json:"token" doc:"JWT bearer token"`
+}
+
+type RefreshOutput struct {
+	Body      RefreshResponse
+	SetCookie http.Cookie `header:"Set-Cookie"`
+}
+
+// Refresh rotates the refresh-token cookie and returns a fresh access token. It is
+// authenticated by the cookie, not a bearer token, so an expired access token can
+// still renew. A missing/invalid/reused refresh token is a 401 the frontend treats
+// as "log out".
+func (h *Auth) Refresh(ctx context.Context, input *RefreshInput) (*RefreshOutput, error) {
+	issued, err := h.svc.Sessions.Refresh(ctx, input.Cookie.Value, middlewares.ClientIPFromContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return &RefreshOutput{
+		Body:      RefreshResponse{Token: issued.AccessToken},
+		SetCookie: h.refreshCookie(issued.RefreshToken),
+	}, nil
+}
+
+// ----- Logout -----
+
+type LogoutInput struct {
+	Cookie http.Cookie `cookie:"arrflix_rt"`
+}
+
+type LogoutOutput struct {
+	SetCookie http.Cookie `header:"Set-Cookie"`
+}
+
+// Logout revokes the session the cookie belongs to and clears the cookie.
+// Idempotent: an absent or already-revoked session still succeeds.
+func (h *Auth) Logout(ctx context.Context, input *LogoutInput) (*LogoutOutput, error) {
+	if err := h.svc.Sessions.RevokeByRefreshToken(ctx, input.Cookie.Value); err != nil {
+		return nil, err
+	}
+	return &LogoutOutput{SetCookie: h.clearRefreshCookie()}, nil
+}
+
 // ----- Register -----
 
 // RegisterHumachi registers the auth operations. PlexStart is registered
@@ -294,4 +407,25 @@ func (h *Auth) RegisterHumachi(api huma.API) {
 		Description: "Returns the authenticated principal (from JWT claims).",
 		Tags:        []string{"auth"},
 	}, h.Me)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "auth-refresh",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/auth/refresh",
+		Summary:     "Refresh session",
+		Description: "Rotates the refresh-token cookie and returns a fresh access token. Authenticated by the refresh cookie, not a bearer token.",
+		Tags:        []string{"auth"},
+		// 401 = missing/invalid/reused refresh token (the FE treats it as logout).
+		Errors: []int{http.StatusUnauthorized},
+	}, h.Refresh)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "auth-logout",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/auth/logout",
+		Summary:       "Logout",
+		Description:   "Revokes the current session and clears the refresh cookie.",
+		Tags:          []string{"auth"},
+		DefaultStatus: http.StatusNoContent,
+	}, h.Logout)
 }

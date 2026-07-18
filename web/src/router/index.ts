@@ -55,10 +55,25 @@ const router = createRouter({
     },
     {
       // Per-user preferences — every authenticated role, no capability gate
-      // (unlike the admin-only /settings tree). Notifications is the only
-      // section today.
+      // (unlike the admin-only /settings tree). Full-bleed sidebar layout like
+      // Settings; sections are Notifications and Devices.
       path: '/preferences',
-      component: () => import('@/views/Preferences.vue'),
+      component: () => import('@/views/preferences/PreferencesLayout.vue'),
+      meta: { layout: 'sidebar' },
+      children: [
+        {
+          path: '',
+          redirect: '/preferences/notifications',
+        },
+        {
+          path: 'notifications',
+          component: () => import('@/views/preferences/NotificationsView.vue'),
+        },
+        {
+          path: 'devices',
+          component: () => import('@/views/preferences/DevicesView.vue'),
+        },
+      ],
     },
     {
       path: '/settings',

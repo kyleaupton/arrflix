@@ -1,4 +1,4 @@
--- Web Push: VAPID identity (singleton) and per-browser subscriptions.
+-- Web Push: VAPID identity (singleton) and per-session subscriptions.
 
 -- name: GetVAPIDConfig :one
 select * from vapid_config
@@ -16,43 +16,52 @@ set subject = sqlc.arg(subject),
 where id = sqlc.arg(id)
 returning *;
 
--- UpsertPushSubscription registers (or refreshes) a browser's subscription.
--- endpoint is the natural key: a re-subscribe from the same browser re-uses the
--- endpoint, so we refresh its keys/owner/user_agent and bump last_used_at rather
--- than inserting a duplicate. This also re-homes an endpoint if a different user
--- signs in on the same browser.
--- name: UpsertPushSubscription :one
-insert into push_subscription (user_id, endpoint, p256dh, auth, user_agent)
-values (sqlc.arg(user_id), sqlc.arg(endpoint), sqlc.arg(p256dh), sqlc.arg(auth), sqlc.arg(user_agent))
-on conflict (endpoint) do update
-set user_id = excluded.user_id,
-    p256dh = excluded.p256dh,
-    auth = excluded.auth,
-    user_agent = excluded.user_agent,
-    last_used_at = now()
+-- ClearPushForSessionOrEndpoint frees the subscribe slot before an insert: it
+-- removes this session's existing push row (a re-subscribe or rotated endpoint) and
+-- any row elsewhere holding this endpoint (the same browser re-homing to a new
+-- login). Paired with a plain insert this enforces the 1:1 session<->push invariant
+-- and re-homes an endpoint, without a fragile data-modifying-CTE upsert.
+-- name: ClearPushForSessionOrEndpoint :execrows
+delete from push_subscription
+where session_id = sqlc.arg(session_id) or endpoint = sqlc.arg(endpoint);
+
+-- name: InsertPushSubscription :one
+insert into push_subscription (session_id, endpoint, p256dh, auth, user_agent)
+values (sqlc.arg(session_id), sqlc.arg(endpoint), sqlc.arg(p256dh), sqlc.arg(auth), sqlc.arg(user_agent))
 returning *;
 
+-- ListPushSubscriptionsByUser is the fan-out lookup: every live subscription for a
+-- recipient. Joining user_session means only non-revoked, non-expired sessions'
+-- devices receive push — revoking a session silently stops its push, with no
+-- change to the adapter.
 -- name: ListPushSubscriptionsByUser :many
-select * from push_subscription
-where user_id = sqlc.arg(user_id)
-order by created_at;
+select ps.* from push_subscription ps
+join user_session us on us.id = ps.session_id
+where us.user_id = sqlc.arg(user_id)
+  and us.revoked_at is null
+  and us.refresh_expires_at > now()
+order by ps.created_at;
 
--- GetPushSubscriptionByIDForUser loads one of the caller's own devices by id.
--- Scoping the read to the owner means a test-send or delete can never address
+-- GetPushSubscriptionByIDForUser loads one of the caller's own devices by id,
+-- scoped to the owner through the session join so a test-send can never address
 -- another user's subscription by guessing an id.
 -- name: GetPushSubscriptionByIDForUser :one
-select * from push_subscription
-where id = sqlc.arg(id) and user_id = sqlc.arg(user_id);
+select ps.* from push_subscription ps
+join user_session us on us.id = ps.session_id
+where ps.id = sqlc.arg(id) and us.user_id = sqlc.arg(user_id);
 
 -- name: DeletePushSubscriptionByEndpoint :execrows
 delete from push_subscription
 where endpoint = sqlc.arg(endpoint);
 
--- DeletePushSubscriptionByIDForUser removes one of the caller's own devices by
--- id, scoped to the owner so a user cannot delete another's subscription.
+-- DeletePushSubscriptionByIDForUser removes one of the caller's own devices by id,
+-- scoped to the owner via the session join.
 -- name: DeletePushSubscriptionByIDForUser :execrows
-delete from push_subscription
-where id = sqlc.arg(id) and user_id = sqlc.arg(user_id);
+delete from push_subscription ps
+using user_session us
+where ps.session_id = us.id
+  and ps.id = sqlc.arg(id)
+  and us.user_id = sqlc.arg(user_id);
 
 -- MarkPushSubscriptionNotified stamps last_notified_at when the push adapter
 -- successfully sends to this endpoint. Best-effort (a lost stamp only means the

@@ -27,8 +27,9 @@ type VAPIDConfig struct {
 	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
-// PushSubscription is one browser's Web Push registration for one user. A user
-// may hold several (one per device). Endpoint is the push service's delivery URL
+// PushSubscription is one browser's Web Push registration, bound to the session
+// (login) it was created under — a session holds at most one. Owner is derived via
+// session_id -> user_session.user_id. Endpoint is the push service's delivery URL
 // and the natural key; P256dh/Auth are the client's ECDH public key and auth
 // secret the adapter encrypts each payload with.
 // LastUsedAt is when the browser last (re)subscribed/refreshed this registration;
@@ -37,7 +38,7 @@ type VAPIDConfig struct {
 // former overstated activity for a device that had only ever subscribed.
 type PushSubscription struct {
 	ID             uuid.UUID  `json:"id"`
-	UserID         uuid.UUID  `json:"userId"`
+	SessionID      uuid.UUID  `json:"sessionId"`
 	Endpoint       string     `json:"endpoint"`
 	P256dh         string     `json:"p256dh"`
 	Auth           string     `json:"auth"`

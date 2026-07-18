@@ -51,30 +51,31 @@ func NewNotificationService(r *repo.Repository) *NotificationService {
 	}
 }
 
-// RegisterPushSubscription records (or refreshes) a browser's Web Push
-// subscription for a user. Idempotent on the endpoint (the natural key): a
-// re-subscribe from the same browser refreshes its keys/owner rather than
-// duplicating.
-func (s *NotificationService) RegisterPushSubscription(ctx context.Context, userID uuid.UUID, endpoint, p256dh, auth string, userAgent *string) error {
+// RegisterPushSubscription binds (or refreshes) a browser's Web Push subscription
+// to the caller's current session. Clearing any prior row for the session or the
+// endpoint first enforces the 1:1 session<->push invariant and re-homes an
+// endpoint when the same browser signs into a new session.
+func (s *NotificationService) RegisterPushSubscription(ctx context.Context, sessionID uuid.UUID, endpoint, p256dh, auth string, userAgent *string) error {
 	const op = "NotificationService.RegisterPushSubscription"
 	if endpoint == "" || p256dh == "" || auth == "" {
 		return apperrors.Validation("push subscription requires endpoint, p256dh, and auth").Op(op)
 	}
-	_, err := s.repo.UpsertPushSubscription(ctx, repo.UpsertPushSubscriptionParams{
-		UserID:    userID,
-		Endpoint:  endpoint,
-		P256dh:    p256dh,
-		Auth:      auth,
-		UserAgent: userAgent,
+	// Clear + insert run in one transaction so they can't half-apply: a failed
+	// insert after a committed clear would leave the device with its prior push
+	// row deleted and no replacement — push silently off until re-subscribe.
+	return s.repo.InTx(ctx, func(r *repo.Repository) error {
+		if _, err := r.ClearPushForSessionOrEndpoint(ctx, sessionID, endpoint); err != nil {
+			return err
+		}
+		_, err := r.InsertPushSubscription(ctx, repo.InsertPushSubscriptionParams{
+			SessionID: sessionID,
+			Endpoint:  endpoint,
+			P256dh:    p256dh,
+			Auth:      auth,
+			UserAgent: userAgent,
+		})
+		return err
 	})
-	return err
-}
-
-// ListPushSubscriptions returns the caller's registered devices, oldest first.
-// The models carry the ECDH secrets (p256dh/auth) for the delivery path; the
-// handler maps to a secret-free view before it reaches the wire.
-func (s *NotificationService) ListPushSubscriptions(ctx context.Context, userID uuid.UUID) ([]model.PushSubscription, error) {
-	return s.repo.ListPushSubscriptionsByUser(ctx, userID)
 }
 
 // GetPushSubscription loads one of the caller's own devices by id, returning a

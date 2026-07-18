@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { client } from '@/client/client.gen'
-import { authLogin, authMe, authPlexExchange } from '@/client/sdk.gen'
+import { authLogin, authLogout, authMe, authPlexExchange } from '@/client/sdk.gen'
 import { problemMessage } from '@/lib/api'
 
 type Nullable<T> = T | null
@@ -13,8 +13,6 @@ interface AuthUser {
   roles: string[]
   permissions: string[]
 }
-
-const AUTH_TOKEN_KEY = 'arrflix.auth.token'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<Nullable<string>>(null)
@@ -70,18 +68,15 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // The access token is memory-only — never persisted. It's reconstituted on
+  // boot and on resume from the HttpOnly refresh cookie (see lib/authRefresh).
   function setToken(nextToken: string | null) {
     token.value = nextToken
-    if (nextToken) {
-      localStorage.setItem(AUTH_TOKEN_KEY, nextToken)
-    } else {
-      localStorage.removeItem(AUTH_TOKEN_KEY)
-    }
     applyTokenToClient(nextToken)
   }
 
-  async function fetchMe(): Promise<void> {
-    if (!token.value) return
+  async function fetchMe(): Promise<boolean> {
+    if (!token.value) return false
     try {
       const res = await authMe<true>({ throwOnError: true })
       user.value = {
@@ -91,21 +86,12 @@ export const useAuthStore = defineStore('auth', () => {
         roles: res.data.roles ?? [],
         permissions: res.data.permissions ?? [],
       }
+      return true
     } catch {
       // Token likely invalid
       user.value = null
-    }
-  }
-
-  /** Restore token from localStorage without making any HTTP calls. */
-  function rehydrateToken(): boolean {
-    const stored = localStorage.getItem(AUTH_TOKEN_KEY)
-    if (!stored) {
-      setToken(null)
       return false
     }
-    setToken(stored)
-    return true
   }
 
   /**
@@ -125,16 +111,6 @@ export const useAuthStore = defineStore('auth', () => {
       roles: [],
       permissions: [],
     }
-  }
-
-  async function rehydrate(): Promise<void> {
-    const stored = localStorage.getItem(AUTH_TOKEN_KEY)
-    if (!stored) {
-      setToken(null)
-      return
-    }
-    setToken(stored)
-    await fetchMe()
   }
 
   async function loginWithPassword(login: string, password: string): Promise<boolean> {
@@ -165,15 +141,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function completeSsoFromCallback(params: URLSearchParams): Promise<boolean> {
-    // Direct token (future use)
-    const fromToken = params.get('token')
-    if (fromToken) {
-      setToken(fromToken)
-      await fetchMe()
-      return true
-    }
-
-    // Plex PIN exchange
+    // Plex PIN exchange. The exchange endpoint sets the refresh cookie
+    // server-side and returns the access token in the body.
     const pinId = params.get('pinId')
     if (pinId) {
       try {
@@ -196,9 +165,24 @@ export const useAuthStore = defineStore('auth', () => {
     return false
   }
 
-  function logout(): void {
+  // Drop in-memory session state without touching the server. The 401
+  // interceptor and boot use this when a refresh is unrecoverable.
+  function clearLocal(): void {
     setToken(null)
     user.value = null
+  }
+
+  // Clear local state immediately for a snappy UI, then revoke the session
+  // server-side (best-effort). Logout is cookie-authed, so dropping the bearer
+  // first is fine. Without the server call a reload would silently re-auth from
+  // the still-valid refresh cookie, so this must run for a real logout.
+  async function logout(): Promise<void> {
+    clearLocal()
+    try {
+      await authLogout<true>({ throwOnError: true })
+    } catch {
+      // Offline or already revoked — local session is gone regardless.
+    }
   }
 
   return {
@@ -221,13 +205,13 @@ export const useAuthStore = defineStore('auth', () => {
     canApprove,
     canDeny,
     // actions
+    setToken,
     fetchMe,
-    rehydrateToken,
     setUserFromBootstrap,
-    rehydrate,
     loginWithPassword,
     startPlexSso,
     completeSsoFromCallback,
+    clearLocal,
     logout,
   }
 })

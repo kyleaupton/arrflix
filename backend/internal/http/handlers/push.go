@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -77,7 +76,7 @@ type PushSubscribeInput struct {
 type PushSubscribeOutput struct{}
 
 func (h *Push) Subscribe(ctx context.Context, input *PushSubscribeInput) (*PushSubscribeOutput, error) {
-	userID, err := userIDFromCtx(ctx, "PushHandler.Subscribe")
+	sessionID, err := sidFromCtx(ctx, "PushHandler.Subscribe")
 	if err != nil {
 		return nil, err
 	}
@@ -85,57 +84,17 @@ func (h *Push) Subscribe(ctx context.Context, input *PushSubscribeInput) (*PushS
 	if input.UserAgent != "" {
 		ua = &input.UserAgent
 	}
-	if err := h.svc.Notifications.RegisterPushSubscription(ctx, userID,
+	if err := h.svc.Notifications.RegisterPushSubscription(ctx, sessionID,
 		input.Body.Endpoint, input.Body.P256dh, input.Body.Auth, ua); err != nil {
 		return nil, err
 	}
 	return &PushSubscribeOutput{}, nil
 }
 
-// ----- List -----
-
-// pushSubscriptionView is the caller-facing shape of a registered device. It
-// deliberately omits the ECDH secrets (p256dh/auth) — those exist only for the
-// server's delivery path and have no business on the wire. Endpoint is included
-// so the browser can match it against its own subscription to badge "this
-// device" in the management UI.
-type pushSubscriptionView struct {
-	ID             uuid.UUID  `json:"id" format:"uuid" doc:"Subscription id; use it to remove or test this device"`
-	Endpoint       string     `json:"endpoint" doc:"Push service endpoint URL; the browser matches this against its own subscription to identify the current device"`
-	UserAgent      *string    `json:"userAgent" doc:"Device label captured at registration (User-Agent), null if unknown"`
-	CreatedAt      time.Time  `json:"createdAt" doc:"When this device first subscribed"`
-	LastUsedAt     time.Time  `json:"lastUsedAt" doc:"When this subscription was last (re)subscribed/refreshed"`
-	LastNotifiedAt *time.Time `json:"lastNotifiedAt" doc:"When a push was last successfully delivered to this device; null if never notified yet"`
-}
-
-type PushListInput struct{}
-
-type PushListOutput struct {
-	Body []pushSubscriptionView
-}
-
-func (h *Push) List(ctx context.Context, _ *PushListInput) (*PushListOutput, error) {
-	userID, err := userIDFromCtx(ctx, "PushHandler.List")
-	if err != nil {
-		return nil, err
-	}
-	subs, err := h.svc.Notifications.ListPushSubscriptions(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	views := make([]pushSubscriptionView, 0, len(subs))
-	for _, s := range subs {
-		views = append(views, pushSubscriptionView{
-			ID:             s.ID,
-			Endpoint:       s.Endpoint,
-			UserAgent:      s.UserAgent,
-			CreatedAt:      s.CreatedAt,
-			LastUsedAt:     s.LastUsedAt,
-			LastNotifiedAt: s.LastNotifiedAt,
-		})
-	}
-	return &PushListOutput{Body: views}, nil
-}
+// The caller's registered devices are listed by the sessions endpoint
+// (GET /api/v1/auth/sessions), where each session row carries its push state — a
+// push subscription is a capability of a session, so there is no separate push
+// device list.
 
 // ----- Remove -----
 
@@ -212,15 +171,6 @@ func (h *Push) RegisterHumachi(api huma.API) {
 		DefaultStatus: http.StatusNoContent,
 		Errors:        []int{http.StatusBadRequest, http.StatusUnprocessableEntity},
 	}, h.Subscribe)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "push-list",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/notifications/push/subscriptions",
-		Summary:     "List my push devices",
-		Description: "Returns the caller's registered Web Push devices (secrets omitted). Match each endpoint against the browser's own subscription to identify the current device.",
-		Tags:        []string{"notifications"},
-	}, h.List)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "push-remove",

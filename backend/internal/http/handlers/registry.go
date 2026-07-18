@@ -44,6 +44,7 @@ func RegisterHumachiHandlers(api huma.API, deps Deps) {
 	NewUsers(deps.Services).RegisterHumachi(api)
 	NewRoles(deps.Services).RegisterHumachi(api)
 	NewAuth(deps.Cfg, deps.Logger, deps.Pool, deps.Services).RegisterHumachi(api)
+	NewSessions(deps.Services).RegisterHumachi(api)
 	NewSetup(deps.Services).RegisterHumachi(api)
 	NewMedia(deps.Services).RegisterHumachi(api)
 	NewEvents(deps.Broker).RegisterHumachi(api)

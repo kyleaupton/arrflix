@@ -7,6 +7,7 @@ package middlewares
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 
@@ -23,6 +24,8 @@ type ctxKey int
 const (
 	// claimsCtxKey stores the parsed jwt.MapClaims after successful auth.
 	claimsCtxKey ctxKey = iota
+	// clientIPCtxKey stores the request's client IP (host only, no port).
+	clientIPCtxKey
 )
 
 // ClaimsFromContext extracts the JWT claims previously stuffed into the
@@ -44,6 +47,41 @@ func ClaimsFromContext(ctx context.Context) (jwt.MapClaims, bool) {
 // withClaims returns ctx with claims attached.
 func withClaims(ctx context.Context, claims jwt.MapClaims) context.Context {
 	return context.WithValue(ctx, claimsCtxKey, claims)
+}
+
+// ChiClientIP stashes the request's client IP (host only) into the context so
+// humachi handlers — which never see the *http.Request — can record it on a
+// session. It relies on chi's middleware.RealIP having already rewritten
+// RemoteAddr from the proxy's X-Forwarded-For/X-Real-IP; behind our own nginx
+// that first hop is the real client. It runs on every path (login/refresh are
+// JWT-public, so this can't hang off ChiJWT).
+func ChiClientIP() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), clientIPCtxKey, hostOnly(r.RemoteAddr))
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// ClientIPFromContext returns the client IP ChiClientIP recorded, or nil when
+// none was captured — the *string shape drops straight into the nullable
+// session ip column.
+func ClientIPFromContext(ctx context.Context) *string {
+	v, _ := ctx.Value(clientIPCtxKey).(string)
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+// hostOnly strips the port from a "host:port" RemoteAddr. RealIP-rewritten
+// values already carry no port (returned as-is); raw TCP addrs are split.
+func hostOnly(remoteAddr string) string {
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		return host
+	}
+	return remoteAddr
 }
 
 // UserIDFromContext extracts the caller's user id from the JWT subject claim
@@ -80,9 +118,14 @@ func UserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 //   - /api/v1/auth/signup
 //   - /api/v1/auth/plex/start
 //   - /api/v1/auth/plex/exchange
+//   - /api/v1/auth/refresh
+//   - /api/v1/auth/logout
 //   - /api/v1/setup/status
 //   - /api/v1/setup/initialize
 //   - /api/v1/setup/tmdb
+//
+// The refresh/logout routes are cookie-authed rather than bearer-authed, so they
+// bypass the JWT middleware and validate the refresh cookie in the service.
 //
 // Plus the /dev/* tree is JWT-bypassed when registered (dev env). Matched
 // by prefix.
@@ -94,6 +137,8 @@ var publicPathSet = map[string]struct{}{
 	"/api/v1/auth/signup":        {},
 	"/api/v1/auth/plex/start":    {},
 	"/api/v1/auth/plex/exchange": {},
+	"/api/v1/auth/refresh":       {},
+	"/api/v1/auth/logout":        {},
 	"/api/v1/setup/status":       {},
 	"/api/v1/setup/initialize":   {},
 	"/api/v1/setup/tmdb":         {},

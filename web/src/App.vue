@@ -12,8 +12,13 @@ import 'vue-sonner/style.css'
 import { toast } from 'vue-sonner'
 import { Toaster } from '@/components/ui/sonner'
 import { usePwaUpdate } from '@/composables/usePwaUpdate'
+import { useSessionKeepalive } from '@/composables/useSessionKeepalive'
 
 const authStore = useAuthStore()
+
+// Refresh the session on foreground/focus so a resumed PWA (notably iOS
+// standalone) never sits on an expired access token.
+useSessionKeepalive()
 const appStore = useAppStore()
 const router = useRouter()
 const route = useRoute()

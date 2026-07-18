@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/kyleaupton/arrflix/internal/logger"
@@ -11,12 +12,14 @@ type Config struct {
 	Env            string // dev|prod
 	Port           string // API internal port, default 8080
 	DatabaseURL    string
-	CORSOrigin     string // used for dev SPA
-	JWTSecret      string // HMAC secret for JWT signing
-	TmdbAPIKey     string // TMDB API key
-	ProwlarrPort   string // Prowlarr port, default 9696
-	ProwlarrAPIKey string // Prowlarr API key
-	EnableAPIDocs  bool   // serve /api/docs + /api/openapi.{json,yaml}; default on in dev, off in prod
+	CORSOrigin     string        // used for dev SPA
+	JWTSecret      string        // HMAC secret for JWT signing
+	TmdbAPIKey     string        // TMDB API key
+	ProwlarrPort   string        // Prowlarr port, default 9696
+	ProwlarrAPIKey string        // Prowlarr API key
+	EnableAPIDocs  bool          // serve /api/docs + /api/openapi.{json,yaml}; default on in dev, off in prod
+	AccessTokenTTL time.Duration // access-token lifetime; short-lived, refreshed via the session cookie
+	SessionTTL     time.Duration // refresh-token / session absolute lifetime
 }
 
 func envOr(k, d string) string {
@@ -37,6 +40,15 @@ func envBoolOr(k string, d bool) bool {
 	return d
 }
 
+func envDurationOr(k string, d time.Duration) time.Duration {
+	if v := os.Getenv(k); v != "" {
+		if parsed, err := time.ParseDuration(v); err == nil {
+			return parsed
+		}
+	}
+	return d
+}
+
 func Load(log *logger.Logger) Config {
 	// Best effort to load .env file
 	_ = godotenv.Load()
@@ -52,6 +64,8 @@ func Load(log *logger.Logger) Config {
 		ProwlarrPort:   envOr("PROWLARR_PORT", "9696"),
 		ProwlarrAPIKey: envOr("PROWLARR_API_KEY", "prowlarr-api-key"),
 		EnableAPIDocs:  envBoolOr("ENABLE_API_DOCS", env == "dev"),
+		AccessTokenTTL: envDurationOr("ACCESS_TOKEN_TTL", 15*time.Minute),
+		SessionTTL:     envDurationOr("SESSION_TTL", 90*24*time.Hour),
 	}
 
 	log.Debug().Interface("config", config).Msg("config")

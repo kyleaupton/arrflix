@@ -642,7 +642,7 @@ type ProposalWant struct {
 
 type PushSubscription struct {
 	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
+	SessionID      pgtype.UUID        `json:"session_id"`
 	Endpoint       string             `json:"endpoint"`
 	P256dh         string             `json:"p256dh"`
 	Auth           string             `json:"auth"`
@@ -777,6 +777,21 @@ type UserRole struct {
 	UserID    pgtype.UUID `json:"user_id"`
 	RoleID    pgtype.UUID `json:"role_id"`
 	GrantedAt time.Time   `json:"granted_at"`
+}
+
+type UserSession struct {
+	ID               pgtype.UUID        `json:"id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	RefreshHash      []byte             `json:"refresh_hash"`
+	PrevRefreshHash  []byte             `json:"prev_refresh_hash"`
+	RotatedAt        pgtype.Timestamptz `json:"rotated_at"`
+	RefreshExpiresAt time.Time          `json:"refresh_expires_at"`
+	CreatedAt        time.Time          `json:"created_at"`
+	LastUsedAt       time.Time          `json:"last_used_at"`
+	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
+	UserAgent        *string            `json:"user_agent"`
+	Ip               *string            `json:"ip"`
+	Label            *string            `json:"label"`
 }
 
 type VapidConfig struct {

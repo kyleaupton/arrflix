@@ -16,7 +16,8 @@ type PushRepo interface {
 	CreateVAPIDConfig(ctx context.Context, publicKey, privateKey, subject string) (model.VAPIDConfig, error)
 	UpdateVAPIDSubject(ctx context.Context, id uuid.UUID, subject string) (model.VAPIDConfig, error)
 
-	UpsertPushSubscription(ctx context.Context, params UpsertPushSubscriptionParams) (model.PushSubscription, error)
+	ClearPushForSessionOrEndpoint(ctx context.Context, sessionID uuid.UUID, endpoint string) (int64, error)
+	InsertPushSubscription(ctx context.Context, params InsertPushSubscriptionParams) (model.PushSubscription, error)
 	ListPushSubscriptionsByUser(ctx context.Context, userID uuid.UUID) ([]model.PushSubscription, error)
 	GetPushSubscriptionByIDForUser(ctx context.Context, userID, id uuid.UUID) (model.PushSubscription, bool, error)
 	DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) (int64, error)
@@ -24,10 +25,12 @@ type PushRepo interface {
 	MarkPushSubscriptionNotified(ctx context.Context, endpoint string) error
 }
 
-// UpsertPushSubscriptionParams is the domain-shaped input for registering a
-// browser's subscription.
-type UpsertPushSubscriptionParams struct {
-	UserID    uuid.UUID
+// InsertPushSubscriptionParams is the domain-shaped input for inserting a
+// browser's subscription. The caller clears the session's prior row and any row
+// holding this endpoint first (ClearPushForSessionOrEndpoint), so a plain insert
+// is safe and enforces the 1:1 session<->push invariant.
+type InsertPushSubscriptionParams struct {
+	SessionID uuid.UUID
 	Endpoint  string
 	P256dh    string
 	Auth      string
@@ -48,7 +51,7 @@ func toModelVAPIDConfig(row dbgen.VapidConfig) model.VAPIDConfig {
 func toModelPushSubscription(row dbgen.PushSubscription) model.PushSubscription {
 	return model.PushSubscription{
 		ID:             uuidFromPgtype(row.ID),
-		UserID:         uuidFromPgtype(row.UserID),
+		SessionID:      uuidFromPgtype(row.SessionID),
 		Endpoint:       row.Endpoint,
 		P256dh:         row.P256dh,
 		Auth:           row.Auth,
@@ -96,16 +99,30 @@ func (r *Repository) UpdateVAPIDSubject(ctx context.Context, id uuid.UUID, subje
 	return toModelVAPIDConfig(row), nil
 }
 
-func (r *Repository) UpsertPushSubscription(ctx context.Context, params UpsertPushSubscriptionParams) (model.PushSubscription, error) {
-	row, err := r.Q.UpsertPushSubscription(ctx, dbgen.UpsertPushSubscriptionParams{
-		UserID:    pgtypeFromUUID(params.UserID),
+// ClearPushForSessionOrEndpoint removes this session's existing push row and any
+// row elsewhere holding the endpoint, freeing the subscribe slot before an insert.
+// Returns rows removed; 0 is not an error.
+func (r *Repository) ClearPushForSessionOrEndpoint(ctx context.Context, sessionID uuid.UUID, endpoint string) (int64, error) {
+	n, err := r.Q.ClearPushForSessionOrEndpoint(ctx, dbgen.ClearPushForSessionOrEndpointParams{
+		SessionID: pgtypeFromUUID(sessionID),
+		Endpoint:  endpoint,
+	})
+	if err != nil {
+		return 0, apperrors.FromPg(err, "clear push subscription for session %s", sessionID)
+	}
+	return n, nil
+}
+
+func (r *Repository) InsertPushSubscription(ctx context.Context, params InsertPushSubscriptionParams) (model.PushSubscription, error) {
+	row, err := r.Q.InsertPushSubscription(ctx, dbgen.InsertPushSubscriptionParams{
+		SessionID: pgtypeFromUUID(params.SessionID),
 		Endpoint:  params.Endpoint,
 		P256dh:    params.P256dh,
 		Auth:      params.Auth,
 		UserAgent: params.UserAgent,
 	})
 	if err != nil {
-		return model.PushSubscription{}, apperrors.FromPg(err, "upsert push subscription")
+		return model.PushSubscription{}, apperrors.FromPg(err, "insert push subscription for session %s", params.SessionID)
 	}
 	return toModelPushSubscription(row), nil
 }

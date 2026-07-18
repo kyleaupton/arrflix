@@ -11,6 +11,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearPushForSessionOrEndpoint = `-- name: ClearPushForSessionOrEndpoint :execrows
+delete from push_subscription
+where session_id = $1 or endpoint = $2
+`
+
+type ClearPushForSessionOrEndpointParams struct {
+	SessionID pgtype.UUID `json:"session_id"`
+	Endpoint  string      `json:"endpoint"`
+}
+
+// ClearPushForSessionOrEndpoint frees the subscribe slot before an insert: it
+// removes this session's existing push row (a re-subscribe or rotated endpoint) and
+// any row elsewhere holding this endpoint (the same browser re-homing to a new
+// login). Paired with a plain insert this enforces the 1:1 session<->push invariant
+// and re-homes an endpoint, without a fragile data-modifying-CTE upsert.
+func (q *Queries) ClearPushForSessionOrEndpoint(ctx context.Context, arg ClearPushForSessionOrEndpointParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearPushForSessionOrEndpoint, arg.SessionID, arg.Endpoint)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createVAPIDConfig = `-- name: CreateVAPIDConfig :one
 insert into vapid_config (public_key, private_key, subject)
 values ($1, $2, $3)
@@ -51,8 +74,11 @@ func (q *Queries) DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint
 }
 
 const deletePushSubscriptionByIDForUser = `-- name: DeletePushSubscriptionByIDForUser :execrows
-delete from push_subscription
-where id = $1 and user_id = $2
+delete from push_subscription ps
+using user_session us
+where ps.session_id = us.id
+  and ps.id = $1
+  and us.user_id = $2
 `
 
 type DeletePushSubscriptionByIDForUserParams struct {
@@ -60,8 +86,8 @@ type DeletePushSubscriptionByIDForUserParams struct {
 	UserID pgtype.UUID `json:"user_id"`
 }
 
-// DeletePushSubscriptionByIDForUser removes one of the caller's own devices by
-// id, scoped to the owner so a user cannot delete another's subscription.
+// DeletePushSubscriptionByIDForUser removes one of the caller's own devices by id,
+// scoped to the owner via the session join.
 func (q *Queries) DeletePushSubscriptionByIDForUser(ctx context.Context, arg DeletePushSubscriptionByIDForUserParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deletePushSubscriptionByIDForUser, arg.ID, arg.UserID)
 	if err != nil {
@@ -71,8 +97,9 @@ func (q *Queries) DeletePushSubscriptionByIDForUser(ctx context.Context, arg Del
 }
 
 const getPushSubscriptionByIDForUser = `-- name: GetPushSubscriptionByIDForUser :one
-select id, user_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at, last_notified_at from push_subscription
-where id = $1 and user_id = $2
+select ps.id, ps.session_id, ps.endpoint, ps.p256dh, ps.auth, ps.user_agent, ps.created_at, ps.last_used_at, ps.last_notified_at from push_subscription ps
+join user_session us on us.id = ps.session_id
+where ps.id = $1 and us.user_id = $2
 `
 
 type GetPushSubscriptionByIDForUserParams struct {
@@ -80,15 +107,15 @@ type GetPushSubscriptionByIDForUserParams struct {
 	UserID pgtype.UUID `json:"user_id"`
 }
 
-// GetPushSubscriptionByIDForUser loads one of the caller's own devices by id.
-// Scoping the read to the owner means a test-send or delete can never address
+// GetPushSubscriptionByIDForUser loads one of the caller's own devices by id,
+// scoped to the owner through the session join so a test-send can never address
 // another user's subscription by guessing an id.
 func (q *Queries) GetPushSubscriptionByIDForUser(ctx context.Context, arg GetPushSubscriptionByIDForUserParams) (PushSubscription, error) {
 	row := q.db.QueryRow(ctx, getPushSubscriptionByIDForUser, arg.ID, arg.UserID)
 	var i PushSubscription
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
+		&i.SessionID,
 		&i.Endpoint,
 		&i.P256dh,
 		&i.Auth,
@@ -106,7 +133,7 @@ select id, public_key, private_key, subject, created_at, updated_at from vapid_c
 limit 1
 `
 
-// Web Push: VAPID identity (singleton) and per-browser subscriptions.
+// Web Push: VAPID identity (singleton) and per-session subscriptions.
 func (q *Queries) GetVAPIDConfig(ctx context.Context) (VapidConfig, error) {
 	row := q.db.QueryRow(ctx, getVAPIDConfig)
 	var i VapidConfig
@@ -121,12 +148,56 @@ func (q *Queries) GetVAPIDConfig(ctx context.Context) (VapidConfig, error) {
 	return i, err
 }
 
-const listPushSubscriptionsByUser = `-- name: ListPushSubscriptionsByUser :many
-select id, user_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at, last_notified_at from push_subscription
-where user_id = $1
-order by created_at
+const insertPushSubscription = `-- name: InsertPushSubscription :one
+insert into push_subscription (session_id, endpoint, p256dh, auth, user_agent)
+values ($1, $2, $3, $4, $5)
+returning id, session_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at, last_notified_at
 `
 
+type InsertPushSubscriptionParams struct {
+	SessionID pgtype.UUID `json:"session_id"`
+	Endpoint  string      `json:"endpoint"`
+	P256dh    string      `json:"p256dh"`
+	Auth      string      `json:"auth"`
+	UserAgent *string     `json:"user_agent"`
+}
+
+func (q *Queries) InsertPushSubscription(ctx context.Context, arg InsertPushSubscriptionParams) (PushSubscription, error) {
+	row := q.db.QueryRow(ctx, insertPushSubscription,
+		arg.SessionID,
+		arg.Endpoint,
+		arg.P256dh,
+		arg.Auth,
+		arg.UserAgent,
+	)
+	var i PushSubscription
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.Endpoint,
+		&i.P256dh,
+		&i.Auth,
+		&i.UserAgent,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.LastNotifiedAt,
+	)
+	return i, err
+}
+
+const listPushSubscriptionsByUser = `-- name: ListPushSubscriptionsByUser :many
+select ps.id, ps.session_id, ps.endpoint, ps.p256dh, ps.auth, ps.user_agent, ps.created_at, ps.last_used_at, ps.last_notified_at from push_subscription ps
+join user_session us on us.id = ps.session_id
+where us.user_id = $1
+  and us.revoked_at is null
+  and us.refresh_expires_at > now()
+order by ps.created_at
+`
+
+// ListPushSubscriptionsByUser is the fan-out lookup: every live subscription for a
+// recipient. Joining user_session means only non-revoked, non-expired sessions'
+// devices receive push — revoking a session silently stops its push, with no
+// change to the adapter.
 func (q *Queries) ListPushSubscriptionsByUser(ctx context.Context, userID pgtype.UUID) ([]PushSubscription, error) {
 	rows, err := q.db.Query(ctx, listPushSubscriptionsByUser, userID)
 	if err != nil {
@@ -138,7 +209,7 @@ func (q *Queries) ListPushSubscriptionsByUser(ctx context.Context, userID pgtype
 		var i PushSubscription
 		if err := rows.Scan(
 			&i.ID,
-			&i.UserID,
+			&i.SessionID,
 			&i.Endpoint,
 			&i.P256dh,
 			&i.Auth,
@@ -195,54 +266,6 @@ func (q *Queries) UpdateVAPIDSubject(ctx context.Context, arg UpdateVAPIDSubject
 		&i.Subject,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const upsertPushSubscription = `-- name: UpsertPushSubscription :one
-insert into push_subscription (user_id, endpoint, p256dh, auth, user_agent)
-values ($1, $2, $3, $4, $5)
-on conflict (endpoint) do update
-set user_id = excluded.user_id,
-    p256dh = excluded.p256dh,
-    auth = excluded.auth,
-    user_agent = excluded.user_agent,
-    last_used_at = now()
-returning id, user_id, endpoint, p256dh, auth, user_agent, created_at, last_used_at, last_notified_at
-`
-
-type UpsertPushSubscriptionParams struct {
-	UserID    pgtype.UUID `json:"user_id"`
-	Endpoint  string      `json:"endpoint"`
-	P256dh    string      `json:"p256dh"`
-	Auth      string      `json:"auth"`
-	UserAgent *string     `json:"user_agent"`
-}
-
-// UpsertPushSubscription registers (or refreshes) a browser's subscription.
-// endpoint is the natural key: a re-subscribe from the same browser re-uses the
-// endpoint, so we refresh its keys/owner/user_agent and bump last_used_at rather
-// than inserting a duplicate. This also re-homes an endpoint if a different user
-// signs in on the same browser.
-func (q *Queries) UpsertPushSubscription(ctx context.Context, arg UpsertPushSubscriptionParams) (PushSubscription, error) {
-	row := q.db.QueryRow(ctx, upsertPushSubscription,
-		arg.UserID,
-		arg.Endpoint,
-		arg.P256dh,
-		arg.Auth,
-		arg.UserAgent,
-	)
-	var i PushSubscription
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Endpoint,
-		&i.P256dh,
-		&i.Auth,
-		&i.UserAgent,
-		&i.CreatedAt,
-		&i.LastUsedAt,
-		&i.LastNotifiedAt,
 	)
 	return i, err
 }

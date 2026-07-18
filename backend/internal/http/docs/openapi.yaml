@@ -293,6 +293,60 @@ components:
         - enabled
         - available
       type: object
+    Cookie:
+      additionalProperties: false
+      properties:
+        Domain:
+          type: string
+        Expires:
+          format: date-time
+          type: string
+        HttpOnly:
+          type: boolean
+        MaxAge:
+          format: int64
+          type: integer
+        Name:
+          type: string
+        Partitioned:
+          type: boolean
+        Path:
+          type: string
+        Quoted:
+          type: boolean
+        Raw:
+          type: string
+        RawExpires:
+          type: string
+        SameSite:
+          format: int64
+          type: integer
+        Secure:
+          type: boolean
+        Unparsed:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        Value:
+          type: string
+      required:
+        - Name
+        - Value
+        - Quoted
+        - Path
+        - Domain
+        - Expires
+        - RawExpires
+        - MaxAge
+        - Secure
+        - HttpOnly
+        - SameSite
+        - Partitioned
+        - Raw
+        - Unparsed
+      type: object
     Credits:
       additionalProperties: false
       properties:
@@ -4071,43 +4125,6 @@ components:
         - p256dh
         - auth
       type: object
-    PushSubscriptionView:
-      additionalProperties: false
-      properties:
-        createdAt:
-          description: When this device first subscribed
-          format: date-time
-          type: string
-        endpoint:
-          description: Push service endpoint URL; the browser matches this against its own subscription to identify the current device
-          type: string
-        id:
-          description: Subscription id; use it to remove or test this device
-          format: uuid
-          type: string
-        lastNotifiedAt:
-          description: When a push was last successfully delivered to this device; null if never notified yet
-          format: date-time
-          type:
-            - string
-            - "null"
-        lastUsedAt:
-          description: When this subscription was last (re)subscribed/refreshed
-          format: date-time
-          type: string
-        userAgent:
-          description: Device label captured at registration (User-Agent), null if unknown
-          type:
-            - string
-            - "null"
-      required:
-        - id
-        - endpoint
-        - userAgent
-        - createdAt
-        - lastUsedAt
-        - lastNotifiedAt
-      type: object
     QualityBinOption:
       additionalProperties: false
       properties:
@@ -4470,6 +4487,22 @@ components:
       required:
         - ok
         - sessionId
+      type: object
+    RefreshResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/RefreshResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        token:
+          description: JWT bearer token
+          type: string
+      required:
+        - token
       type: object
     ReimportResult:
       additionalProperties: false
@@ -5142,6 +5175,54 @@ components:
         - inProduction
         - availability
         - seasons
+      type: object
+    SessionView:
+      additionalProperties: false
+      properties:
+        createdAt:
+          description: When this session was created (login)
+          format: date-time
+          type: string
+        id:
+          description: Session id
+          format: uuid
+          type: string
+        isCurrent:
+          description: Whether this is the session the request was made from
+          type: boolean
+        label:
+          description: User-set device label, null if unset
+          type:
+            - string
+            - "null"
+        lastUsedAt:
+          description: When this session last refreshed
+          format: date-time
+          type: string
+        pushEnabled:
+          description: Whether push notifications are enabled on this device
+          type: boolean
+        pushLastNotifiedAt:
+          description: When a push was last delivered to this device; null if never
+          format: date-time
+          type: string
+        pushSubscriptionId:
+          description: Push subscription id for this device; use it to disable or test push. Null when push is off
+          format: uuid
+          type: string
+        userAgent:
+          description: Device label captured at login (User-Agent), null if unknown
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - isCurrent
+        - userAgent
+        - label
+        - createdAt
+        - lastUsedAt
+        - pushEnabled
       type: object
     SettingsPatchBody:
       additionalProperties: false
@@ -5875,6 +5956,13 @@ paths:
     post:
       description: Validate username/email + password and issue a JWT.
       operationId: auth-login
+      parameters:
+        - description: Device label, captured server-side
+          in: header
+          name: User-Agent
+          schema:
+            description: Device label, captured server-side
+            type: string
       requestBody:
         content:
           application/json:
@@ -5888,6 +5976,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
           description: OK
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
         "400":
           content:
             application/json:
@@ -5915,6 +6007,31 @@ paths:
       summary: Login
       tags:
         - auth
+  /api/v1/auth/logout:
+    post:
+      description: Revokes the current session and clears the refresh cookie.
+      operationId: auth-logout
+      parameters:
+        - in: cookie
+          name: arrflix_rt
+          schema:
+            $ref: "#/components/schemas/Cookie"
+      responses:
+        "204":
+          description: No Content
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Logout
+      tags:
+        - auth
   /api/v1/auth/me:
     get:
       description: Returns the authenticated principal (from JWT claims).
@@ -5939,6 +6056,13 @@ paths:
     post:
       description: Polls the Plex API for the PIN's auth token and, if claimed, returns a JWT. Returns 401 when the PIN has not been claimed yet.
       operationId: auth-plex-exchange
+      parameters:
+        - description: Device label, captured server-side
+          in: header
+          name: User-Agent
+          schema:
+            description: Device label, captured server-side
+            type: string
       requestBody:
         content:
           application/json:
@@ -5952,6 +6076,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlexExchangeResponse"
           description: OK
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
         "400":
           content:
             application/json:
@@ -6107,6 +6235,123 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: Update current user password
+      tags:
+        - auth
+  /api/v1/auth/refresh:
+    post:
+      description: Rotates the refresh-token cookie and returns a fresh access token. Authenticated by the refresh cookie, not a bearer token.
+      operationId: auth-refresh
+      parameters:
+        - in: cookie
+          name: arrflix_rt
+          schema:
+            $ref: "#/components/schemas/Cookie"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResponse"
+          description: OK
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Refresh session
+      tags:
+        - auth
+  /api/v1/auth/sessions:
+    delete:
+      description: Revokes every active session except the caller's current one.
+      operationId: sessions-revoke-all
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Log out other devices
+      tags:
+        - auth
+    get:
+      description: Returns the caller's active sessions (devices), each with its push state. The current session is flagged isCurrent.
+      operationId: sessions-list
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/SessionView"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: List my sessions
+      tags:
+        - auth
+  /api/v1/auth/sessions/{id}:
+    delete:
+      description: Logs out one of the caller's own devices by session id. 404 if the session isn't the caller's.
+      operationId: sessions-revoke
+      parameters:
+        - description: Session id to revoke
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Session id to revoke
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Revoke a session
       tags:
         - auth
   /api/v1/auth/signup:
@@ -9400,29 +9645,6 @@ paths:
       tags:
         - notifications
   /api/v1/notifications/push/subscriptions:
-    get:
-      description: Returns the caller's registered Web Push devices (secrets omitted). Match each endpoint against the browser's own subscription to identify the current device.
-      operationId: push-list
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/PushSubscriptionView"
-                type:
-                  - array
-                  - "null"
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-          description: Error
-      summary: List my push devices
-      tags:
-        - notifications
     post:
       description: Stores (or refreshes) the caller's Web Push subscription for this browser. Idempotent on the endpoint.
       operationId: push-subscribe
