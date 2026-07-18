@@ -6,8 +6,9 @@ import App from '@/App.vue'
 import router from '@/router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
-import { client } from '@/client/client.gen'
 import { bootstrapGet } from '@/client/sdk.gen'
+import { installAuthInterceptor } from '@/lib/authInterceptor'
+import { refreshAccessToken } from '@/lib/authRefresh'
 import { installRealtime } from '@/realtime/bindings'
 import '@/main.css'
 
@@ -36,42 +37,34 @@ app.use(VueQueryPlugin, {
 // auth in App.vue; this just registers the cache-update contract.
 installRealtime(queryClient)
 
-// Redirect to login on any 401 response
-client.interceptors.response.use(async (response) => {
-  if (response.status === 401) {
-    const auth = useAuthStore()
-    auth.logout()
-    const current = router.currentRoute.value
-    if (current.path !== '/login') {
-      router.replace({ path: '/login', query: { redirect: current.fullPath } })
-    }
-  }
-  return response
-})
+// Queue-and-replay 401 handling: a 401 on a protected endpoint triggers a
+// single-flight refresh and replays the original request with the rotated
+// token; an unrecoverable refresh clears the session and redirects to /login.
+installAuthInterceptor(router)
 
 // Force dark mode globally
 document.documentElement.classList.add('dark')
 
-// Restore token from localStorage (no HTTP call)
 const auth = useAuthStore()
-auth.rehydrateToken()
-
-// Single bootstrap request populates auth + app state
 const appStore = useAppStore()
+
+// Boot the session from the HttpOnly refresh cookie — no token is read from
+// localStorage. A valid cookie mints an in-memory access token; otherwise the
+// app boots unauthenticated and the router guard sends the user to /login.
 try {
+  const refreshed = await refreshAccessToken()
   const res = await bootstrapGet<true>({ throwOnError: true })
   appStore.setFromBootstrap({
     initialized: res.data.initialized,
     config: res.data.config,
     setup: res.data.setup,
   })
-  if (res.data.user) {
-    auth.setUserFromBootstrap(res.data.user)
-    // Bootstrap carries identity only; enrich roles + auto-approve policy.
-    await auth.fetchMe()
-  } else if (auth.token) {
-    // Token was present but server says invalid — clear it
-    auth.logout()
+  if (refreshed) {
+    if (res.data.user) auth.setUserFromBootstrap(res.data.user)
+    // Enrich roles + auto-approve policy. A token rejected here means the
+    // session is unusable, so clear it and boot unauthenticated.
+    const ok = await auth.fetchMe()
+    if (!ok) auth.clearLocal()
   }
 } catch {
   // Bootstrap failed — app will show in default state

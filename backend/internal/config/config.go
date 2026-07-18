@@ -18,7 +18,7 @@ type Config struct {
 	ProwlarrPort   string        // Prowlarr port, default 9696
 	ProwlarrAPIKey string        // Prowlarr API key
 	EnableAPIDocs  bool          // serve /api/docs + /api/openapi.{json,yaml}; default on in dev, off in prod
-	AccessTokenTTL time.Duration // access-token lifetime; Phase 1 keeps 24h parity with the legacy token
+	AccessTokenTTL time.Duration // access-token lifetime; short-lived, refreshed via the session cookie
 	SessionTTL     time.Duration // refresh-token / session absolute lifetime
 }
 
@@ -64,7 +64,7 @@ func Load(log *logger.Logger) Config {
 		ProwlarrPort:   envOr("PROWLARR_PORT", "9696"),
 		ProwlarrAPIKey: envOr("PROWLARR_API_KEY", "prowlarr-api-key"),
 		EnableAPIDocs:  envBoolOr("ENABLE_API_DOCS", env == "dev"),
-		AccessTokenTTL: envDurationOr("ACCESS_TOKEN_TTL", 24*time.Hour),
+		AccessTokenTTL: envDurationOr("ACCESS_TOKEN_TTL", 15*time.Minute),
 		SessionTTL:     envDurationOr("SESSION_TTL", 90*24*time.Hour),
 	}
 
