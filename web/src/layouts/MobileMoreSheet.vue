@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Calendar, Download, Inbox, Library, LogOut, Settings2 } from 'lucide-vue-next'
+import { Calendar, Download, Inbox, Library, LogOut, Settings2, UserCog } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { useInboxCount } from '@/composables/useInboxCount'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -33,6 +33,7 @@ const links = computed<MoreLink[]>(() => [
   ...(auth.canViewJobs ? [{ label: 'Downloads', icon: Download, to: '/downloads' }] : []),
   { label: 'Matching', icon: Inbox, to: '/library/matching', badge: inboxCount.value || undefined },
   { label: 'Calendar', icon: Calendar, disabled: true },
+  { label: 'Preferences', icon: UserCog, to: '/preferences' },
   ...(auth.canManageSettings ? [{ label: 'Settings', icon: Settings2, to: '/settings' }] : []),
 ])
 

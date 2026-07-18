@@ -344,6 +344,25 @@ type Downloader struct {
 	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
+type EmailProvider struct {
+	ID            pgtype.UUID `json:"id"`
+	Provider      string      `json:"provider"`
+	FromAddress   string      `json:"from_address"`
+	FromName      *string     `json:"from_name"`
+	ReplyTo       *string     `json:"reply_to"`
+	Host          *string     `json:"host"`
+	Port          *int32      `json:"port"`
+	Security      *string     `json:"security"`
+	Auth          bool        `json:"auth"`
+	Username      *string     `json:"username"`
+	Password      *string     `json:"password"`
+	SkipTlsVerify bool        `json:"skip_tls_verify"`
+	ConfigJson    []byte      `json:"config_json"`
+	Enabled       bool        `json:"enabled"`
+	CreatedAt     time.Time   `json:"created_at"`
+	UpdatedAt     time.Time   `json:"updated_at"`
+}
+
 type File struct {
 	ID          pgtype.UUID        `json:"id"`
 	LibraryID   pgtype.UUID        `json:"library_id"`
@@ -544,6 +563,34 @@ type NameTemplate struct {
 	UpdatedAt            time.Time   `json:"updated_at"`
 }
 
+type NotificationOutbox struct {
+	ID              pgtype.UUID        `json:"id"`
+	EventType       string             `json:"event_type"`
+	Audience        string             `json:"audience"`
+	RecipientUserID pgtype.UUID        `json:"recipient_user_id"`
+	Channel         string             `json:"channel"`
+	Payload         []byte             `json:"payload"`
+	DedupKey        *string            `json:"dedup_key"`
+	Status          string             `json:"status"`
+	Attempts        int32              `json:"attempts"`
+	NextAttemptAt   time.Time          `json:"next_attempt_at"`
+	LastError       *string            `json:"last_error"`
+	CreatedAt       time.Time          `json:"created_at"`
+	DeliveredAt     pgtype.Timestamptz `json:"delivered_at"`
+	ReadAt          pgtype.Timestamptz `json:"read_at"`
+	ClaimedAt       pgtype.Timestamptz `json:"claimed_at"`
+}
+
+type NotificationPreference struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	Bundle     string      `json:"bundle"`
+	Subscribed *bool       `json:"subscribed"`
+	Email      *bool       `json:"email"`
+	Push       *bool       `json:"push"`
+	CreatedAt  time.Time   `json:"created_at"`
+	UpdatedAt  time.Time   `json:"updated_at"`
+}
+
 type Permission struct {
 	ID          pgtype.UUID `json:"id"`
 	Key         string      `json:"key"`
@@ -591,6 +638,18 @@ type ProposalWant struct {
 	ProposalID pgtype.UUID `json:"proposal_id"`
 	WantID     pgtype.UUID `json:"want_id"`
 	CreatedAt  time.Time   `json:"created_at"`
+}
+
+type PushSubscription struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Endpoint       string             `json:"endpoint"`
+	P256dh         string             `json:"p256dh"`
+	Auth           string             `json:"auth"`
+	UserAgent      *string            `json:"user_agent"`
+	CreatedAt      time.Time          `json:"created_at"`
+	LastUsedAt     time.Time          `json:"last_used_at"`
+	LastNotifiedAt pgtype.Timestamptz `json:"last_notified_at"`
 }
 
 type QualityProfile struct {
@@ -718,6 +777,15 @@ type UserRole struct {
 	UserID    pgtype.UUID `json:"user_id"`
 	RoleID    pgtype.UUID `json:"role_id"`
 	GrantedAt time.Time   `json:"granted_at"`
+}
+
+type VapidConfig struct {
+	ID         pgtype.UUID `json:"id"`
+	PublicKey  string      `json:"public_key"`
+	PrivateKey string      `json:"private_key"`
+	Subject    string      `json:"subject"`
+	CreatedAt  time.Time   `json:"created_at"`
+	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
 type Want struct {

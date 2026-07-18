@@ -38,8 +38,39 @@ The split matters because `system` events serve flows where preferences would de
 
 Resolution at enqueue time:
 - `user` audience → exactly one `recipient: user_id`.
-- `admin` audience → expands to all users with the relevant admin permission *at enqueue time*. Newly-promoted admins do not get backfilled with prior alerts; newly-demoted admins still receive in-flight ones.
+- `admin` audience → expands to all users holding the event's declared recipient permission key *at enqueue time* (see [Admin recipient resolution](#admin-recipient-resolution-frozen--iteration-2)). Newly-promoted admins do not get backfilled with prior alerts; newly-demoted admins still receive in-flight ones.
 - `system` audience → recipient is either a `user_id` (most common — password reset, 2FA) or a literal email/endpoint (pre-claim invite, signup verification).
+
+### Admin recipient resolution (frozen — iteration 2)
+
+Iteration 1 routed `admin` events to "the relevant admin permission." That phrasing assumed a coarse `admin` role; RBAC instead froze a **fine-grained keyspace** — 33 enumerated concrete keys, with no blanket "is-admin" bit (`internal/authz`, migration `0022`). Two things pin down as a result.
+
+**Each `admin` event declares a recipient permission key** — a constant in the constructor file, next to `audience` and the default bundle. Its recipients are everyone holding that key. Routing by role name (`admin` / `co_admin`) is deliberately *not* used: the RBAC model gates on capability, not role identity, and notification fan-out is no exception.
+
+The launch-set mapping — every key already exists in the frozen catalog, so shipping notifications needs no catalog migration:
+
+| Event                                  | Recipient key             | Rationale                                                         |
+| -------------------------------------- | ------------------------- | ----------------------------------------------------------------- |
+| `connectivity.failed` / `.recovered`   | `admin.indexers.manage`   | whoever manages indexer/downloader connections owns their health  |
+| `hygiene.error_finding`                | `hygiene.read`            | hygiene visibility ⇒ hygiene findings                             |
+| `hygiene.digest_weekly`                | `hygiene.read`            | same audience as the findings                                     |
+| `metadata.renumber`                    | `media.write`             | renumber-override review is a `media.write` capability            |
+| `request.pending_review`               | `requests.approve:<type>` | the approval queue — type-qualified (below)                       |
+| `acquisition.search_failure_summary`   | `jobs.manage`             | acquisition-operator surface = `jobs.manage`                      |
+
+Callouts:
+
+- `request.pending_review` is **type-qualified** (`requests.approve:movie` / `requests.approve:series`): a movie-only approver is not paged for a pending series request. The fine-grained catalog buys this precision for free.
+- **Recipient key ≠ preference bundle.** The key answers "are you in the audience"; [preferences](#preferences-and-bundles) answer "which channel." A user receives an admin event only if they *both* hold the key *and* have the channel enabled. The admin bundles (`admin_alerts`, `admin_summaries`) are shown in the prefs UI only to users eligible for at least one event they contain.
+- A future admin event with no natural existing key requires an append-only catalog migration (owned by the [users spec](../users/README.md), not here).
+
+**The reverse resolver.** RBAC's runtime answers one direction — given a *user*, does she hold key `K` (`AuthzService.Can`). Admin fan-out needs the reverse: **given `K`, which users hold it?** That query does not exist yet; it is the single primitive notifications adds to the authz layer. Its shape:
+
+1. **Candidate gather** — a query unioning users with a direct `user`-subject allow on `K` with the members of any role holding an allow on `K` (global grants only in v1; resource-scoped admin events don't exist yet).
+2. **Deny-wins filter** — the candidate set is a *superset* (a role allow can be overridden by a direct user deny), so each candidate is resolved through the existing pure `authz.Resolve`. The naive `SELECT subject_id WHERE permission_key = K` is wrong for exactly this reason.
+3. **Surface** — `AuthzService.UsersWith(ctx, key)`, called at enqueue to produce the recipient set. Resolving at enqueue time is what yields the snapshot semantics above (no backfill for new admins; in-flight rows survive demotion).
+
+Recommended: resolve directly against the DB rather than caching the reverse direction — enqueue is a cold path, and a reverse cache would add an invalidation surface the forward per-user cache doesn't have.
 
 ### The constructor API
 
@@ -296,9 +327,23 @@ Referenced (owned elsewhere):
 - `app_user`, `permission_grant` — see [users](../users/README.md)
 - `auth_audit` — see [users](../users/README.md#admin-action-audit); admin-action notifications surface from here
 
+## v1 scope and build order (frozen — iteration 2)
+
+The full spec is large — VAPID push, an MJML email pipeline, the preference matrix, the resolution lifecycle, SMTP with drain UX. v1 proves the **spine** first, then layers channels and the admin path onto it.
+
+**v1 — the spine.** `user` audience only; `in_app` channel only (a DB write — no VAPID, SMTP, or MJML). The [outbox](#the-outbox) with its status lifecycle and the retry worker; [typed constructors](#the-constructor-api) with build-time template verification; bundle-level [preferences](#preferences-and-bundles) for `my_requests` + `library_activity`, seeded on user creation; the bell-icon UI (outbox query, unread count, mark-read). First producers: `request.decision_made` (→ the requester) and `want.available` (→ the want's requester set) — both already carry the recipient `user_id`. Needs nothing from RBAC at runtime.
+
+**v1.1 — the `admin` audience.** The [reverse resolver](#admin-recipient-resolution-frozen--iteration-2) and the event→key map; the admin bundles plus eligibility gating in the prefs UI; first admin producers `request.pending_review` and `connectivity.failed` / `.recovered`. This slice introduces the [resolution lifecycle](#resolvable-notifications-resolution-lifecycle) — connectivity is the first resolvable event.
+
+**v1.2 — `push`.** `push_subscription`, the VAPID Web Push adapter, per-device fan-out, dead-endpoint cleanup on 410/404.
+
+**v1.3 — `email`.** The SMTP adapter, `IsConfigured()` gating, `awaiting_config` parking and drain UX, the MJML→HTML build step. The system-audience email events that motivate email — `invite.created`, `auth.password_reset`, `auth.2fa_code` — only deliver once their *producers* exist: invites are RBAC P5, and password-reset / 2FA are not in the current auth build. The substrate can land ahead of them.
+
+**Dependency gates.** v1 lands after the RBAC merge (to avoid stacking work on an unmerged branch, not for any runtime coupling). v1.1's reverse resolver builds directly on `internal/authz`. The v1.3 system email events are gated on RBAC P5 and auth flows that don't yet exist.
+
 ## Open questions
 
-1. **Bundle catalog finalization.** The starter set (`my_requests`, `library_activity`, `admin_alerts`, `admin_summaries`) is directional. Iteration 2 should pin the full catalog and the bundle-default channels per bundle. Lean: ship the four-bundle starter; add new bundles as new event-type categories emerge.
+1. **Bundle catalog finalization.** The starter set (`my_requests`, `library_activity`, `admin_alerts`, `admin_summaries`) is directional. Iteration 2 should pin the full catalog and the bundle-default channels per bundle. Lean: ship the four-bundle starter; add new bundles as new event-type categories emerge. *Partially pinned (iteration 2): [v1](#v1-scope-and-build-order-frozen--iteration-2) ships `my_requests` + `library_activity`; the admin bundles arrive in v1.1. Full catalog and per-bundle default channels still to pin.*
 2. **Admin install-wide defaults vs per-admin only.** When a new admin is promoted, they get bundle defaults. Should those defaults be configurable per-install ("our team wants admin_alerts on email + push by default") or hardcoded? Lean: configurable per-install, surfaced in Settings → Notifications → Admin defaults.
 3. **System-event registry — do we expose this in the UI?** `system` audience events bypass user preferences entirely. Should the UI at least *show* the user "we will email you for password resets and invites" so it's not opaque? Lean: yes, a read-only "system emails" disclosure section in the preferences page.
 4. **Dedup semantics: drop vs replace — resolved.** Transient events **drop** the colliding enqueue (the simple default). Resolvable events **replace** the payload (keeping the original `created_at`) so the standing condition shows its latest state. See [Resolvable notifications](#resolvable-notifications-resolution-lifecycle).

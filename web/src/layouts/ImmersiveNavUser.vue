@@ -48,10 +48,9 @@ const handleLogout = () => {
         </span>
       </DropdownMenuLabel>
       <DropdownMenuSeparator v-if="authStore.user?.name" />
-      <DropdownMenuItem disabled>
+      <DropdownMenuItem @click="router.push('/preferences')">
         <UserCog class="mr-2 size-4" />
         Preferences
-        <span class="ml-auto text-[10px] text-muted-foreground">Soon</span>
       </DropdownMenuItem>
       <DropdownMenuItem v-if="authStore.canManageSettings" @click="router.push('/settings')">
         <Settings2 class="mr-2 size-4" />

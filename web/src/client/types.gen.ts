@@ -74,6 +74,12 @@ export type BootstrapUser = {
     username: string | null;
 };
 
+export type BundlePreference = {
+    bundle: string;
+    channels: Array<ChannelPreference> | null;
+    subscribed: boolean;
+};
+
 export type CandidateFields = {
     Age: number;
     AgeHours: number;
@@ -115,6 +121,12 @@ export type Categories = {
     id: number;
     name: string;
     subCategories: Array<Categories> | null;
+};
+
+export type ChannelPreference = {
+    available: boolean;
+    channel: string;
+    enabled: boolean;
 };
 
 export type Credits = {
@@ -482,6 +494,150 @@ export type DownloadersTestConfigBody = {
     url: string;
     /**
      * Optional username
+     */
+    username?: string;
+};
+
+export type EmailProviderResponse = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    auth: boolean;
+    configured: boolean;
+    createdAt: string;
+    enabled: boolean;
+    fromAddress: string;
+    fromName?: string;
+    hasPassword: boolean;
+    host?: string;
+    id: string;
+    port?: number;
+    provider: string;
+    replyTo?: string;
+    security?: string;
+    skipTlsVerify: boolean;
+    updatedAt: string;
+    username?: string;
+};
+
+export type EmailProviderTestBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Recipient address for the test email
+     */
+    to: string;
+};
+
+export type EmailProviderTestConfigBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Whether the server requires SMTP authentication
+     */
+    auth: boolean;
+    /**
+     * From/envelope address
+     */
+    fromAddress: string;
+    /**
+     * Optional display name for the From address
+     */
+    fromName?: string;
+    /**
+     * SMTP server hostname
+     */
+    host?: string;
+    /**
+     * SMTP password
+     */
+    password?: string;
+    /**
+     * SMTP server port (1-65535)
+     */
+    port?: number;
+    /**
+     * Email provider implementation
+     */
+    provider: 'smtp';
+    /**
+     * Optional Reply-To address
+     */
+    replyTo?: string;
+    /**
+     * Transport security mode
+     */
+    security?: 'starttls' | 'implicit_tls' | 'none';
+    /**
+     * Skip TLS certificate verification (self-signed relays)
+     */
+    skipTlsVerify: boolean;
+    /**
+     * Recipient address for the test email
+     */
+    to: string;
+    /**
+     * SMTP username; required when auth is enabled
+     */
+    username?: string;
+};
+
+export type EmailProviderWriteBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Whether the server requires SMTP authentication
+     */
+    auth: boolean;
+    /**
+     * Whether email sending is enabled
+     */
+    enabled: boolean;
+    /**
+     * From/envelope address
+     */
+    fromAddress: string;
+    /**
+     * Optional display name for the From address
+     */
+    fromName?: string;
+    /**
+     * SMTP server hostname
+     */
+    host?: string;
+    /**
+     * SMTP password; empty preserves existing
+     */
+    password?: string;
+    /**
+     * SMTP server port (1-65535)
+     */
+    port?: number;
+    /**
+     * Email provider implementation
+     */
+    provider: 'smtp';
+    /**
+     * Optional Reply-To address
+     */
+    replyTo?: string;
+    /**
+     * Transport security mode
+     */
+    security?: 'starttls' | 'implicit_tls' | 'none';
+    /**
+     * Skip TLS certificate verification (self-signed relays)
+     */
+    skipTlsVerify: boolean;
+    /**
+     * SMTP username; required when auth is enabled
      */
     username?: string;
 };
@@ -928,6 +1084,16 @@ export type InboxItem = {
     title?: string;
     type?: string;
     year?: number;
+};
+
+export type InboxNotification = {
+    body: string;
+    createdAt: string;
+    eventType: string;
+    id: string;
+    payload: unknown;
+    readAt?: string;
+    title: string;
 };
 
 export type InboxPage = {
@@ -1381,6 +1547,47 @@ export type NextEpisode = {
     title: string;
 };
 
+export type NotificationsPrefsBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Per-bundle channel preferences, one entry per user-facing bundle
+     */
+    bundles: Array<BundlePreference> | null;
+};
+
+export type NotificationsPrefsSetBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Bundle the preference applies to
+     */
+    bundle: string;
+    /**
+     * Whether the target is enabled for the bundle
+     */
+    enabled: boolean;
+    /**
+     * What to toggle: 'subscribed' (the master — in-app follows it), 'email', or 'push'
+     */
+    target: string;
+};
+
+export type NotificationsUnreadBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Delivered-but-unread in_app notification count
+     */
+    count: number;
+};
+
 export type PageLibraryItem = {
     /**
      * A URL to the JSON Schema for this object.
@@ -1510,6 +1717,63 @@ export type ProposalView = {
     size: number;
     trackingId: string;
     updatedAt: string;
+};
+
+export type PushPublicKeyBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * VAPID application server public key (base64url); pass to pushManager.subscribe
+     */
+    publicKey: string;
+};
+
+export type PushSubscribeBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Client auth secret (base64url)
+     */
+    auth: string;
+    /**
+     * Push service endpoint URL
+     */
+    endpoint: string;
+    /**
+     * Client ECDH public key (base64url)
+     */
+    p256dh: string;
+};
+
+export type PushSubscriptionView = {
+    /**
+     * When this device first subscribed
+     */
+    createdAt: string;
+    /**
+     * Push service endpoint URL; the browser matches this against its own subscription to identify the current device
+     */
+    endpoint: string;
+    /**
+     * Subscription id; use it to remove or test this device
+     */
+    id: string;
+    /**
+     * When a push was last successfully delivered to this device; null if never notified yet
+     */
+    lastNotifiedAt: string | null;
+    /**
+     * When this subscription was last (re)subscribed/refreshed
+     */
+    lastUsedAt: string;
+    /**
+     * Device label captured at registration (User-Agent), null if unknown
+     */
+    userAgent: string | null;
 };
 
 export type QualityBinOption = {
@@ -2516,6 +2780,134 @@ export type DownloadersTestConfigBodyWritable = {
     username?: string;
 };
 
+export type EmailProviderResponseWritable = {
+    auth: boolean;
+    configured: boolean;
+    createdAt: string;
+    enabled: boolean;
+    fromAddress: string;
+    fromName?: string;
+    hasPassword: boolean;
+    host?: string;
+    id: string;
+    port?: number;
+    provider: string;
+    replyTo?: string;
+    security?: string;
+    skipTlsVerify: boolean;
+    updatedAt: string;
+    username?: string;
+};
+
+export type EmailProviderTestBodyWritable = {
+    /**
+     * Recipient address for the test email
+     */
+    to: string;
+};
+
+export type EmailProviderTestConfigBodyWritable = {
+    /**
+     * Whether the server requires SMTP authentication
+     */
+    auth: boolean;
+    /**
+     * From/envelope address
+     */
+    fromAddress: string;
+    /**
+     * Optional display name for the From address
+     */
+    fromName?: string;
+    /**
+     * SMTP server hostname
+     */
+    host?: string;
+    /**
+     * SMTP password
+     */
+    password?: string;
+    /**
+     * SMTP server port (1-65535)
+     */
+    port?: number;
+    /**
+     * Email provider implementation
+     */
+    provider: 'smtp';
+    /**
+     * Optional Reply-To address
+     */
+    replyTo?: string;
+    /**
+     * Transport security mode
+     */
+    security?: 'starttls' | 'implicit_tls' | 'none';
+    /**
+     * Skip TLS certificate verification (self-signed relays)
+     */
+    skipTlsVerify: boolean;
+    /**
+     * Recipient address for the test email
+     */
+    to: string;
+    /**
+     * SMTP username; required when auth is enabled
+     */
+    username?: string;
+};
+
+export type EmailProviderWriteBodyWritable = {
+    /**
+     * Whether the server requires SMTP authentication
+     */
+    auth: boolean;
+    /**
+     * Whether email sending is enabled
+     */
+    enabled: boolean;
+    /**
+     * From/envelope address
+     */
+    fromAddress: string;
+    /**
+     * Optional display name for the From address
+     */
+    fromName?: string;
+    /**
+     * SMTP server hostname
+     */
+    host?: string;
+    /**
+     * SMTP password; empty preserves existing
+     */
+    password?: string;
+    /**
+     * SMTP server port (1-65535)
+     */
+    port?: number;
+    /**
+     * Email provider implementation
+     */
+    provider: 'smtp';
+    /**
+     * Optional Reply-To address
+     */
+    replyTo?: string;
+    /**
+     * Transport security mode
+     */
+    security?: 'starttls' | 'implicit_tls' | 'none';
+    /**
+     * Skip TLS certificate verification (self-signed relays)
+     */
+    skipTlsVerify: boolean;
+    /**
+     * SMTP username; required when auth is enabled
+     */
+    username?: string;
+};
+
 export type EnqueueCandidateBodyWritable = {
     /**
      * Episode number (series only)
@@ -2953,6 +3345,35 @@ export type NameTemplateWriteBodyWritable = {
     type: 'movie' | 'series';
 };
 
+export type NotificationsPrefsBodyWritable = {
+    /**
+     * Per-bundle channel preferences, one entry per user-facing bundle
+     */
+    bundles: Array<BundlePreference> | null;
+};
+
+export type NotificationsPrefsSetBodyWritable = {
+    /**
+     * Bundle the preference applies to
+     */
+    bundle: string;
+    /**
+     * Whether the target is enabled for the bundle
+     */
+    enabled: boolean;
+    /**
+     * What to toggle: 'subscribed' (the master — in-app follows it), 'email', or 'push'
+     */
+    target: string;
+};
+
+export type NotificationsUnreadBodyWritable = {
+    /**
+     * Delivered-but-unread in_app notification count
+     */
+    count: number;
+};
+
 export type PageLibraryItemWritable = {
     data: Array<LibraryItem> | null;
     pagination: Pagination;
@@ -2993,6 +3414,28 @@ export type ProblemDetailsWritable = {
     status: number;
     title: string;
     type: string;
+};
+
+export type PushPublicKeyBodyWritable = {
+    /**
+     * VAPID application server public key (base64url); pass to pushManager.subscribe
+     */
+    publicKey: string;
+};
+
+export type PushSubscribeBodyWritable = {
+    /**
+     * Client auth secret (base64url)
+     */
+    auth: string;
+    /**
+     * Push service endpoint URL
+     */
+    endpoint: string;
+    /**
+     * Client ECDH public key (base64url)
+     */
+    p256dh: string;
 };
 
 export type QualityBindTierBodyWritable = {
@@ -6504,6 +6947,331 @@ export type NameTemplatesUpdateResponses = {
 
 export type NameTemplatesUpdateResponse = NameTemplatesUpdateResponses[keyof NameTemplatesUpdateResponses];
 
+export type NotificationsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Max notifications to return, newest first
+         */
+        limit?: number;
+    };
+    url: '/api/v1/notifications';
+};
+
+export type NotificationsListErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type NotificationsListError = NotificationsListErrors[keyof NotificationsListErrors];
+
+export type NotificationsListResponses = {
+    /**
+     * OK
+     */
+    200: Array<InboxNotification> | null;
+};
+
+export type NotificationsListResponse = NotificationsListResponses[keyof NotificationsListResponses];
+
+export type NotificationPreferencesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/preferences';
+};
+
+export type NotificationPreferencesGetErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type NotificationPreferencesGetError = NotificationPreferencesGetErrors[keyof NotificationPreferencesGetErrors];
+
+export type NotificationPreferencesGetResponses = {
+    /**
+     * OK
+     */
+    200: NotificationsPrefsBody;
+};
+
+export type NotificationPreferencesGetResponse = NotificationPreferencesGetResponses[keyof NotificationPreferencesGetResponses];
+
+export type NotificationPreferencesSetData = {
+    body: NotificationsPrefsSetBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/preferences';
+};
+
+export type NotificationPreferencesSetErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type NotificationPreferencesSetError = NotificationPreferencesSetErrors[keyof NotificationPreferencesSetErrors];
+
+export type NotificationPreferencesSetResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type NotificationPreferencesSetResponse = NotificationPreferencesSetResponses[keyof NotificationPreferencesSetResponses];
+
+export type PushPublicKeyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/push/public-key';
+};
+
+export type PushPublicKeyErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type PushPublicKeyError = PushPublicKeyErrors[keyof PushPublicKeyErrors];
+
+export type PushPublicKeyResponses = {
+    /**
+     * OK
+     */
+    200: PushPublicKeyBody;
+};
+
+export type PushPublicKeyResponse = PushPublicKeyResponses[keyof PushPublicKeyResponses];
+
+export type PushListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/push/subscriptions';
+};
+
+export type PushListErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type PushListError = PushListErrors[keyof PushListErrors];
+
+export type PushListResponses = {
+    /**
+     * OK
+     */
+    200: Array<PushSubscriptionView> | null;
+};
+
+export type PushListResponse = PushListResponses[keyof PushListResponses];
+
+export type PushSubscribeData = {
+    body: PushSubscribeBodyWritable;
+    headers?: {
+        /**
+         * Device label, captured server-side
+         */
+        'User-Agent'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/push/subscriptions';
+};
+
+export type PushSubscribeErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type PushSubscribeError = PushSubscribeErrors[keyof PushSubscribeErrors];
+
+export type PushSubscribeResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PushSubscribeResponse = PushSubscribeResponses[keyof PushSubscribeResponses];
+
+export type PushRemoveData = {
+    body?: never;
+    path: {
+        /**
+         * Subscription id to remove
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/notifications/push/subscriptions/{id}';
+};
+
+export type PushRemoveErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type PushRemoveError = PushRemoveErrors[keyof PushRemoveErrors];
+
+export type PushRemoveResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PushRemoveResponse = PushRemoveResponses[keyof PushRemoveResponses];
+
+export type PushTestData = {
+    body?: never;
+    path: {
+        /**
+         * Subscription id to send a test push to
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/notifications/push/subscriptions/{id}/test';
+};
+
+export type PushTestErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type PushTestError = PushTestErrors[keyof PushTestErrors];
+
+export type PushTestResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PushTestResponse = PushTestResponses[keyof PushTestResponses];
+
+export type NotificationsMarkAllReadData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/read-all';
+};
+
+export type NotificationsMarkAllReadErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type NotificationsMarkAllReadError = NotificationsMarkAllReadErrors[keyof NotificationsMarkAllReadErrors];
+
+export type NotificationsMarkAllReadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type NotificationsMarkAllReadResponse = NotificationsMarkAllReadResponses[keyof NotificationsMarkAllReadResponses];
+
+export type NotificationsUnreadCountData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/notifications/unread-count';
+};
+
+export type NotificationsUnreadCountErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type NotificationsUnreadCountError = NotificationsUnreadCountErrors[keyof NotificationsUnreadCountErrors];
+
+export type NotificationsUnreadCountResponses = {
+    /**
+     * OK
+     */
+    200: NotificationsUnreadBody;
+};
+
+export type NotificationsUnreadCountResponse = NotificationsUnreadCountResponses[keyof NotificationsUnreadCountResponses];
+
+export type NotificationsMarkReadData = {
+    body?: never;
+    path: {
+        /**
+         * Notification ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/notifications/{id}/read';
+};
+
+export type NotificationsMarkReadErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type NotificationsMarkReadError = NotificationsMarkReadErrors[keyof NotificationsMarkReadErrors];
+
+export type NotificationsMarkReadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type NotificationsMarkReadResponse = NotificationsMarkReadResponses[keyof NotificationsMarkReadResponses];
+
 export type MediaGetPersonData = {
     body?: never;
     path: {
@@ -7905,6 +8673,150 @@ export type SettingsPatchResponses = {
 };
 
 export type SettingsPatchResponse = SettingsPatchResponses[keyof SettingsPatchResponses];
+
+export type EmailProviderGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/email';
+};
+
+export type EmailProviderGetErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type EmailProviderGetError = EmailProviderGetErrors[keyof EmailProviderGetErrors];
+
+export type EmailProviderGetResponses = {
+    /**
+     * OK
+     */
+    200: EmailProviderResponse;
+};
+
+export type EmailProviderGetResponse = EmailProviderGetResponses[keyof EmailProviderGetResponses];
+
+export type EmailProviderSaveData = {
+    body: EmailProviderWriteBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/email';
+};
+
+export type EmailProviderSaveErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type EmailProviderSaveError = EmailProviderSaveErrors[keyof EmailProviderSaveErrors];
+
+export type EmailProviderSaveResponses = {
+    /**
+     * OK
+     */
+    200: EmailProviderResponse;
+};
+
+export type EmailProviderSaveResponse = EmailProviderSaveResponses[keyof EmailProviderSaveResponses];
+
+export type EmailProviderTestData = {
+    body: EmailProviderTestBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/email/test';
+};
+
+export type EmailProviderTestErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+    /**
+     * Bad Gateway
+     */
+    502: ProblemDetails;
+};
+
+export type EmailProviderTestError = EmailProviderTestErrors[keyof EmailProviderTestErrors];
+
+export type EmailProviderTestResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type EmailProviderTestResponse = EmailProviderTestResponses[keyof EmailProviderTestResponses];
+
+export type EmailProviderTestConfigData = {
+    body: EmailProviderTestConfigBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/email/test-config';
+};
+
+export type EmailProviderTestConfigErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+    /**
+     * Bad Gateway
+     */
+    502: ProblemDetails;
+};
+
+export type EmailProviderTestConfigError = EmailProviderTestConfigErrors[keyof EmailProviderTestConfigErrors];
+
+export type EmailProviderTestConfigResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type EmailProviderTestConfigResponse = EmailProviderTestConfigResponses[keyof EmailProviderTestConfigResponses];
 
 export type SetupInitializeData = {
     body: SetupInitializeInputBodyWritable;

@@ -104,6 +104,24 @@ components:
         - email
         - username
       type: object
+    BundlePreference:
+      additionalProperties: false
+      properties:
+        bundle:
+          type: string
+        channels:
+          items:
+            $ref: "#/components/schemas/ChannelPreference"
+          type:
+            - array
+            - "null"
+        subscribed:
+          type: boolean
+      required:
+        - bundle
+        - subscribed
+        - channels
+      type: object
     CandidateFields:
       additionalProperties: false
       properties:
@@ -260,6 +278,20 @@ components:
         - id
         - name
         - subCategories
+      type: object
+    ChannelPreference:
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+        channel:
+          type: string
+        enabled:
+          type: boolean
+      required:
+        - channel
+        - enabled
+        - available
       type: object
     Credits:
       additionalProperties: false
@@ -1276,6 +1308,203 @@ components:
       required:
         - type
         - url
+      type: object
+    EmailProviderResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/EmailProviderResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        auth:
+          type: boolean
+        configured:
+          type: boolean
+        createdAt:
+          format: date-time
+          type: string
+        enabled:
+          type: boolean
+        fromAddress:
+          type: string
+        fromName:
+          type: string
+        hasPassword:
+          type: boolean
+        host:
+          type: string
+        id:
+          type: string
+        port:
+          format: int64
+          type: integer
+        provider:
+          type: string
+        replyTo:
+          type: string
+        security:
+          type: string
+        skipTlsVerify:
+          type: boolean
+        updatedAt:
+          format: date-time
+          type: string
+        username:
+          type: string
+      required:
+        - id
+        - provider
+        - fromAddress
+        - auth
+        - hasPassword
+        - skipTlsVerify
+        - enabled
+        - configured
+        - createdAt
+        - updatedAt
+      type: object
+    EmailProviderTestBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/EmailProviderTestBody.json
+          format: uri
+          readOnly: true
+          type: string
+        to:
+          description: Recipient address for the test email
+          minLength: 1
+          type: string
+      required:
+        - to
+      type: object
+    EmailProviderTestConfigBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/EmailProviderTestConfigBody.json
+          format: uri
+          readOnly: true
+          type: string
+        auth:
+          description: Whether the server requires SMTP authentication
+          type: boolean
+        fromAddress:
+          description: From/envelope address
+          minLength: 1
+          type: string
+        fromName:
+          description: Optional display name for the From address
+          type: string
+        host:
+          description: SMTP server hostname
+          type: string
+        password:
+          description: SMTP password
+          type: string
+        port:
+          description: SMTP server port (1-65535)
+          format: int64
+          type: integer
+        provider:
+          description: Email provider implementation
+          enum:
+            - smtp
+          type: string
+        replyTo:
+          description: Optional Reply-To address
+          type: string
+        security:
+          description: Transport security mode
+          enum:
+            - starttls
+            - implicit_tls
+            - none
+          type: string
+        skipTlsVerify:
+          description: Skip TLS certificate verification (self-signed relays)
+          type: boolean
+        to:
+          description: Recipient address for the test email
+          minLength: 1
+          type: string
+        username:
+          description: SMTP username; required when auth is enabled
+          type: string
+      required:
+        - provider
+        - fromAddress
+        - auth
+        - skipTlsVerify
+        - to
+      type: object
+    EmailProviderWriteBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/EmailProviderWriteBody.json
+          format: uri
+          readOnly: true
+          type: string
+        auth:
+          description: Whether the server requires SMTP authentication
+          type: boolean
+        enabled:
+          description: Whether email sending is enabled
+          type: boolean
+        fromAddress:
+          description: From/envelope address
+          minLength: 1
+          type: string
+        fromName:
+          description: Optional display name for the From address
+          type: string
+        host:
+          description: SMTP server hostname
+          type: string
+        password:
+          description: SMTP password; empty preserves existing
+          type: string
+        port:
+          description: SMTP server port (1-65535)
+          format: int64
+          type: integer
+        provider:
+          description: Email provider implementation
+          enum:
+            - smtp
+          type: string
+        replyTo:
+          description: Optional Reply-To address
+          type: string
+        security:
+          description: Transport security mode
+          enum:
+            - starttls
+            - implicit_tls
+            - none
+          type: string
+        skipTlsVerify:
+          description: Skip TLS certificate verification (self-signed relays)
+          type: boolean
+        username:
+          description: SMTP username; required when auth is enabled
+          type: string
+      required:
+        - provider
+        - fromAddress
+        - auth
+        - skipTlsVerify
+        - enabled
       type: object
     EncodeFields:
       additionalProperties: false
@@ -2412,6 +2641,32 @@ components:
         - outcome
         - confidence
       type: object
+    InboxNotification:
+      additionalProperties: false
+      properties:
+        body:
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        eventType:
+          type: string
+        id:
+          type: string
+        payload: {}
+        readAt:
+          format: date-time
+          type: string
+        title:
+          type: string
+      required:
+        - id
+        - eventType
+        - title
+        - body
+        - payload
+        - createdAt
+      type: object
     InboxPage:
       additionalProperties: false
       properties:
@@ -3417,6 +3672,69 @@ components:
         - episodeNumber
         - title
       type: object
+    NotificationsPrefsBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/NotificationsPrefsBody.json
+          format: uri
+          readOnly: true
+          type: string
+        bundles:
+          description: Per-bundle channel preferences, one entry per user-facing bundle
+          items:
+            $ref: "#/components/schemas/BundlePreference"
+          type:
+            - array
+            - "null"
+      required:
+        - bundles
+      type: object
+    NotificationsPrefsSetBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/NotificationsPrefsSetBody.json
+          format: uri
+          readOnly: true
+          type: string
+        bundle:
+          description: Bundle the preference applies to
+          minLength: 1
+          type: string
+        enabled:
+          description: Whether the target is enabled for the bundle
+          type: boolean
+        target:
+          description: "What to toggle: 'subscribed' (the master — in-app follows it), 'email', or 'push'"
+          minLength: 1
+          type: string
+      required:
+        - bundle
+        - target
+        - enabled
+      type: object
+    NotificationsUnreadBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/NotificationsUnreadBody.json
+          format: uri
+          readOnly: true
+          type: string
+        count:
+          description: Delivered-but-unread in_app notification count
+          format: int64
+          type: integer
+      required:
+        - count
+      type: object
     PageLibraryItem:
       additionalProperties: false
       properties:
@@ -3709,6 +4027,86 @@ components:
         - score
         - createdAt
         - updatedAt
+      type: object
+    PushPublicKeyBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/PushPublicKeyBody.json
+          format: uri
+          readOnly: true
+          type: string
+        publicKey:
+          description: VAPID application server public key (base64url); pass to pushManager.subscribe
+          type: string
+      required:
+        - publicKey
+      type: object
+    PushSubscribeBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/PushSubscribeBody.json
+          format: uri
+          readOnly: true
+          type: string
+        auth:
+          description: Client auth secret (base64url)
+          minLength: 1
+          type: string
+        endpoint:
+          description: Push service endpoint URL
+          minLength: 1
+          type: string
+        p256dh:
+          description: Client ECDH public key (base64url)
+          minLength: 1
+          type: string
+      required:
+        - endpoint
+        - p256dh
+        - auth
+      type: object
+    PushSubscriptionView:
+      additionalProperties: false
+      properties:
+        createdAt:
+          description: When this device first subscribed
+          format: date-time
+          type: string
+        endpoint:
+          description: Push service endpoint URL; the browser matches this against its own subscription to identify the current device
+          type: string
+        id:
+          description: Subscription id; use it to remove or test this device
+          format: uuid
+          type: string
+        lastNotifiedAt:
+          description: When a push was last successfully delivered to this device; null if never notified yet
+          format: date-time
+          type:
+            - string
+            - "null"
+        lastUsedAt:
+          description: When this subscription was last (re)subscribed/refreshed
+          format: date-time
+          type: string
+        userAgent:
+          description: Device label captured at registration (User-Agent), null if unknown
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - endpoint
+        - userAgent
+        - createdAt
+        - lastUsedAt
+        - lastNotifiedAt
       type: object
     QualityBinOption:
       additionalProperties: false
@@ -8892,6 +9290,300 @@ paths:
       summary: Update name template
       tags:
         - name-templates
+  /api/v1/notifications:
+    get:
+      description: Returns the caller's delivered in-app notifications, newest first, each with its title and body rendered from the event template.
+      operationId: notifications-list
+      parameters:
+        - description: Max notifications to return, newest first
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: Max notifications to return, newest first
+            format: int32
+            maximum: 200
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/InboxNotification"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: List my notifications
+      tags:
+        - notifications
+  /api/v1/notifications/preferences:
+    get:
+      description: "Returns the caller's per-bundle preferences: whether they're subscribed (the master — in-app follows it) and the resolved enablement plus deliverability of each outbound channel (email, push)."
+      operationId: notification-preferences-get
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationsPrefsBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Get my notification preferences
+      tags:
+        - notifications
+    put:
+      description: "Toggles one target for one bundle for the caller: the subscription master ('subscribed', which governs in-app), or an outbound channel ('email'/'push')."
+      operationId: notification-preferences-set
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationsPrefsSetBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Set a notification preference
+      tags:
+        - notifications
+  /api/v1/notifications/push/public-key:
+    get:
+      description: Returns the server's VAPID application server key, used by the browser to create a push subscription.
+      operationId: push-public-key
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushPublicKeyBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Get the VAPID public key
+      tags:
+        - notifications
+  /api/v1/notifications/push/subscriptions:
+    get:
+      description: Returns the caller's registered Web Push devices (secrets omitted). Match each endpoint against the browser's own subscription to identify the current device.
+      operationId: push-list
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/PushSubscriptionView"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: List my push devices
+      tags:
+        - notifications
+    post:
+      description: Stores (or refreshes) the caller's Web Push subscription for this browser. Idempotent on the endpoint.
+      operationId: push-subscribe
+      parameters:
+        - description: Device label, captured server-side
+          in: header
+          name: User-Agent
+          schema:
+            description: Device label, captured server-side
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscribeBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Register a push subscription
+      tags:
+        - notifications
+  /api/v1/notifications/push/subscriptions/{id}:
+    delete:
+      description: Removes one of the caller's registered Web Push devices by id. Idempotent.
+      operationId: push-remove
+      parameters:
+        - description: Subscription id to remove
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Subscription id to remove
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Remove a push device
+      tags:
+        - notifications
+  /api/v1/notifications/push/subscriptions/{id}/test:
+    post:
+      description: Sends a canned test notification to one of the caller's registered devices to verify it can receive pushes. Prunes and 404s a device the push service reports gone.
+      operationId: push-test
+      parameters:
+        - description: Subscription id to send a test push to
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Subscription id to send a test push to
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Send a test push to a device
+      tags:
+        - notifications
+  /api/v1/notifications/read-all:
+    post:
+      operationId: notifications-mark-all-read
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Mark all my notifications read
+      tags:
+        - notifications
+  /api/v1/notifications/unread-count:
+    get:
+      operationId: notifications-unread-count
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationsUnreadBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Count my unread notifications
+      tags:
+        - notifications
+  /api/v1/notifications/{id}/read:
+    post:
+      description: Marks one of the caller's notifications read. Idempotent, and a no-op for an id that isn't the caller's.
+      operationId: notifications-mark-read
+      parameters:
+        - description: Notification ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Notification ID
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Mark a notification read
+      tags:
+        - notifications
   /api/v1/person/{id}:
     get:
       description: Returns the full person detail.
@@ -10510,6 +11202,157 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: Update a setting
+      tags:
+        - settings
+  /api/v1/settings/email:
+    get:
+      operationId: email-provider-get
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailProviderResponse"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Get email provider configuration
+      tags:
+        - settings
+    put:
+      operationId: email-provider-save
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailProviderWriteBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailProviderResponse"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Save email provider configuration
+      tags:
+        - settings
+  /api/v1/settings/email/test:
+    post:
+      operationId: email-provider-test
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailProviderTestBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+      summary: Send a test email using the stored configuration
+      tags:
+        - settings
+  /api/v1/settings/email/test-config:
+    post:
+      operationId: email-provider-test-config
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailProviderTestConfigBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+      summary: Send a test email using an unsaved configuration
       tags:
         - settings
   /api/v1/setup/initialize:

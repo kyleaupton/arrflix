@@ -3,8 +3,8 @@
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/vue-query';
 
 import { client } from '../client.gen';
-import { authLogin, authMe, authPlexExchange, authSignup, bootstrapGet, downloadCandidatesDownloadMovie, downloadCandidatesDownloadSeries, downloadCandidatesListMovie, downloadCandidatesListSeries, downloadCandidatesPreviewMovie, downloadCandidatesPreviewSeries, downloadersCreate, downloadersDelete, downloadersGet, downloadersGetDefault, downloadersList, downloadersTest, downloadersTestConfig, downloadersUpdate, downloadJobsCancel, downloadJobsGet, downloadJobsHistory, downloadJobsList, downloadJobsListForMovie, downloadJobsListForSeries, downloadJobsListImportTasks, downloadJobsReimport, downloadJobsRetry, downloadJobsTimeline, eventsSubscriptionsAdd, eventsSubscriptionsList, eventsSubscriptionsRemove, feedGet, filesDetach, filesMatch, filesMatchDecision, filesUnmatch, filesystemBrowse, healthCheck, importTasksCancel, importTasksCounts, importTasksGet, importTasksHistory, importTasksList, importTasksReimport, importTasksTimeline, indexersAction, indexersDelete, indexersGet, indexersGetSchema, indexersListConfigured, indexersSave, indexersTestAll, indexersTestSaved, indexersTestUnsaved, indexersToggle, invitesCreate, invitesDelete, invitesList, librariesCreate, librariesDelete, librariesGet, librariesList, librariesScan, librariesUpdate, libraryList, mediaGetMovie, mediaGetPerson, mediaGetSeries, mediaSearch, nameTemplatesCreate, nameTemplatesDelete, nameTemplatesGet, nameTemplatesGetDefault, nameTemplatesList, nameTemplatesUpdate, type Options, proposalsApprove, proposalsDecline, qualityBindTier, qualityCreateCustomFormat, qualityCreateProfile, qualityDeleteCustomFormat, qualityDeleteProfile, qualityGetCustomFormat, qualityGetProfile, qualityListBins, qualityListCustomFormats, qualityListProfiles, qualityListSizeDefaults, qualityListTiers, qualityTestProfile, qualityUpdateCustomFormat, qualityUpdateProfile, requestsApprove, requestsCancel, requestsCreate, requestsDeny, requestsGet, requestsList, rolesList, routingCreateRule, routingDeleteRule, routingEvaluate, routingGetFields, routingGetRule, routingListRules, routingReorderRules, routingUpdateRule, settingsList, settingsPatch, setupInitialize, setupStatus, setupTmdb, trackingByTmdb, trackingCancel, trackingGet, trackingList, trackingProposals, trackingRequesters, trackingRetry, trackingSetAutonomy, trackingWants, unmatchedFilesGet, unmatchedFilesList, usersAssignRole, usersDelete, usersGet, usersGetProfile, usersList, usersUpdate, usersUpdatePassword, usersUpdateProfile, usersUpdateProfilePassword, versionGet, wantsCancel } from '../sdk.gen';
-import type { AuthLoginData, AuthLoginError, AuthLoginResponse, AuthMeData, AuthPlexExchangeData, AuthPlexExchangeError, AuthPlexExchangeResponse, AuthSignupData, AuthSignupError, AuthSignupResponse, BootstrapGetData, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieError, DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesError, DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesListMovieData, DownloadCandidatesListSeriesData, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieError, DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesError, DownloadCandidatesPreviewSeriesResponse, DownloadersCreateData, DownloadersCreateError, DownloadersCreateResponse, DownloadersDeleteData, DownloadersDeleteError, DownloadersDeleteResponse, DownloadersGetData, DownloadersGetDefaultData, DownloadersListData, DownloadersTestConfigData, DownloadersTestConfigError, DownloadersTestConfigResponse, DownloadersTestData, DownloadersTestError, DownloadersTestResponse, DownloadersUpdateData, DownloadersUpdateError, DownloadersUpdateResponse, DownloadJobsCancelData, DownloadJobsCancelError, DownloadJobsCancelResponse, DownloadJobsGetData, DownloadJobsHistoryData, DownloadJobsListData, DownloadJobsListForMovieData, DownloadJobsListForSeriesData, DownloadJobsListImportTasksData, DownloadJobsReimportData, DownloadJobsReimportError, DownloadJobsReimportResponse, DownloadJobsRetryData, DownloadJobsRetryError, DownloadJobsRetryResponse, DownloadJobsTimelineData, EventsSubscriptionsAddData, EventsSubscriptionsAddError, EventsSubscriptionsAddResponse, EventsSubscriptionsListData, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveError, EventsSubscriptionsRemoveResponse, FeedGetData, FilesDetachData, FilesDetachError, FilesDetachResponse, FilesMatchData, FilesMatchDecisionData, FilesMatchError, FilesMatchResponse, FilesUnmatchData, FilesUnmatchError, FilesUnmatchResponse, FilesystemBrowseData, HealthCheckData, ImportTasksCancelData, ImportTasksCancelError, ImportTasksCancelResponse, ImportTasksCountsData, ImportTasksGetData, ImportTasksHistoryData, ImportTasksListData, ImportTasksListError, ImportTasksListResponse, ImportTasksReimportData, ImportTasksReimportError, ImportTasksReimportResponse, ImportTasksTimelineData, IndexersActionData, IndexersActionError, IndexersDeleteData, IndexersDeleteError, IndexersDeleteResponse, IndexersGetData, IndexersGetSchemaData, IndexersListConfiguredData, IndexersSaveData, IndexersSaveError, IndexersSaveResponse, IndexersTestAllData, IndexersTestAllError, IndexersTestAllResponse, IndexersTestSavedData, IndexersTestSavedError, IndexersTestSavedResponse, IndexersTestUnsavedData, IndexersTestUnsavedError, IndexersTestUnsavedResponse, IndexersToggleData, IndexersToggleError, IndexersToggleResponse, InvitesCreateData, InvitesCreateError, InvitesCreateResponse, InvitesDeleteData, InvitesDeleteError, InvitesDeleteResponse, InvitesListData, LibrariesCreateData, LibrariesCreateError, LibrariesCreateResponse, LibrariesDeleteData, LibrariesDeleteError, LibrariesDeleteResponse, LibrariesGetData, LibrariesListData, LibrariesScanData, LibrariesScanError, LibrariesScanResponse, LibrariesUpdateData, LibrariesUpdateError, LibrariesUpdateResponse, LibraryListData, LibraryListError, LibraryListResponse, MediaGetMovieData, MediaGetPersonData, MediaGetSeriesData, MediaSearchData, MediaSearchError, MediaSearchResponse, NameTemplatesCreateData, NameTemplatesCreateError, NameTemplatesCreateResponse, NameTemplatesDeleteData, NameTemplatesDeleteError, NameTemplatesDeleteResponse, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesListData, NameTemplatesUpdateData, NameTemplatesUpdateError, NameTemplatesUpdateResponse, ProposalsApproveData, ProposalsApproveError, ProposalsApproveResponse, ProposalsDeclineData, ProposalsDeclineError, ProposalsDeclineResponse, QualityBindTierData, QualityBindTierError, QualityBindTierResponse, QualityCreateCustomFormatData, QualityCreateCustomFormatError, QualityCreateCustomFormatResponse, QualityCreateProfileData, QualityCreateProfileError, QualityCreateProfileResponse, QualityDeleteCustomFormatData, QualityDeleteCustomFormatError, QualityDeleteCustomFormatResponse, QualityDeleteProfileData, QualityDeleteProfileError, QualityDeleteProfileResponse, QualityGetCustomFormatData, QualityGetProfileData, QualityListBinsData, QualityListCustomFormatsData, QualityListProfilesData, QualityListSizeDefaultsData, QualityListTiersData, QualityTestProfileData, QualityTestProfileError, QualityTestProfileResponse, QualityUpdateCustomFormatData, QualityUpdateCustomFormatError, QualityUpdateCustomFormatResponse, QualityUpdateProfileData, QualityUpdateProfileError, QualityUpdateProfileResponse, RequestsApproveData, RequestsApproveError, RequestsApproveResponse, RequestsCancelData, RequestsCancelError, RequestsCancelResponse, RequestsCreateData, RequestsCreateError, RequestsCreateResponse, RequestsDenyData, RequestsDenyError, RequestsDenyResponse, RequestsGetData, RequestsListData, RolesListData, RoutingCreateRuleData, RoutingCreateRuleError, RoutingCreateRuleResponse, RoutingDeleteRuleData, RoutingDeleteRuleError, RoutingDeleteRuleResponse, RoutingEvaluateData, RoutingEvaluateError, RoutingEvaluateResponse, RoutingGetFieldsData, RoutingGetRuleData, RoutingListRulesData, RoutingReorderRulesData, RoutingReorderRulesError, RoutingReorderRulesResponse, RoutingUpdateRuleData, RoutingUpdateRuleError, RoutingUpdateRuleResponse, SettingsListData, SettingsPatchData, SettingsPatchError, SettingsPatchResponse, SetupInitializeData, SetupInitializeError, SetupInitializeResponse2, SetupStatusData, SetupTmdbData, SetupTmdbError, SetupTmdbResponse2, TrackingByTmdbData, TrackingCancelData, TrackingCancelError, TrackingCancelResponse, TrackingGetData, TrackingListData, TrackingProposalsData, TrackingRequestersData, TrackingRetryData, TrackingRetryError, TrackingRetryResponse, TrackingSetAutonomyData, TrackingSetAutonomyError, TrackingSetAutonomyResponse, TrackingWantsData, UnmatchedFilesGetData, UnmatchedFilesListData, UnmatchedFilesListError, UnmatchedFilesListResponse, UsersAssignRoleData, UsersAssignRoleError, UsersAssignRoleResponse, UsersDeleteData, UsersDeleteError, UsersDeleteResponse, UsersGetData, UsersGetProfileData, UsersListData, UsersUpdateData, UsersUpdateError, UsersUpdatePasswordData, UsersUpdatePasswordError, UsersUpdatePasswordResponse, UsersUpdateProfileData, UsersUpdateProfileError, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordError, UsersUpdateProfilePasswordResponse, UsersUpdateProfileResponse, UsersUpdateResponse, VersionGetData, WantsCancelData, WantsCancelError, WantsCancelResponse } from '../types.gen';
+import { authLogin, authMe, authPlexExchange, authSignup, bootstrapGet, downloadCandidatesDownloadMovie, downloadCandidatesDownloadSeries, downloadCandidatesListMovie, downloadCandidatesListSeries, downloadCandidatesPreviewMovie, downloadCandidatesPreviewSeries, downloadersCreate, downloadersDelete, downloadersGet, downloadersGetDefault, downloadersList, downloadersTest, downloadersTestConfig, downloadersUpdate, downloadJobsCancel, downloadJobsGet, downloadJobsHistory, downloadJobsList, downloadJobsListForMovie, downloadJobsListForSeries, downloadJobsListImportTasks, downloadJobsReimport, downloadJobsRetry, downloadJobsTimeline, emailProviderGet, emailProviderSave, emailProviderTest, emailProviderTestConfig, eventsSubscriptionsAdd, eventsSubscriptionsList, eventsSubscriptionsRemove, feedGet, filesDetach, filesMatch, filesMatchDecision, filesUnmatch, filesystemBrowse, healthCheck, importTasksCancel, importTasksCounts, importTasksGet, importTasksHistory, importTasksList, importTasksReimport, importTasksTimeline, indexersAction, indexersDelete, indexersGet, indexersGetSchema, indexersListConfigured, indexersSave, indexersTestAll, indexersTestSaved, indexersTestUnsaved, indexersToggle, invitesCreate, invitesDelete, invitesList, librariesCreate, librariesDelete, librariesGet, librariesList, librariesScan, librariesUpdate, libraryList, mediaGetMovie, mediaGetPerson, mediaGetSeries, mediaSearch, nameTemplatesCreate, nameTemplatesDelete, nameTemplatesGet, nameTemplatesGetDefault, nameTemplatesList, nameTemplatesUpdate, notificationPreferencesGet, notificationPreferencesSet, notificationsList, notificationsMarkAllRead, notificationsMarkRead, notificationsUnreadCount, type Options, proposalsApprove, proposalsDecline, pushList, pushPublicKey, pushRemove, pushSubscribe, pushTest, qualityBindTier, qualityCreateCustomFormat, qualityCreateProfile, qualityDeleteCustomFormat, qualityDeleteProfile, qualityGetCustomFormat, qualityGetProfile, qualityListBins, qualityListCustomFormats, qualityListProfiles, qualityListSizeDefaults, qualityListTiers, qualityTestProfile, qualityUpdateCustomFormat, qualityUpdateProfile, requestsApprove, requestsCancel, requestsCreate, requestsDeny, requestsGet, requestsList, rolesList, routingCreateRule, routingDeleteRule, routingEvaluate, routingGetFields, routingGetRule, routingListRules, routingReorderRules, routingUpdateRule, settingsList, settingsPatch, setupInitialize, setupStatus, setupTmdb, trackingByTmdb, trackingCancel, trackingGet, trackingList, trackingProposals, trackingRequesters, trackingRetry, trackingSetAutonomy, trackingWants, unmatchedFilesGet, unmatchedFilesList, usersAssignRole, usersDelete, usersGet, usersGetProfile, usersList, usersUpdate, usersUpdatePassword, usersUpdateProfile, usersUpdateProfilePassword, versionGet, wantsCancel } from '../sdk.gen';
+import type { AuthLoginData, AuthLoginError, AuthLoginResponse, AuthMeData, AuthPlexExchangeData, AuthPlexExchangeError, AuthPlexExchangeResponse, AuthSignupData, AuthSignupError, AuthSignupResponse, BootstrapGetData, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieError, DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesError, DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesListMovieData, DownloadCandidatesListSeriesData, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieError, DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesError, DownloadCandidatesPreviewSeriesResponse, DownloadersCreateData, DownloadersCreateError, DownloadersCreateResponse, DownloadersDeleteData, DownloadersDeleteError, DownloadersDeleteResponse, DownloadersGetData, DownloadersGetDefaultData, DownloadersListData, DownloadersTestConfigData, DownloadersTestConfigError, DownloadersTestConfigResponse, DownloadersTestData, DownloadersTestError, DownloadersTestResponse, DownloadersUpdateData, DownloadersUpdateError, DownloadersUpdateResponse, DownloadJobsCancelData, DownloadJobsCancelError, DownloadJobsCancelResponse, DownloadJobsGetData, DownloadJobsHistoryData, DownloadJobsListData, DownloadJobsListForMovieData, DownloadJobsListForSeriesData, DownloadJobsListImportTasksData, DownloadJobsReimportData, DownloadJobsReimportError, DownloadJobsReimportResponse, DownloadJobsRetryData, DownloadJobsRetryError, DownloadJobsRetryResponse, DownloadJobsTimelineData, EmailProviderGetData, EmailProviderSaveData, EmailProviderSaveError, EmailProviderSaveResponse, EmailProviderTestConfigData, EmailProviderTestConfigError, EmailProviderTestConfigResponse, EmailProviderTestData, EmailProviderTestError, EmailProviderTestResponse, EventsSubscriptionsAddData, EventsSubscriptionsAddError, EventsSubscriptionsAddResponse, EventsSubscriptionsListData, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveError, EventsSubscriptionsRemoveResponse, FeedGetData, FilesDetachData, FilesDetachError, FilesDetachResponse, FilesMatchData, FilesMatchDecisionData, FilesMatchError, FilesMatchResponse, FilesUnmatchData, FilesUnmatchError, FilesUnmatchResponse, FilesystemBrowseData, HealthCheckData, ImportTasksCancelData, ImportTasksCancelError, ImportTasksCancelResponse, ImportTasksCountsData, ImportTasksGetData, ImportTasksHistoryData, ImportTasksListData, ImportTasksListError, ImportTasksListResponse, ImportTasksReimportData, ImportTasksReimportError, ImportTasksReimportResponse, ImportTasksTimelineData, IndexersActionData, IndexersActionError, IndexersDeleteData, IndexersDeleteError, IndexersDeleteResponse, IndexersGetData, IndexersGetSchemaData, IndexersListConfiguredData, IndexersSaveData, IndexersSaveError, IndexersSaveResponse, IndexersTestAllData, IndexersTestAllError, IndexersTestAllResponse, IndexersTestSavedData, IndexersTestSavedError, IndexersTestSavedResponse, IndexersTestUnsavedData, IndexersTestUnsavedError, IndexersTestUnsavedResponse, IndexersToggleData, IndexersToggleError, IndexersToggleResponse, InvitesCreateData, InvitesCreateError, InvitesCreateResponse, InvitesDeleteData, InvitesDeleteError, InvitesDeleteResponse, InvitesListData, LibrariesCreateData, LibrariesCreateError, LibrariesCreateResponse, LibrariesDeleteData, LibrariesDeleteError, LibrariesDeleteResponse, LibrariesGetData, LibrariesListData, LibrariesScanData, LibrariesScanError, LibrariesScanResponse, LibrariesUpdateData, LibrariesUpdateError, LibrariesUpdateResponse, LibraryListData, LibraryListError, LibraryListResponse, MediaGetMovieData, MediaGetPersonData, MediaGetSeriesData, MediaSearchData, MediaSearchError, MediaSearchResponse, NameTemplatesCreateData, NameTemplatesCreateError, NameTemplatesCreateResponse, NameTemplatesDeleteData, NameTemplatesDeleteError, NameTemplatesDeleteResponse, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesListData, NameTemplatesUpdateData, NameTemplatesUpdateError, NameTemplatesUpdateResponse, NotificationPreferencesGetData, NotificationPreferencesSetData, NotificationPreferencesSetError, NotificationPreferencesSetResponse, NotificationsListData, NotificationsMarkAllReadData, NotificationsMarkAllReadError, NotificationsMarkAllReadResponse, NotificationsMarkReadData, NotificationsMarkReadError, NotificationsMarkReadResponse, NotificationsUnreadCountData, ProposalsApproveData, ProposalsApproveError, ProposalsApproveResponse, ProposalsDeclineData, ProposalsDeclineError, ProposalsDeclineResponse, PushListData, PushPublicKeyData, PushRemoveData, PushRemoveError, PushRemoveResponse, PushSubscribeData, PushSubscribeError, PushSubscribeResponse, PushTestData, PushTestError, PushTestResponse, QualityBindTierData, QualityBindTierError, QualityBindTierResponse, QualityCreateCustomFormatData, QualityCreateCustomFormatError, QualityCreateCustomFormatResponse, QualityCreateProfileData, QualityCreateProfileError, QualityCreateProfileResponse, QualityDeleteCustomFormatData, QualityDeleteCustomFormatError, QualityDeleteCustomFormatResponse, QualityDeleteProfileData, QualityDeleteProfileError, QualityDeleteProfileResponse, QualityGetCustomFormatData, QualityGetProfileData, QualityListBinsData, QualityListCustomFormatsData, QualityListProfilesData, QualityListSizeDefaultsData, QualityListTiersData, QualityTestProfileData, QualityTestProfileError, QualityTestProfileResponse, QualityUpdateCustomFormatData, QualityUpdateCustomFormatError, QualityUpdateCustomFormatResponse, QualityUpdateProfileData, QualityUpdateProfileError, QualityUpdateProfileResponse, RequestsApproveData, RequestsApproveError, RequestsApproveResponse, RequestsCancelData, RequestsCancelError, RequestsCancelResponse, RequestsCreateData, RequestsCreateError, RequestsCreateResponse, RequestsDenyData, RequestsDenyError, RequestsDenyResponse, RequestsGetData, RequestsListData, RolesListData, RoutingCreateRuleData, RoutingCreateRuleError, RoutingCreateRuleResponse, RoutingDeleteRuleData, RoutingDeleteRuleError, RoutingDeleteRuleResponse, RoutingEvaluateData, RoutingEvaluateError, RoutingEvaluateResponse, RoutingGetFieldsData, RoutingGetRuleData, RoutingListRulesData, RoutingReorderRulesData, RoutingReorderRulesError, RoutingReorderRulesResponse, RoutingUpdateRuleData, RoutingUpdateRuleError, RoutingUpdateRuleResponse, SettingsListData, SettingsPatchData, SettingsPatchError, SettingsPatchResponse, SetupInitializeData, SetupInitializeError, SetupInitializeResponse2, SetupStatusData, SetupTmdbData, SetupTmdbError, SetupTmdbResponse2, TrackingByTmdbData, TrackingCancelData, TrackingCancelError, TrackingCancelResponse, TrackingGetData, TrackingListData, TrackingProposalsData, TrackingRequestersData, TrackingRetryData, TrackingRetryError, TrackingRetryResponse, TrackingSetAutonomyData, TrackingSetAutonomyError, TrackingSetAutonomyResponse, TrackingWantsData, UnmatchedFilesGetData, UnmatchedFilesListData, UnmatchedFilesListError, UnmatchedFilesListResponse, UsersAssignRoleData, UsersAssignRoleError, UsersAssignRoleResponse, UsersDeleteData, UsersDeleteError, UsersDeleteResponse, UsersGetData, UsersGetProfileData, UsersListData, UsersUpdateData, UsersUpdateError, UsersUpdatePasswordData, UsersUpdatePasswordError, UsersUpdatePasswordResponse, UsersUpdateProfileData, UsersUpdateProfileError, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordError, UsersUpdateProfilePasswordResponse, UsersUpdateProfileResponse, UsersUpdateResponse, VersionGetData, WantsCancelData, WantsCancelError, WantsCancelResponse } from '../types.gen';
 
 /**
  * Login
@@ -1556,6 +1556,217 @@ export const nameTemplatesUpdateMutation = (options?: Partial<Options<NameTempla
     return mutationOptions;
 };
 
+export const notificationsListQueryKey = (options?: Options<NotificationsListData>) => createQueryKey('notificationsList', options);
+
+/**
+ * List my notifications
+ * Returns the caller's delivered in-app notifications, newest first, each with its title and body rendered from the event template.
+ */
+export const notificationsListOptions = (options?: Options<NotificationsListData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await notificationsList({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: notificationsListQueryKey(options)
+    });
+};
+
+export const notificationPreferencesGetQueryKey = (options?: Options<NotificationPreferencesGetData>) => createQueryKey('notificationPreferencesGet', options);
+
+/**
+ * Get my notification preferences
+ * Returns the caller's per-bundle preferences: whether they're subscribed (the master — in-app follows it) and the resolved enablement plus deliverability of each outbound channel (email, push).
+ */
+export const notificationPreferencesGetOptions = (options?: Options<NotificationPreferencesGetData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await notificationPreferencesGet({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: notificationPreferencesGetQueryKey(options)
+    });
+};
+
+/**
+ * Set a notification preference
+ * Toggles one target for one bundle for the caller: the subscription master ('subscribed', which governs in-app), or an outbound channel ('email'/'push').
+ */
+export const notificationPreferencesSetMutation = (options?: Partial<Options<NotificationPreferencesSetData>>): UseMutationOptions<NotificationPreferencesSetResponse, NotificationPreferencesSetError, Options<NotificationPreferencesSetData>> => {
+    const mutationOptions: UseMutationOptions<NotificationPreferencesSetResponse, NotificationPreferencesSetError, Options<NotificationPreferencesSetData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await notificationPreferencesSet({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const pushPublicKeyQueryKey = (options?: Options<PushPublicKeyData>) => createQueryKey('pushPublicKey', options);
+
+/**
+ * Get the VAPID public key
+ * Returns the server's VAPID application server key, used by the browser to create a push subscription.
+ */
+export const pushPublicKeyOptions = (options?: Options<PushPublicKeyData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await pushPublicKey({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: pushPublicKeyQueryKey(options)
+    });
+};
+
+export const pushListQueryKey = (options?: Options<PushListData>) => createQueryKey('pushList', options);
+
+/**
+ * List my push devices
+ * Returns the caller's registered Web Push devices (secrets omitted). Match each endpoint against the browser's own subscription to identify the current device.
+ */
+export const pushListOptions = (options?: Options<PushListData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await pushList({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: pushListQueryKey(options)
+    });
+};
+
+/**
+ * Register a push subscription
+ * Stores (or refreshes) the caller's Web Push subscription for this browser. Idempotent on the endpoint.
+ */
+export const pushSubscribeMutation = (options?: Partial<Options<PushSubscribeData>>): UseMutationOptions<PushSubscribeResponse, PushSubscribeError, Options<PushSubscribeData>> => {
+    const mutationOptions: UseMutationOptions<PushSubscribeResponse, PushSubscribeError, Options<PushSubscribeData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await pushSubscribe({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Remove a push device
+ * Removes one of the caller's registered Web Push devices by id. Idempotent.
+ */
+export const pushRemoveMutation = (options?: Partial<Options<PushRemoveData>>): UseMutationOptions<PushRemoveResponse, PushRemoveError, Options<PushRemoveData>> => {
+    const mutationOptions: UseMutationOptions<PushRemoveResponse, PushRemoveError, Options<PushRemoveData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await pushRemove({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Send a test push to a device
+ * Sends a canned test notification to one of the caller's registered devices to verify it can receive pushes. Prunes and 404s a device the push service reports gone.
+ */
+export const pushTestMutation = (options?: Partial<Options<PushTestData>>): UseMutationOptions<PushTestResponse, PushTestError, Options<PushTestData>> => {
+    const mutationOptions: UseMutationOptions<PushTestResponse, PushTestError, Options<PushTestData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await pushTest({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Mark all my notifications read
+ */
+export const notificationsMarkAllReadMutation = (options?: Partial<Options<NotificationsMarkAllReadData>>): UseMutationOptions<NotificationsMarkAllReadResponse, NotificationsMarkAllReadError, Options<NotificationsMarkAllReadData>> => {
+    const mutationOptions: UseMutationOptions<NotificationsMarkAllReadResponse, NotificationsMarkAllReadError, Options<NotificationsMarkAllReadData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await notificationsMarkAllRead({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const notificationsUnreadCountQueryKey = (options?: Options<NotificationsUnreadCountData>) => createQueryKey('notificationsUnreadCount', options);
+
+/**
+ * Count my unread notifications
+ */
+export const notificationsUnreadCountOptions = (options?: Options<NotificationsUnreadCountData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await notificationsUnreadCount({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: notificationsUnreadCountQueryKey(options)
+    });
+};
+
+/**
+ * Mark a notification read
+ * Marks one of the caller's notifications read. Idempotent, and a no-op for an id that isn't the caller's.
+ */
+export const notificationsMarkReadMutation = (options?: Partial<Options<NotificationsMarkReadData>>): UseMutationOptions<NotificationsMarkReadResponse, NotificationsMarkReadError, Options<NotificationsMarkReadData>> => {
+    const mutationOptions: UseMutationOptions<NotificationsMarkReadResponse, NotificationsMarkReadError, Options<NotificationsMarkReadData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await notificationsMarkRead({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
 export const mediaGetPersonQueryKey = (options: Options<MediaGetPersonData>) => createQueryKey('mediaGetPerson', options);
 
 /**
@@ -2255,6 +2466,77 @@ export const settingsPatchMutation = (options?: Partial<Options<SettingsPatchDat
     const mutationOptions: UseMutationOptions<SettingsPatchResponse, SettingsPatchError, Options<SettingsPatchData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await settingsPatch({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const emailProviderGetQueryKey = (options?: Options<EmailProviderGetData>) => createQueryKey('emailProviderGet', options);
+
+/**
+ * Get email provider configuration
+ */
+export const emailProviderGetOptions = (options?: Options<EmailProviderGetData>) => {
+    return queryOptions({
+        queryFn: async ({ queryKey, signal }) => {
+            const { data } = await emailProviderGet({
+                ...options,
+                ...queryKey[0],
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: emailProviderGetQueryKey(options)
+    });
+};
+
+/**
+ * Save email provider configuration
+ */
+export const emailProviderSaveMutation = (options?: Partial<Options<EmailProviderSaveData>>): UseMutationOptions<EmailProviderSaveResponse, EmailProviderSaveError, Options<EmailProviderSaveData>> => {
+    const mutationOptions: UseMutationOptions<EmailProviderSaveResponse, EmailProviderSaveError, Options<EmailProviderSaveData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await emailProviderSave({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Send a test email using the stored configuration
+ */
+export const emailProviderTestMutation = (options?: Partial<Options<EmailProviderTestData>>): UseMutationOptions<EmailProviderTestResponse, EmailProviderTestError, Options<EmailProviderTestData>> => {
+    const mutationOptions: UseMutationOptions<EmailProviderTestResponse, EmailProviderTestError, Options<EmailProviderTestData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await emailProviderTest({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Send a test email using an unsaved configuration
+ */
+export const emailProviderTestConfigMutation = (options?: Partial<Options<EmailProviderTestConfigData>>): UseMutationOptions<EmailProviderTestConfigResponse, EmailProviderTestConfigError, Options<EmailProviderTestConfigData>> => {
+    const mutationOptions: UseMutationOptions<EmailProviderTestConfigResponse, EmailProviderTestConfigError, Options<EmailProviderTestConfigData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await emailProviderTestConfig({
                 ...options,
                 ...fnOptions,
                 throwOnError: true

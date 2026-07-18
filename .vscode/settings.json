@@ -4,11 +4,14 @@
   },
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "[go]": {
-    "editor.defaultFormatter": "golang.go"
-  },
   "remote.autoForwardPorts": false,
   "search.exclude": {
     "submodules/**": true
+  },
+  "[go]": {
+    "editor.defaultFormatter": "golang.go"
+  },
+  "gopls": {
+    "buildFlags": ["-tags=integration"]
   }
 }

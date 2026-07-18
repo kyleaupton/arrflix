@@ -37,6 +37,17 @@ var operationPerms = map[string]requirement{
 	"events-subscriptions-list":     authUser(),
 	"events-subscriptions-add":      authUser(),
 	"events-subscriptions-remove":   authUser(),
+	"notifications-list":            authUser(),
+	"notifications-unread-count":    authUser(),
+	"notifications-mark-read":       authUser(),
+	"notifications-mark-all-read":   authUser(),
+	"notification-preferences-get":  authUser(),
+	"notification-preferences-set":  authUser(),
+	"push-public-key":               authUser(),
+	"push-subscribe":                authUser(),
+	"push-list":                     authUser(),
+	"push-remove":                   authUser(),
+	"push-test":                     authUser(),
 
 	// ----- admin.users.manage -----
 	"users-list":            perm(authz.AdminUsersManage),
@@ -132,6 +143,7 @@ var operationPerms = map[string]requirement{
 	"name-templates-list":         perm(authz.AdminSettingsRead),
 	"name-templates-get":          perm(authz.AdminSettingsRead),
 	"name-templates-get-default":  perm(authz.AdminSettingsRead),
+	"email-provider-get":          perm(authz.AdminSettingsRead),
 
 	// ----- admin.settings.write -----
 	"settings-patch":               perm(authz.AdminSettingsWrite),
@@ -151,6 +163,9 @@ var operationPerms = map[string]requirement{
 	"name-templates-create":        perm(authz.AdminSettingsWrite),
 	"name-templates-update":        perm(authz.AdminSettingsWrite),
 	"name-templates-delete":        perm(authz.AdminSettingsWrite),
+	"email-provider-save":          perm(authz.AdminSettingsWrite),
+	"email-provider-test":          perm(authz.AdminSettingsWrite),
+	"email-provider-test-config":   perm(authz.AdminSettingsWrite),
 
 	// ----- admin.indexers.manage -----
 	"indexers-list-configured": perm(authz.AdminIndexersManage),

@@ -7,6 +7,7 @@ import { KbdGroup, Kbd } from '@/components/ui/kbd'
 import { useScrollProgress } from '@/composables/useScrollProgress'
 import { isMac } from '@/lib/platform'
 import { useAuthStore } from '@/stores/auth'
+import NotificationBell from '@/components/notifications/NotificationBell.vue'
 import ImmersiveNavUser from './ImmersiveNavUser.vue'
 
 const props = defineProps<{
@@ -147,6 +148,12 @@ const isLinkActive = (to: string) => {
         </div>
       </TooltipContent>
     </Tooltip>
+
+    <!-- Notifications bell — shown on every breakpoint: it's the one top-bar
+         action that belongs on mobile too, where there's no other bell surface. -->
+    <div class="mr-2 flex items-center">
+      <NotificationBell />
+    </div>
 
     <!-- User avatar (desktop only — the mobile More tab owns the user menu) -->
     <span class="hidden sm:block">

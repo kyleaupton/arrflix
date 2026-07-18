@@ -30,9 +30,12 @@ import (
 	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	"github.com/kyleaupton/arrflix/internal/downloader/qbittorrent"
+	"github.com/kyleaupton/arrflix/internal/email"
+	emailsmtp "github.com/kyleaupton/arrflix/internal/email/smtp"
 	internalhttp "github.com/kyleaupton/arrflix/internal/http"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/push"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
@@ -94,6 +97,10 @@ func New(t *testing.T, pool *pgxpool.Pool, opts ...Option) *App {
 	qbittorrent.Register(registry)
 	dm := downloader.NewManager(registry, r, logg)
 
+	emailRegistry := email.NewRegistry()
+	emailsmtp.Register(emailRegistry)
+	em := email.NewManager(emailRegistry, r)
+
 	// When WithTmdbClient is set, service.New skips registering the OnChange
 	// hook for "tmdb.api_key", so the Settings.Set call below stays a plain
 	// row write and won't clobber the injected client.
@@ -128,7 +135,12 @@ func New(t *testing.T, pool *pgxpool.Pool, opts ...Option) *App {
 		t.Fatalf("testapp: issue token: %v", err)
 	}
 
-	srv := internalhttp.NewServer(cfg, logg, pool, services, r, dm, broker)
+	pm := push.NewManager(r)
+	if _, err := pm.EnsureConfig(ctx); err != nil {
+		t.Fatalf("testapp: ensure vapid config: %v", err)
+	}
+
+	srv := internalhttp.NewServer(cfg, logg, pool, services, r, dm, em, pm, broker)
 
 	httpSrv := httptest.NewServer(srv.Router)
 	t.Cleanup(httpSrv.Close)

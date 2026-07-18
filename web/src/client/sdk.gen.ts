@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthPlexExchangeData, AuthPlexExchangeErrors, AuthPlexExchangeResponses, AuthSignupData, AuthSignupErrors, AuthSignupResponses, BootstrapGetData, BootstrapGetErrors, BootstrapGetResponses, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieErrors, DownloadCandidatesDownloadMovieResponses, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesErrors, DownloadCandidatesDownloadSeriesResponses, DownloadCandidatesListMovieData, DownloadCandidatesListMovieErrors, DownloadCandidatesListMovieResponses, DownloadCandidatesListSeriesData, DownloadCandidatesListSeriesErrors, DownloadCandidatesListSeriesResponses, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieErrors, DownloadCandidatesPreviewMovieResponses, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesErrors, DownloadCandidatesPreviewSeriesResponses, DownloadersCreateData, DownloadersCreateErrors, DownloadersCreateResponses, DownloadersDeleteData, DownloadersDeleteErrors, DownloadersDeleteResponses, DownloadersGetData, DownloadersGetDefaultData, DownloadersGetDefaultErrors, DownloadersGetDefaultResponses, DownloadersGetErrors, DownloadersGetResponses, DownloadersListData, DownloadersListErrors, DownloadersListResponses, DownloadersTestConfigData, DownloadersTestConfigErrors, DownloadersTestConfigResponses, DownloadersTestData, DownloadersTestErrors, DownloadersTestResponses, DownloadersUpdateData, DownloadersUpdateErrors, DownloadersUpdateResponses, DownloadJobsCancelData, DownloadJobsCancelErrors, DownloadJobsCancelResponses, DownloadJobsGetData, DownloadJobsGetErrors, DownloadJobsGetResponses, DownloadJobsHistoryData, DownloadJobsHistoryErrors, DownloadJobsHistoryResponses, DownloadJobsListData, DownloadJobsListErrors, DownloadJobsListForMovieData, DownloadJobsListForMovieErrors, DownloadJobsListForMovieResponses, DownloadJobsListForSeriesData, DownloadJobsListForSeriesErrors, DownloadJobsListForSeriesResponses, DownloadJobsListImportTasksData, DownloadJobsListImportTasksErrors, DownloadJobsListImportTasksResponses, DownloadJobsListResponses, DownloadJobsReimportData, DownloadJobsReimportErrors, DownloadJobsReimportResponses, DownloadJobsRetryData, DownloadJobsRetryErrors, DownloadJobsRetryResponses, DownloadJobsTimelineData, DownloadJobsTimelineErrors, DownloadJobsTimelineResponses, EventsStreamData, EventsStreamErrors, EventsStreamResponses, EventsSubscriptionsAddData, EventsSubscriptionsAddErrors, EventsSubscriptionsAddResponses, EventsSubscriptionsListData, EventsSubscriptionsListErrors, EventsSubscriptionsListResponses, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveErrors, EventsSubscriptionsRemoveResponses, FeedGetData, FeedGetErrors, FeedGetResponses, FilesDetachData, FilesDetachErrors, FilesDetachResponses, FilesMatchData, FilesMatchDecisionData, FilesMatchDecisionErrors, FilesMatchDecisionResponses, FilesMatchErrors, FilesMatchResponses, FilesUnmatchData, FilesUnmatchErrors, FilesUnmatchResponses, FilesystemBrowseData, FilesystemBrowseErrors, FilesystemBrowseResponses, HealthCheckData, HealthCheckErrors, HealthCheckResponses, ImportTasksCancelData, ImportTasksCancelErrors, ImportTasksCancelResponses, ImportTasksCountsData, ImportTasksCountsErrors, ImportTasksCountsResponses, ImportTasksGetData, ImportTasksGetErrors, ImportTasksGetResponses, ImportTasksHistoryData, ImportTasksHistoryErrors, ImportTasksHistoryResponses, ImportTasksListData, ImportTasksListErrors, ImportTasksListResponses, ImportTasksReimportData, ImportTasksReimportErrors, ImportTasksReimportResponses, ImportTasksTimelineData, ImportTasksTimelineErrors, ImportTasksTimelineResponses, IndexersActionData, IndexersActionErrors, IndexersActionResponses, IndexersDeleteData, IndexersDeleteErrors, IndexersDeleteResponses, IndexersGetData, IndexersGetErrors, IndexersGetResponses, IndexersGetSchemaData, IndexersGetSchemaErrors, IndexersGetSchemaResponses, IndexersListConfiguredData, IndexersListConfiguredErrors, IndexersListConfiguredResponses, IndexersSaveData, IndexersSaveErrors, IndexersSaveResponses, IndexersTestAllData, IndexersTestAllErrors, IndexersTestAllResponses, IndexersTestSavedData, IndexersTestSavedErrors, IndexersTestSavedResponses, IndexersTestUnsavedData, IndexersTestUnsavedErrors, IndexersTestUnsavedResponses, IndexersToggleData, IndexersToggleErrors, IndexersToggleResponses, InvitesCreateData, InvitesCreateErrors, InvitesCreateResponses, InvitesDeleteData, InvitesDeleteErrors, InvitesDeleteResponses, InvitesListData, InvitesListErrors, InvitesListResponses, LibrariesCreateData, LibrariesCreateErrors, LibrariesCreateResponses, LibrariesDeleteData, LibrariesDeleteErrors, LibrariesDeleteResponses, LibrariesGetData, LibrariesGetErrors, LibrariesGetResponses, LibrariesListData, LibrariesListErrors, LibrariesListResponses, LibrariesScanData, LibrariesScanErrors, LibrariesScanResponses, LibrariesUpdateData, LibrariesUpdateErrors, LibrariesUpdateResponses, LibraryListData, LibraryListErrors, LibraryListResponses, MediaGetMovieData, MediaGetMovieErrors, MediaGetMovieResponses, MediaGetPersonData, MediaGetPersonErrors, MediaGetPersonResponses, MediaGetSeriesData, MediaGetSeriesErrors, MediaGetSeriesResponses, MediaSearchData, MediaSearchErrors, MediaSearchResponses, NameTemplatesCreateData, NameTemplatesCreateErrors, NameTemplatesCreateResponses, NameTemplatesDeleteData, NameTemplatesDeleteErrors, NameTemplatesDeleteResponses, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesGetDefaultErrors, NameTemplatesGetDefaultResponses, NameTemplatesGetErrors, NameTemplatesGetResponses, NameTemplatesListData, NameTemplatesListErrors, NameTemplatesListResponses, NameTemplatesUpdateData, NameTemplatesUpdateErrors, NameTemplatesUpdateResponses, ProposalsApproveData, ProposalsApproveErrors, ProposalsApproveResponses, ProposalsDeclineData, ProposalsDeclineErrors, ProposalsDeclineResponses, QualityBindTierData, QualityBindTierErrors, QualityBindTierResponses, QualityCreateCustomFormatData, QualityCreateCustomFormatErrors, QualityCreateCustomFormatResponses, QualityCreateProfileData, QualityCreateProfileErrors, QualityCreateProfileResponses, QualityDeleteCustomFormatData, QualityDeleteCustomFormatErrors, QualityDeleteCustomFormatResponses, QualityDeleteProfileData, QualityDeleteProfileErrors, QualityDeleteProfileResponses, QualityGetCustomFormatData, QualityGetCustomFormatErrors, QualityGetCustomFormatResponses, QualityGetProfileData, QualityGetProfileErrors, QualityGetProfileResponses, QualityListBinsData, QualityListBinsErrors, QualityListBinsResponses, QualityListCustomFormatsData, QualityListCustomFormatsErrors, QualityListCustomFormatsResponses, QualityListProfilesData, QualityListProfilesErrors, QualityListProfilesResponses, QualityListSizeDefaultsData, QualityListSizeDefaultsErrors, QualityListSizeDefaultsResponses, QualityListTiersData, QualityListTiersErrors, QualityListTiersResponses, QualityTestProfileData, QualityTestProfileErrors, QualityTestProfileResponses, QualityUpdateCustomFormatData, QualityUpdateCustomFormatErrors, QualityUpdateCustomFormatResponses, QualityUpdateProfileData, QualityUpdateProfileErrors, QualityUpdateProfileResponses, RequestsApproveData, RequestsApproveErrors, RequestsApproveResponses, RequestsCancelData, RequestsCancelErrors, RequestsCancelResponses, RequestsCreateData, RequestsCreateErrors, RequestsCreateResponses, RequestsDenyData, RequestsDenyErrors, RequestsDenyResponses, RequestsGetData, RequestsGetErrors, RequestsGetResponses, RequestsListData, RequestsListErrors, RequestsListResponses, RolesListData, RolesListErrors, RolesListResponses, RoutingCreateRuleData, RoutingCreateRuleErrors, RoutingCreateRuleResponses, RoutingDeleteRuleData, RoutingDeleteRuleErrors, RoutingDeleteRuleResponses, RoutingEvaluateData, RoutingEvaluateErrors, RoutingEvaluateResponses, RoutingGetFieldsData, RoutingGetFieldsErrors, RoutingGetFieldsResponses, RoutingGetRuleData, RoutingGetRuleErrors, RoutingGetRuleResponses, RoutingListRulesData, RoutingListRulesErrors, RoutingListRulesResponses, RoutingReorderRulesData, RoutingReorderRulesErrors, RoutingReorderRulesResponses, RoutingUpdateRuleData, RoutingUpdateRuleErrors, RoutingUpdateRuleResponses, SettingsListData, SettingsListErrors, SettingsListResponses, SettingsPatchData, SettingsPatchErrors, SettingsPatchResponses, SetupInitializeData, SetupInitializeErrors, SetupInitializeResponses, SetupStatusData, SetupStatusErrors, SetupStatusResponses, SetupTmdbData, SetupTmdbErrors, SetupTmdbResponses, TrackingByTmdbData, TrackingByTmdbErrors, TrackingByTmdbResponses, TrackingCancelData, TrackingCancelErrors, TrackingCancelResponses, TrackingGetData, TrackingGetErrors, TrackingGetResponses, TrackingListData, TrackingListErrors, TrackingListResponses, TrackingProposalsData, TrackingProposalsErrors, TrackingProposalsResponses, TrackingRequestersData, TrackingRequestersErrors, TrackingRequestersResponses, TrackingRetryData, TrackingRetryErrors, TrackingRetryResponses, TrackingSetAutonomyData, TrackingSetAutonomyErrors, TrackingSetAutonomyResponses, TrackingWantsData, TrackingWantsErrors, TrackingWantsResponses, UnmatchedFilesGetData, UnmatchedFilesGetErrors, UnmatchedFilesGetResponses, UnmatchedFilesListData, UnmatchedFilesListErrors, UnmatchedFilesListResponses, UsersAssignRoleData, UsersAssignRoleErrors, UsersAssignRoleResponses, UsersDeleteData, UsersDeleteErrors, UsersDeleteResponses, UsersGetData, UsersGetErrors, UsersGetProfileData, UsersGetProfileErrors, UsersGetProfileResponses, UsersGetResponses, UsersListData, UsersListErrors, UsersListResponses, UsersUpdateData, UsersUpdateErrors, UsersUpdatePasswordData, UsersUpdatePasswordErrors, UsersUpdatePasswordResponses, UsersUpdateProfileData, UsersUpdateProfileErrors, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordErrors, UsersUpdateProfilePasswordResponses, UsersUpdateProfileResponses, UsersUpdateResponses, VersionGetData, VersionGetErrors, VersionGetResponses, WantsCancelData, WantsCancelErrors, WantsCancelResponses } from './types.gen';
+import type { AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthMeData, AuthMeErrors, AuthMeResponses, AuthPlexExchangeData, AuthPlexExchangeErrors, AuthPlexExchangeResponses, AuthSignupData, AuthSignupErrors, AuthSignupResponses, BootstrapGetData, BootstrapGetErrors, BootstrapGetResponses, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieErrors, DownloadCandidatesDownloadMovieResponses, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesErrors, DownloadCandidatesDownloadSeriesResponses, DownloadCandidatesListMovieData, DownloadCandidatesListMovieErrors, DownloadCandidatesListMovieResponses, DownloadCandidatesListSeriesData, DownloadCandidatesListSeriesErrors, DownloadCandidatesListSeriesResponses, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieErrors, DownloadCandidatesPreviewMovieResponses, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesErrors, DownloadCandidatesPreviewSeriesResponses, DownloadersCreateData, DownloadersCreateErrors, DownloadersCreateResponses, DownloadersDeleteData, DownloadersDeleteErrors, DownloadersDeleteResponses, DownloadersGetData, DownloadersGetDefaultData, DownloadersGetDefaultErrors, DownloadersGetDefaultResponses, DownloadersGetErrors, DownloadersGetResponses, DownloadersListData, DownloadersListErrors, DownloadersListResponses, DownloadersTestConfigData, DownloadersTestConfigErrors, DownloadersTestConfigResponses, DownloadersTestData, DownloadersTestErrors, DownloadersTestResponses, DownloadersUpdateData, DownloadersUpdateErrors, DownloadersUpdateResponses, DownloadJobsCancelData, DownloadJobsCancelErrors, DownloadJobsCancelResponses, DownloadJobsGetData, DownloadJobsGetErrors, DownloadJobsGetResponses, DownloadJobsHistoryData, DownloadJobsHistoryErrors, DownloadJobsHistoryResponses, DownloadJobsListData, DownloadJobsListErrors, DownloadJobsListForMovieData, DownloadJobsListForMovieErrors, DownloadJobsListForMovieResponses, DownloadJobsListForSeriesData, DownloadJobsListForSeriesErrors, DownloadJobsListForSeriesResponses, DownloadJobsListImportTasksData, DownloadJobsListImportTasksErrors, DownloadJobsListImportTasksResponses, DownloadJobsListResponses, DownloadJobsReimportData, DownloadJobsReimportErrors, DownloadJobsReimportResponses, DownloadJobsRetryData, DownloadJobsRetryErrors, DownloadJobsRetryResponses, DownloadJobsTimelineData, DownloadJobsTimelineErrors, DownloadJobsTimelineResponses, EmailProviderGetData, EmailProviderGetErrors, EmailProviderGetResponses, EmailProviderSaveData, EmailProviderSaveErrors, EmailProviderSaveResponses, EmailProviderTestConfigData, EmailProviderTestConfigErrors, EmailProviderTestConfigResponses, EmailProviderTestData, EmailProviderTestErrors, EmailProviderTestResponses, EventsStreamData, EventsStreamErrors, EventsStreamResponses, EventsSubscriptionsAddData, EventsSubscriptionsAddErrors, EventsSubscriptionsAddResponses, EventsSubscriptionsListData, EventsSubscriptionsListErrors, EventsSubscriptionsListResponses, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveErrors, EventsSubscriptionsRemoveResponses, FeedGetData, FeedGetErrors, FeedGetResponses, FilesDetachData, FilesDetachErrors, FilesDetachResponses, FilesMatchData, FilesMatchDecisionData, FilesMatchDecisionErrors, FilesMatchDecisionResponses, FilesMatchErrors, FilesMatchResponses, FilesUnmatchData, FilesUnmatchErrors, FilesUnmatchResponses, FilesystemBrowseData, FilesystemBrowseErrors, FilesystemBrowseResponses, HealthCheckData, HealthCheckErrors, HealthCheckResponses, ImportTasksCancelData, ImportTasksCancelErrors, ImportTasksCancelResponses, ImportTasksCountsData, ImportTasksCountsErrors, ImportTasksCountsResponses, ImportTasksGetData, ImportTasksGetErrors, ImportTasksGetResponses, ImportTasksHistoryData, ImportTasksHistoryErrors, ImportTasksHistoryResponses, ImportTasksListData, ImportTasksListErrors, ImportTasksListResponses, ImportTasksReimportData, ImportTasksReimportErrors, ImportTasksReimportResponses, ImportTasksTimelineData, ImportTasksTimelineErrors, ImportTasksTimelineResponses, IndexersActionData, IndexersActionErrors, IndexersActionResponses, IndexersDeleteData, IndexersDeleteErrors, IndexersDeleteResponses, IndexersGetData, IndexersGetErrors, IndexersGetResponses, IndexersGetSchemaData, IndexersGetSchemaErrors, IndexersGetSchemaResponses, IndexersListConfiguredData, IndexersListConfiguredErrors, IndexersListConfiguredResponses, IndexersSaveData, IndexersSaveErrors, IndexersSaveResponses, IndexersTestAllData, IndexersTestAllErrors, IndexersTestAllResponses, IndexersTestSavedData, IndexersTestSavedErrors, IndexersTestSavedResponses, IndexersTestUnsavedData, IndexersTestUnsavedErrors, IndexersTestUnsavedResponses, IndexersToggleData, IndexersToggleErrors, IndexersToggleResponses, InvitesCreateData, InvitesCreateErrors, InvitesCreateResponses, InvitesDeleteData, InvitesDeleteErrors, InvitesDeleteResponses, InvitesListData, InvitesListErrors, InvitesListResponses, LibrariesCreateData, LibrariesCreateErrors, LibrariesCreateResponses, LibrariesDeleteData, LibrariesDeleteErrors, LibrariesDeleteResponses, LibrariesGetData, LibrariesGetErrors, LibrariesGetResponses, LibrariesListData, LibrariesListErrors, LibrariesListResponses, LibrariesScanData, LibrariesScanErrors, LibrariesScanResponses, LibrariesUpdateData, LibrariesUpdateErrors, LibrariesUpdateResponses, LibraryListData, LibraryListErrors, LibraryListResponses, MediaGetMovieData, MediaGetMovieErrors, MediaGetMovieResponses, MediaGetPersonData, MediaGetPersonErrors, MediaGetPersonResponses, MediaGetSeriesData, MediaGetSeriesErrors, MediaGetSeriesResponses, MediaSearchData, MediaSearchErrors, MediaSearchResponses, NameTemplatesCreateData, NameTemplatesCreateErrors, NameTemplatesCreateResponses, NameTemplatesDeleteData, NameTemplatesDeleteErrors, NameTemplatesDeleteResponses, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesGetDefaultErrors, NameTemplatesGetDefaultResponses, NameTemplatesGetErrors, NameTemplatesGetResponses, NameTemplatesListData, NameTemplatesListErrors, NameTemplatesListResponses, NameTemplatesUpdateData, NameTemplatesUpdateErrors, NameTemplatesUpdateResponses, NotificationPreferencesGetData, NotificationPreferencesGetErrors, NotificationPreferencesGetResponses, NotificationPreferencesSetData, NotificationPreferencesSetErrors, NotificationPreferencesSetResponses, NotificationsListData, NotificationsListErrors, NotificationsListResponses, NotificationsMarkAllReadData, NotificationsMarkAllReadErrors, NotificationsMarkAllReadResponses, NotificationsMarkReadData, NotificationsMarkReadErrors, NotificationsMarkReadResponses, NotificationsUnreadCountData, NotificationsUnreadCountErrors, NotificationsUnreadCountResponses, ProposalsApproveData, ProposalsApproveErrors, ProposalsApproveResponses, ProposalsDeclineData, ProposalsDeclineErrors, ProposalsDeclineResponses, PushListData, PushListErrors, PushListResponses, PushPublicKeyData, PushPublicKeyErrors, PushPublicKeyResponses, PushRemoveData, PushRemoveErrors, PushRemoveResponses, PushSubscribeData, PushSubscribeErrors, PushSubscribeResponses, PushTestData, PushTestErrors, PushTestResponses, QualityBindTierData, QualityBindTierErrors, QualityBindTierResponses, QualityCreateCustomFormatData, QualityCreateCustomFormatErrors, QualityCreateCustomFormatResponses, QualityCreateProfileData, QualityCreateProfileErrors, QualityCreateProfileResponses, QualityDeleteCustomFormatData, QualityDeleteCustomFormatErrors, QualityDeleteCustomFormatResponses, QualityDeleteProfileData, QualityDeleteProfileErrors, QualityDeleteProfileResponses, QualityGetCustomFormatData, QualityGetCustomFormatErrors, QualityGetCustomFormatResponses, QualityGetProfileData, QualityGetProfileErrors, QualityGetProfileResponses, QualityListBinsData, QualityListBinsErrors, QualityListBinsResponses, QualityListCustomFormatsData, QualityListCustomFormatsErrors, QualityListCustomFormatsResponses, QualityListProfilesData, QualityListProfilesErrors, QualityListProfilesResponses, QualityListSizeDefaultsData, QualityListSizeDefaultsErrors, QualityListSizeDefaultsResponses, QualityListTiersData, QualityListTiersErrors, QualityListTiersResponses, QualityTestProfileData, QualityTestProfileErrors, QualityTestProfileResponses, QualityUpdateCustomFormatData, QualityUpdateCustomFormatErrors, QualityUpdateCustomFormatResponses, QualityUpdateProfileData, QualityUpdateProfileErrors, QualityUpdateProfileResponses, RequestsApproveData, RequestsApproveErrors, RequestsApproveResponses, RequestsCancelData, RequestsCancelErrors, RequestsCancelResponses, RequestsCreateData, RequestsCreateErrors, RequestsCreateResponses, RequestsDenyData, RequestsDenyErrors, RequestsDenyResponses, RequestsGetData, RequestsGetErrors, RequestsGetResponses, RequestsListData, RequestsListErrors, RequestsListResponses, RolesListData, RolesListErrors, RolesListResponses, RoutingCreateRuleData, RoutingCreateRuleErrors, RoutingCreateRuleResponses, RoutingDeleteRuleData, RoutingDeleteRuleErrors, RoutingDeleteRuleResponses, RoutingEvaluateData, RoutingEvaluateErrors, RoutingEvaluateResponses, RoutingGetFieldsData, RoutingGetFieldsErrors, RoutingGetFieldsResponses, RoutingGetRuleData, RoutingGetRuleErrors, RoutingGetRuleResponses, RoutingListRulesData, RoutingListRulesErrors, RoutingListRulesResponses, RoutingReorderRulesData, RoutingReorderRulesErrors, RoutingReorderRulesResponses, RoutingUpdateRuleData, RoutingUpdateRuleErrors, RoutingUpdateRuleResponses, SettingsListData, SettingsListErrors, SettingsListResponses, SettingsPatchData, SettingsPatchErrors, SettingsPatchResponses, SetupInitializeData, SetupInitializeErrors, SetupInitializeResponses, SetupStatusData, SetupStatusErrors, SetupStatusResponses, SetupTmdbData, SetupTmdbErrors, SetupTmdbResponses, TrackingByTmdbData, TrackingByTmdbErrors, TrackingByTmdbResponses, TrackingCancelData, TrackingCancelErrors, TrackingCancelResponses, TrackingGetData, TrackingGetErrors, TrackingGetResponses, TrackingListData, TrackingListErrors, TrackingListResponses, TrackingProposalsData, TrackingProposalsErrors, TrackingProposalsResponses, TrackingRequestersData, TrackingRequestersErrors, TrackingRequestersResponses, TrackingRetryData, TrackingRetryErrors, TrackingRetryResponses, TrackingSetAutonomyData, TrackingSetAutonomyErrors, TrackingSetAutonomyResponses, TrackingWantsData, TrackingWantsErrors, TrackingWantsResponses, UnmatchedFilesGetData, UnmatchedFilesGetErrors, UnmatchedFilesGetResponses, UnmatchedFilesListData, UnmatchedFilesListErrors, UnmatchedFilesListResponses, UsersAssignRoleData, UsersAssignRoleErrors, UsersAssignRoleResponses, UsersDeleteData, UsersDeleteErrors, UsersDeleteResponses, UsersGetData, UsersGetErrors, UsersGetProfileData, UsersGetProfileErrors, UsersGetProfileResponses, UsersGetResponses, UsersListData, UsersListErrors, UsersListResponses, UsersUpdateData, UsersUpdateErrors, UsersUpdatePasswordData, UsersUpdatePasswordErrors, UsersUpdatePasswordResponses, UsersUpdateProfileData, UsersUpdateProfileErrors, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordErrors, UsersUpdateProfilePasswordResponses, UsersUpdateProfileResponses, UsersUpdateResponses, VersionGetData, VersionGetErrors, VersionGetResponses, WantsCancelData, WantsCancelErrors, WantsCancelResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -910,6 +910,133 @@ export const nameTemplatesUpdate = <ThrowOnError extends boolean = false>(option
 };
 
 /**
+ * List my notifications
+ * Returns the caller's delivered in-app notifications, newest first, each with its title and body rendered from the event template.
+ */
+export const notificationsList = <ThrowOnError extends boolean = false>(options?: Options<NotificationsListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<NotificationsListResponses, NotificationsListErrors, ThrowOnError>({
+        url: '/api/v1/notifications',
+        ...options
+    });
+};
+
+/**
+ * Get my notification preferences
+ * Returns the caller's per-bundle preferences: whether they're subscribed (the master — in-app follows it) and the resolved enablement plus deliverability of each outbound channel (email, push).
+ */
+export const notificationPreferencesGet = <ThrowOnError extends boolean = false>(options?: Options<NotificationPreferencesGetData, ThrowOnError>) => {
+    return (options?.client ?? client).get<NotificationPreferencesGetResponses, NotificationPreferencesGetErrors, ThrowOnError>({
+        url: '/api/v1/notifications/preferences',
+        ...options
+    });
+};
+
+/**
+ * Set a notification preference
+ * Toggles one target for one bundle for the caller: the subscription master ('subscribed', which governs in-app), or an outbound channel ('email'/'push').
+ */
+export const notificationPreferencesSet = <ThrowOnError extends boolean = false>(options: Options<NotificationPreferencesSetData, ThrowOnError>) => {
+    return (options.client ?? client).put<NotificationPreferencesSetResponses, NotificationPreferencesSetErrors, ThrowOnError>({
+        url: '/api/v1/notifications/preferences',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * Get the VAPID public key
+ * Returns the server's VAPID application server key, used by the browser to create a push subscription.
+ */
+export const pushPublicKey = <ThrowOnError extends boolean = false>(options?: Options<PushPublicKeyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<PushPublicKeyResponses, PushPublicKeyErrors, ThrowOnError>({
+        url: '/api/v1/notifications/push/public-key',
+        ...options
+    });
+};
+
+/**
+ * List my push devices
+ * Returns the caller's registered Web Push devices (secrets omitted). Match each endpoint against the browser's own subscription to identify the current device.
+ */
+export const pushList = <ThrowOnError extends boolean = false>(options?: Options<PushListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<PushListResponses, PushListErrors, ThrowOnError>({
+        url: '/api/v1/notifications/push/subscriptions',
+        ...options
+    });
+};
+
+/**
+ * Register a push subscription
+ * Stores (or refreshes) the caller's Web Push subscription for this browser. Idempotent on the endpoint.
+ */
+export const pushSubscribe = <ThrowOnError extends boolean = false>(options: Options<PushSubscribeData, ThrowOnError>) => {
+    return (options.client ?? client).post<PushSubscribeResponses, PushSubscribeErrors, ThrowOnError>({
+        url: '/api/v1/notifications/push/subscriptions',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * Remove a push device
+ * Removes one of the caller's registered Web Push devices by id. Idempotent.
+ */
+export const pushRemove = <ThrowOnError extends boolean = false>(options: Options<PushRemoveData, ThrowOnError>) => {
+    return (options.client ?? client).delete<PushRemoveResponses, PushRemoveErrors, ThrowOnError>({
+        url: '/api/v1/notifications/push/subscriptions/{id}',
+        ...options
+    });
+};
+
+/**
+ * Send a test push to a device
+ * Sends a canned test notification to one of the caller's registered devices to verify it can receive pushes. Prunes and 404s a device the push service reports gone.
+ */
+export const pushTest = <ThrowOnError extends boolean = false>(options: Options<PushTestData, ThrowOnError>) => {
+    return (options.client ?? client).post<PushTestResponses, PushTestErrors, ThrowOnError>({
+        url: '/api/v1/notifications/push/subscriptions/{id}/test',
+        ...options
+    });
+};
+
+/**
+ * Mark all my notifications read
+ */
+export const notificationsMarkAllRead = <ThrowOnError extends boolean = false>(options?: Options<NotificationsMarkAllReadData, ThrowOnError>) => {
+    return (options?.client ?? client).post<NotificationsMarkAllReadResponses, NotificationsMarkAllReadErrors, ThrowOnError>({
+        url: '/api/v1/notifications/read-all',
+        ...options
+    });
+};
+
+/**
+ * Count my unread notifications
+ */
+export const notificationsUnreadCount = <ThrowOnError extends boolean = false>(options?: Options<NotificationsUnreadCountData, ThrowOnError>) => {
+    return (options?.client ?? client).get<NotificationsUnreadCountResponses, NotificationsUnreadCountErrors, ThrowOnError>({
+        url: '/api/v1/notifications/unread-count',
+        ...options
+    });
+};
+
+/**
+ * Mark a notification read
+ * Marks one of the caller's notifications read. Idempotent, and a no-op for an id that isn't the caller's.
+ */
+export const notificationsMarkRead = <ThrowOnError extends boolean = false>(options: Options<NotificationsMarkReadData, ThrowOnError>) => {
+    return (options.client ?? client).post<NotificationsMarkReadResponses, NotificationsMarkReadErrors, ThrowOnError>({
+        url: '/api/v1/notifications/{id}/read',
+        ...options
+    });
+};
+
+/**
  * Get person
  * Returns the full person detail.
  */
@@ -1329,6 +1456,58 @@ export const settingsList = <ThrowOnError extends boolean = false>(options?: Opt
 export const settingsPatch = <ThrowOnError extends boolean = false>(options: Options<SettingsPatchData, ThrowOnError>) => {
     return (options.client ?? client).patch<SettingsPatchResponses, SettingsPatchErrors, ThrowOnError>({
         url: '/api/v1/settings',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * Get email provider configuration
+ */
+export const emailProviderGet = <ThrowOnError extends boolean = false>(options?: Options<EmailProviderGetData, ThrowOnError>) => {
+    return (options?.client ?? client).get<EmailProviderGetResponses, EmailProviderGetErrors, ThrowOnError>({
+        url: '/api/v1/settings/email',
+        ...options
+    });
+};
+
+/**
+ * Save email provider configuration
+ */
+export const emailProviderSave = <ThrowOnError extends boolean = false>(options: Options<EmailProviderSaveData, ThrowOnError>) => {
+    return (options.client ?? client).put<EmailProviderSaveResponses, EmailProviderSaveErrors, ThrowOnError>({
+        url: '/api/v1/settings/email',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * Send a test email using the stored configuration
+ */
+export const emailProviderTest = <ThrowOnError extends boolean = false>(options: Options<EmailProviderTestData, ThrowOnError>) => {
+    return (options.client ?? client).post<EmailProviderTestResponses, EmailProviderTestErrors, ThrowOnError>({
+        url: '/api/v1/settings/email/test',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * Send a test email using an unsaved configuration
+ */
+export const emailProviderTestConfig = <ThrowOnError extends boolean = false>(options: Options<EmailProviderTestConfigData, ThrowOnError>) => {
+    return (options.client ?? client).post<EmailProviderTestConfigResponses, EmailProviderTestConfigErrors, ThrowOnError>({
+        url: '/api/v1/settings/email/test-config',
         ...options,
         headers: {
             'Content-Type': 'application/json',
