@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
 import { watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
@@ -7,6 +7,19 @@ import { useAppStore } from '@/stores/app'
 if ('scrollRestoration' in history) {
   history.scrollRestoration = 'manual'
 }
+
+// Master–detail section trees (Settings, Preferences) show a full-screen list at
+// their bare index on mobile, so the index must remain a real, renderable route
+// there. Desktop has no list — forward the index to the first section. Doing this
+// as a guard (not a router redirect) is what keeps mobile on the list; the
+// breakpoint mirrors SidebarProvider's `(max-width: 768px)`.
+const forwardIndexOnDesktop =
+  (basePath: string, firstSection: string) => (to: RouteLocationNormalized) => {
+    if (to.path === basePath && window.matchMedia('(min-width: 769px)').matches) {
+      return firstSection
+    }
+    return true
+  }
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -60,11 +73,8 @@ const router = createRouter({
       path: '/preferences',
       component: () => import('@/views/preferences/PreferencesLayout.vue'),
       meta: { layout: 'sidebar' },
+      beforeEnter: forwardIndexOnDesktop('/preferences', '/preferences/notifications'),
       children: [
-        {
-          path: '',
-          redirect: '/preferences/notifications',
-        },
         {
           path: 'notifications',
           component: () => import('@/views/preferences/NotificationsView.vue'),
@@ -79,11 +89,8 @@ const router = createRouter({
       path: '/settings',
       component: () => import('@/views/settings/SettingsLayout.vue'),
       meta: { layout: 'sidebar', requires: 'admin.settings.read' },
+      beforeEnter: forwardIndexOnDesktop('/settings', '/settings/general'),
       children: [
-        {
-          path: '',
-          redirect: '/settings/general',
-        },
         {
           path: 'general',
           component: () => import('@/views/settings/GeneralSettings.vue'),
