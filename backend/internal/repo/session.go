@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -176,6 +177,17 @@ func (r *Repository) RevokeAllSessionsForUser(ctx context.Context, userID uuid.U
 	n, err := r.Q.RevokeAllSessionsForUser(ctx, pgtypeFromUUID(userID))
 	if err != nil {
 		return 0, apperrors.FromPg(err, "revoke sessions for user %s", userID)
+	}
+	return n, nil
+}
+
+// SweepTerminalSessions hard-deletes terminal sessions (revoked, or past absolute
+// expiry) whose terminal timestamp is older than before. Returns the rows deleted;
+// each deleted session's push subscription cascades away with it.
+func (r *Repository) SweepTerminalSessions(ctx context.Context, before time.Time) (int64, error) {
+	n, err := r.Q.DeleteTerminalSessions(ctx, pgtype.Timestamptz{Time: before, Valid: true})
+	if err != nil {
+		return 0, apperrors.FromPg(err, "sweep terminal sessions")
 	}
 	return n, nil
 }

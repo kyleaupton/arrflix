@@ -58,3 +58,13 @@ FROM user_session us
 LEFT JOIN push_subscription ps ON ps.session_id = us.id
 WHERE us.user_id = sqlc.arg(user_id) AND us.revoked_at IS NULL AND us.refresh_expires_at > now()
 ORDER BY us.last_used_at DESC;
+
+-- DeleteTerminalSessions garbage-collects sessions that are terminal (revoked, or
+-- past their absolute expiry) and have been so since before the retention cutoff.
+-- COALESCE keys off revoked_at when set, else refresh_expires_at; an active
+-- session's future expiry never falls before the cutoff, so only dead rows match.
+-- The durable auth record lives in auth_audit (no session FK), so these rows are
+-- pure garbage; each deleted session's push subscription cascades away with it.
+-- name: DeleteTerminalSessions :execrows
+DELETE FROM user_session
+WHERE COALESCE(revoked_at, refresh_expires_at) < sqlc.arg(before);

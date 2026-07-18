@@ -52,6 +52,25 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (U
 	return i, err
 }
 
+const deleteTerminalSessions = `-- name: DeleteTerminalSessions :execrows
+DELETE FROM user_session
+WHERE COALESCE(revoked_at, refresh_expires_at) < $1
+`
+
+// DeleteTerminalSessions garbage-collects sessions that are terminal (revoked, or
+// past their absolute expiry) and have been so since before the retention cutoff.
+// COALESCE keys off revoked_at when set, else refresh_expires_at; an active
+// session's future expiry never falls before the cutoff, so only dead rows match.
+// The durable auth record lives in auth_audit (no session FK), so these rows are
+// pure garbage; each deleted session's push subscription cascades away with it.
+func (q *Queries) DeleteTerminalSessions(ctx context.Context, before pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTerminalSessions, before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getSession = `-- name: GetSession :one
 SELECT id, user_id, refresh_hash, prev_refresh_hash, rotated_at, refresh_expires_at, created_at, last_used_at, revoked_at, user_agent, ip, label FROM user_session WHERE id = $1
 `

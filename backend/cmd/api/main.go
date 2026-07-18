@@ -20,6 +20,7 @@ import (
 	enrichmentworker "github.com/kyleaupton/arrflix/internal/jobs/enrichment"
 	importworker "github.com/kyleaupton/arrflix/internal/jobs/import"
 	notificationworker "github.com/kyleaupton/arrflix/internal/jobs/notification"
+	sessionworker "github.com/kyleaupton/arrflix/internal/jobs/session"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/notifications"
 	"github.com/kyleaupton/arrflix/internal/notifications/emailadapter"
@@ -126,11 +127,13 @@ func main() {
 	if err != nil {
 		logg.Fatal().Err(err).Msg("failed to build notification worker")
 	}
+	sessWorker := sessionworker.New(services.Sessions, logg)
 	go dlWorker.Run(workerCtx)
 	go impWorker.Run(workerCtx)
 	go enrichWorker.Run(workerCtx)
 	go acqWorker.Run(workerCtx)
 	go notifWorker.Run(workerCtx)
+	go sessWorker.Run(workerCtx)
 
 	// Graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

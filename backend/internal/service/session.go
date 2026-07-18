@@ -201,6 +201,13 @@ func (s *SessionService) RevokeOthersForUser(ctx context.Context, userID, keepSe
 	return s.repo.RevokeOtherSessionsForUser(ctx, userID, keepSessionID)
 }
 
+// SweepTerminal garbage-collects sessions that have been terminal (revoked or
+// expired) for longer than retention. Active sessions are never touched — their
+// future expiry can't fall before the cutoff. Returns the rows reclaimed.
+func (s *SessionService) SweepTerminal(ctx context.Context, retention time.Duration) (int64, error) {
+	return s.repo.SweepTerminalSessions(ctx, time.Now().Add(-retention))
+}
+
 func (s *SessionService) issue(sess model.Session, user model.User, secret string) (Issued, error) {
 	sid := sess.ID
 	access, exp, err := signAccessToken(s.jwtSecret, user.ID, user.Email, user.Username, &sid, s.accessTTL)
