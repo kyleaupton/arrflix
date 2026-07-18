@@ -32,6 +32,9 @@ var operationPerms = map[string]requirement{
 
 	// ----- Authenticated (valid login, no permission key) -----
 	"auth-me":                       authUser(),
+	"sessions-list":                 authUser(),
+	"sessions-revoke":               authUser(),
+	"sessions-revoke-all":           authUser(),
 	"users-get-profile":             authUser(),
 	"users-update-profile":          authUser(),
 	"users-update-profile-password": authUser(),
@@ -47,7 +50,6 @@ var operationPerms = map[string]requirement{
 	"notification-preferences-set":  authUser(),
 	"push-public-key":               authUser(),
 	"push-subscribe":                authUser(),
-	"push-list":                     authUser(),
 	"push-remove":                   authUser(),
 	"push-test":                     authUser(),
 

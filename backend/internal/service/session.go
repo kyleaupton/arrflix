@@ -175,6 +175,32 @@ func (s *SessionService) ListForUser(ctx context.Context, userID uuid.UUID) ([]m
 	return s.repo.ListActiveSessionsByUser(ctx, userID)
 }
 
+// ListDevicesForUser returns the user's active sessions each joined to its push
+// subscription — the unified devices list.
+func (s *SessionService) ListDevicesForUser(ctx context.Context, userID uuid.UUID) ([]model.SessionDevice, error) {
+	return s.repo.ListActiveSessionDevicesByUser(ctx, userID)
+}
+
+// RevokeForUser revokes one of the caller's own sessions. A session that isn't the
+// caller's (or doesn't exist) affects 0 rows and is a 404 — it never reveals that
+// the id belongs to someone else.
+func (s *SessionService) RevokeForUser(ctx context.Context, userID, sessionID uuid.UUID) error {
+	n, err := s.repo.RevokeSessionForUser(ctx, userID, sessionID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return apperrors.NotFoundf("session %s not found", sessionID).Op("SessionService.RevokeForUser")
+	}
+	return nil
+}
+
+// RevokeOthersForUser revokes every active session for the caller except the one
+// they're currently on ("log out other devices").
+func (s *SessionService) RevokeOthersForUser(ctx context.Context, userID, keepSessionID uuid.UUID) (int64, error) {
+	return s.repo.RevokeOtherSessionsForUser(ctx, userID, keepSessionID)
+}
+
 func (s *SessionService) issue(sess model.Session, user model.User, secret string) (Issued, error) {
 	sid := sess.ID
 	access, exp, err := signAccessToken(s.jwtSecret, user.ID, user.Email, user.Username, &sid, s.accessTTL)

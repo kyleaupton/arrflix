@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -15,16 +16,32 @@ import (
 	"github.com/kyleaupton/arrflix/internal/test/dbtest"
 )
 
-// seedPushSub registers a device for a user through the repo so the test holds
-// the row's id (the service create path returns no model). endpoint is the
-// natural key, so each call passes a distinct one.
-func seedPushSub(t *testing.T, ctx context.Context, r *repo.Repository, userID uuid.UUID, endpoint string) model.PushSubscription {
+// seedSession opens a login for a user so a device (push subscription) has a
+// session to hang off. A push subscription is a capability of a session now, so
+// each device in these tests is a distinct session.
+func seedSession(t *testing.T, ctx context.Context, r *repo.Repository, userID uuid.UUID) model.Session {
 	t.Helper()
-	sub, err := r.UpsertPushSubscription(ctx, repo.UpsertPushSubscriptionParams{
-		UserID:   userID,
-		Endpoint: endpoint,
-		P256dh:   "test-p256dh",
-		Auth:     "test-auth",
+	sess, err := r.CreateSession(ctx, repo.CreateSessionParams{
+		UserID:           userID,
+		RefreshHash:      []byte("test-refresh-hash"),
+		RefreshExpiresAt: time.Now().Add(90 * 24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("seed session for %s: %v", userID, err)
+	}
+	return sess
+}
+
+// seedPushSub registers a device for a session through the repo so the test holds
+// the row's id (the service create path returns no model). endpoint is the natural
+// key, so each call passes a distinct one.
+func seedPushSub(t *testing.T, ctx context.Context, r *repo.Repository, sessionID uuid.UUID, endpoint string) model.PushSubscription {
+	t.Helper()
+	sub, err := r.InsertPushSubscription(ctx, repo.InsertPushSubscriptionParams{
+		SessionID: sessionID,
+		Endpoint:  endpoint,
+		P256dh:    "test-p256dh",
+		Auth:      "test-auth",
 	})
 	if err != nil {
 		t.Fatalf("seed push sub %q: %v", endpoint, err)
@@ -39,17 +56,18 @@ func TestPush_ListReturnsOnlyOwnDevices(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
 	r := repo.New(pool)
-	svc := service.NewNotificationService(r)
 	ctx := context.Background()
 
 	alice := newNotifUser(t, ctx, r, "push-list-alice@test.local")
 	bob := newNotifUser(t, ctx, r, "push-list-bob@test.local")
 
-	seedPushSub(t, ctx, r, alice.ID, "https://push.test/alice-phone")
-	seedPushSub(t, ctx, r, alice.ID, "https://push.test/alice-laptop")
-	seedPushSub(t, ctx, r, bob.ID, "https://push.test/bob-phone")
+	// Each device is its own session (1:1 session<->push).
+	seedPushSub(t, ctx, r, seedSession(t, ctx, r, alice.ID).ID, "https://push.test/alice-phone")
+	seedPushSub(t, ctx, r, seedSession(t, ctx, r, alice.ID).ID, "https://push.test/alice-laptop")
+	seedPushSub(t, ctx, r, seedSession(t, ctx, r, bob.ID).ID, "https://push.test/bob-phone")
 
-	aliceSubs, err := svc.ListPushSubscriptions(ctx, alice.ID)
+	// The fan-out lookup is owner-scoped through the session join.
+	aliceSubs, err := r.ListPushSubscriptionsByUser(ctx, alice.ID)
 	if err != nil {
 		t.Fatalf("list alice: %v", err)
 	}
@@ -67,7 +85,7 @@ func TestPush_ListReturnsOnlyOwnDevices(t *testing.T) {
 		t.Fatal("bob's device leaked into alice's list")
 	}
 
-	bobSubs, err := svc.ListPushSubscriptions(ctx, bob.ID)
+	bobSubs, err := r.ListPushSubscriptionsByUser(ctx, bob.ID)
 	if err != nil {
 		t.Fatalf("list bob: %v", err)
 	}
@@ -88,8 +106,8 @@ func TestPush_GetIsOwnerScoped(t *testing.T) {
 
 	alice := newNotifUser(t, ctx, r, "push-get-alice@test.local")
 	bob := newNotifUser(t, ctx, r, "push-get-bob@test.local")
-	aliceSub := seedPushSub(t, ctx, r, alice.ID, "https://push.test/get-alice")
-	bobSub := seedPushSub(t, ctx, r, bob.ID, "https://push.test/get-bob")
+	aliceSub := seedPushSub(t, ctx, r, seedSession(t, ctx, r, alice.ID).ID, "https://push.test/get-alice")
+	bobSub := seedPushSub(t, ctx, r, seedSession(t, ctx, r, bob.ID).ID, "https://push.test/get-bob")
 
 	own, err := svc.GetPushSubscription(ctx, alice.ID, aliceSub.ID)
 	if err != nil {
@@ -116,14 +134,14 @@ func TestPush_RemoveIsOwnerScopedAndIdempotent(t *testing.T) {
 
 	alice := newNotifUser(t, ctx, r, "push-rm-alice@test.local")
 	bob := newNotifUser(t, ctx, r, "push-rm-bob@test.local")
-	aliceSub := seedPushSub(t, ctx, r, alice.ID, "https://push.test/rm-alice")
-	bobSub := seedPushSub(t, ctx, r, bob.ID, "https://push.test/rm-bob")
+	aliceSub := seedPushSub(t, ctx, r, seedSession(t, ctx, r, alice.ID).ID, "https://push.test/rm-alice")
+	bobSub := seedPushSub(t, ctx, r, seedSession(t, ctx, r, bob.ID).ID, "https://push.test/rm-bob")
 
 	// Alice cannot remove Bob's device: no error, and Bob's device survives.
 	if err := svc.RemovePushSubscription(ctx, alice.ID, bobSub.ID); err != nil {
 		t.Fatalf("remove foreign id should be a no-op, got: %v", err)
 	}
-	bobSubs, err := svc.ListPushSubscriptions(ctx, bob.ID)
+	bobSubs, err := r.ListPushSubscriptionsByUser(ctx, bob.ID)
 	if err != nil {
 		t.Fatalf("list bob: %v", err)
 	}
@@ -135,7 +153,7 @@ func TestPush_RemoveIsOwnerScopedAndIdempotent(t *testing.T) {
 	if err := svc.RemovePushSubscription(ctx, alice.ID, aliceSub.ID); err != nil {
 		t.Fatalf("remove own: %v", err)
 	}
-	aliceSubs, err := svc.ListPushSubscriptions(ctx, alice.ID)
+	aliceSubs, err := r.ListPushSubscriptionsByUser(ctx, alice.ID)
 	if err != nil {
 		t.Fatalf("list alice: %v", err)
 	}

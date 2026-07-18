@@ -1,24 +1,28 @@
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { pushPublicKey, pushSubscribe, notificationPreferencesSet } from '@/client/sdk.gen'
 import {
-  pushListOptions,
-  pushListQueryKey,
+  sessionsListOptions,
+  sessionsListQueryKey,
+  sessionsRevokeMutation,
+  sessionsRevokeAllMutation,
   pushRemoveMutation,
   pushTestMutation,
   notificationPreferencesGetQueryKey,
 } from '@/client/@tanstack/vue-query.gen'
-import type { PushSubscriptionView } from '@/client/types.gen'
+import type { SessionView } from '@/client/types.gen'
 import { useAuthStore } from '@/stores/auth'
 
-// Web Push for THIS browser + the caller's registered-device list. Browser facts
-// (support, permission, this device's subscription endpoint) are local refs; the
-// device list, removal, and test-send are server operations through the API.
+// The unified device surface for the preferences page. A "device" is a session
+// (a login), and push is a capability of that session — so one list carries both
+// the session concern (log out a device / log out others) and the push concern
+// (enable on this device, test, disable). All server state is the sessionsList
+// query; browser facts (push support, permission) are local to this tab.
 //
-// Enabling is deliberately one action = subscribe this browser AND turn the push
-// channel on for the requests bundle, so a user who opts in actually receives
-// something. The onboarding prompt calls enableOnThisDevice from a click handler
-// because iOS/Safari reject Notification.requestPermission() outside a gesture.
+// Push can only be *enabled* on the current device: it needs this browser's
+// Notification permission + PushManager, and the subscription is attached to the
+// caller's current session server-side. Test and disable work on any device that
+// already has push, addressed by its pushSubscriptionId.
 
 const PUSH_BUNDLE = 'my_requests'
 
@@ -34,11 +38,11 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
-export function usePushSubscription() {
+export function useDevices() {
   const auth = useAuthStore()
   const qc = useQueryClient()
 
-  // --- Browser capability (static for this session) ---
+  // --- Browser push capability (static for this session) ---
   const supported =
     typeof navigator !== 'undefined' &&
     'serviceWorker' in navigator &&
@@ -56,44 +60,30 @@ export function usePushSubscription() {
   const isIos = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent)
   const needsInstall = isIos && !isStandalone && !supported
 
-  // --- Reactive browser state ---
   const permission = ref<NotificationPermission>(
     'Notification' in globalThis ? Notification.permission : 'default',
   )
-  // The endpoint of THIS browser's current subscription, if any.
-  const currentEndpoint = ref<string | null>(null)
   const isEnabling = ref(false)
   const enableError = ref<string | null>(null)
 
   // --- Device list (server state) ---
   const listQuery = useQuery(
     computed(() => ({
-      ...pushListOptions(),
+      ...sessionsListOptions(),
       enabled: auth.isAuthenticated,
       staleTime: 30_000,
     })),
   )
-  const devices = computed<PushSubscriptionView[]>(() => listQuery.data.value ?? [])
+  const devices = computed<SessionView[]>(() => listQuery.data.value ?? [])
+  const current = computed<SessionView | undefined>(() => devices.value.find((d) => d.isCurrent))
 
-  const isThisDeviceSubscribed = computed(() => currentEndpoint.value !== null)
-  function isCurrentDevice(d: PushSubscriptionView) {
-    return currentEndpoint.value !== null && d.endpoint === currentEndpoint.value
+  function invalidateDevices() {
+    qc.invalidateQueries({ queryKey: sessionsListQueryKey() })
   }
 
-  async function refreshCurrentEndpoint() {
-    if (!supported) return
-    try {
-      const reg = await navigator.serviceWorker.ready
-      const sub = await reg.pushManager.getSubscription()
-      currentEndpoint.value = sub?.endpoint ?? null
-    } catch {
-      currentEndpoint.value = null
-    }
-  }
-
-  onMounted(refreshCurrentEndpoint)
-
-  // Must be called from a user gesture (a click handler).
+  // --- Enable push on THIS device (multi-step: permission → key → subscribe →
+  // opt the push channel in). Must be called from a user gesture (a click
+  // handler): iOS/Safari reject Notification.requestPermission() outside one. ---
   async function enableOnThisDevice(): Promise<boolean> {
     enableError.value = null
     if (!supported || !secureContext) {
@@ -138,8 +128,7 @@ export function usePushSubscription() {
         body: { bundle: PUSH_BUNDLE, target: 'push', enabled: true },
       })
 
-      currentEndpoint.value = sub.endpoint
-      qc.invalidateQueries({ queryKey: pushListQueryKey() })
+      invalidateDevices()
       qc.invalidateQueries({ queryKey: notificationPreferencesGetQueryKey() })
       return true
     } catch (err) {
@@ -150,49 +139,72 @@ export function usePushSubscription() {
     }
   }
 
-  // --- Remove / test (server mutations) ---
-  const removeM = useMutation({
-    ...pushRemoveMutation(),
-    onSuccess: async (_data, vars) => {
-      // If this was the current browser's device, drop its local subscription
-      // too so it stops receiving pushes and can be cleanly re-enabled.
-      const removed = devices.value.find((d) => d.id === vars.path?.id)
-      if (removed && removed.endpoint === currentEndpoint.value) {
-        try {
-          const reg = await navigator.serviceWorker.ready
-          const sub = await reg.pushManager.getSubscription()
-          await sub?.unsubscribe()
-        } catch {
-          // best-effort — the server row is already gone
-        }
-        currentEndpoint.value = null
-      }
-      qc.invalidateQueries({ queryKey: pushListQueryKey() })
-    },
+  // --- Session mutations ---
+  const revokeM = useMutation({
+    ...sessionsRevokeMutation(),
+    onSuccess: invalidateDevices,
+  })
+  const revokeOthersM = useMutation({
+    ...sessionsRevokeAllMutation(),
+    onSuccess: invalidateDevices,
   })
 
-  const testM = useMutation({ ...pushTestMutation() })
+  // --- Push mutations (addressed by pushSubscriptionId) ---
+  const removePushM = useMutation({
+    ...pushRemoveMutation(),
+    onSuccess: invalidateDevices,
+  })
+  const testPushM = useMutation({ ...pushTestMutation() })
+
+  // Turning push off for a device removes its subscription. When it's this
+  // browser, also drop the local PushManager subscription so it stops receiving
+  // pushes and can be cleanly re-enabled later.
+  async function disablePush(session: SessionView): Promise<void> {
+    if (!session.pushSubscriptionId) return
+    await removePushM.mutateAsync({ path: { id: session.pushSubscriptionId } })
+    if (session.isCurrent && supported) {
+      try {
+        const reg = await navigator.serviceWorker.ready
+        const sub = await reg.pushManager.getSubscription()
+        await sub?.unsubscribe()
+      } catch {
+        // best-effort — the server row is already gone
+      }
+    }
+  }
 
   return {
+    devices,
+    current,
+    isLoading: computed(() => listQuery.isLoading.value),
+    isError: computed(() => listQuery.isError.value),
+
+    // Push capability + enable-on-this-device
     supported,
     secureContext,
     needsInstall,
     permission,
-    devices,
-    isLoading: computed(() => listQuery.isLoading.value),
-    isError: computed(() => listQuery.isError.value),
-    isThisDeviceSubscribed,
-    isCurrentDevice,
     isEnabling,
     enableError,
     enableOnThisDevice,
-    removeDevice: (id: string) => removeM.mutateAsync({ path: { id } }),
-    removingId: computed(() =>
-      removeM.isPending.value ? (removeM.variables.value?.path?.id ?? null) : null,
+
+    // Session revoke ("log out")
+    revokeDevice: (sessionId: string) => revokeM.mutateAsync({ path: { id: sessionId } }),
+    revokingId: computed(() =>
+      revokeM.isPending.value ? (revokeM.variables.value?.path?.id ?? null) : null,
     ),
-    testDevice: (id: string) => testM.mutateAsync({ path: { id } }),
+    revokeOthers: () => revokeOthersM.mutateAsync({}),
+    isRevokingOthers: computed(() => revokeOthersM.isPending.value),
+
+    // Push per-device
+    testDevice: (pushSubscriptionId: string) =>
+      testPushM.mutateAsync({ path: { id: pushSubscriptionId } }),
     testingId: computed(() =>
-      testM.isPending.value ? (testM.variables.value?.path?.id ?? null) : null,
+      testPushM.isPending.value ? (testPushM.variables.value?.path?.id ?? null) : null,
+    ),
+    disablePush,
+    disablingId: computed(() =>
+      removePushM.isPending.value ? (removePushM.variables.value?.path?.id ?? null) : null,
     ),
   }
 }

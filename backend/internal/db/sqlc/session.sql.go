@@ -76,6 +76,69 @@ func (q *Queries) GetSession(ctx context.Context, id pgtype.UUID) (UserSession, 
 	return i, err
 }
 
+const listActiveSessionDevicesByUser = `-- name: ListActiveSessionDevicesByUser :many
+SELECT us.id, us.user_id, us.refresh_hash, us.prev_refresh_hash, us.rotated_at, us.refresh_expires_at, us.created_at, us.last_used_at, us.revoked_at, us.user_agent, us.ip, us.label, ps.id AS push_subscription_id, ps.last_notified_at AS push_last_notified_at
+FROM user_session us
+LEFT JOIN push_subscription ps ON ps.session_id = us.id
+WHERE us.user_id = $1 AND us.revoked_at IS NULL AND us.refresh_expires_at > now()
+ORDER BY us.last_used_at DESC
+`
+
+type ListActiveSessionDevicesByUserRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	RefreshHash        []byte             `json:"refresh_hash"`
+	PrevRefreshHash    []byte             `json:"prev_refresh_hash"`
+	RotatedAt          pgtype.Timestamptz `json:"rotated_at"`
+	RefreshExpiresAt   time.Time          `json:"refresh_expires_at"`
+	CreatedAt          time.Time          `json:"created_at"`
+	LastUsedAt         time.Time          `json:"last_used_at"`
+	RevokedAt          pgtype.Timestamptz `json:"revoked_at"`
+	UserAgent          *string            `json:"user_agent"`
+	Ip                 *string            `json:"ip"`
+	Label              *string            `json:"label"`
+	PushSubscriptionID pgtype.UUID        `json:"push_subscription_id"`
+	PushLastNotifiedAt pgtype.Timestamptz `json:"push_last_notified_at"`
+}
+
+// ListActiveSessionDevicesByUser is the unified device list: each live session with
+// its push subscription (if any). LEFT JOIN so a session without push still lists;
+// push_subscription_id NULL means push is off for that device.
+func (q *Queries) ListActiveSessionDevicesByUser(ctx context.Context, userID pgtype.UUID) ([]ListActiveSessionDevicesByUserRow, error) {
+	rows, err := q.db.Query(ctx, listActiveSessionDevicesByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveSessionDevicesByUserRow
+	for rows.Next() {
+		var i ListActiveSessionDevicesByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.RefreshHash,
+			&i.PrevRefreshHash,
+			&i.RotatedAt,
+			&i.RefreshExpiresAt,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+			&i.RevokedAt,
+			&i.UserAgent,
+			&i.Ip,
+			&i.Label,
+			&i.PushSubscriptionID,
+			&i.PushLastNotifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listActiveSessionsByUser = `-- name: ListActiveSessionsByUser :many
 SELECT id, user_id, refresh_hash, prev_refresh_hash, rotated_at, refresh_expires_at, created_at, last_used_at, revoked_at, user_agent, ip, label FROM user_session
 WHERE user_id = $1 AND revoked_at IS NULL AND refresh_expires_at > now()
@@ -129,6 +192,27 @@ func (q *Queries) RevokeAllSessionsForUser(ctx context.Context, userID pgtype.UU
 	return result.RowsAffected(), nil
 }
 
+const revokeOtherSessionsForUser = `-- name: RevokeOtherSessionsForUser :execrows
+UPDATE user_session
+SET revoked_at = now()
+WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL
+`
+
+type RevokeOtherSessionsForUserParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	KeepID pgtype.UUID `json:"keep_id"`
+}
+
+// RevokeOtherSessionsForUser is "log out other devices": every active session for
+// the caller except the one they're currently on (keep_id = the token's sid).
+func (q *Queries) RevokeOtherSessionsForUser(ctx context.Context, arg RevokeOtherSessionsForUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeOtherSessionsForUser, arg.UserID, arg.KeepID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeSession = `-- name: RevokeSession :execrows
 UPDATE user_session
 SET revoked_at = now()
@@ -137,6 +221,28 @@ WHERE id = $1 AND revoked_at IS NULL
 
 func (q *Queries) RevokeSession(ctx context.Context, id pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, revokeSession, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const revokeSessionForUser = `-- name: RevokeSessionForUser :execrows
+UPDATE user_session
+SET revoked_at = now()
+WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+`
+
+type RevokeSessionForUserParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// RevokeSessionForUser owner-scopes a single revoke: only a row belonging to the
+// caller is touched, so a guessed id can't log out someone else. 0 rows affected =
+// not found (or not yours), which the service maps to 404.
+func (q *Queries) RevokeSessionForUser(ctx context.Context, arg RevokeSessionForUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeSessionForUser, arg.ID, arg.UserID)
 	if err != nil {
 		return 0, err
 	}

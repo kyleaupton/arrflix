@@ -29,6 +29,27 @@ func toModelSession(row dbgen.UserSession) model.Session {
 	}
 }
 
+func toModelSessionDevice(row dbgen.ListActiveSessionDevicesByUserRow) model.SessionDevice {
+	return model.SessionDevice{
+		Session: model.Session{
+			ID:               uuidFromPgtype(row.ID),
+			UserID:           uuidFromPgtype(row.UserID),
+			RefreshHash:      row.RefreshHash,
+			PrevRefreshHash:  row.PrevRefreshHash,
+			RotatedAt:        timePtrFromPgTimestamptz(row.RotatedAt),
+			RefreshExpiresAt: row.RefreshExpiresAt,
+			CreatedAt:        row.CreatedAt,
+			LastUsedAt:       row.LastUsedAt,
+			RevokedAt:        timePtrFromPgTimestamptz(row.RevokedAt),
+			UserAgent:        row.UserAgent,
+			IP:               row.Ip,
+			Label:            row.Label,
+		},
+		PushSubscriptionID: uuidPtrFromPgtype(row.PushSubscriptionID),
+		PushLastNotifiedAt: timePtrFromPgTimestamptz(row.PushLastNotifiedAt),
+	}
+}
+
 // CreateSessionParams is the domain-shaped input for CreateSession. The refresh
 // hash + absolute expiry are computed by the service; server-managed fields (id,
 // timestamps, revoked_at) are omitted.
@@ -78,6 +99,47 @@ func (r *Repository) ListActiveSessionsByUser(ctx context.Context, userID uuid.U
 		sessions = append(sessions, toModelSession(row))
 	}
 	return sessions, nil
+}
+
+// ListActiveSessionDevicesByUser returns the caller's live sessions each joined to
+// its push subscription (if any) — the unified devices list.
+func (r *Repository) ListActiveSessionDevicesByUser(ctx context.Context, userID uuid.UUID) ([]model.SessionDevice, error) {
+	rows, err := r.Q.ListActiveSessionDevicesByUser(ctx, pgtypeFromUUID(userID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list session devices for user %s", userID)
+	}
+	devices := make([]model.SessionDevice, 0, len(rows))
+	for _, row := range rows {
+		devices = append(devices, toModelSessionDevice(row))
+	}
+	return devices, nil
+}
+
+// RevokeSessionForUser owner-scopes a revoke: only a row belonging to the caller
+// is touched. Returns rows affected; 0 = not found or not the caller's, which the
+// service maps to 404.
+func (r *Repository) RevokeSessionForUser(ctx context.Context, userID, sessionID uuid.UUID) (int64, error) {
+	n, err := r.Q.RevokeSessionForUser(ctx, dbgen.RevokeSessionForUserParams{
+		ID:     pgtypeFromUUID(sessionID),
+		UserID: pgtypeFromUUID(userID),
+	})
+	if err != nil {
+		return 0, apperrors.FromPg(err, "revoke session %s", sessionID)
+	}
+	return n, nil
+}
+
+// RevokeOtherSessionsForUser revokes every active session for the caller except
+// keepID (the current session). Returns the rows affected.
+func (r *Repository) RevokeOtherSessionsForUser(ctx context.Context, userID, keepID uuid.UUID) (int64, error) {
+	n, err := r.Q.RevokeOtherSessionsForUser(ctx, dbgen.RevokeOtherSessionsForUserParams{
+		UserID: pgtypeFromUUID(userID),
+		KeepID: pgtypeFromUUID(keepID),
+	})
+	if err != nil {
+		return 0, apperrors.FromPg(err, "revoke other sessions for user %s", userID)
+	}
+	return n, nil
 }
 
 // RotateSession installs newHash as the current refresh hash, shifting the old

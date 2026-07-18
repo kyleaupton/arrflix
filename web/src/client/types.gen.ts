@@ -1766,33 +1766,6 @@ export type PushSubscribeBody = {
     p256dh: string;
 };
 
-export type PushSubscriptionView = {
-    /**
-     * When this device first subscribed
-     */
-    createdAt: string;
-    /**
-     * Push service endpoint URL; the browser matches this against its own subscription to identify the current device
-     */
-    endpoint: string;
-    /**
-     * Subscription id; use it to remove or test this device
-     */
-    id: string;
-    /**
-     * When a push was last successfully delivered to this device; null if never notified yet
-     */
-    lastNotifiedAt: string | null;
-    /**
-     * When this subscription was last (re)subscribed/refreshed
-     */
-    lastUsedAt: string;
-    /**
-     * Device label captured at registration (User-Agent), null if unknown
-     */
-    userAgent: string | null;
-};
-
 export type QualityBinOption = {
     bin: BinKey;
     /**
@@ -2269,6 +2242,45 @@ export type SeriesDetail = {
     voteCount?: number;
     watchProviders?: WatchProviders;
     year?: number;
+};
+
+export type SessionView = {
+    /**
+     * When this session was created (login)
+     */
+    createdAt: string;
+    /**
+     * Session id
+     */
+    id: string;
+    /**
+     * Whether this is the session the request was made from
+     */
+    isCurrent: boolean;
+    /**
+     * User-set device label, null if unset
+     */
+    label: string | null;
+    /**
+     * When this session last refreshed
+     */
+    lastUsedAt: string;
+    /**
+     * Whether push notifications are enabled on this device
+     */
+    pushEnabled: boolean;
+    /**
+     * When a push was last delivered to this device; null if never
+     */
+    pushLastNotifiedAt?: string;
+    /**
+     * Push subscription id for this device; use it to disable or test push. Null when push is off
+     */
+    pushSubscriptionId?: string;
+    /**
+     * Device label captured at login (User-Agent), null if unknown
+     */
+    userAgent: string | null;
 };
 
 export type SettingsPatchBody = {
@@ -4203,6 +4215,94 @@ export type AuthRefreshResponses = {
 };
 
 export type AuthRefreshResponse = AuthRefreshResponses[keyof AuthRefreshResponses];
+
+export type SessionsRevokeAllData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/sessions';
+};
+
+export type SessionsRevokeAllErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type SessionsRevokeAllError = SessionsRevokeAllErrors[keyof SessionsRevokeAllErrors];
+
+export type SessionsRevokeAllResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type SessionsRevokeAllResponse = SessionsRevokeAllResponses[keyof SessionsRevokeAllResponses];
+
+export type SessionsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/sessions';
+};
+
+export type SessionsListErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type SessionsListError = SessionsListErrors[keyof SessionsListErrors];
+
+export type SessionsListResponses = {
+    /**
+     * OK
+     */
+    200: Array<SessionView> | null;
+};
+
+export type SessionsListResponse = SessionsListResponses[keyof SessionsListResponses];
+
+export type SessionsRevokeData = {
+    body?: never;
+    path: {
+        /**
+         * Session id to revoke
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/sessions/{id}';
+};
+
+export type SessionsRevokeErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type SessionsRevokeError = SessionsRevokeErrors[keyof SessionsRevokeErrors];
+
+export type SessionsRevokeResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type SessionsRevokeResponse = SessionsRevokeResponses[keyof SessionsRevokeResponses];
 
 export type AuthSignupData = {
     body: SignupInputBodyWritable;
@@ -7164,31 +7264,6 @@ export type PushPublicKeyResponses = {
 };
 
 export type PushPublicKeyResponse = PushPublicKeyResponses[keyof PushPublicKeyResponses];
-
-export type PushListData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/v1/notifications/push/subscriptions';
-};
-
-export type PushListErrors = {
-    /**
-     * Error
-     */
-    default: ProblemDetails;
-};
-
-export type PushListError = PushListErrors[keyof PushListErrors];
-
-export type PushListResponses = {
-    /**
-     * OK
-     */
-    200: Array<PushSubscriptionView> | null;
-};
-
-export type PushListResponse = PushListResponses[keyof PushListResponses];
 
 export type PushSubscribeData = {
     body: PushSubscribeBodyWritable;

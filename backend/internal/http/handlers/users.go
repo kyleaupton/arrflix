@@ -42,6 +42,25 @@ func userIDFromCtx(ctx context.Context, op string) (uuid.UUID, error) {
 	return id, nil
 }
 
+// sidFromCtx pulls the caller's session id (the token's `sid` claim) from the
+// request context. Present on every session-issued access token; a token without
+// it (the legacy identity-only token the test harness mints) yields a 401.
+func sidFromCtx(ctx context.Context, op string) (uuid.UUID, error) {
+	claims, ok := middlewares.ClaimsFromContext(ctx)
+	if !ok {
+		return uuid.Nil, apperrors.Unauthenticatedf("missing credentials").Op(op)
+	}
+	sid, _ := claims["sid"].(string)
+	if sid == "" {
+		return uuid.Nil, apperrors.Unauthenticatedf("token has no session").Op(op)
+	}
+	id, err := uuid.Parse(sid)
+	if err != nil {
+		return uuid.Nil, apperrors.Unauthenticatedf("invalid session id").Op(op)
+	}
+	return id, nil
+}
+
 // ----- List -----
 
 type UsersListInput struct{}

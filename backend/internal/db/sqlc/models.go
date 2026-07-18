@@ -642,7 +642,7 @@ type ProposalWant struct {
 
 type PushSubscription struct {
 	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
+	SessionID      pgtype.UUID        `json:"session_id"`
 	Endpoint       string             `json:"endpoint"`
 	P256dh         string             `json:"p256dh"`
 	Auth           string             `json:"auth"`

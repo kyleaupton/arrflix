@@ -28,3 +28,12 @@ type Session struct {
 	IP               *string    `json:"ip,omitempty"`
 	Label            *string    `json:"label"`
 }
+
+// SessionDevice is a session enriched with its push subscription (if any) for the
+// unified devices list — "where am I logged in" plus "which of those receive
+// push". PushSubscriptionID is nil when the device has no push registered.
+type SessionDevice struct {
+	Session
+	PushSubscriptionID *uuid.UUID
+	PushLastNotifiedAt *time.Time
+}

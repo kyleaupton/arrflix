@@ -33,3 +33,28 @@ WHERE id = $1 AND revoked_at IS NULL;
 UPDATE user_session
 SET revoked_at = now()
 WHERE user_id = $1 AND revoked_at IS NULL;
+
+-- RevokeSessionForUser owner-scopes a single revoke: only a row belonging to the
+-- caller is touched, so a guessed id can't log out someone else. 0 rows affected =
+-- not found (or not yours), which the service maps to 404.
+-- name: RevokeSessionForUser :execrows
+UPDATE user_session
+SET revoked_at = now()
+WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id) AND revoked_at IS NULL;
+
+-- RevokeOtherSessionsForUser is "log out other devices": every active session for
+-- the caller except the one they're currently on (keep_id = the token's sid).
+-- name: RevokeOtherSessionsForUser :execrows
+UPDATE user_session
+SET revoked_at = now()
+WHERE user_id = sqlc.arg(user_id) AND id <> sqlc.arg(keep_id) AND revoked_at IS NULL;
+
+-- ListActiveSessionDevicesByUser is the unified device list: each live session with
+-- its push subscription (if any). LEFT JOIN so a session without push still lists;
+-- push_subscription_id NULL means push is off for that device.
+-- name: ListActiveSessionDevicesByUser :many
+SELECT us.*, ps.id AS push_subscription_id, ps.last_notified_at AS push_last_notified_at
+FROM user_session us
+LEFT JOIN push_subscription ps ON ps.session_id = us.id
+WHERE us.user_id = sqlc.arg(user_id) AND us.revoked_at IS NULL AND us.refresh_expires_at > now()
+ORDER BY us.last_used_at DESC;
