@@ -34,8 +34,14 @@ registerRoute(
   }),
 )
 
-// autoUpdate: a new SW takes over immediately and claims open pages.
-self.skipWaiting()
+// Prompt-to-update: a freshly installed worker stays in "waiting" so the app can
+// surface an update prompt, and only takes over when the page accepts and posts
+// SKIP_WAITING (workbox-window's messageSkipWaiting, driven by usePwaUpdate).
+// clientsClaim then lets the newly activated worker control the already-open
+// page so the reload lands on this build rather than the next navigation.
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting()
+})
 clientsClaim()
 
 // ----- Web Push -----

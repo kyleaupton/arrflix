@@ -9,7 +9,9 @@ import DialogContainer from '@/components/DialogContainer.vue'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 import 'vue-sonner/style.css'
+import { toast } from 'vue-sonner'
 import { Toaster } from '@/components/ui/sonner'
+import { usePwaUpdate } from '@/composables/usePwaUpdate'
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
@@ -42,6 +44,27 @@ const navbarOpaque = ref(route.meta.layout !== 'immersive')
 const onPageAfterLeave = () => {
   navbarOpaque.value = route.meta.layout !== 'immersive'
 }
+
+// A new build has precached and is waiting to take over. Offer the reload rather
+// than forcing it — a stable toast id keeps a single prompt if the check refires.
+const { needRefresh, applyUpdate } = usePwaUpdate()
+watch(
+  needRefresh,
+  (ready) => {
+    if (!ready) return
+    toast('A new version is available', {
+      id: 'pwa-update',
+      duration: Infinity,
+      action: {
+        label: 'Reload',
+        onClick: () => {
+          void applyUpdate()
+        },
+      },
+    })
+  },
+  { immediate: true },
+)
 </script>
 
 <template>

@@ -20,10 +20,11 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
-      // Silent update: a new build's service worker activates and reloads
-      // without prompting (sw.ts calls skipWaiting + clientsClaim). Icons come
-      // from pwa-assets.config.ts.
-      registerType: 'autoUpdate',
+      // Prompt to update: a new build's worker installs and parks in "waiting"
+      // rather than taking over silently. The app surfaces a "new version" toast
+      // and only reloads when the user accepts — sw.ts skips waiting on the
+      // SKIP_WAITING message. Icons come from pwa-assets.config.ts.
+      registerType: 'prompt',
       pwaAssets: { config: true, overrideManifestIcons: true },
       manifest: {
         name: 'Arrflix',
