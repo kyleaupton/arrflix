@@ -60,19 +60,22 @@ func (s *NotificationService) RegisterPushSubscription(ctx context.Context, sess
 	if endpoint == "" || p256dh == "" || auth == "" {
 		return apperrors.Validation("push subscription requires endpoint, p256dh, and auth").Op(op)
 	}
-	if _, err := s.repo.ClearPushForSessionOrEndpoint(ctx, sessionID, endpoint); err != nil {
+	// Clear + insert run in one transaction so they can't half-apply: a failed
+	// insert after a committed clear would leave the device with its prior push
+	// row deleted and no replacement — push silently off until re-subscribe.
+	return s.repo.InTx(ctx, func(r *repo.Repository) error {
+		if _, err := r.ClearPushForSessionOrEndpoint(ctx, sessionID, endpoint); err != nil {
+			return err
+		}
+		_, err := r.InsertPushSubscription(ctx, repo.InsertPushSubscriptionParams{
+			SessionID: sessionID,
+			Endpoint:  endpoint,
+			P256dh:    p256dh,
+			Auth:      auth,
+			UserAgent: userAgent,
+		})
 		return err
-	}
-	if _, err := s.repo.InsertPushSubscription(ctx, repo.InsertPushSubscriptionParams{
-		SessionID: sessionID,
-		Endpoint:  endpoint,
-		P256dh:    p256dh,
-		Auth:      auth,
-		UserAgent: userAgent,
-	}); err != nil {
-		return err
-	}
-	return nil
+	})
 }
 
 // GetPushSubscription loads one of the caller's own devices by id, returning a

@@ -123,10 +123,13 @@ export function useDevices() {
       })
       if (subRes.error) throw new Error('Could not register this device.')
 
-      // Opt the push channel in so enabling actually delivers something.
-      await notificationPreferencesSet({
+      // Opt the push channel in so enabling actually delivers something. If this
+      // fails the browser is subscribed but the channel stays muted, so treat it
+      // as a failed enable rather than reporting success (a retry re-runs both).
+      const prefRes = await notificationPreferencesSet({
         body: { bundle: PUSH_BUNDLE, target: 'push', enabled: true },
       })
+      if (prefRes.error) throw new Error('Registered this device, but could not switch push on.')
 
       invalidateDevices()
       qc.invalidateQueries({ queryKey: notificationPreferencesGetQueryKey() })

@@ -151,13 +151,6 @@ const router = createRouter({
             path: '/dev',
             component: () => import('@/views/DevPlayground.vue'),
           },
-          {
-            // Bottom-sheet spike — public + chrome-free so it's reachable over
-            // LAN in standalone mode without a login gate. Dev-only.
-            path: '/drawer-poc',
-            component: () => import('@/views/DrawerPoc.vue'),
-            meta: { public: true },
-          },
         ]
       : []),
 
