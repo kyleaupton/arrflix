@@ -144,13 +144,14 @@ func (r *Repository) RevokeOtherSessionsForUser(ctx context.Context, userID, kee
 }
 
 // RotateSession installs newHash as the current refresh hash, shifting the old
-// current into prev. The bool reports whether a row was updated: false means the
-// session was revoked between the read and the rotate, which the service maps to
-// Unauthenticated.
-func (r *Repository) RotateSession(ctx context.Context, id uuid.UUID, newHash []byte) (model.Session, bool, error) {
+// current into prev, and refreshes the last-seen ip (nil leaves it unchanged).
+// The bool reports whether a row was updated: false means the session was revoked
+// between the read and the rotate, which the service maps to Unauthenticated.
+func (r *Repository) RotateSession(ctx context.Context, id uuid.UUID, newHash []byte, ip *string) (model.Session, bool, error) {
 	row, err := r.Q.RotateSession(ctx, dbgen.RotateSessionParams{
 		ID:          pgtypeFromUUID(id),
 		RefreshHash: newHash,
+		Ip:          ip,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

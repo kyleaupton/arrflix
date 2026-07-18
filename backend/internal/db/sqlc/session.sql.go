@@ -271,24 +271,27 @@ func (q *Queries) RevokeSessionForUser(ctx context.Context, arg RevokeSessionFor
 const rotateSession = `-- name: RotateSession :one
 UPDATE user_session
 SET prev_refresh_hash = refresh_hash,
-    refresh_hash = $2,
+    refresh_hash = $1,
     rotated_at = now(),
-    last_used_at = now()
-WHERE id = $1 AND revoked_at IS NULL
+    last_used_at = now(),
+    ip = COALESCE($2, ip)
+WHERE id = $3 AND revoked_at IS NULL
 RETURNING id, user_id, refresh_hash, prev_refresh_hash, rotated_at, refresh_expires_at, created_at, last_used_at, revoked_at, user_agent, ip, label
 `
 
 type RotateSessionParams struct {
-	ID          pgtype.UUID `json:"id"`
 	RefreshHash []byte      `json:"refresh_hash"`
+	Ip          *string     `json:"ip"`
+	ID          pgtype.UUID `json:"id"`
 }
 
 // Shift the current hash into prev and install a freshly generated hash. Uniform
 // for both rotation cases (the client matched current, or matched prev within the
 // grace window) — either way the new prev is the current-at-rotation. No row is
-// updated once the session is revoked.
+// updated once the session is revoked. ip refreshes the "last seen from" address;
+// COALESCE leaves the stored ip untouched when the refresh carried none.
 func (q *Queries) RotateSession(ctx context.Context, arg RotateSessionParams) (UserSession, error) {
-	row := q.db.QueryRow(ctx, rotateSession, arg.ID, arg.RefreshHash)
+	row := q.db.QueryRow(ctx, rotateSession, arg.RefreshHash, arg.Ip, arg.ID)
 	var i UserSession
 	err := row.Scan(
 		&i.ID,

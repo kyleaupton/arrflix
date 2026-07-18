@@ -82,9 +82,10 @@ func (s *SessionService) Create(ctx context.Context, user model.User, meta Sessi
 }
 
 // Refresh validates the presented refresh token, rotates it, and returns a fresh
-// access + refresh token. A token that matches neither the current nor the
-// grace-window previous secret is treated as reuse and revokes the session.
-func (s *SessionService) Refresh(ctx context.Context, rawToken string) (Issued, error) {
+// access + refresh token. ip (nil when unknown) refreshes the session's last-seen
+// address. A token that matches neither the current nor the grace-window previous
+// secret is treated as reuse and revokes the session.
+func (s *SessionService) Refresh(ctx context.Context, rawToken string, ip *string) (Issued, error) {
 	sid, secret, ok := splitRefreshToken(rawToken)
 	if !ok {
 		return Issued{}, apperrors.Unauthenticatedf("invalid refresh token").Op("SessionService.Refresh")
@@ -116,7 +117,7 @@ func (s *SessionService) Refresh(ctx context.Context, rawToken string) (Issued, 
 	if err != nil {
 		return Issued{}, apperrors.Internalf("generate refresh secret: %v", err).Op("SessionService.Refresh")
 	}
-	rotated, updated, err := s.repo.RotateSession(ctx, sess.ID, newHash)
+	rotated, updated, err := s.repo.RotateSession(ctx, sess.ID, newHash, ip)
 	if err != nil {
 		return Issued{}, err
 	}

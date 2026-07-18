@@ -42,7 +42,7 @@ func TestSession_CreateAndRefreshRotates(t *testing.T) {
 		t.Fatal("create returned empty tokens")
 	}
 
-	second, err := svc.Refresh(ctx, first.RefreshToken)
+	second, err := svc.Refresh(ctx, first.RefreshToken, nil)
 	if err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
@@ -74,22 +74,22 @@ func TestSession_ReuseDetectionRevokesFamily(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	rt2, err := svc.Refresh(ctx, rt1.RefreshToken) // rt1 -> prev
+	rt2, err := svc.Refresh(ctx, rt1.RefreshToken, nil) // rt1 -> prev
 	if err != nil {
 		t.Fatalf("refresh 1: %v", err)
 	}
-	rt3, err := svc.Refresh(ctx, rt2.RefreshToken) // rt2 -> prev, rt1 now stale
+	rt3, err := svc.Refresh(ctx, rt2.RefreshToken, nil) // rt2 -> prev, rt1 now stale
 	if err != nil {
 		t.Fatalf("refresh 2: %v", err)
 	}
 
 	// Replaying rt1 matches neither current (rt3) nor prev (rt2) → reuse.
-	if _, err := svc.Refresh(ctx, rt1.RefreshToken); !apperrors.IsUnauthenticated(err) {
+	if _, err := svc.Refresh(ctx, rt1.RefreshToken, nil); !apperrors.IsUnauthenticated(err) {
 		t.Fatalf("stale token reuse: err = %v, want Unauthenticated", err)
 	}
 
 	// The family is burned: the latest valid token no longer works either.
-	if _, err := svc.Refresh(ctx, rt3.RefreshToken); !apperrors.IsUnauthenticated(err) {
+	if _, err := svc.Refresh(ctx, rt3.RefreshToken, nil); !apperrors.IsUnauthenticated(err) {
 		t.Fatalf("post-reuse refresh of live token: err = %v, want Unauthenticated", err)
 	}
 }
@@ -110,7 +110,7 @@ func TestSession_RefreshRejectsRevokedAndGarbage(t *testing.T) {
 	if err := svc.Revoke(ctx, issued.Session.ID); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
-	if _, err := svc.Refresh(ctx, issued.RefreshToken); !apperrors.IsUnauthenticated(err) {
+	if _, err := svc.Refresh(ctx, issued.RefreshToken, nil); !apperrors.IsUnauthenticated(err) {
 		t.Fatalf("refresh after revoke: err = %v, want Unauthenticated", err)
 	}
 
@@ -120,7 +120,7 @@ func TestSession_RefreshRejectsRevokedAndGarbage(t *testing.T) {
 		"not-a-uuid.secret",                 // bad session id
 		issued.Session.ID.String() + ".xxx", // real session, wrong secret
 	} {
-		if _, err := svc.Refresh(ctx, tok); !apperrors.IsUnauthenticated(err) {
+		if _, err := svc.Refresh(ctx, tok, nil); !apperrors.IsUnauthenticated(err) {
 			t.Fatalf("refresh %q: err = %v, want Unauthenticated", tok, err)
 		}
 	}
@@ -144,19 +144,19 @@ func TestSession_LogoutRevokesOwnSessionOnly(t *testing.T) {
 	if err := svc.RevokeByRefreshToken(ctx, issued.Session.ID.String()+".wrong"); err != nil {
 		t.Fatalf("revoke-by-token with wrong secret should be a no-op: %v", err)
 	}
-	if _, err := svc.Refresh(ctx, issued.RefreshToken); err != nil {
+	if _, err := svc.Refresh(ctx, issued.RefreshToken, nil); err != nil {
 		t.Fatalf("session should survive a bad-secret logout: %v", err)
 	}
 
 	// Re-read the current token (refresh above rotated it) and log out properly.
-	current, err := svc.Refresh(ctx, issued.RefreshToken)
+	current, err := svc.Refresh(ctx, issued.RefreshToken, nil)
 	if err != nil {
 		t.Fatalf("refresh to get current token: %v", err)
 	}
 	if err := svc.RevokeByRefreshToken(ctx, current.RefreshToken); err != nil {
 		t.Fatalf("logout: %v", err)
 	}
-	if _, err := svc.Refresh(ctx, current.RefreshToken); !apperrors.IsUnauthenticated(err) {
+	if _, err := svc.Refresh(ctx, current.RefreshToken, nil); !apperrors.IsUnauthenticated(err) {
 		t.Fatalf("refresh after logout: err = %v, want Unauthenticated", err)
 	}
 }
@@ -190,7 +190,7 @@ func TestSession_RevokeAllForUser(t *testing.T) {
 		t.Fatalf("revoke all: %v", err)
 	}
 	for _, s := range []service.Issued{a, b} {
-		if _, err := svc.Refresh(ctx, s.RefreshToken); !apperrors.IsUnauthenticated(err) {
+		if _, err := svc.Refresh(ctx, s.RefreshToken, nil); !apperrors.IsUnauthenticated(err) {
 			t.Fatalf("refresh after revoke-all: err = %v, want Unauthenticated", err)
 		}
 	}

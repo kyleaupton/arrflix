@@ -15,13 +15,15 @@ ORDER BY last_used_at DESC;
 -- Shift the current hash into prev and install a freshly generated hash. Uniform
 -- for both rotation cases (the client matched current, or matched prev within the
 -- grace window) — either way the new prev is the current-at-rotation. No row is
--- updated once the session is revoked.
+-- updated once the session is revoked. ip refreshes the "last seen from" address;
+-- COALESCE leaves the stored ip untouched when the refresh carried none.
 UPDATE user_session
 SET prev_refresh_hash = refresh_hash,
-    refresh_hash = $2,
+    refresh_hash = sqlc.arg(refresh_hash),
     rotated_at = now(),
-    last_used_at = now()
-WHERE id = $1 AND revoked_at IS NULL
+    last_used_at = now(),
+    ip = COALESCE(sqlc.narg(ip), ip)
+WHERE id = sqlc.arg(id) AND revoked_at IS NULL
 RETURNING *;
 
 -- name: RevokeSession :execrows

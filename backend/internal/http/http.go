@@ -13,6 +13,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/downloader"
@@ -40,6 +41,12 @@ type Server struct {
 func NewServer(cfg config.Config, log *logger.Logger, pool *pgxpool.Pool, services *service.Services, repo *repo.Repository, downloaderManager *downloader.Manager, emailManager *email.Manager, pushManager *push.Manager, broker *sse.Broker) *Server {
 	r := chi.NewRouter()
 
+	// RealIP rewrites RemoteAddr from the proxy's forwarded-for header; ChiClientIP
+	// then lifts it into the context for the session handlers. Both run before the
+	// auth/setup gates so the IP is captured even on JWT-public routes (login,
+	// refresh).
+	r.Use(middleware.RealIP)
+	r.Use(middlewares.ChiClientIP())
 	r.Use(middlewares.ChiSetupMode(services))
 	r.Use(middlewares.ChiJWT(cfg.JWTSecret))
 

@@ -67,13 +67,15 @@ func (h *Auth) clearRefreshCookie() http.Cookie {
 	}
 }
 
-// sessionMeta captures best-effort device context for a new session.
-func sessionMeta(userAgent string) service.SessionMeta {
+// sessionMeta captures best-effort device context for a new session: the
+// User-Agent header for a device label and the client ip (from ChiClientIP) for
+// the last-seen address. Either may be absent.
+func sessionMeta(userAgent string, ip *string) service.SessionMeta {
 	var ua *string
 	if userAgent != "" {
 		ua = &userAgent
 	}
-	return service.SessionMeta{UserAgent: ua}
+	return service.SessionMeta{UserAgent: ua, IP: ip}
 }
 
 // ----- Login -----
@@ -100,7 +102,7 @@ func (h *Auth) Login(ctx context.Context, input *LoginInput) (*LoginOutput, erro
 	if err != nil {
 		return nil, err
 	}
-	issued, err := h.svc.Sessions.Create(ctx, user, sessionMeta(input.UserAgent))
+	issued, err := h.svc.Sessions.Create(ctx, user, sessionMeta(input.UserAgent, middlewares.ClientIPFromContext(ctx)))
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +207,7 @@ func (h *Auth) PlexExchange(ctx context.Context, input *PlexExchangeInput) (*Ple
 	if err != nil {
 		return nil, err
 	}
-	issued, err := h.svc.Sessions.Create(ctx, user, sessionMeta(input.UserAgent))
+	issued, err := h.svc.Sessions.Create(ctx, user, sessionMeta(input.UserAgent, middlewares.ClientIPFromContext(ctx)))
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +332,7 @@ type RefreshOutput struct {
 // still renew. A missing/invalid/reused refresh token is a 401 the frontend treats
 // as "log out".
 func (h *Auth) Refresh(ctx context.Context, input *RefreshInput) (*RefreshOutput, error) {
-	issued, err := h.svc.Sessions.Refresh(ctx, input.Cookie.Value)
+	issued, err := h.svc.Sessions.Refresh(ctx, input.Cookie.Value, middlewares.ClientIPFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}
