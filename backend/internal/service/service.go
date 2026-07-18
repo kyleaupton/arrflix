@@ -43,6 +43,7 @@ type Services struct {
 	Scheduler          *SchedulerService
 	Routing            *RoutingService
 	Scanner            *ScannerService
+	Sessions           *SessionService
 	Tracking           *TrackingService
 	Settings           *SettingsService
 	Setup              *SetupService
@@ -150,6 +151,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Routing:            routingSvc,
 		Scanner:            NewScannerService(r, l, tmdb, broker, matcherSvc, enrichment),
 		Scheduler:          scheduler,
+		Sessions:           NewSessionService(r, cfg.jwtSecret, c.AccessTokenTTL, c.SessionTTL),
 		Settings:           settings,
 		Setup:              NewSetupService(r, users, settings, tmdb),
 		Tmdb:               tmdb,

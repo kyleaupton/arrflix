@@ -293,6 +293,60 @@ components:
         - enabled
         - available
       type: object
+    Cookie:
+      additionalProperties: false
+      properties:
+        Domain:
+          type: string
+        Expires:
+          format: date-time
+          type: string
+        HttpOnly:
+          type: boolean
+        MaxAge:
+          format: int64
+          type: integer
+        Name:
+          type: string
+        Partitioned:
+          type: boolean
+        Path:
+          type: string
+        Quoted:
+          type: boolean
+        Raw:
+          type: string
+        RawExpires:
+          type: string
+        SameSite:
+          format: int64
+          type: integer
+        Secure:
+          type: boolean
+        Unparsed:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        Value:
+          type: string
+      required:
+        - Name
+        - Value
+        - Quoted
+        - Path
+        - Domain
+        - Expires
+        - RawExpires
+        - MaxAge
+        - Secure
+        - HttpOnly
+        - SameSite
+        - Partitioned
+        - Raw
+        - Unparsed
+      type: object
     Credits:
       additionalProperties: false
       properties:
@@ -4471,6 +4525,22 @@ components:
         - ok
         - sessionId
       type: object
+    RefreshResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/RefreshResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        token:
+          description: JWT bearer token
+          type: string
+      required:
+        - token
+      type: object
     ReimportResult:
       additionalProperties: false
       properties:
@@ -5875,6 +5945,13 @@ paths:
     post:
       description: Validate username/email + password and issue a JWT.
       operationId: auth-login
+      parameters:
+        - description: Device label, captured server-side
+          in: header
+          name: User-Agent
+          schema:
+            description: Device label, captured server-side
+            type: string
       requestBody:
         content:
           application/json:
@@ -5888,6 +5965,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
           description: OK
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
         "400":
           content:
             application/json:
@@ -5915,6 +5996,31 @@ paths:
       summary: Login
       tags:
         - auth
+  /api/v1/auth/logout:
+    post:
+      description: Revokes the current session and clears the refresh cookie.
+      operationId: auth-logout
+      parameters:
+        - in: cookie
+          name: arrflix_rt
+          schema:
+            $ref: "#/components/schemas/Cookie"
+      responses:
+        "204":
+          description: No Content
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Logout
+      tags:
+        - auth
   /api/v1/auth/me:
     get:
       description: Returns the authenticated principal (from JWT claims).
@@ -5939,6 +6045,13 @@ paths:
     post:
       description: Polls the Plex API for the PIN's auth token and, if claimed, returns a JWT. Returns 401 when the PIN has not been claimed yet.
       operationId: auth-plex-exchange
+      parameters:
+        - description: Device label, captured server-side
+          in: header
+          name: User-Agent
+          schema:
+            description: Device label, captured server-side
+            type: string
       requestBody:
         content:
           application/json:
@@ -5952,6 +6065,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlexExchangeResponse"
           description: OK
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
         "400":
           content:
             application/json:
@@ -6107,6 +6224,47 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: Update current user password
+      tags:
+        - auth
+  /api/v1/auth/refresh:
+    post:
+      description: Rotates the refresh-token cookie and returns a fresh access token. Authenticated by the refresh cookie, not a bearer token.
+      operationId: auth-refresh
+      parameters:
+        - in: cookie
+          name: arrflix_rt
+          schema:
+            $ref: "#/components/schemas/Cookie"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResponse"
+          description: OK
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Refresh session
       tags:
         - auth
   /api/v1/auth/signup:

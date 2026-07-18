@@ -80,9 +80,14 @@ func UserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 //   - /api/v1/auth/signup
 //   - /api/v1/auth/plex/start
 //   - /api/v1/auth/plex/exchange
+//   - /api/v1/auth/refresh
+//   - /api/v1/auth/logout
 //   - /api/v1/setup/status
 //   - /api/v1/setup/initialize
 //   - /api/v1/setup/tmdb
+//
+// The refresh/logout routes are cookie-authed rather than bearer-authed, so they
+// bypass the JWT middleware and validate the refresh cookie in the service.
 //
 // Plus the /dev/* tree is JWT-bypassed when registered (dev env). Matched
 // by prefix.
@@ -94,6 +99,8 @@ var publicPathSet = map[string]struct{}{
 	"/api/v1/auth/signup":        {},
 	"/api/v1/auth/plex/start":    {},
 	"/api/v1/auth/plex/exchange": {},
+	"/api/v1/auth/refresh":       {},
+	"/api/v1/auth/logout":        {},
 	"/api/v1/setup/status":       {},
 	"/api/v1/setup/initialize":   {},
 	"/api/v1/setup/tmdb":         {},

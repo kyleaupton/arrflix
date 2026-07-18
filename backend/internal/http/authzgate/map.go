@@ -21,6 +21,8 @@ var operationPerms = map[string]requirement{
 	"auth-login":         authPublic(),
 	"auth-signup":        authPublic(),
 	"auth-plex-exchange": authPublic(),
+	"auth-refresh":       authPublic(),
+	"auth-logout":        authPublic(),
 	"health-check":       authPublic(),
 	"bootstrap-get":      authPublic(),
 	"version-get":        authPublic(),

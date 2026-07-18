@@ -129,6 +129,23 @@ export type ChannelPreference = {
     enabled: boolean;
 };
 
+export type Cookie = {
+    Domain: string;
+    Expires: string;
+    HttpOnly: boolean;
+    MaxAge: number;
+    Name: string;
+    Partitioned: boolean;
+    Path: string;
+    Quoted: boolean;
+    Raw: string;
+    RawExpires: string;
+    SameSite: number;
+    Secure: boolean;
+    Unparsed: Array<string> | null;
+    Value: string;
+};
+
 export type Credits = {
     cast: Array<CastMember> | null;
     crew: Array<CrewMember> | null;
@@ -1935,6 +1952,17 @@ export type ReadyPayload = {
     sessionId: string;
 };
 
+export type RefreshResponse = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * JWT bearer token
+     */
+    token: string;
+};
+
 export type ReimportResult = {
     /**
      * A URL to the JSON Schema for this object.
@@ -3524,6 +3552,13 @@ export type QualityTestBodyWritable = {
     title: string;
 };
 
+export type RefreshResponseWritable = {
+    /**
+     * JWT bearer token
+     */
+    token: string;
+};
+
 export type ReimportResultWritable = {
     created_tasks: Array<ImportTaskWritable> | null;
     skipped_count: number;
@@ -3883,6 +3918,12 @@ export type WantWritable = {
 
 export type AuthLoginData = {
     body: LoginInputBodyWritable;
+    headers?: {
+        /**
+         * Device label, captured server-side
+         */
+        'User-Agent'?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/v1/auth/login';
@@ -3918,6 +3959,31 @@ export type AuthLoginResponses = {
 
 export type AuthLoginResponse = AuthLoginResponses[keyof AuthLoginResponses];
 
+export type AuthLogoutData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/logout';
+};
+
+export type AuthLogoutErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type AuthLogoutError = AuthLogoutErrors[keyof AuthLogoutErrors];
+
+export type AuthLogoutResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type AuthLogoutResponse = AuthLogoutResponses[keyof AuthLogoutResponses];
+
 export type AuthMeData = {
     body?: never;
     path?: never;
@@ -3945,6 +4011,12 @@ export type AuthMeResponse = AuthMeResponses[keyof AuthMeResponses];
 
 export type AuthPlexExchangeData = {
     body: PlexExchangeInputBodyWritable;
+    headers?: {
+        /**
+         * Device label, captured server-side
+         */
+        'User-Agent'?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/v1/auth/plex/exchange';
@@ -4098,6 +4170,39 @@ export type UsersUpdateProfilePasswordResponses = {
 };
 
 export type UsersUpdateProfilePasswordResponse = UsersUpdateProfilePasswordResponses[keyof UsersUpdateProfilePasswordResponses];
+
+export type AuthRefreshData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/refresh';
+};
+
+export type AuthRefreshErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type AuthRefreshError = AuthRefreshErrors[keyof AuthRefreshErrors];
+
+export type AuthRefreshResponses = {
+    /**
+     * OK
+     */
+    200: RefreshResponse;
+};
+
+export type AuthRefreshResponse = AuthRefreshResponses[keyof AuthRefreshResponses];
 
 export type AuthSignupData = {
     body: SignupInputBodyWritable;
