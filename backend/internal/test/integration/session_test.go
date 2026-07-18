@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/test/dbtest"
@@ -23,7 +24,7 @@ func newSessionSvc(t *testing.T) (*service.SessionService, *repo.Repository) {
 	t.Helper()
 	pool := dbtest.New(t)
 	r := repo.New(pool)
-	return service.NewSessionService(r, "test-session-secret", 0, 0), r
+	return service.NewSessionService(r, logger.New(false), "test-session-secret", 0, 0), r
 }
 
 // TestSession_CreateAndRefreshRotates proves a created session issues an access +

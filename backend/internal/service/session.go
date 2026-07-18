@@ -6,12 +6,14 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
@@ -30,19 +32,52 @@ const (
 // persisted, so a database read can never reconstruct a usable token.
 type SessionService struct {
 	repo       *repo.Repository
+	log        *logger.Logger
 	jwtSecret  string
 	accessTTL  time.Duration
 	sessionTTL time.Duration
 }
 
-func NewSessionService(r *repo.Repository, jwtSecret string, accessTTL, sessionTTL time.Duration) *SessionService {
+func NewSessionService(r *repo.Repository, log *logger.Logger, jwtSecret string, accessTTL, sessionTTL time.Duration) *SessionService {
 	if accessTTL <= 0 {
 		accessTTL = defaultAccessTTL
 	}
 	if sessionTTL <= 0 {
 		sessionTTL = defaultSessionTTL
 	}
-	return &SessionService{repo: r, jwtSecret: jwtSecret, accessTTL: accessTTL, sessionTTL: sessionTTL}
+	return &SessionService{repo: r, log: log, jwtSecret: jwtSecret, accessTTL: accessTTL, sessionTTL: sessionTTL}
+}
+
+// auth_audit event names for the session lifecycle.
+const (
+	auditSessionCreated       = "session.created"
+	auditSessionRefreshed     = "session.refreshed"
+	auditSessionRevoked       = "session.revoked"
+	auditSessionReuseDetected = "session.reuse_detected"
+)
+
+// auditDetail is the JSONB payload of an auth_audit row. Fields are omitempty so
+// each event records only what's relevant to it.
+type auditDetail struct {
+	SessionID string `json:"session_id,omitempty"`
+	IP        string `json:"ip,omitempty"`
+	PrevIP    string `json:"prev_ip,omitempty"`
+	UserAgent string `json:"user_agent,omitempty"`
+	Scope     string `json:"scope,omitempty"`
+	Count     int64  `json:"count,omitempty"`
+}
+
+// audit writes a best-effort auth_audit row. A marshal or write failure is logged
+// and swallowed — auditing must never fail the operation it records.
+func (s *SessionService) audit(ctx context.Context, userID uuid.UUID, event string, detail auditDetail) {
+	raw, err := json.Marshal(detail)
+	if err != nil {
+		s.log.Error().Err(err).Str("event", event).Msg("marshal auth audit detail")
+		return
+	}
+	if err := s.repo.InsertAuthAudit(ctx, repo.InsertAuthAuditParams{UserID: userID, Event: event, Detail: raw}); err != nil {
+		s.log.Error().Err(err).Str("event", event).Msg("write auth audit")
+	}
 }
 
 // Issued is the result of creating or refreshing a session: a short-lived access
@@ -78,6 +113,11 @@ func (s *SessionService) Create(ctx context.Context, user model.User, meta Sessi
 	if err != nil {
 		return Issued{}, err
 	}
+	s.audit(ctx, user.ID, auditSessionCreated, auditDetail{
+		SessionID: sess.ID.String(),
+		IP:        derefOr(meta.IP),
+		UserAgent: derefOr(meta.UserAgent),
+	})
 	return s.issue(sess, user, secret)
 }
 
@@ -110,6 +150,7 @@ func (s *SessionService) Refresh(ctx context.Context, rawToken string, ip *strin
 	default:
 		// reuse / theft — burn the whole session so the real user must re-login
 		_, _ = s.repo.RevokeSession(ctx, sess.ID)
+		s.audit(ctx, sess.UserID, auditSessionReuseDetected, auditDetail{SessionID: sess.ID.String()})
 		return Issued{}, apperrors.Unauthenticatedf("refresh token reuse detected").Op("SessionService.Refresh")
 	}
 
@@ -124,6 +165,17 @@ func (s *SessionService) Refresh(ctx context.Context, rawToken string, ip *strin
 	if !updated {
 		// Revoked between the read above and the rotate.
 		return Issued{}, apperrors.Unauthenticatedf("invalid refresh token").Op("SessionService.Refresh")
+	}
+
+	// Only audit a refresh when the source ip moves — routine same-network
+	// rotations every access-TTL would otherwise bury the meaningful signal (a
+	// session suddenly used from a new location).
+	if ipChanged(sess.IP, ip) {
+		s.audit(ctx, rotated.UserID, auditSessionRefreshed, auditDetail{
+			SessionID: sess.ID.String(),
+			PrevIP:    derefOr(sess.IP),
+			IP:        derefOr(ip),
+		})
 	}
 
 	user, err := s.repo.GetUserByID(ctx, rotated.UserID)
@@ -155,8 +207,14 @@ func (s *SessionService) RevokeByRefreshToken(ctx context.Context, rawToken stri
 	if !matches {
 		return nil
 	}
-	_, err = s.repo.RevokeSession(ctx, sid)
-	return err
+	n, err := s.repo.RevokeSession(ctx, sid)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		s.audit(ctx, sess.UserID, auditSessionRevoked, auditDetail{SessionID: sid.String(), Scope: "logout"})
+	}
+	return nil
 }
 
 // Revoke ends one session by id (owner enforcement is the caller's responsibility).
@@ -193,13 +251,21 @@ func (s *SessionService) RevokeForUser(ctx context.Context, userID, sessionID uu
 	if n == 0 {
 		return apperrors.NotFoundf("session %s not found", sessionID).Op("SessionService.RevokeForUser")
 	}
+	s.audit(ctx, userID, auditSessionRevoked, auditDetail{SessionID: sessionID.String(), Scope: "single"})
 	return nil
 }
 
 // RevokeOthersForUser revokes every active session for the caller except the one
 // they're currently on ("log out other devices").
 func (s *SessionService) RevokeOthersForUser(ctx context.Context, userID, keepSessionID uuid.UUID) (int64, error) {
-	return s.repo.RevokeOtherSessionsForUser(ctx, userID, keepSessionID)
+	n, err := s.repo.RevokeOtherSessionsForUser(ctx, userID, keepSessionID)
+	if err != nil {
+		return n, err
+	}
+	if n > 0 {
+		s.audit(ctx, userID, auditSessionRevoked, auditDetail{Scope: "others", Count: n})
+	}
+	return n, nil
 }
 
 // SweepTerminal garbage-collects sessions that have been terminal (revoked or
@@ -260,6 +326,22 @@ func newRefreshSecret() (secret string, hash []byte, err error) {
 func hashSecret(secret string) []byte {
 	sum := sha256.Sum256([]byte(secret))
 	return sum[:]
+}
+
+// derefOr returns *p, or "" when p is nil — for folding a nullable ip/user-agent
+// into the omitempty audit detail.
+func derefOr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+// ipChanged reports whether cur is a new, non-nil address distinct from old. A
+// nil cur (this refresh carried no ip) is never a change — it leaves the stored
+// address untouched (see RotateSession's COALESCE), so there's nothing to audit.
+func ipChanged(old, cur *string) bool {
+	return cur != nil && (old == nil || *old != *cur)
 }
 
 // splitRefreshToken parses the "<sessionId>.<secret>" wire form. A UUID contains

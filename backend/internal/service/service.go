@@ -151,7 +151,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Routing:            routingSvc,
 		Scanner:            NewScannerService(r, l, tmdb, broker, matcherSvc, enrichment),
 		Scheduler:          scheduler,
-		Sessions:           NewSessionService(r, cfg.jwtSecret, c.AccessTokenTTL, c.SessionTTL),
+		Sessions:           NewSessionService(r, l, cfg.jwtSecret, c.AccessTokenTTL, c.SessionTTL),
 		Settings:           settings,
 		Setup:              NewSetupService(r, users, settings, tmdb),
 		Tmdb:               tmdb,
