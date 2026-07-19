@@ -20,9 +20,11 @@ func toModelOutbox(row dbgen.NotificationOutbox) model.NotificationOutbox {
 		EventType:       row.EventType,
 		Audience:        row.Audience,
 		RecipientUserID: uuidPtrFromPgtype(row.RecipientUserID),
+		RecipientEmail:  row.RecipientEmail,
 		Channel:         row.Channel,
 		Payload:         json.RawMessage(row.Payload),
 		DedupKey:        row.DedupKey,
+		Transactional:   row.Transactional,
 		Status:          row.Status,
 		Attempts:        row.Attempts,
 		NextAttemptAt:   row.NextAttemptAt,
@@ -50,14 +52,17 @@ func toModelPreference(row dbgen.NotificationPreference) model.NotificationPrefe
 
 // EnqueueOutboxParams is the domain-shaped input for EnqueueOutbox. Mirrors the
 // producer-supplied subset of a notification_outbox row; status, attempts, and
-// timestamps take their column defaults.
+// timestamps take their column defaults. RecipientUserID and RecipientEmail are
+// mutually exclusive — a user row or a literal-address transactional row.
 type EnqueueOutboxParams struct {
 	EventType       string
 	Audience        string
 	RecipientUserID *uuid.UUID
+	RecipientEmail  *string
 	Channel         string
 	Payload         json.RawMessage
 	DedupKey        *string
+	Transactional   bool
 }
 
 func (r *Repository) EnqueueOutbox(ctx context.Context, params EnqueueOutboxParams) (model.NotificationOutbox, error) {
@@ -65,9 +70,11 @@ func (r *Repository) EnqueueOutbox(ctx context.Context, params EnqueueOutboxPara
 		EventType:       params.EventType,
 		Audience:        params.Audience,
 		RecipientUserID: pgtypeFromUUIDPtr(params.RecipientUserID),
+		RecipientEmail:  params.RecipientEmail,
 		Channel:         params.Channel,
 		Payload:         []byte(params.Payload),
 		DedupKey:        params.DedupKey,
+		Transactional:   params.Transactional,
 	})
 	if err != nil {
 		return model.NotificationOutbox{}, apperrors.FromPg(err, "enqueue %q notification", params.EventType)

@@ -2,10 +2,11 @@
 // internal/downloader: a builder-registry keyed by Provider maps a stored (or
 // unsaved) config record to a Transport that actually talks to the relay.
 //
-// Phase 1 ships one provider — SMTP — behind the seam, decoupled from the
-// notification delivery pipeline: the manager builds a Transport for the
-// "send test email" flow directly, needing none of the worker/outbox/renderer.
-// A future HTTP-API provider (Resend/Mailgun) registers another builder here.
+// One provider ships — SMTP — behind the seam. The transport stays decoupled from
+// the notification worker/outbox: the settings "send test email" flow builds a
+// Transport and calls Send directly with a message the handler composed (rendered
+// through the notifications Renderer for the house style). A future HTTP-API
+// provider (Resend/Mailgun) registers another builder here.
 package email
 
 import "context"
@@ -26,13 +27,13 @@ type Message struct {
 	HTMLBody string
 }
 
-// Transport sends mail via a concrete provider. Test sends a minimal probe
-// message to `to` and returns the provider error verbatim, so the handler can
-// surface the raw connection/auth failure to the operator.
+// Transport sends mail via a concrete provider. Send returns the provider error
+// verbatim (typed via the transport's own classify), so a caller — e.g. the
+// settings test-send flow — can surface the raw connection/auth failure to the
+// operator.
 type Transport interface {
 	Provider() Provider
 	Send(ctx context.Context, msg Message) error
-	Test(ctx context.Context, to string) error
 }
 
 // ConfigRecord is the flattened, provider-agnostic input a Builder consumes.

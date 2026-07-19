@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { client } from '@/client/client.gen'
-import { authLogin, authLogout, authMe, authPlexExchange } from '@/client/sdk.gen'
+import { authAcceptInvite, authLogin, authLogout, authMe, authPlexExchange } from '@/client/sdk.gen'
 import { problemMessage } from '@/lib/api'
 
 type Nullable<T> = T | null
@@ -133,6 +133,29 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // Redeem an invite link: the accept endpoint provisions the account, sets the
+  // refresh cookie server-side, and returns the access token — so this logs the
+  // invitee straight in, same shape as loginWithPassword. errorMessage carries the
+  // specific failure (invalid/expired link, taken username) for the accept form.
+  async function acceptInvite(token: string, username: string, password: string): Promise<boolean> {
+    isLoading.value = true
+    errorMessage.value = null
+    try {
+      const res = await authAcceptInvite<true>({
+        throwOnError: true,
+        body: { token, username, password },
+      })
+      setToken(res.data.token)
+      await fetchMe()
+      return true
+    } catch (err) {
+      errorMessage.value = problemMessage(err, 'Could not accept this invite')
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   function startPlexSso(): void {
     // Backend endpoint expected to initiate Plex OAuth and redirect back
     const redirectUri = `${window.location.origin}/auth/callback`
@@ -209,6 +232,7 @@ export const useAuthStore = defineStore('auth', () => {
     fetchMe,
     setUserFromBootstrap,
     loginWithPassword,
+    acceptInvite,
     startPlexSso,
     completeSsoFromCallback,
     clearLocal,

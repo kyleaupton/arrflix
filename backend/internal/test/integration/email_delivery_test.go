@@ -192,6 +192,25 @@ func enqueueEmail(t *testing.T, ctx context.Context, r *repo.Repository, addr st
 	return user, row
 }
 
+// enqueueTransactionalEmail writes one queued transactional invite.created row
+// addressed to a literal address (no user), the shape EnqueueTransactionalEmail
+// produces.
+func enqueueTransactionalEmail(t *testing.T, ctx context.Context, r *repo.Repository, addr string) model.NotificationOutbox {
+	t.Helper()
+	row, err := r.EnqueueOutbox(ctx, repo.EnqueueOutboxParams{
+		EventType:      notifications.EventInviteCreated,
+		Audience:       string(model.AudienceSystem),
+		RecipientEmail: &addr,
+		Channel:        string(model.ChannelEmail),
+		Payload:        json.RawMessage(`{"acceptUrl":"https://arrflix.test/accept?token=abc123"}`),
+		Transactional:  true,
+	})
+	if err != nil {
+		t.Fatalf("enqueue transactional email: %v", err)
+	}
+	return row
+}
+
 // --- tests -------------------------------------------------------------------
 
 // TestEmailManager_IsConfigured proves the config gate the worker consults:
@@ -372,6 +391,143 @@ func TestNotificationWorker_EmailRequeueDrains(t *testing.T) {
 	catcher.waitForEmail(t)
 	if got := fetchOutbox(t, ctx, r, row.ID); got.Status != string(model.OutboxDelivered) {
 		t.Fatalf("status = %q, want delivered", got.Status)
+	}
+}
+
+// TestNotification_EnqueueTransactionalEmail proves the service precheck: with SMTP
+// unconfigured it enqueues nothing and reports false (caller falls back to the copy
+// link); with SMTP configured it writes exactly one transactional email row to the
+// literal address, no user and no preference gate involved.
+func TestNotification_EnqueueTransactionalEmail(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+	svc := service.NewNotificationService(r)
+
+	payload := notifications.InviteCreatedPayload{AcceptURL: "https://arrflix.test/accept?token=t"}
+
+	// Unconfigured → no enqueue.
+	enqueued, err := svc.EnqueueTransactionalEmail(ctx, notifications.EventInviteCreated, "invitee@test.local", payload)
+	if err != nil {
+		t.Fatalf("enqueue (unconfigured): %v", err)
+	}
+	if enqueued {
+		t.Fatal("enqueued = true with SMTP unconfigured, want false")
+	}
+	if due, _ := r.ListDueOutbox(ctx, 100); len(due) != 0 {
+		t.Fatalf("wrote %d rows with SMTP unconfigured, want 0", len(due))
+	}
+
+	// Configured → one transactional literal-recipient email row.
+	seedEmailProvider(t, ctx, r, "127.0.0.1", 2525, true)
+	enqueued, err = svc.EnqueueTransactionalEmail(ctx, notifications.EventInviteCreated, "invitee@test.local", payload)
+	if err != nil {
+		t.Fatalf("enqueue (configured): %v", err)
+	}
+	if !enqueued {
+		t.Fatal("enqueued = false with SMTP configured, want true")
+	}
+	due, err := r.ListDueOutbox(ctx, 100)
+	if err != nil {
+		t.Fatalf("list due: %v", err)
+	}
+	if len(due) != 1 {
+		t.Fatalf("wrote %d rows, want 1", len(due))
+	}
+	row := due[0]
+	if !row.Transactional || row.Channel != string(model.ChannelEmail) {
+		t.Fatalf("row = %+v, want a transactional email row", row)
+	}
+	if row.RecipientUserID != nil {
+		t.Fatalf("recipient_user_id = %v, want nil for a literal recipient", row.RecipientUserID)
+	}
+	if row.RecipientEmail == nil || *row.RecipientEmail != "invitee@test.local" {
+		t.Fatalf("recipient_email = %v, want invitee@test.local", row.RecipientEmail)
+	}
+}
+
+// TestNotificationWorker_TransactionalEmailDelivers is the literal-recipient
+// end-to-end: an enabled provider + a transactional invite row → a Drain sends the
+// invite email to the literal address (subject + link asserted) and settles the row
+// delivered, with no user record involved.
+func TestNotificationWorker_TransactionalEmailDelivers(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	catcher := newSMTPCatcher(t)
+	host, port := catcher.addr()
+	seedEmailProvider(t, ctx, r, host, port, true)
+
+	row := enqueueTransactionalEmail(t, ctx, r, "invitee@test.local")
+	w := newEmailWorker(t, r)
+
+	n, err := w.Drain(ctx)
+	if err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("delivered = %d, want 1", n)
+	}
+
+	got := catcher.waitForEmail(t)
+	if !strings.Contains(got.data, "You're invited to Arrflix") {
+		t.Fatalf("message missing the invite subject:\n%s", got.data)
+	}
+	// The HTML body is quoted-printable: the '=' in "?token=" encodes to "=3D", so
+	// assert the link's QP-safe path and the token value rather than the raw URL.
+	// Drop soft line breaks first so neither is split across the 76-column wrap.
+	unwrapped := strings.ReplaceAll(got.data, "=\r\n", "")
+	if !strings.Contains(unwrapped, "arrflix.test/accept") || !strings.Contains(unwrapped, "abc123") {
+		t.Fatalf("message body missing the accept link:\n%s", got.data)
+	}
+	if !strings.Contains(strings.Join(got.to, " "), "invitee@test.local") {
+		t.Fatalf("RCPT TO missing the literal recipient: %v", got.to)
+	}
+
+	if settled := fetchOutbox(t, ctx, r, row.ID); settled.Status != string(model.OutboxDelivered) {
+		t.Fatalf("status = %q, want delivered", settled.Status)
+	}
+}
+
+// TestNotificationWorker_TransactionalEmailNeverParks proves the transactional
+// contract: a transactional email on an unconfigured channel must NOT park as
+// awaiting_config (which would wait silently forever). It fails loud instead —
+// rescheduled with backoff, attempts incremented, the reason recorded — so it
+// eventually dies rather than lingering invisibly. Contrast
+// TestNotificationWorker_EmailParksWhenUnconfigured, where a non-transactional row
+// parks.
+func TestNotificationWorker_TransactionalEmailNeverParks(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	row := enqueueTransactionalEmail(t, ctx, r, "invitee@test.local")
+	w := newEmailWorker(t, r) // no provider seeded → unconfigured
+
+	n, err := w.Drain(ctx)
+	if err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("delivered = %d, want 0 (unconfigured)", n)
+	}
+
+	got := fetchOutbox(t, ctx, r, row.ID)
+	if got.Status == string(model.OutboxAwaitingConfig) {
+		t.Fatal("a transactional email must never park as awaiting_config")
+	}
+	if got.Status != string(model.OutboxQueued) {
+		t.Fatalf("status = %q, want queued (rescheduled to fail loud)", got.Status)
+	}
+	if got.Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", got.Attempts)
+	}
+	if got.LastError == nil || *got.LastError == "" {
+		t.Fatalf("last_error should record the not-configured reason")
 	}
 }
 

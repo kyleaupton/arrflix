@@ -1,0 +1,6 @@
+<!-- Shared footer. Single-root section. -->
+<mj-section padding="16px 12px 28px">
+  <mj-column>
+    <mj-text css-class="dk-muted" align="center" color="#737373" font-size="12px">Sent by Arrflix</mj-text>
+  </mj-column>
+</mj-section>

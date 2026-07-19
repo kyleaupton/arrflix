@@ -95,7 +95,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	authz := NewAuthzService(r)
 	notifications := NewNotificationService(r)
 	users := NewUsersService(r, authz)
-	invites := NewInvitesService(r)
+	invites := NewInvitesService(r, notifications, settings, l)
 	reconcile := NewReconcileService(r, l)
 	scheduler := NewSchedulerService(r, l)
 	enrichment := NewEnrichmentService(r, l, tmdb, reconcile)

@@ -3,6 +3,7 @@ package emailadapter
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -67,6 +68,59 @@ func wantAvailableRow(t *testing.T, recipient *uuid.UUID) model.NotificationOutb
 		Channel:         string(model.ChannelEmail),
 		RecipientUserID: recipient,
 		Payload:         payload,
+	}
+}
+
+// inviteRow builds a transactional invite.created row addressed to a literal
+// email, with no recipient user — the shape EnqueueTransactionalEmail produces.
+func inviteRow(t *testing.T, to string) model.NotificationOutbox {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{"acceptUrl": "https://arrflix.test/accept?token=abc"})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	return model.NotificationOutbox{
+		ID:             uuid.New(),
+		EventType:      "invite.created",
+		Channel:        string(model.ChannelEmail),
+		RecipientEmail: &to,
+		Transactional:  true,
+		Payload:        payload,
+	}
+}
+
+// erroringUsers fails every lookup, proving the literal-recipient path never
+// resolves a user.
+type erroringUsers struct{}
+
+func (erroringUsers) GetUserByID(context.Context, uuid.UUID) (model.User, error) {
+	return model.User{}, apperrors.Internalf("user lookup must not be called for a literal recipient")
+}
+
+// TestAdapter_DeliverLiteralRecipient proves a transactional row addressed to a
+// literal email sends to that address without any user lookup — the invite path.
+func TestAdapter_DeliverLiteralRecipient(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	ft := &fakeTransport{}
+	a := New(fakeMailer{configured: true, transport: ft}, notifications.MustNewRenderer(), erroringUsers{})
+
+	if err := a.Deliver(ctx, inviteRow(t, "invitee@test.local")); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	if len(ft.sent) != 1 {
+		t.Fatalf("sent %d messages, want 1", len(ft.sent))
+	}
+	msg := ft.sent[0]
+	if len(msg.To) != 1 || msg.To[0] != "invitee@test.local" {
+		t.Fatalf("To = %v, want [invitee@test.local]", msg.To)
+	}
+	if msg.Subject != "You're invited to Arrflix" {
+		t.Fatalf("Subject = %q", msg.Subject)
+	}
+	if !strings.Contains(msg.HTMLBody, "https://arrflix.test/accept?token=abc") {
+		t.Fatalf("HTMLBody missing the accept link: %q", msg.HTMLBody)
 	}
 }
 

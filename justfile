@@ -191,16 +191,32 @@ web-build: _ensure-up
 web-genclient: _ensure-up
     {{web-exec-rw}} npm run openapi-ts
 
+# Compile MJML email sources (backend/internal/notifications/emailsrc/) into the
+# Go-embedded template tree. Node/MJML live in the web toolchain; the compiled
+# .html.tmpl output is generated — edit the .mjml source, never the output.
+[group('frontend')]
+gen-email: _ensure-up
+    {{web-exec-rw}} npm run gen-email
+
+# Compile MJML then render every email template through the real Go Renderer with
+# sample payloads into .ignore/email-preview/ (gitignored). Open the printed
+# index.html in a browser to eyeball changes — the whole MJML → preview loop.
+[group('frontend')]
+email-preview: gen-email
+    {{backend-exec-rw}} go run ./cmd/emailpreview
+    @echo "open backend/.ignore/email-preview/index.html"
+
 # --- aggregates --------------------------------------------------------------
 
 # Format both backend and frontend.
 [group('aggregate')]
 fmt: backend-fmt web-fmt
 
-# Regenerate everything (sqlc, openapi spec, ts client). Order matters —
-# the TS client reads the spec produced by genspec.
+# Regenerate everything (sqlc, openapi spec, email templates, ts client). Order
+# matters for the API chain — the TS client reads the spec produced by genspec.
+# gen-email is independent (compiles MJML → embedded HTML) and runs alongside.
 [group('aggregate')]
-gen: backend-sqlc backend-genspec web-genclient
+gen: backend-sqlc backend-genspec gen-email web-genclient
 
 # Autofix everything: format, lint --fix, regenerate. Best-effort; lint
 # errors that can't be autofixed are left for `check` to surface.
@@ -215,6 +231,7 @@ fix: _ensure-up
     @echo "→ regenerating"
     {{backend-exec-rw}} sqlc generate
     {{backend-exec-rw}} go run ./cmd/genspec
+    {{web-exec-rw}} npm run gen-email
     {{web-exec-rw}} npm run openapi-ts
     @echo "Done. Run 'just check' to verify."
 

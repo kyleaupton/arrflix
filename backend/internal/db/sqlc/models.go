@@ -579,6 +579,8 @@ type NotificationOutbox struct {
 	DeliveredAt     pgtype.Timestamptz `json:"delivered_at"`
 	ReadAt          pgtype.Timestamptz `json:"read_at"`
 	ClaimedAt       pgtype.Timestamptz `json:"claimed_at"`
+	RecipientEmail  *string            `json:"recipient_email"`
+	Transactional   bool               `json:"transactional"`
 }
 
 type NotificationPreference struct {
@@ -771,6 +773,9 @@ type UserInvite struct {
 	InvitedBy pgtype.UUID        `json:"invited_by"`
 	CreatedAt time.Time          `json:"created_at"`
 	ClaimedAt pgtype.Timestamptz `json:"claimed_at"`
+	TokenHash []byte             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	Role      string             `json:"role"`
 }
 
 type UserRole struct {

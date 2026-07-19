@@ -116,6 +116,7 @@ func UserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 //   - /api/v1/version
 //   - /api/v1/auth/login
 //   - /api/v1/auth/signup
+//   - /api/v1/auth/accept-invite
 //   - /api/v1/auth/plex/start
 //   - /api/v1/auth/plex/exchange
 //   - /api/v1/auth/refresh
@@ -135,6 +136,7 @@ var publicPathSet = map[string]struct{}{
 	"/api/v1/version":            {},
 	"/api/v1/auth/login":         {},
 	"/api/v1/auth/signup":        {},
+	"/api/v1/auth/accept-invite": {},
 	"/api/v1/auth/plex/start":    {},
 	"/api/v1/auth/plex/exchange": {},
 	"/api/v1/auth/refresh":       {},

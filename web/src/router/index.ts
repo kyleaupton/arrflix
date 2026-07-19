@@ -145,6 +145,13 @@ const router = createRouter({
       meta: { public: true, layout: 'auth' },
     },
     {
+      // Invite acceptance — magic link carries the token in ?token=. Public: the
+      // invitee has no session yet; accepting the invite creates one.
+      path: '/accept',
+      component: () => import('@/views/AcceptInvite.vue'),
+      meta: { public: true, layout: 'auth' },
+    },
+    {
       path: '/setup',
       component: () => import('@/views/Setup.vue'),
       meta: { public: true, layout: 'auth', setup: true },

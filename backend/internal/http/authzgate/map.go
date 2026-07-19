@@ -20,6 +20,7 @@ var operationPerms = map[string]requirement{
 	// ----- Public (gate skips; must match middlewares.publicPathSet) -----
 	"auth-login":         authPublic(),
 	"auth-signup":        authPublic(),
+	"auth-accept-invite": authPublic(),
 	"auth-plex-exchange": authPublic(),
 	"auth-refresh":       authPublic(),
 	"auth-logout":        authPublic(),

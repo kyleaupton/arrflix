@@ -317,6 +317,52 @@ func (s *NotificationService) Enqueue(ctx context.Context, ev notifications.Even
 	return nil
 }
 
+// EnqueueTransactionalEmail queues one email to a literal address, bypassing the
+// preference gate entirely (there is no user row and no bundle — a transactional
+// email must send, not be opt-in-gated). It performs the synchronous
+// IsConfigured precheck the caller needs for immediate "emailed vs copy-the-link"
+// feedback: with SMTP unconfigured it enqueues nothing and reports enqueued=false,
+// so a doomed transactional row is never written. With SMTP configured it writes a
+// single transactional email row the worker delivers (and, being transactional,
+// never parks — see the worker). "configured" mirrors email.Manager.IsConfigured
+// (a provider row exists and is enabled); it's inlined here to avoid a manager
+// dependency on this enqueue-only service.
+func (s *NotificationService) EnqueueTransactionalEmail(ctx context.Context, eventType, recipientEmail string, payload any) (enqueued bool, err error) {
+	const op = "NotificationService.EnqueueTransactionalEmail"
+
+	cfg, found, err := s.repo.GetEmailProvider(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !found || !cfg.Enabled {
+		return false, nil // SMTP not configured → caller falls back to the copyable link.
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return false, apperrors.Internalf("marshal %q payload: %v", eventType, err).Op(op)
+	}
+	if _, err := s.repo.EnqueueOutbox(ctx, repo.EnqueueOutboxParams{
+		EventType:      eventType,
+		Audience:       string(model.AudienceSystem),
+		RecipientEmail: &recipientEmail,
+		Channel:        string(model.ChannelEmail),
+		Payload:        body,
+		Transactional:  true,
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// RenderTestEmail renders the house-styled "send test email" probe (subject +
+// HTML body). Unlike the other transactional emails this one is sent synchronously
+// by the email-provider settings handler rather than enqueued, so it renders here
+// through the shared renderer instead of going through the outbox.
+func (s *NotificationService) RenderTestEmail() (subject, htmlBody string, err error) {
+	return s.renderer.RenderEmail(notifications.EventEmailTest, nil)
+}
+
 // enabledOutbound returns the outbound channels enabled for a bundle given the
 // recipient's resolved preferences.
 func (s *NotificationService) enabledOutbound(prefs []model.NotificationPreference, bundle string) []model.NotificationChannel {

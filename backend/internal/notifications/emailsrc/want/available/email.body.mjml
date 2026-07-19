@@ -1,0 +1,44 @@
+<!--
+  want.available — "your requested title is ready to watch".
+  Compiles to templates/want/available/email.body.html.tmpl, parsed by the Go
+  renderer as an html/template. Go actions ({{ ... }}) pass through untouched:
+  the payload is {media:{title,year}, plexLink}. Structural/numeric MJML
+  attributes are never templated — only text content and the CTA href are.
+  dk-* css-classes drive dark mode (see partials/head.mjml).
+-->
+<mjml lang="en">
+  <mj-head>
+    <mj-include path="partials/head.mjml" />
+    <mj-title>{{.media.title}} is ready to watch</mj-title>
+    <mj-preview>Your request is now available in the library.</mj-preview>
+  </mj-head>
+  <mj-body css-class="dk-page" background-color="#fafafa" width="480px">
+    <mj-include path="partials/header.mjml" />
+
+    <mj-section css-class="dk-card" background-color="#ffffff" border="1px solid #e5e5e5" border-radius="14px" padding="32px">
+      <mj-column>
+        <mj-text css-class="dk-muted" color="#737373" font-size="12px" font-weight="600" letter-spacing="0.06em" text-transform="uppercase">
+          Ready to watch
+        </mj-text>
+        <mj-text css-class="dk-fg" color="#0a0a0a" font-size="24px" font-weight="600" line-height="1.3" padding-top="6px">
+          {{.media.title}}{{if .media.year}} <span style="font-weight:400;color:#737373;">({{.media.year}})</span>{{end}}
+        </mj-text>
+        <mj-text css-class="dk-body" padding-top="14px">
+          Good news — your request is now available in the library and ready to play.
+        </mj-text>
+
+        <!-- CTA branches on plexLink; mj-raw carries the Go control tokens so they
+             land adjacent to the compiled button/text at render time. -->
+        <mj-raw>{{if .plexLink}}</mj-raw>
+        <mj-button css-class="dk-btn" href="{{.plexLink}}" align="left" padding="24px 0 0">Play now</mj-button>
+        <mj-raw>{{else}}</mj-raw>
+        <mj-text css-class="dk-muted" color="#737373" font-size="13px" padding-top="12px">
+          Open your library to start watching.
+        </mj-text>
+        <mj-raw>{{end}}</mj-raw>
+      </mj-column>
+    </mj-section>
+
+    <mj-include path="partials/footer.mjml" />
+  </mj-body>
+</mjml>

@@ -3,19 +3,24 @@
 
 -- EnqueueOutbox writes one delivery row. status/attempts/timestamps take their
 -- column defaults (queued, 0, now()); the delivery worker owns every later
--- transition. dedup collision handling (ON CONFLICT) arrives with the typed
+-- transition. A row targets either a known user (recipient_user_id) or a literal
+-- address (recipient_email, for transactional email to someone with no account);
+-- transactional marks a row that bypasses preference-gating and never parks as
+-- awaiting_config. dedup collision handling (ON CONFLICT) arrives with the typed
 -- constructors that own the drop-vs-replace policy.
 -- name: EnqueueOutbox :one
 INSERT INTO notification_outbox (
-  event_type, audience, recipient_user_id, channel, payload, dedup_key
+  event_type, audience, recipient_user_id, recipient_email, channel, payload, dedup_key, transactional
 )
 VALUES (
   sqlc.arg(event_type),
   sqlc.arg(audience),
   sqlc.narg(recipient_user_id),
+  sqlc.narg(recipient_email),
   sqlc.arg(channel),
   sqlc.arg(payload),
-  sqlc.narg(dedup_key)
+  sqlc.narg(dedup_key),
+  sqlc.arg(transactional)
 )
 RETURNING *;
 
