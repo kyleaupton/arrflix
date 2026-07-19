@@ -25,9 +25,7 @@ const benefits = [
     @update:open="(v: boolean) => emit('update:open', v)"
   >
     <template #header>
-      <div
-        class="mx-auto mb-2 flex size-12 items-center justify-center rounded-full bg-primary/10"
-      >
+      <div class="mx-auto mb-2 flex size-12 items-center justify-center rounded-full bg-primary/10">
         <BellRing class="size-6 text-primary" />
       </div>
       <h2 class="text-center text-lg leading-none font-semibold">

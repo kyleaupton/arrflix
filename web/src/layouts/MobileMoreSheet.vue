@@ -1,15 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  Calendar,
-  Download,
-  Inbox,
-  Library,
-  LogOut,
-  Settings2,
-  UserCog,
-} from 'lucide-vue-next'
+import { Calendar, Download, Inbox, Library, LogOut, Settings2, UserCog } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { useInboxCount } from '@/composables/useInboxCount'
 import { ResponsiveDialog } from '@/components/responsive-dialog'
