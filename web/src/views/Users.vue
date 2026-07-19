@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Plus, X, Users as UsersIcon } from 'lucide-vue-next'
 import {
@@ -25,6 +25,9 @@ import { problemMessage } from '@/lib/api'
 // Data queries
 const { data: users, isLoading } = useQuery(usersListOptions())
 const { data: invites, isLoading: invitesLoading } = useQuery(invitesListOptions())
+// Claimed invites are dropped here: once accepted, the person is a real user in
+// the table below, so surfacing the spent invite too is pure duplication.
+const pendingInvites = computed(() => invites.value?.filter((invite) => !invite.claimedAt) ?? [])
 const queryClient = useQueryClient()
 const modal = useModal()
 
@@ -99,12 +102,14 @@ function formatDate(dateStr: string) {
 <template>
   <div class="flex flex-col gap-6">
     <!-- Pending Invites -->
-    <Card v-if="invitesLoading || (invites && invites.length > 0)">
+    <Card v-if="invitesLoading || pendingInvites.length > 0">
       <CardHeader>
         <div class="flex items-center justify-between">
           <div>
-            <CardTitle class="text-xl font-semibold mb-2">Invites</CardTitle>
-            <p class="text-sm text-muted-foreground">Pending and claimed invitations.</p>
+            <CardTitle class="text-xl font-semibold mb-2">Pending Invites</CardTitle>
+            <p class="text-sm text-muted-foreground">
+              People you've invited who haven't accepted yet.
+            </p>
           </div>
           <Button @click="handleInviteUser">
             <Plus class="mr-2 size-4" />
@@ -117,31 +122,16 @@ function formatDate(dateStr: string) {
           <Skeleton class="h-10 w-full" />
           <Skeleton class="h-10 w-full" />
         </div>
-        <div v-else-if="invites && invites.length > 0" class="space-y-2">
+        <div v-else-if="pendingInvites.length > 0" class="space-y-2">
           <div
-            v-for="invite in invites"
+            v-for="invite in pendingInvites"
             :key="invite.id"
             class="flex items-center justify-between rounded-lg border p-3"
           >
-            <div class="flex items-center gap-3">
-              <span class="text-sm font-medium">{{ invite.email }}</span>
-              <span
-                v-if="invite.claimedAt"
-                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-              >
-                Claimed
-              </span>
-              <span
-                v-else
-                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-              >
-                Pending
-              </span>
-            </div>
+            <span class="text-sm font-medium">{{ invite.email }}</span>
             <div class="flex items-center gap-3">
               <span class="text-xs text-muted-foreground">{{ formatDate(invite.createdAt) }}</span>
               <Button
-                v-if="!invite.claimedAt"
                 variant="ghost"
                 size="icon"
                 class="size-8"
@@ -163,7 +153,7 @@ function formatDate(dateStr: string) {
             <CardTitle class="text-xl font-semibold mb-2">User Management</CardTitle>
             <p class="text-sm text-muted-foreground">Manage application users and their roles.</p>
           </div>
-          <Button v-if="!invites || invites.length === 0" @click="handleInviteUser">
+          <Button v-if="pendingInvites.length === 0" @click="handleInviteUser">
             <Plus class="mr-2 size-4" />
             Invite User
           </Button>
