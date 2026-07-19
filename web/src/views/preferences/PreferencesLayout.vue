@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bell, MonitorSmartphone } from 'lucide-vue-next'
+import { Bell, Bug, MonitorSmartphone } from 'lucide-vue-next'
 import SidebarLayout, { type NavGroup } from '@/layouts/SidebarLayout.vue'
 
 // Per-user preferences — available to every authenticated role, so (unlike the
@@ -10,6 +10,7 @@ const groups: NavGroup[] = [
     items: [
       { label: 'Notifications', to: '/preferences/notifications', icon: Bell },
       { label: 'Devices', to: '/preferences/devices', icon: MonitorSmartphone },
+      { label: 'Developer', to: '/preferences/developer', icon: Bug },
     ],
   },
 ]

@@ -6,7 +6,9 @@ import { useAppStore } from '@/stores/app'
 import { connect as connectRealtime, reset as resetRealtime } from '@/realtime/connection'
 import ImmersiveLayout from '@/layouts/ImmersiveLayout.vue'
 import DialogContainer from '@/components/DialogContainer.vue'
+import SafeAreaOverlay from '@/components/debug/SafeAreaOverlay.vue'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useDebugStore } from '@/stores/debug'
 
 import 'vue-sonner/style.css'
 import { toast } from 'vue-sonner'
@@ -15,6 +17,7 @@ import { usePwaUpdate } from '@/composables/usePwaUpdate'
 import { useSessionKeepalive } from '@/composables/useSessionKeepalive'
 
 const authStore = useAuthStore()
+const debug = useDebugStore()
 
 // Refresh the session on foreground/focus so a resumed PWA (notably iOS
 // standalone) never sits on an expired access token.
@@ -76,6 +79,7 @@ watch(
   <TooltipProvider>
     <Toaster position="top-center" />
     <DialogContainer />
+    <SafeAreaOverlay v-if="debug.anyActive" />
     <div v-if="!appStore.isReady" class="flex min-h-svh items-center justify-center">
       <div class="text-muted-foreground">Loading...</div>
     </div>

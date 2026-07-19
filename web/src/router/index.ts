@@ -83,6 +83,10 @@ const router = createRouter({
           path: 'devices',
           component: () => import('@/views/preferences/DevicesView.vue'),
         },
+        {
+          path: 'developer',
+          component: () => import('@/views/preferences/DeveloperView.vue'),
+        },
       ],
     },
     {
