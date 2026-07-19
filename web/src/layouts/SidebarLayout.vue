@@ -146,52 +146,67 @@ const isActive = (to: string) => route.path === to || route.path.startsWith(`${t
   </SidebarProvider>
 
   <!--
-    Mobile master view: a full-screen list of sections. Top padding clears the
-    fixed mobile navbar (safe-area + 2.75rem); bottom padding clears the fixed tab
-    bar (its height + home-indicator inset). Rows mirror MobileMoreSheet.
+    Mobile master view: an iOS Settings-style list of sections. Each NavGroup is an
+    inset rounded card on a lightly tinted page (grouped-table look), rows split by
+    hairlines inset to the label. Top padding clears the fixed mobile navbar
+    (safe-area + 2.75rem); bottom padding clears the fixed tab bar (its height +
+    home-indicator inset).
+
+    The page tint differs by scheme so cards always separate from the page: in light
+    a gray page under white cards, in dark the near-black `background` under the
+    lighter `card`. Separators live at left-[3.75rem] to align with the label —
+    px-4 (1rem) + icon chip (size-8, 2rem) + gap-3 (0.75rem).
   -->
   <div
     v-else-if="isIndex"
-    class="min-h-svh pt-[calc(env(safe-area-inset-top)_+_2.75rem)] pb-[calc(3.75rem_+_var(--tabbar-inset-bottom))]"
+    class="min-h-svh bg-muted/40 pt-[calc(env(safe-area-inset-top)_+_2.75rem)] pb-[calc(3.75rem_+_var(--tabbar-inset-bottom))] dark:bg-background"
   >
-    <header class="px-4 pb-2 pt-4">
-      <h1 class="text-2xl font-semibold">{{ title }}</h1>
+    <header class="px-4 pb-3 pt-3">
+      <h1 class="text-3xl font-bold tracking-tight">{{ title }}</h1>
     </header>
 
-    <nav class="flex flex-col px-2">
-      <div v-for="(group, i) in groups" :key="group.label ?? `group-${i}`" class="flex flex-col">
-        <p
-          v-if="group.label"
-          class="px-3 pb-1 pt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground"
-        >
+    <nav class="flex flex-col gap-6 px-4 pb-6 pt-1">
+      <section v-for="(group, i) in groups" :key="group.label ?? `group-${i}`">
+        <h2 v-if="group.label" class="px-1 pb-2 text-[0.8125rem] font-medium text-muted-foreground">
           {{ group.label }}
-        </p>
-        <template v-for="item in group.items" :key="item.label">
-          <span
-            v-if="item.disabled"
-            class="flex items-center gap-3 rounded-lg px-3 py-3 text-base text-foreground/35 select-none"
-          >
-            <component :is="item.icon" class="size-5" />
-            {{ item.label }}
-            <span class="ml-auto text-xs text-muted-foreground">Soon</span>
-          </span>
-          <RouterLink
-            v-else
-            :to="item.to!"
-            class="flex items-center gap-3 rounded-lg px-3 py-3 text-base text-foreground transition-colors active:bg-accent"
-          >
-            <component :is="item.icon" class="size-5" />
-            {{ item.label }}
-            <Badge v-if="item.badge && item.badge() > 0" variant="secondary" class="ml-auto">
-              {{ item.badge() }}
-            </Badge>
-            <ChevronRight
-              class="size-4 text-muted-foreground"
-              :class="item.badge && item.badge() > 0 ? 'ml-2' : 'ml-auto'"
-            />
-          </RouterLink>
-        </template>
-      </div>
+        </h2>
+
+        <div class="overflow-hidden rounded-xl bg-card">
+          <template v-for="(item, idx) in group.items" :key="item.label">
+            <span
+              v-if="item.disabled"
+              class="relative flex select-none items-center gap-3 px-4 py-2.5"
+            >
+              <span v-if="idx > 0" class="absolute left-[3.75rem] right-0 top-0 h-px bg-border/60" />
+              <span
+                class="flex size-8 items-center justify-center rounded-lg border border-border bg-muted text-foreground/40"
+              >
+                <component :is="item.icon" class="size-[18px]" />
+              </span>
+              <span class="flex-1 truncate text-base text-foreground/40">{{ item.label }}</span>
+              <span class="text-xs text-muted-foreground">Soon</span>
+            </span>
+
+            <RouterLink
+              v-else
+              :to="item.to!"
+              class="relative flex items-center gap-3 px-4 py-2.5 transition-colors active:bg-accent"
+            >
+              <span v-if="idx > 0" class="absolute left-[3.75rem] right-0 top-0 h-px bg-border/60" />
+              <span
+                class="flex size-8 items-center justify-center rounded-lg border border-border bg-muted text-foreground"
+              >
+                <component :is="item.icon" class="size-[18px]" />
+              </span>
+              <span class="flex-1 truncate text-base">{{ item.label }}</span>
+              <Badge v-if="item.badge && item.badge() > 0" variant="secondary">
+                {{ item.badge() }}
+              </Badge>
+              <ChevronRight class="size-4 shrink-0 text-muted-foreground/50" />
+            </RouterLink>
+          </template>
+        </div>
+      </section>
     </nav>
   </div>
 
