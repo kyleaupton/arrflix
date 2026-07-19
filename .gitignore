@@ -1,6 +1,7 @@
 *.env
 .data/
 .ignore/
+HANDOVER_*
 
 # Scratch reference for the parser port (Sonarr/Radarr structural inventory).
 submodules/PORT_NOTES.md
