@@ -1,0 +1,34 @@
+<!--
+  email.test — the "send test email" probe from Settings ▸ Email. Rendered by the
+  notifications Renderer and sent synchronously by the email-provider handler (not
+  the outbox/worker), so it takes no payload. Compiles to
+  templates/email/test/email.body.html.tmpl. dk-* css-classes drive dark mode
+  (see partials/head.mjml).
+-->
+<mjml lang="en">
+  <mj-head>
+    <mj-include path="partials/head.mjml" />
+    <mj-title>Arrflix test email</mj-title>
+    <mj-preview>Your email configuration is working.</mj-preview>
+  </mj-head>
+  <mj-body css-class="dk-page" background-color="#fafafa" width="480px">
+    <mj-include path="partials/header.mjml" />
+
+    <mj-section css-class="dk-card" background-color="#ffffff" border="1px solid #e5e5e5" border-radius="14px" padding="32px">
+      <mj-column>
+        <mj-text css-class="dk-muted" color="#737373" font-size="12px" font-weight="600" letter-spacing="0.06em" text-transform="uppercase">
+          Configuration test
+        </mj-text>
+        <mj-text css-class="dk-fg" color="#0a0a0a" font-size="24px" font-weight="600" line-height="1.3" padding-top="6px">
+          Your email is working
+        </mj-text>
+        <mj-text css-class="dk-body" padding-top="14px">
+          If you're reading this, Arrflix can send email through your configured provider. No action is
+          needed — you can close this message.
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <mj-include path="partials/footer.mjml" />
+  </mj-body>
+</mjml>

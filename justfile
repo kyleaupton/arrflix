@@ -198,6 +198,14 @@ web-genclient: _ensure-up
 gen-email: _ensure-up
     {{web-exec-rw}} npm run gen-email
 
+# Compile MJML then render every email template through the real Go Renderer with
+# sample payloads into .ignore/email-preview/ (gitignored). Open the printed
+# index.html in a browser to eyeball changes — the whole MJML → preview loop.
+[group('frontend')]
+email-preview: gen-email
+    {{backend-exec-rw}} go run ./cmd/emailpreview
+    @echo "open backend/.ignore/email-preview/index.html"
+
 # --- aggregates --------------------------------------------------------------
 
 # Format both backend and frontend.

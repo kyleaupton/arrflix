@@ -151,11 +151,3 @@ func classify(err error) error {
 	}
 	return apperrors.BadGatewayf("smtp send failed: %v", err)
 }
-
-func (t *transport) Test(ctx context.Context, to string) error {
-	return t.Send(ctx, email.Message{
-		To:       []string{to},
-		Subject:  "Arrflix SMTP test",
-		TextBody: "This is a test email from Arrflix. If you received it, your SMTP configuration is working.",
-	})
-}

@@ -1,7 +1,7 @@
 <!-- Shared masthead: the Arrflix wordmark above the card. Single-root section. -->
-<mj-section padding="24px 12px 8px">
+<mj-section padding="28px 12px 16px">
   <mj-column>
-    <mj-text align="center" color="#ffffff" font-size="20px" font-weight="700" line-height="1.2">
+    <mj-text css-class="dk-fg" align="center" color="#0a0a0a" font-size="20px" font-weight="700" line-height="1.2">
       Arrflix
     </mj-text>
   </mj-column>

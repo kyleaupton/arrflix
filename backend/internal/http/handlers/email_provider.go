@@ -186,6 +186,32 @@ func (h *EmailProvider) Save(ctx context.Context, input *EmailProviderSaveInput)
 	return &EmailProviderSaveOutput{Body: toEmailProviderResponse(cfg)}, nil
 }
 
+// ----- Test send (shared) -----
+
+// testEmailText is the plain-text alternative for the house-styled test email —
+// the multipart fallback for clients that don't render the HTML body.
+const testEmailText = "If you're reading this, your Arrflix email configuration is working. No action is needed."
+
+// sendTestEmail renders the shared house-styled test email and sends it via the
+// given transport. A render failure is Internal (a broken embedded template); a
+// send failure is BadGateway, carrying the relay's own error to the operator.
+func (h *EmailProvider) sendTestEmail(ctx context.Context, transport email.Transport, to string) error {
+	const op = "EmailProviderHandler.sendTestEmail"
+	subject, htmlBody, err := h.svc.Notifications.RenderTestEmail()
+	if err != nil {
+		return apperrors.Internalf("render test email: %v", err).Op(op)
+	}
+	if err := transport.Send(ctx, email.Message{
+		To:       []string{to},
+		Subject:  subject,
+		TextBody: testEmailText,
+		HTMLBody: htmlBody,
+	}); err != nil {
+		return apperrors.BadGatewayf("%v", err).Op(op)
+	}
+	return nil
+}
+
 // ----- Test (stored config) -----
 
 type EmailProviderTestBody struct {
@@ -207,8 +233,8 @@ func (h *EmailProvider) Test(ctx context.Context, input *EmailProviderTestInput)
 	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	if err := transport.Test(testCtx, input.Body.To); err != nil {
-		return nil, apperrors.BadGatewayf("%v", err).Op("EmailProviderHandler.Test")
+	if err := h.sendTestEmail(testCtx, transport, input.Body.To); err != nil {
+		return nil, err
 	}
 	return &EmailProviderTestOutput{}, nil
 }
@@ -264,8 +290,8 @@ func (h *EmailProvider) TestConfig(ctx context.Context, input *EmailProviderTest
 	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	if err := transport.Test(testCtx, input.Body.To); err != nil {
-		return nil, apperrors.BadGatewayf("%v", err).Op("EmailProviderHandler.TestConfig")
+	if err := h.sendTestEmail(testCtx, transport, input.Body.To); err != nil {
+		return nil, err
 	}
 	return &EmailProviderTestConfigOutput{}, nil
 }

@@ -355,6 +355,14 @@ func (s *NotificationService) EnqueueTransactionalEmail(ctx context.Context, eve
 	return true, nil
 }
 
+// RenderTestEmail renders the house-styled "send test email" probe (subject +
+// HTML body). Unlike the other transactional emails this one is sent synchronously
+// by the email-provider settings handler rather than enqueued, so it renders here
+// through the shared renderer instead of going through the outbox.
+func (s *NotificationService) RenderTestEmail() (subject, htmlBody string, err error) {
+	return s.renderer.RenderEmail(notifications.EventEmailTest, nil)
+}
+
 // enabledOutbound returns the outbound channels enabled for a bundle given the
 // recipient's resolved preferences.
 func (s *NotificationService) enabledOutbound(prefs []model.NotificationPreference, bundle string) []model.NotificationChannel {

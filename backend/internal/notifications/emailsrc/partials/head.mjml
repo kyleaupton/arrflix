@@ -1,20 +1,47 @@
 <!--
-  Shared head fragment: brand fonts, colors, and component defaults every Arrflix
-  email inherits. Included into <mj-head> via mj-include, so the palette lives in
-  one place. Single root element (mj-attributes) — mj-include splices it in.
+  Shared head fragment: brand fonts, colors, component defaults, and the dark-mode
+  stylesheet every Arrflix email inherits. Included into <mj-head> via mj-include,
+  so the palette lives in one place.
 
-  Palette: bg #0f1115, card #181b22, heading #ffffff, body #c7ccd8, muted #8a90a2,
-  footer #5b6172, Plex-gold CTA #e5a00d on #1a1c20.
+  Palette mirrors the app's shadcn "neutral" theme (web/src/main.css), converted
+  from its oklch tokens to the hex email clients require:
+    LIGHT  page #fafafa  card #ffffff  border #e5e5e5  head #0a0a0a  body #404040  muted #737373
+    DARK   page #0a0a0a  card #171717  border #2e2e2e  head #fafafa  body #d4d4d4  muted #a1a1a1
+    button LIGHT #171717 on text #fafafa   DARK inverts to #e5e5e5 on text #171717 (shadcn primary)
+
+  Dark mode is opt-in per client. The <style> media query below only fires where
+  prefers-color-scheme is honored (chiefly Apple Mail / iOS Mail); it targets the
+  css-class hooks the templates attach and needs !important to beat MJML's inline
+  styles. Gmail/Outlook apply their own auto-darkening we can't fully control — the
+  color-scheme meta tags just tell them we're dark-aware so they invert more sanely.
 -->
+<mj-raw>
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
+</mj-raw>
 <mj-attributes>
-  <mj-all font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" />
-  <mj-text color="#c7ccd8" font-size="15px" line-height="1.6" padding="0" />
+  <mj-all font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" />
+  <mj-text color="#404040" font-size="15px" line-height="1.6" padding="0" />
   <mj-button
-    background-color="#e5a00d"
-    color="#1a1c20"
-    font-size="15px"
-    font-weight="600"
+    background-color="#171717"
+    color="#fafafa"
+    font-size="14px"
+    font-weight="500"
     border-radius="8px"
-    inner-padding="12px 24px"
+    inner-padding="10px 18px"
   />
 </mj-attributes>
+<mj-style>
+  :root { color-scheme: light dark; supported-color-schemes: light dark; }
+  @media (prefers-color-scheme: dark) {
+    body, .dk-page, div[role="article"] { background-color: #0a0a0a !important; }
+    .dk-card, .dk-card table { background: #171717 !important; background-color: #171717 !important; }
+    .dk-card td { border-color: #2e2e2e !important; }
+    .dk-fg, .dk-fg div { color: #fafafa !important; }
+    .dk-fg span { color: #a1a1a1 !important; }
+    .dk-body, .dk-body div { color: #d4d4d4 !important; }
+    .dk-muted, .dk-muted div { color: #a1a1a1 !important; }
+    .dk-btn a, .dk-btn td { background: #e5e5e5 !important; background-color: #e5e5e5 !important; }
+    .dk-btn a { color: #171717 !important; }
+  }
+</mj-style>

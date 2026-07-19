@@ -12,12 +12,18 @@ package notifications
 // SMTP is configured and a public URL is known) we email the magic link.
 const EventInviteCreated = "invite.created"
 
+// EventEmailTest is the "send test email" probe from Settings ▸ Email. Unlike the
+// other transactional emails it is rendered and sent synchronously by the
+// email-provider handler, never enqueued to the outbox — but it is registered
+// below so the renderer verifies its templates at boot, same as the rest.
+const EventEmailTest = "email.test"
+
 // RegisteredTransactionalEmail lists the email-only transactional event types the
 // renderer must have templates for. It is the transactional analogue of Registered:
 // the worker verifies email subject + HTML body exist for each at startup, so a
 // missing template is a loud boot failure rather than a first-send surprise. These
 // events have no in_app/push parts, so they're verified for email only.
-var RegisteredTransactionalEmail = []string{EventInviteCreated}
+var RegisteredTransactionalEmail = []string{EventInviteCreated, EventEmailTest}
 
 // InviteCreatedPayload is the template payload for the invite email — exactly the
 // variables invite/created/email.* may reference. AcceptURL is the fully-built
