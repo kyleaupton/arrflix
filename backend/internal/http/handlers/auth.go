@@ -130,8 +130,11 @@ type SignupOutput struct {
 	Body SignupResponse
 }
 
-// Signup honors the configured signup strategy: invite_only requires a
-// matching invite (Forbidden if missing); open allows arbitrary signups.
+// Signup is open self-registration, permitted only under the "open" strategy —
+// intended for instances behind a trusted network perimeter (mesh-VPN/LAN), where
+// the operator gates access at the network. Under invite_only (default) and
+// plex_friends there is no open local signup: invited users arrive through the
+// magic-link accept flow (AcceptInvite), so self-signup is Forbidden.
 func (h *Auth) Signup(ctx context.Context, input *SignupInput) (*SignupOutput, error) {
 	all, err := h.svc.Settings.GetAll(ctx)
 	if err != nil {
@@ -141,17 +144,65 @@ func (h *Auth) Signup(ctx context.Context, input *SignupInput) (*SignupOutput, e
 	if strategy == "" {
 		strategy = "invite_only"
 	}
-
-	if strategy == "invite_only" {
-		if err := h.svc.Invites.CheckAndClaim(ctx, input.Body.Email); err != nil {
-			return nil, err
-		}
+	if strategy != "open" {
+		return nil, apperrors.Forbiddenf("self-signup is disabled; ask an administrator for an invite").
+			Op("AuthHandler.Signup")
 	}
 
 	if _, err := h.svc.Users.Create(ctx, input.Body.Email, input.Body.Username, input.Body.Password, "requester", true); err != nil {
 		return nil, err
 	}
 	return &SignupOutput{Body: SignupResponse{Success: true}}, nil
+}
+
+// ----- Accept Invite -----
+
+type AcceptInviteInput struct {
+	UserAgent string `header:"User-Agent" doc:"Device label, captured server-side"`
+	Body      struct {
+		Token    string `json:"token" required:"true" minLength:"1" doc:"Invite token from the accept link"`
+		Username string `json:"username" required:"true" minLength:"1" doc:"Chosen username"`
+		Password string `json:"password" required:"true" minLength:"8" doc:"Password (>= 8 chars)"`
+	}
+}
+
+type AcceptInviteResponse struct {
+	Token string `json:"token" doc:"JWT bearer token"`
+}
+
+type AcceptInviteOutput struct {
+	Body      AcceptInviteResponse
+	SetCookie http.Cookie `header:"Set-Cookie"`
+}
+
+// AcceptInvite redeems an invite link: it validates the token, provisions the
+// account with the invited email + role, consumes the invite, and opens a session
+// so the invitee lands logged-in. The token is validated before the account is
+// created and consumed only after — so a failed create (weak password, taken
+// username/email) leaves the link live to retry.
+func (h *Auth) AcceptInvite(ctx context.Context, input *AcceptInviteInput) (*AcceptInviteOutput, error) {
+	invite, err := h.svc.Invites.ValidateToken(ctx, input.Body.Token)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := h.svc.Users.Create(ctx, invite.Email, input.Body.Username, input.Body.Password, invite.Role, true)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.svc.Invites.Claim(ctx, invite.ID); err != nil {
+		return nil, err
+	}
+
+	issued, err := h.svc.Sessions.Create(ctx, user, sessionMeta(input.UserAgent, middlewares.ClientIPFromContext(ctx)))
+	if err != nil {
+		return nil, err
+	}
+	return &AcceptInviteOutput{
+		Body:      AcceptInviteResponse{Token: issued.AccessToken},
+		SetCookie: h.refreshCookie(issued.RefreshToken),
+	}, nil
 }
 
 // ----- Plex Exchange -----
@@ -387,6 +438,18 @@ func (h *Auth) RegisterHumachi(api huma.API) {
 		DefaultStatus: http.StatusCreated,
 		Errors:        errs(errsWrite, errsForbidden),
 	}, h.Signup)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "auth-accept-invite",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/auth/accept-invite",
+		Summary:       "Accept an invite",
+		Description:   "Validates an invite token, provisions the account with the invited role, and opens a session.",
+		Tags:          []string{"auth"},
+		DefaultStatus: http.StatusCreated,
+		// 404 = invalid/expired token; write set covers taken username/email + weak password.
+		Errors: errs(errsRead, errsWrite),
+	}, h.AcceptInvite)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "auth-plex-exchange",

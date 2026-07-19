@@ -4,6 +4,36 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type AcceptInviteInputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Password (>= 8 chars)
+     */
+    password: string;
+    /**
+     * Invite token from the accept link
+     */
+    token: string;
+    /**
+     * Chosen username
+     */
+    username: string;
+};
+
+export type AcceptInviteResponse = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * JWT bearer token
+     */
+    token: string;
+};
+
 export type ActionSet = {
     downloaderId?: string;
     libraryId?: string;
@@ -1195,15 +1225,13 @@ export type IndexerTestResult = {
 };
 
 export type Invite = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
     claimedAt: string | null;
     createdAt: string;
     email: string;
+    expiresAt: string | null;
     id: string;
     invitedBy: string;
+    role: string;
 };
 
 export type InvitesCreateBody = {
@@ -1215,6 +1243,22 @@ export type InvitesCreateBody = {
      * Invitee email
      */
     email: string;
+    /**
+     * Target role for the invited user (defaults to requester)
+     */
+    role?: 'requester' | 'viewer' | 'co_admin' | 'admin';
+};
+
+export type InvitesCreateResponse = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    invite: Invite;
+    /**
+     * Raw invite token; build the accept link as <app-origin>/accept?token=<token>
+     */
+    token: string;
 };
 
 export type LatestVersionInfo = {
@@ -2645,6 +2689,28 @@ export type WatchProviders = {
     rent?: Array<WatchProvider> | null;
 };
 
+export type AcceptInviteInputBodyWritable = {
+    /**
+     * Password (>= 8 chars)
+     */
+    password: string;
+    /**
+     * Invite token from the accept link
+     */
+    token: string;
+    /**
+     * Chosen username
+     */
+    username: string;
+};
+
+export type AcceptInviteResponseWritable = {
+    /**
+     * JWT bearer token
+     */
+    token: string;
+};
+
 export type BootstrapResponseWritable = {
     /**
      * Public app config
@@ -3163,19 +3229,23 @@ export type IndexerTestResultWritable = {
     success: boolean;
 };
 
-export type InviteWritable = {
-    claimedAt: string | null;
-    createdAt: string;
-    email: string;
-    id: string;
-    invitedBy: string;
-};
-
 export type InvitesCreateBodyWritable = {
     /**
      * Invitee email
      */
     email: string;
+    /**
+     * Target role for the invited user (defaults to requester)
+     */
+    role?: 'requester' | 'viewer' | 'co_admin' | 'admin';
+};
+
+export type InvitesCreateResponseWritable = {
+    invite: Invite;
+    /**
+     * Raw invite token; build the accept link as <app-origin>/accept?token=<token>
+     */
+    token: string;
 };
 
 export type LibraryWritable = {
@@ -3927,6 +3997,53 @@ export type WantWritable = {
     trackingId: string;
     updatedAt: string;
 };
+
+export type AuthAcceptInviteData = {
+    body: AcceptInviteInputBodyWritable;
+    headers?: {
+        /**
+         * Device label, captured server-side
+         */
+        'User-Agent'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/accept-invite';
+};
+
+export type AuthAcceptInviteErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type AuthAcceptInviteError = AuthAcceptInviteErrors[keyof AuthAcceptInviteErrors];
+
+export type AuthAcceptInviteResponses = {
+    /**
+     * Created
+     */
+    201: AcceptInviteResponse;
+};
+
+export type AuthAcceptInviteResponse = AuthAcceptInviteResponses[keyof AuthAcceptInviteResponses];
 
 export type AuthLoginData = {
     body: LoginInputBodyWritable;
@@ -6437,10 +6554,10 @@ export type InvitesCreateResponses = {
     /**
      * Created
      */
-    201: Invite;
+    201: InvitesCreateResponse;
 };
 
-export type InvitesCreateResponse = InvitesCreateResponses[keyof InvitesCreateResponses];
+export type InvitesCreateResponse2 = InvitesCreateResponses[keyof InvitesCreateResponses];
 
 export type InvitesDeleteData = {
     body?: never;

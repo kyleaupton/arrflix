@@ -22,30 +22,6 @@ func (q *Queries) ClaimInvite(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
-const createInvite = `-- name: CreateInvite :one
-INSERT INTO user_invite (email, invited_by)
-VALUES ($1, $2)
-RETURNING id, email, invited_by, created_at, claimed_at
-`
-
-type CreateInviteParams struct {
-	Email     string      `json:"email"`
-	InvitedBy pgtype.UUID `json:"invited_by"`
-}
-
-func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (UserInvite, error) {
-	row := q.db.QueryRow(ctx, createInvite, arg.Email, arg.InvitedBy)
-	var i UserInvite
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.InvitedBy,
-		&i.CreatedAt,
-		&i.ClaimedAt,
-	)
-	return i, err
-}
-
 const deleteInvite = `-- name: DeleteInvite :exec
 DELETE FROM user_invite WHERE id = $1
 `
@@ -56,7 +32,7 @@ func (q *Queries) DeleteInvite(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getInviteByEmail = `-- name: GetInviteByEmail :one
-SELECT id, email, invited_by, created_at, claimed_at FROM user_invite
+SELECT id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role FROM user_invite
 WHERE lower(email) = lower($1) AND claimed_at IS NULL
 `
 
@@ -69,12 +45,36 @@ func (q *Queries) GetInviteByEmail(ctx context.Context, lower string) (UserInvit
 		&i.InvitedBy,
 		&i.CreatedAt,
 		&i.ClaimedAt,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.Role,
+	)
+	return i, err
+}
+
+const getInviteByTokenHash = `-- name: GetInviteByTokenHash :one
+SELECT id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role FROM user_invite
+WHERE token_hash = $1 AND claimed_at IS NULL AND expires_at > now()
+`
+
+func (q *Queries) GetInviteByTokenHash(ctx context.Context, tokenHash []byte) (UserInvite, error) {
+	row := q.db.QueryRow(ctx, getInviteByTokenHash, tokenHash)
+	var i UserInvite
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.InvitedBy,
+		&i.CreatedAt,
+		&i.ClaimedAt,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.Role,
 	)
 	return i, err
 }
 
 const listInvites = `-- name: ListInvites :many
-SELECT id, email, invited_by, created_at, claimed_at FROM user_invite
+SELECT id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role FROM user_invite
 ORDER BY created_at DESC
 `
 
@@ -93,6 +93,9 @@ func (q *Queries) ListInvites(ctx context.Context) ([]UserInvite, error) {
 			&i.InvitedBy,
 			&i.CreatedAt,
 			&i.ClaimedAt,
+			&i.TokenHash,
+			&i.ExpiresAt,
+			&i.Role,
 		); err != nil {
 			return nil, err
 		}
@@ -102,4 +105,49 @@ func (q *Queries) ListInvites(ctx context.Context) ([]UserInvite, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const upsertInvite = `-- name: UpsertInvite :one
+INSERT INTO user_invite (email, invited_by, token_hash, expires_at, role)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (email) DO UPDATE SET
+  invited_by = EXCLUDED.invited_by,
+  token_hash = EXCLUDED.token_hash,
+  expires_at = EXCLUDED.expires_at,
+  role       = EXCLUDED.role,
+  claimed_at = NULL,
+  created_at = now()
+RETURNING id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role
+`
+
+type UpsertInviteParams struct {
+	Email     string             `json:"email"`
+	InvitedBy pgtype.UUID        `json:"invited_by"`
+	TokenHash []byte             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	Role      string             `json:"role"`
+}
+
+// Create or re-issue an invite. Re-inviting an email (ON CONFLICT) regenerates the
+// token/expiry/role and clears claimed_at — the admin "resend" gesture.
+func (q *Queries) UpsertInvite(ctx context.Context, arg UpsertInviteParams) (UserInvite, error) {
+	row := q.db.QueryRow(ctx, upsertInvite,
+		arg.Email,
+		arg.InvitedBy,
+		arg.TokenHash,
+		arg.ExpiresAt,
+		arg.Role,
+	)
+	var i UserInvite
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.InvitedBy,
+		&i.CreatedAt,
+		&i.ClaimedAt,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.Role,
+	)
+	return i, err
 }
