@@ -29,6 +29,7 @@ async function loadSettings() {
     const res = await settingsList<true>({ throwOnError: true })
     settings.value = res.data as SettingsMap
     siteTitleInput.value = String(settings.value['site.title'] ?? '')
+    siteBaseUrlInput.value = String(settings.value['site.base_url'] ?? '')
   } catch {
     error.value = 'Failed to load settings'
   } finally {
@@ -55,6 +56,19 @@ let siteTitleTimer: ReturnType<typeof setTimeout>
 watch(siteTitleInput, (v) => {
   clearTimeout(siteTitleTimer)
   siteTitleTimer = setTimeout(() => saveSetting('site.title', v), 500)
+})
+
+const siteBaseUrlInput = ref('')
+
+// Trailing slashes are stripped so the backend can concatenate paths
+// (e.g. "<base>/accept?token=…") without producing a double slash.
+let siteBaseUrlTimer: ReturnType<typeof setTimeout>
+watch(siteBaseUrlInput, (v) => {
+  clearTimeout(siteBaseUrlTimer)
+  siteBaseUrlTimer = setTimeout(
+    () => saveSetting('site.base_url', v.trim().replace(/\/+$/, '')),
+    500,
+  )
 })
 
 const tmdbKeyDisplay = computed(() => {
@@ -121,12 +135,30 @@ async function saveTmdbKey() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Site</CardTitle>
+          <div class="flex items-center justify-between">
+            <CardTitle>Site</CardTitle>
+            <span v-if="isSaving" class="text-xs text-muted-foreground">Saving…</span>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent class="flex flex-col gap-4">
           <div class="flex flex-col gap-2">
             <Label for="site-title" class="text-sm text-muted-foreground">Site title</Label>
-            <Input id="site-title" v-model="siteTitleInput" :disabled="isSaving" />
+            <Input id="site-title" v-model="siteTitleInput" />
+          </div>
+          <div class="flex flex-col gap-2">
+            <Label for="site-base-url" class="text-sm text-muted-foreground">Base URL</Label>
+            <Input
+              id="site-base-url"
+              v-model="siteBaseUrlInput"
+              type="url"
+              inputmode="url"
+              placeholder="https://arrflix.example"
+            />
+            <p class="text-xs text-muted-foreground">
+              The public URL Arrflix is reached at. Used to build links in outbound email such as
+              invitations. When empty, invite emails fall back to the request origin and, failing
+              that, aren't sent (the copyable link still works).
+            </p>
           </div>
         </CardContent>
       </Card>
