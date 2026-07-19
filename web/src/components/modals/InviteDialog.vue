@@ -31,10 +31,12 @@ const email = ref('')
 const role = ref<InviteRole>('requester')
 const error = ref<string | null>(null)
 
-// After creation we show the accept link instead of closing: email delivery is a
-// convenience layered on later, so the copyable link is the source of truth — the
-// admin sends it however they like (and it works with SMTP unconfigured).
+// After creation we show the accept link instead of closing: the copyable link is
+// the source of truth. When SMTP is configured (and a base URL is known) the backend
+// also emails it — `emailed` reflects that, so the admin knows whether they still
+// need to send the link themselves.
 const acceptLink = ref<string | null>(null)
+const emailed = ref(false)
 const copied = ref(false)
 
 const { data: roles } = useQuery(rolesListOptions())
@@ -44,6 +46,7 @@ const createInviteMutation = useMutation({
   onSuccess: (data) => {
     queryClient.invalidateQueries({ queryKey: invitesListQueryKey() })
     acceptLink.value = `${window.location.origin}/accept?token=${encodeURIComponent(data.token)}`
+    emailed.value = data.emailed
   },
   onError: (err) => {
     error.value = problemMessage(err, 'Failed to create invite')
@@ -107,7 +110,11 @@ const handleClose = () => {
 
     <!-- Step 2: hand off the link -->
     <div v-else class="flex flex-col gap-3">
-      <p class="text-sm text-muted-foreground">
+      <p v-if="emailed" class="text-sm text-muted-foreground">
+        Invite emailed to <span class="font-medium text-foreground">{{ email }}</span
+        >. You can also copy the link below to share it directly:
+      </p>
+      <p v-else class="text-sm text-muted-foreground">
         Invite created for <span class="font-medium text-foreground">{{ email }}</span
         >. Send them this link to finish setting up their account:
       </p>

@@ -215,6 +215,27 @@ func (r *Renderer) Verify(events []Event, channels []model.NotificationChannel) 
 	return nil
 }
 
+// VerifyTransactionalEmail confirms every email-only transactional event type has
+// its email subject (text) and HTML body (html) templates. It is the transactional
+// analogue of Verify: RegisteredTransactionalEmail events have no in_app/push face,
+// so only the email parts are demanded. A missing part is a loud startup error,
+// same as Verify — a transactional email that can't render is a silently-dropped
+// invite/reset, which is worse than a boot failure.
+func (r *Renderer) VerifyTransactionalEmail(eventTypes []string) error {
+	var missing []string
+	for _, et := range eventTypes {
+		for _, part := range emailParts {
+			if key := templateKey(et, model.ChannelEmail, part); !r.hasTemplate(key) {
+				missing = append(missing, key)
+			}
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing transactional email templates: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
 // templateKey maps an event type's dotted identifier to its template path prefix
 // ("want.available" → "want/available") and appends the channel and part.
 func templateKey(eventType string, ch model.NotificationChannel, part string) string {

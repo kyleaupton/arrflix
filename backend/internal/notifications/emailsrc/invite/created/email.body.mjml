@@ -1,0 +1,46 @@
+<!--
+  invite.created — an admin invited someone; here's their magic link.
+  Compiles to templates/invite/created/email.body.html.tmpl. Payload is
+  {acceptUrl}; only the CTA href is templated (a structural/numeric MJML
+  attribute is never). The link is unconditional — the service enqueues this
+  email only once it has a URL to build.
+-->
+<mjml lang="en">
+  <mj-head>
+    <mj-include path="partials/head.mjml" />
+    <mj-title>You're invited to Arrflix</mj-title>
+    <mj-preview>Set up your account to start requesting.</mj-preview>
+  </mj-head>
+  <mj-body background-color="#0f1115" width="480px">
+    <mj-include path="partials/header.mjml" />
+
+    <mj-section background-color="#181b22" border-radius="12px" padding="32px">
+      <mj-column>
+        <mj-text
+          color="#8a90a2"
+          font-size="13px"
+          font-weight="600"
+          letter-spacing="0.08em"
+          text-transform="uppercase"
+        >
+          You're invited
+        </mj-text>
+        <mj-text color="#ffffff" font-size="24px" font-weight="700" line-height="1.25" padding-top="8px">
+          Join Arrflix
+        </mj-text>
+        <mj-text padding-top="16px">
+          An administrator has invited you to Arrflix. Set up your account to start requesting movies and
+          shows.
+        </mj-text>
+
+        <mj-button href="{{.acceptUrl}}" align="left" padding="24px 0 0">Accept invite</mj-button>
+
+        <mj-text color="#8a90a2" font-size="14px" padding-top="24px">
+          This link expires in 7 days. If you weren't expecting this invite, you can safely ignore this email.
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <mj-include path="partials/footer.mjml" />
+  </mj-body>
+</mjml>

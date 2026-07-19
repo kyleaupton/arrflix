@@ -1254,6 +1254,10 @@ export type InvitesCreateResponse = {
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    /**
+     * Whether the invite magic link was also emailed to the invitee
+     */
+    emailed: boolean;
     invite: Invite;
     /**
      * Raw invite token; build the accept link as <app-origin>/accept?token=<token>
@@ -3241,6 +3245,10 @@ export type InvitesCreateBodyWritable = {
 };
 
 export type InvitesCreateResponseWritable = {
+    /**
+     * Whether the invite magic link was also emailed to the invitee
+     */
+    emailed: boolean;
     invite: Invite;
     /**
      * Raw invite token; build the accept link as <app-origin>/accept?token=<token>
@@ -6524,6 +6532,9 @@ export type InvitesListResponse = InvitesListResponses[keyof InvitesListResponse
 
 export type InvitesCreateData = {
     body: InvitesCreateBodyWritable;
+    headers?: {
+        Origin?: string;
+    };
     path?: never;
     query?: never;
     url: '/api/v1/invites';

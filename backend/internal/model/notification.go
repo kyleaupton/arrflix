@@ -43,19 +43,24 @@ const (
 
 // NotificationOutbox is the domain shape for a notification_outbox row — one
 // delivery attempt and, once delivered on the in_app channel, one bell-icon
-// history entry. RecipientUserID is nil only for the system-audience literal-email
-// recipients v1 doesn't yet produce. DeliveredAt/ReadAt are nil until the worker
-// delivers and the user reads. ClaimedAt is the worker's claim stamp, meaningful
-// only while Status is 'delivering' — it is how the crash-window reaper spots a
-// row whose worker died mid-delivery. Mirrors dbgen.NotificationOutbox.
+// history entry. A row targets either a known user (RecipientUserID) or a literal
+// address (RecipientEmail — a transactional email to someone with no account, e.g.
+// an invitee); exactly one is set. Transactional marks a row that bypassed
+// preference-gating at enqueue and must never park as awaiting_config at delivery.
+// DeliveredAt/ReadAt are nil until the worker delivers and the user reads. ClaimedAt
+// is the worker's claim stamp, meaningful only while Status is 'delivering' — it is
+// how the crash-window reaper spots a row whose worker died mid-delivery. Mirrors
+// dbgen.NotificationOutbox.
 type NotificationOutbox struct {
 	ID              uuid.UUID       `json:"id"`
 	EventType       string          `json:"eventType"`
 	Audience        string          `json:"audience"`
 	RecipientUserID *uuid.UUID      `json:"recipientUserId"`
+	RecipientEmail  *string         `json:"recipientEmail"`
 	Channel         string          `json:"channel"`
 	Payload         json.RawMessage `json:"payload"`
 	DedupKey        *string         `json:"dedupKey"`
+	Transactional   bool            `json:"transactional"`
 	Status          string          `json:"status"`
 	Attempts        int32           `json:"attempts"`
 	NextAttemptAt   time.Time       `json:"nextAttemptAt"`

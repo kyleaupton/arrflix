@@ -63,12 +63,24 @@ func New(r *repo.Repository, log *logger.Logger, adapters ...notifications.Chann
 	}
 	byChannel := make(map[model.NotificationChannel]notifications.ChannelAdapter, len(adapters))
 	channels := make([]model.NotificationChannel, 0, len(adapters))
+	hasEmail := false
 	for _, a := range adapters {
 		byChannel[a.Name()] = a
 		channels = append(channels, a.Name())
+		if a.Name() == model.ChannelEmail {
+			hasEmail = true
+		}
 	}
 	if err := renderer.Verify(notifications.Registered, channels); err != nil {
 		return nil, err
+	}
+	// Transactional emails (invites, resets) are email-only; verify their templates
+	// too when the email channel is wired, so a missing one fails boot rather than a
+	// first send.
+	if hasEmail {
+		if err := renderer.VerifyTransactionalEmail(notifications.RegisteredTransactionalEmail); err != nil {
+			return nil, err
+		}
 	}
 	return &Worker{
 		repo:         r,
@@ -155,12 +167,18 @@ func (w *Worker) handle(ctx context.Context, row model.NotificationOutbox) bool 
 		return false
 	}
 
-	// The channel's adapter may not be configured yet (email without SMTP). Park
-	// the row as awaiting_config rather than claiming it: ListDueOutbox skips
-	// non-queued rows, so it waits until a provider save requeues it. This also
-	// covers config removed after enqueue. Checked before the claim so an
-	// unconfigured row never enters the delivering state.
-	if !adapter.IsConfigured(ctx) {
+	// The channel's adapter may not be configured yet (email without SMTP). A
+	// non-transactional row parks as awaiting_config rather than claiming it:
+	// ListDueOutbox skips non-queued rows, so it waits until a provider save
+	// requeues it. This also covers config removed after enqueue. Checked before the
+	// claim so an unconfigured row never enters the delivering state.
+	//
+	// A transactional row (an invite/reset email) never parks — it was enqueued only
+	// after a configured-precheck, so an unconfigured adapter here means config was
+	// removed mid-flight. It falls through to claim + fail below, so it retries with
+	// backoff and eventually dies (fail loud), never waiting silently.
+	configured := adapter.IsConfigured(ctx)
+	if !configured && !row.Transactional {
 		if _, err := w.repo.MarkOutboxAwaitingConfig(ctx, row.ID); err != nil && !apperrors.IsNotFound(err) {
 			w.log.Error().Err(err).Str("id", row.ID.String()).Msg("park notification awaiting_config failed")
 		}
@@ -174,6 +192,13 @@ func (w *Worker) handle(ctx context.Context, row model.NotificationOutbox) bool 
 		if !apperrors.IsNotFound(err) {
 			w.log.Error().Err(err).Str("id", row.ID.String()).Msg("claim notification failed")
 		}
+		return false
+	}
+
+	// Transactional row on an unconfigured channel: fail as a retryable error so it
+	// backs off and eventually dies with a clear last_error, rather than parking.
+	if !configured {
+		w.retryOrKill(ctx, claimed, apperrors.BadGatewayf("%s channel not configured at delivery time", claimed.Channel))
 		return false
 	}
 

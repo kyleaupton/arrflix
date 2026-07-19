@@ -42,15 +42,23 @@ type InvitesCreateBody struct {
 }
 
 type InvitesCreateInput struct {
-	Body InvitesCreateBody
+	// Origin is the browser's origin on the create POST — the public URL the admin
+	// reached Arrflix at. It's the fallback base for the emailed magic link when the
+	// site.base_url setting is unset (fetch sends Origin on every POST).
+	Origin string `header:"Origin"`
+	Body   InvitesCreateBody
 }
 
-// InvitesCreateResponse returns the invite plus the raw token. The token is shown
-// once, here: the admin builds the accept link (`<app-origin>/accept?token=<token>`)
-// to email or copy. It is never persisted in plaintext nor returned by any other op.
+// InvitesCreateResponse returns the invite, the raw token, and whether the magic
+// link was also emailed. The token is shown once, here: the admin builds the accept
+// link (`<app-origin>/accept?token=<token>`) to copy — always the source of truth,
+// whether or not it was emailed. It is never persisted in plaintext nor returned by
+// any other op. Emailed is true only when SMTP is configured and a base URL was
+// known; false means "copy the link" (unconfigured SMTP or no base URL).
 type InvitesCreateResponse struct {
-	Invite model.Invite `json:"invite"`
-	Token  string       `json:"token" doc:"Raw invite token; build the accept link as <app-origin>/accept?token=<token>"`
+	Invite  model.Invite `json:"invite"`
+	Token   string       `json:"token" doc:"Raw invite token; build the accept link as <app-origin>/accept?token=<token>"`
+	Emailed bool         `json:"emailed" doc:"Whether the invite magic link was also emailed to the invitee"`
 }
 
 type InvitesCreateOutput struct {
@@ -71,11 +79,11 @@ func (h *Invites) Create(ctx context.Context, input *InvitesCreateInput) (*Invit
 		return nil, apperrors.Unauthenticatedf("invalid token").Op("InvitesHandler.Create")
 	}
 
-	invite, rawToken, err := h.svc.Invites.Create(ctx, input.Body.Email, input.Body.Role, invitedBy)
+	invite, rawToken, emailed, err := h.svc.Invites.Create(ctx, input.Body.Email, input.Body.Role, invitedBy, input.Origin)
 	if err != nil {
 		return nil, err
 	}
-	return &InvitesCreateOutput{Body: InvitesCreateResponse{Invite: invite, Token: rawToken}}, nil
+	return &InvitesCreateOutput{Body: InvitesCreateResponse{Invite: invite, Token: rawToken, Emailed: emailed}}, nil
 }
 
 // ----- Delete -----

@@ -55,26 +55,20 @@ func (a *Adapter) Name() model.NotificationChannel { return model.ChannelEmail }
 // it.
 func (a *Adapter) IsConfigured(ctx context.Context) bool { return a.manager.IsConfigured(ctx) }
 
-// Deliver resolves the recipient's address, renders the email, and sends it.
-// A missing recipient or empty address is a permanent (Validation → non-retryable)
-// failure the worker marks dead; a render error is likewise permanent; a
-// transport/send failure propagates verbatim so apperrors.IsRetryable governs
-// retry-vs-dead (a connection blip retries, a 5xx-rejected address dies — the
-// transport classifies the relay's reply, see smtp.classify).
+// Deliver resolves the recipient's address, renders the email, and sends it. The
+// address comes from a literal recipient_email (a transactional email to someone
+// with no account — an invitee) when present, else from the recipient user's stored
+// address. A missing recipient or empty address is a permanent (Validation →
+// non-retryable) failure the worker marks dead; a render error is likewise
+// permanent; a transport/send failure propagates verbatim so apperrors.IsRetryable
+// governs retry-vs-dead (a connection blip retries, a 5xx-rejected address dies —
+// the transport classifies the relay's reply, see smtp.classify).
 func (a *Adapter) Deliver(ctx context.Context, row model.NotificationOutbox) error {
 	const op = "EmailAdapter.Deliver"
 
-	if row.RecipientUserID == nil {
-		return apperrors.Validation("email notification has no recipient user").Op(op)
-	}
-	user, err := a.users.GetUserByID(ctx, *row.RecipientUserID)
+	to, err := a.resolveRecipient(ctx, row)
 	if err != nil {
-		// A deleted/unknown user surfaces as NotFound (non-retryable → dead); a
-		// transient DB error surfaces retryable and requeues.
 		return err
-	}
-	if user.Email == nil || *user.Email == "" {
-		return apperrors.Validation("recipient has no email address").Op(op)
 	}
 
 	subject, htmlBody, err := a.renderer.RenderEmail(row.EventType, row.Payload)
@@ -87,10 +81,35 @@ func (a *Adapter) Deliver(ctx context.Context, row model.NotificationOutbox) err
 		return err
 	}
 	return transport.Send(ctx, email.Message{
-		To:       []string{*user.Email},
+		To:       []string{to},
 		Subject:  subject,
 		HTMLBody: htmlBody,
 	})
+}
+
+// resolveRecipient returns the destination address for a row: a literal
+// recipient_email (transactional mail with no account) wins; otherwise the row's
+// recipient user is looked up and their stored address used. An addressless row is
+// a permanent failure.
+func (a *Adapter) resolveRecipient(ctx context.Context, row model.NotificationOutbox) (string, error) {
+	const op = "EmailAdapter.Deliver"
+
+	if row.RecipientEmail != nil && *row.RecipientEmail != "" {
+		return *row.RecipientEmail, nil
+	}
+	if row.RecipientUserID == nil {
+		return "", apperrors.Validation("email notification has no recipient").Op(op)
+	}
+	user, err := a.users.GetUserByID(ctx, *row.RecipientUserID)
+	if err != nil {
+		// A deleted/unknown user surfaces as NotFound (non-retryable → dead); a
+		// transient DB error surfaces retryable and requeues.
+		return "", err
+	}
+	if user.Email == nil || *user.Email == "" {
+		return "", apperrors.Validation("recipient has no email address").Op(op)
+	}
+	return *user.Email, nil
 }
 
 var _ notifications.ChannelAdapter = (*Adapter)(nil)

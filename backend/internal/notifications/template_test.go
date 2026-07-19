@@ -149,6 +149,51 @@ func TestRenderer_VerifyEmail(t *testing.T) {
 	}
 }
 
+// TestRenderer_RenderInviteEmail proves the transactional invite email renders its
+// subject and body, with the accept URL landing in the HTML CTA.
+func TestRenderer_RenderInviteEmail(t *testing.T) {
+	t.Parallel()
+
+	r, err := NewRenderer()
+	if err != nil {
+		t.Fatalf("new renderer: %v", err)
+	}
+	payload, _ := json.Marshal(InviteCreatedPayload{AcceptURL: "https://arrflix.test/accept?token=xyz"})
+
+	subject, html, err := r.RenderEmail(EventInviteCreated, payload)
+	if err != nil {
+		t.Fatalf("render invite email: %v", err)
+	}
+	if subject != "You're invited to Arrflix" {
+		t.Fatalf("subject = %q", subject)
+	}
+	if !strings.Contains(html, "https://arrflix.test/accept?token=xyz") {
+		t.Fatalf("html body = %q, want the accept link", html)
+	}
+}
+
+// TestRenderer_VerifyTransactionalEmail proves the transactional email startup
+// guard: every RegisteredTransactionalEmail type must have an email subject + HTML
+// body, and a missing one is reported by name.
+func TestRenderer_VerifyTransactionalEmail(t *testing.T) {
+	t.Parallel()
+
+	r, err := NewRenderer()
+	if err != nil {
+		t.Fatalf("new renderer: %v", err)
+	}
+	if err := r.VerifyTransactionalEmail(RegisteredTransactionalEmail); err != nil {
+		t.Fatalf("verify transactional email should pass with templates present: %v", err)
+	}
+
+	// Drop the invite HTML body → verify names it missing.
+	delete(r.htmlTemplates, "invite/created/email.body.html")
+	if err := r.VerifyTransactionalEmail(RegisteredTransactionalEmail); err == nil ||
+		!strings.Contains(err.Error(), "invite/created/email.body.html") {
+		t.Fatalf("verify should flag the missing invite html body, got %v", err)
+	}
+}
+
 // TestRenderer_Verify proves the build-time guard for the text channels: every
 // registered event ships in_app and push templates (a title + body each), and a
 // missing one is reported by name.

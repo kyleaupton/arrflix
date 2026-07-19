@@ -3062,6 +3062,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        emailed:
+          description: Whether the invite magic link was also emailed to the invitee
+          type: boolean
         invite:
           $ref: "#/components/schemas/Invite"
         token:
@@ -3070,6 +3073,7 @@ components:
       required:
         - invite
         - token
+        - emailed
       type: object
     LatestVersionInfo:
       additionalProperties: false
@@ -8828,6 +8832,11 @@ paths:
         - invites
     post:
       operationId: invites-create
+      parameters:
+        - in: header
+          name: Origin
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
