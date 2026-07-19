@@ -249,7 +249,11 @@ async function logOutOthers() {
         </DialogDescription>
       </DialogHeader>
       <DialogFooter class="gap-2 sm:justify-end">
-        <Button variant="ghost" :disabled="isRevokingOthers" @click="confirmLogoutOthersOpen = false">
+        <Button
+          variant="ghost"
+          :disabled="isRevokingOthers"
+          @click="confirmLogoutOthersOpen = false"
+        >
           Cancel
         </Button>
         <Button variant="destructive" :disabled="isRevokingOthers" @click="logOutOthers">
