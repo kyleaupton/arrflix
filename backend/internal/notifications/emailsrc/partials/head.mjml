@@ -1,0 +1,20 @@
+<!--
+  Shared head fragment: brand fonts, colors, and component defaults every Arrflix
+  email inherits. Included into <mj-head> via mj-include, so the palette lives in
+  one place. Single root element (mj-attributes) — mj-include splices it in.
+
+  Palette: bg #0f1115, card #181b22, heading #ffffff, body #c7ccd8, muted #8a90a2,
+  footer #5b6172, Plex-gold CTA #e5a00d on #1a1c20.
+-->
+<mj-attributes>
+  <mj-all font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" />
+  <mj-text color="#c7ccd8" font-size="15px" line-height="1.6" padding="0" />
+  <mj-button
+    background-color="#e5a00d"
+    color="#1a1c20"
+    font-size="15px"
+    font-weight="600"
+    border-radius="8px"
+    inner-padding="12px 24px"
+  />
+</mj-attributes>

@@ -1,0 +1,49 @@
+<!--
+  want.available — "your requested title is ready to watch".
+  Compiles to templates/want/available/email.body.html.tmpl, parsed by the Go
+  renderer as an html/template. Go actions ({{ ... }}) pass through untouched:
+  the payload is {media:{title,year}, plexLink}. Structural/numeric MJML
+  attributes are never templated — only text content and the CTA href are.
+-->
+<mjml lang="en">
+  <mj-head>
+    <mj-include path="partials/head.mjml" />
+    <mj-title>{{.media.title}} is ready to watch</mj-title>
+    <mj-preview>Your request is now available in the library.</mj-preview>
+  </mj-head>
+  <mj-body background-color="#0f1115" width="480px">
+    <mj-include path="partials/header.mjml" />
+
+    <mj-section background-color="#181b22" border-radius="12px" padding="32px">
+      <mj-column>
+        <mj-text
+          color="#8a90a2"
+          font-size="13px"
+          font-weight="600"
+          letter-spacing="0.08em"
+          text-transform="uppercase"
+        >
+          Ready to watch
+        </mj-text>
+        <mj-text color="#ffffff" font-size="24px" font-weight="700" line-height="1.25" padding-top="8px">
+          {{.media.title}}{{if .media.year}} <span style="font-weight:400;color:#8a90a2;">({{.media.year}})</span>{{end}}
+        </mj-text>
+        <mj-text padding-top="16px">
+          Good news — your request is now available in the library and ready to play.
+        </mj-text>
+
+        <!-- CTA branches on plexLink; mj-raw carries the Go control tokens so they
+             land adjacent to the compiled button/text at render time. -->
+        <mj-raw>{{if .plexLink}}</mj-raw>
+        <mj-button href="{{.plexLink}}" align="left" padding="24px 0 0">Play now</mj-button>
+        <mj-raw>{{else}}</mj-raw>
+        <mj-text color="#8a90a2" font-size="14px" padding-top="8px">
+          Open your library to start watching.
+        </mj-text>
+        <mj-raw>{{end}}</mj-raw>
+      </mj-column>
+    </mj-section>
+
+    <mj-include path="partials/footer.mjml" />
+  </mj-body>
+</mjml>
