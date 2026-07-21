@@ -5569,6 +5569,39 @@ components:
         - domain
         - profileId
       type: object
+    TitleAction:
+      additionalProperties: false
+      properties:
+        disabledReason:
+          type: string
+        enabled:
+          type: boolean
+        kind:
+          type: string
+        requiresApproval:
+          type: boolean
+        tiers:
+          items:
+            $ref: "#/components/schemas/TitleActionTier"
+          type:
+            - array
+            - "null"
+      required:
+        - kind
+        - enabled
+        - requiresApproval
+      type: object
+    TitleActionTier:
+      additionalProperties: false
+      properties:
+        requiresApproval:
+          type: boolean
+        tier:
+          type: string
+      required:
+        - tier
+        - requiresApproval
+      type: object
     TitleCounts:
       additionalProperties: false
       properties:
@@ -5620,6 +5653,28 @@ components:
         - hasFiles
         - fileCount
       type: object
+    TitleProgressPayload:
+      additionalProperties: false
+      properties:
+        bytesPerSecond:
+          format: int64
+          type: integer
+        etaSeconds:
+          format: int64
+          type: integer
+        mediaType:
+          type: string
+        progress:
+          format: double
+          type: number
+        tmdbId:
+          format: int64
+          type: integer
+      required:
+        - mediaType
+        - tmdbId
+        - progress
+      type: object
     TitleStatus:
       additionalProperties: false
       properties:
@@ -5630,6 +5685,12 @@ components:
           format: uri
           readOnly: true
           type: string
+        actions:
+          items:
+            $ref: "#/components/schemas/TitleAction"
+          type:
+            - array
+            - "null"
         active:
           type: boolean
         counts:
@@ -5651,6 +5712,8 @@ components:
         tmdbId:
           format: int64
           type: integer
+        viewer:
+          $ref: "#/components/schemas/TitleViewer"
       required:
         - mediaType
         - tmdbId
@@ -5658,6 +5721,28 @@ components:
         - active
         - library
         - counts
+        - viewer
+        - actions
+      type: object
+    TitleStatusPayload:
+      additionalProperties: false
+      properties:
+        mediaType:
+          type: string
+        tmdbId:
+          format: int64
+          type: integer
+      required:
+        - mediaType
+        - tmdbId
+      type: object
+    TitleViewer:
+      additionalProperties: false
+      properties:
+        isRequester:
+          type: boolean
+      required:
+        - isRequester
       type: object
     Trace:
       additionalProperties: false
@@ -7753,6 +7838,42 @@ paths:
                         - data
                         - event
                       title: Event scan_started
+                      type: object
+                    - properties:
+                        data:
+                          $ref: "#/components/schemas/TitleProgressPayload"
+                        event:
+                          const: title_progress
+                          description: The event name.
+                          type: string
+                        id:
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
+                        retry:
+                          description: The retry time in milliseconds.
+                          type: integer
+                      required:
+                        - data
+                        - event
+                      title: Event title_progress
+                      type: object
+                    - properties:
+                        data:
+                          $ref: "#/components/schemas/TitleStatusPayload"
+                        event:
+                          const: title_status
+                          description: The event name.
+                          type: string
+                        id:
+                          description: The event ID (sortable; used for Last-Event-ID resume).
+                          type: string
+                        retry:
+                          description: The retry time in milliseconds.
+                          type: integer
+                      required:
+                        - data
+                        - event
+                      title: Event title_status
                       type: object
                     - properties:
                         data:

@@ -125,10 +125,16 @@ type Item struct {
 
 // Input is everything the derivation reads. Items holds one entry per acquirable
 // atom — exactly one for a movie, one per in-scope episode for a series.
+//
+// Viewer is who is asking. It affects only Result.Actions; the state, counts,
+// and library facts are the same for everyone looking at the title. Its zero
+// value yields no actions, which is the honest answer for an unauthenticated
+// read.
 type Input struct {
 	MediaType MediaType
 	Items     []Item
 	Request   *Request
+	Viewer    Viewer
 	Now       time.Time
 }
 
@@ -158,6 +164,10 @@ type Result struct {
 	Library    Library
 	Counts     Counts
 	ItemStates []State
+	// Actions is what this viewer may do about the state above. Empty is a
+	// legitimate answer — a title fully in the library, seen by someone with no
+	// request permission, affords nothing.
+	Actions []Action
 }
 
 // stateDominance orders headline states by how much they warrant attention,
@@ -236,6 +246,7 @@ func Derive(in Input) Result {
 	res.Phase = dominantPhase
 	res.Active = dominantPhase != PhaseNone
 	res.State = headline(in, res, scoped)
+	res.Actions = deriveActions(in, res.State)
 
 	return res
 }

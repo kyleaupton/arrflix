@@ -6,8 +6,10 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/kyleaupton/arrflix/internal/authz"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/qualityprofile"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/titlestatus"
 )
@@ -30,14 +32,15 @@ var activeDownloadStatuses = map[string]bool{
 // nobody has requested has no media item, no tracking, and no wants — and the
 // honest answer for it is not_requested, not a 404.
 type TitleStatusService struct {
-	repo *repo.Repository
+	repo  *repo.Repository
+	authz *AuthzService
 	// now is injectable so tests can pin "is this episode aired yet?" instead of
 	// racing the wall clock.
 	now func() time.Time
 }
 
-func NewTitleStatusService(r *repo.Repository) *TitleStatusService {
-	return &TitleStatusService{repo: r, now: time.Now}
+func NewTitleStatusService(r *repo.Repository, authz *AuthzService) *TitleStatusService {
+	return &TitleStatusService{repo: r, authz: authz, now: time.Now}
 }
 
 // Get builds the projection for (mediaType, tmdbID) as seen by viewerID.
@@ -52,6 +55,12 @@ func (s *TitleStatusService) Get(ctx context.Context, viewerID uuid.UUID, mediaT
 		return model.TitleStatus{}, err
 	}
 	in.Request = req
+
+	viewer, err := s.viewerLens(ctx, viewerID, mediaType, req)
+	if err != nil {
+		return model.TitleStatus{}, err
+	}
+	in.Viewer = viewer
 
 	item, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, tmdbID, string(mediaType))
 	switch {
@@ -106,6 +115,23 @@ func (s *TitleStatusService) finish(in titlestatus.Input, episodes []episodeItem
 			Available: res.Counts.Available,
 			Working:   res.Counts.Working,
 		},
+	}
+
+	out.Viewer = model.TitleViewer{IsRequester: in.Viewer.IsRequester}
+	for _, a := range res.Actions {
+		action := model.TitleAction{
+			Kind:             string(a.Kind),
+			Enabled:          a.Enabled,
+			RequiresApproval: a.RequiresApproval,
+			DisabledReason:   a.DisabledReason,
+		}
+		for _, t := range a.Tiers {
+			action.Tiers = append(action.Tiers, model.TitleActionTier{
+				Tier:             t.Tier,
+				RequiresApproval: t.RequiresApproval,
+			})
+		}
+		out.Actions = append(out.Actions, action)
 	}
 
 	if len(episodes) > 0 {
@@ -274,4 +300,58 @@ func (s *TitleStatusService) seriesItems(ctx context.Context, mediaItemID uuid.U
 		})
 	}
 	return out, nil
+}
+
+// liveRequestStatuses are the request states in which the viewer still has an
+// ask outstanding. A denied or canceled request is history: it leaves nothing to
+// withdraw and returns the viewer to being able to ask again.
+var liveRequestStatuses = map[string]bool{
+	string(model.RequestPending):  true,
+	string(model.RequestApproved): true,
+	string(model.RequestSpawned):  true,
+}
+
+// viewerLens resolves what this viewer may do, so the client does not have to.
+//
+// Today the client filters the tier list against its own copy of the grants and
+// separately re-checks whether the choice will auto-approve. Both are answered
+// here instead: the tiers returned are exactly the ones the viewer may choose,
+// each already labeled with whether picking it lands in the approval queue.
+//
+// An anonymous read resolves to the zero viewer, which affords nothing.
+func (s *TitleStatusService) viewerLens(ctx context.Context, viewerID uuid.UUID, mediaType model.MediaType, req *titlestatus.Request) (titlestatus.Viewer, error) {
+	if viewerID == uuid.Nil || s.authz == nil {
+		return titlestatus.Viewer{}, nil
+	}
+
+	var v titlestatus.Viewer
+	v.IsRequester = req != nil && liveRequestStatuses[req.Status]
+
+	for _, tier := range qualityprofile.AllTiers {
+		mayRequest, err := s.authz.Can(ctx, viewerID, authz.RequestCreate(mediaType, string(tier)), nil)
+		if err != nil {
+			return titlestatus.Viewer{}, err
+		}
+		if !mayRequest {
+			continue
+		}
+		auto, err := s.authz.Can(ctx, viewerID, authz.RequestAutoApprove(mediaType, string(tier)), nil)
+		if err != nil {
+			return titlestatus.Viewer{}, err
+		}
+		v.Grants.RequestTiers = append(v.Grants.RequestTiers, titlestatus.TierOption{
+			Tier:             string(tier),
+			RequiresApproval: !auto,
+		})
+	}
+
+	// Only the viewer's own request is ever offered for withdrawal here, so
+	// ownership is a given and the .own grant is enough.
+	canCancel, err := s.authz.CanOwnAny(ctx, viewerID, "requests.cancel", true)
+	if err != nil {
+		return titlestatus.Viewer{}, err
+	}
+	v.Grants.CanCancel = canCancel
+
+	return v, nil
 }

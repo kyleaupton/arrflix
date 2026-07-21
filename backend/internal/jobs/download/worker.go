@@ -20,6 +20,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/realtime"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
+	"github.com/kyleaupton/arrflix/internal/titlenotify"
 )
 
 // Worker polls download clients and manages download job lifecycle.
@@ -28,6 +29,7 @@ type Worker struct {
 	dlm    *downloader.Manager
 	log    *logger.Logger
 	broker *sse.Broker
+	titles *titlenotify.Notifier
 	sm     *state.DownloadJobMachine
 
 	pollInterval time.Duration
@@ -52,18 +54,19 @@ func DefaultConfig() Config {
 }
 
 // New creates a new download worker with the default configuration.
-func New(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker *sse.Broker) *Worker {
-	return NewWithConfig(r, dlm, log, broker, DefaultConfig())
+func New(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker *sse.Broker, titles *titlenotify.Notifier) *Worker {
+	return NewWithConfig(r, dlm, log, broker, titles, DefaultConfig())
 }
 
 // NewWithConfig creates a new download worker with explicit configuration — the
 // seam tests use to drive the loop on a fast cadence.
-func NewWithConfig(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker *sse.Broker, cfg Config) *Worker {
+func NewWithConfig(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker *sse.Broker, titles *titlenotify.Notifier, cfg Config) *Worker {
 	return &Worker{
 		repo:         r,
 		dlm:          dlm,
 		log:          log,
 		broker:       broker,
+		titles:       titles,
 		sm:           state.NewDownloadJobMachine(),
 		pollInterval: cfg.PollInterval,
 		claimLimit:   cfg.ClaimLimit,
@@ -169,6 +172,7 @@ func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, 
 	})
 
 	w.publishJobUpdated(ctx, updated.ID)
+	w.titles.Notify(job.MediaItemID)
 	return nil
 }
 
@@ -231,6 +235,10 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 			"new_status": newStatus,
 			"progress":   item.Progress,
 		})
+		// The transition edge only. Progress moves on every poll and must not
+		// drag a status refetch along with it — that split is the whole point of
+		// having a separate progress tick.
+		w.titles.Notify(job.MediaItemID)
 	}
 
 	w.publishJobUpdated(ctx, updated.ID)
@@ -520,6 +528,7 @@ func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJ
 		w.log.Warn().Err(err).Str("job_id", job.ID.String()).Msg("failed to mark download job failed")
 	}
 	w.publishJobUpdated(ctx, job.ID)
+	w.titles.Notify(job.MediaItemID)
 
 	wants, err := w.repo.ListWantsByDownloadJob(ctx, job.ID)
 	if err != nil {
@@ -542,7 +551,7 @@ func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJ
 			// Releasing without the exclusion would loop on the same release. Fall
 			// back to the pre-A2 terminal-fail so the want doesn't wedge.
 			w.log.Warn().Err(err).Str("want_id", want.ID.String()).Msg("failed to exclude release; failing want")
-			jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, want.ID, model.WantFailed)
+			jobutil.MirrorWant(ctx, w.repo, w.broker, w.titles, w.log, want.ID, model.WantFailed)
 			continue
 		}
 
@@ -557,6 +566,7 @@ func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJ
 			continue
 		}
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(released))
+		w.titles.Notify(released.MediaItemID)
 		w.restampManualHold(ctx, released)
 	}
 }
@@ -631,7 +641,7 @@ func (w *Worker) mirrorWants(ctx context.Context, jobID uuid.UUID, status model.
 		return
 	}
 	for _, want := range wants {
-		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, want.ID, status)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.titles, w.log, want.ID, status)
 	}
 }
 
@@ -730,6 +740,39 @@ func (w *Worker) publishJobUpdated(ctx context.Context, jobID uuid.UUID) {
 		return
 	}
 	realtime.Emit(ctx, w.broker, realtime.DownloadJobUpdated(enriched))
+	w.publishTitleProgress(ctx, enriched)
+}
+
+// publishTitleProgress emits the requester-visible tick for an in-flight
+// transfer.
+//
+// This is the same poll that feeds download_job_updated, but the two carry
+// different things to different audiences: the job event is operator data behind
+// jobs.read, while a percentage is not privileged — a requester watching their
+// own request is entitled to see it move. Splitting them is what lets the
+// progress bar reach a requester without the release title going with it.
+//
+// Only active transfers tick. A completed or failed job's progress is a
+// consequence of its state, which the status kick already delivered.
+func (w *Worker) publishTitleProgress(ctx context.Context, job model.DownloadJobWithSummary) {
+	if job.TmdbID == nil || job.Progress == nil || !activeTransfer[job.Status] {
+		return
+	}
+	realtime.Emit(ctx, w.broker, realtime.TitleProgress(realtime.TitleProgressPayload{
+		MediaType:      job.MediaType,
+		TmdbID:         *job.TmdbID,
+		Progress:       *job.Progress,
+		BytesPerSecond: job.DownloadSpeed,
+		EtaSeconds:     job.EtaSeconds,
+	}))
+}
+
+// activeTransfer is the set of job statuses for which a progress tick is
+// meaningful.
+var activeTransfer = map[string]bool{
+	"created":     true,
+	"enqueued":    true,
+	"downloading": true,
 }
 
 func mapItemStatus(st downloader.JobStatus) string {

@@ -15,6 +15,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/realtime"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
+	"github.com/kyleaupton/arrflix/internal/titlenotify"
 )
 
 // Backoff is the exponential retry delay for a 1-based attempt number: 2^attempt
@@ -51,7 +52,7 @@ func BackoffCapped(attempt int, max time.Duration) time.Duration {
 // exactly once on the real transition — enqueuing a want.available notification,
 // say — keys off the bool so an idempotent re-run or a terminal-sticky no-op
 // doesn't double-fire.
-func MirrorWant(ctx context.Context, r *repo.Repository, broker *sse.Broker, log *logger.Logger, wantID uuid.UUID, status model.WantStatus) (model.Want, bool) {
+func MirrorWant(ctx context.Context, r *repo.Repository, broker *sse.Broker, titles *titlenotify.Notifier, log *logger.Logger, wantID uuid.UUID, status model.WantStatus) (model.Want, bool) {
 	if wantID == uuid.Nil {
 		return model.Want{}, false
 	}
@@ -64,6 +65,9 @@ func MirrorWant(ctx context.Context, r *repo.Repository, broker *sse.Broker, log
 		return model.Want{}, false
 	}
 	realtime.Emit(ctx, broker, realtime.WantUpdated(want))
+	// Only real transitions reach here — the CAS above filters no-ops — so this
+	// announces the title exactly when its projection actually moved.
+	titles.Notify(want.MediaItemID)
 	return want, true
 }
 

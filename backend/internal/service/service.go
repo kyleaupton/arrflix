@@ -14,6 +14,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/metadata"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
+	"github.com/kyleaupton/arrflix/internal/titlenotify"
 )
 
 type Services struct {
@@ -104,7 +105,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	wants := NewWantService(r, downloadJobs)
 	// Proposals is constructed before Acquisition, which depends on it for the
 	// propose branch. broker is in scope from New's params.
-	proposals := NewProposalService(r, quality, broker, l)
+	proposals := NewProposalService(r, quality, broker, cfg.titles, l)
 
 	// Matcher: the v1 resolver catalog (path-embed + name-parse) wires
 	// up via DefaultRegistry. ScannerService.MatchBatch is the only
@@ -156,7 +157,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Settings:           settings,
 		Setup:              NewSetupService(r, users, settings, tmdb),
 		Tmdb:               tmdb,
-		TitleStatus:        NewTitleStatusService(r),
+		TitleStatus:        NewTitleStatusService(r, authz),
 		Tracking:           NewTrackingService(r, wants, authz),
 		UnmatchedFiles:     NewUnmatchedFilesService(r, l, tmdb),
 		Users:              users,
@@ -168,6 +169,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 type cfg struct {
 	jwtSecret  string
 	tmdbClient *tmdb.Client
+	titles     *titlenotify.Notifier
 }
 
 type Option interface{ apply(*cfg) }
@@ -177,6 +179,16 @@ type withJWT string
 func (w withJWT) apply(c *cfg) { c.jwtSecret = string(w) }
 
 func WithJWTSecret(secret string) Option { return withJWT(secret) }
+
+type withTitles struct{ n *titlenotify.Notifier }
+
+func (w withTitles) apply(c *cfg) { c.titles = w.n }
+
+// WithTitleNotifier injects the title-status notifier. Services that change
+// acquisition state announce it through this so mounted views refetch. Omitting
+// it leaves the notifier nil, which is a safe no-op — tests that don't assert on
+// realtime need not wire one.
+func WithTitleNotifier(n *titlenotify.Notifier) Option { return withTitles{n: n} }
 
 type withTmdbClient struct{ c *tmdb.Client }
 

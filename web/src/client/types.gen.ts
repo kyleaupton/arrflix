@@ -2492,6 +2492,19 @@ export type TierBinding = {
     tier: string;
 };
 
+export type TitleAction = {
+    disabledReason?: string;
+    enabled: boolean;
+    kind: string;
+    requiresApproval: boolean;
+    tiers?: Array<TitleActionTier> | null;
+};
+
+export type TitleActionTier = {
+    requiresApproval: boolean;
+    tier: string;
+};
+
 export type TitleCounts = {
     available: number;
     total: number;
@@ -2511,11 +2524,20 @@ export type TitleLibrary = {
     hasFiles: boolean;
 };
 
+export type TitleProgressPayload = {
+    bytesPerSecond?: number;
+    etaSeconds?: number;
+    mediaType: string;
+    progress: number;
+    tmdbId: number;
+};
+
 export type TitleStatus = {
     /**
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    actions: Array<TitleAction> | null;
     active: boolean;
     counts: TitleCounts;
     episodes?: Array<TitleEpisodeStatus> | null;
@@ -2524,6 +2546,16 @@ export type TitleStatus = {
     phase?: string;
     state: string;
     tmdbId: number;
+    viewer: TitleViewer;
+};
+
+export type TitleStatusPayload = {
+    mediaType: string;
+    tmdbId: number;
+};
+
+export type TitleViewer = {
+    isRequester: boolean;
 };
 
 export type Trace = {
@@ -3936,6 +3968,7 @@ export type TierBindingWritable = {
 };
 
 export type TitleStatusWritable = {
+    actions: Array<TitleAction> | null;
     active: boolean;
     counts: TitleCounts;
     episodes?: Array<TitleEpisodeStatus> | null;
@@ -3944,6 +3977,7 @@ export type TitleStatusWritable = {
     phase?: string;
     state: string;
     tmdbId: number;
+    viewer: TitleViewer;
 };
 
 export type TrackingWritable = {
@@ -5519,6 +5553,34 @@ export type EventsStreamResponses = {
          * The event name.
          */
         event: 'scan_started';
+        /**
+         * The event ID (sortable; used for Last-Event-ID resume).
+         */
+        id?: string;
+        /**
+         * The retry time in milliseconds.
+         */
+        retry?: number;
+    } | {
+        data: TitleProgressPayload;
+        /**
+         * The event name.
+         */
+        event: 'title_progress';
+        /**
+         * The event ID (sortable; used for Last-Event-ID resume).
+         */
+        id?: string;
+        /**
+         * The retry time in milliseconds.
+         */
+        retry?: number;
+    } | {
+        data: TitleStatusPayload;
+        /**
+         * The event name.
+         */
+        event: 'title_status';
         /**
          * The event ID (sortable; used for Last-Event-ID resume).
          */

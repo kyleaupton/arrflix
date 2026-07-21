@@ -1,6 +1,6 @@
 # Title status — the acquisition read model
 
-**Status:** Draft, iteration 1
+**Status:** Draft, iteration 2 — derivation, scoping, read, and events implemented; `actions[]` and the frontend swap outstanding.
 
 This doc defines **title status**: a single server-computed answer to *"what is happening with this title, for this viewer, right now."* It is the read model every acquisition-facing surface renders from — focus pages, poster chips, hero controls, status cards, season grids — and the payload of the realtime events that keep those surfaces live.
 
@@ -13,8 +13,8 @@ This doc owns the shape of the read model, its state vocabulary, how it is compu
 - **One type, every surface.** `TitleStatus` is computed server-side and rendered — never re-derived — by the poster chip, the hero control, the status card, and the season grid. Identical shape everywhere is what makes those surfaces structurally incapable of disagreeing.
 - **Name events for what the UI renders, not what the DB stores.** `title_status`, not `want_updated`. An event named after a table pushes a join onto every client that receives it; three clients doing that join three ways is how we got here.
 - **This finishes an existing pattern, it doesn't invent one.** `HydratedTitle`/`MovieRail` already carry server-computed `isInLibrary`/`isDownloading`, and rails/search/library already consume them with no derivation. The focus pages were left behind.
-- **Two events on one query key.** `title_status` carries the full projection and fires on transitions. `title_progress` carries numbers only and fires per tick. Both land on the same TanStack key.
-- **The payload is per-viewer.** Two people looking at the same title get different `TitleStatus` — different actions, different intent, and different *fields*. Operator-only data is **absent** for a requester, not hidden by the client.
+- **Two events on one query key.** `title_status` is a bare kick to refetch and fires on transitions; `title_progress` carries numbers and fires per tick. The split falls out of what each one is: the projection is per-viewer so it is fetched, progress is viewer-independent so it is pushed. Both land on the same TanStack key.
+- **The projection is per-viewer.** Two people looking at the same title get different `TitleStatus` — different actions, different intent, and different *fields*. Operator-only data is **absent** for a requester, not hidden by the client. That is also why the transition event is a kick: a per-viewer answer is fetched by the viewer, not pushed to them.
 - **State is not one enum.** A title can be *available* and *working* at once (an upgrade in flight), or partially available and still acquiring (a series mid-season). A headline state drives the chip; orthogonal facts carry the rest.
 - **`actions[]` is server-computed.** What this viewer may do, whether it needs approval, and what it would cost. The client renders buttons; it does not decide which buttons exist.
 - **Derivation is a pure function.** Raw state tuple → `TitleState`, total, no I/O. Every requirement about *what state should show* becomes a table test with no database.
@@ -171,10 +171,12 @@ Action
   kind              request | cancel | approve | deny | retry | pick | upgrade
   enabled
   requiresApproval?   this will need a decision before anything happens
-  tiers?              which tiers this viewer may choose
+  tiers?              [{ tier, requiresApproval }] — which tiers this viewer may choose
   effect?             { episodesAdded, bytesEstimate }
   disabledReason?
 ```
+
+**Approval is per tier, not per user.** A viewer can be trusted to pull HD on their own and still need a decision for 4K — the grant catalog says so directly (`requests.auto_approve:<type>:<tier>`). So the flag lives on each tier, and the top-level `requiresApproval` is set only when *every* offered tier needs a decision, letting a single-tier UI read it without walking the list.
 
 This absorbs three requirements that would otherwise each need their own endpoint:
 
@@ -186,20 +188,30 @@ It also deletes the client-side tier filtering and the auto-approve check that c
 
 **Disabled actions are still sent** when the affordance needs to explain itself. An action that simply does not apply is omitted; an action that is unavailable *for a reason the user should know* is present, disabled, and carries the reason.
 
+The line between the two is whether seeing the affordance helps. A viewer with no create grant does not get a greyed-out Request button — that permission is not a state that will change, and showing it only invites them to keep trying. A viewer looking at *their own* live request they may not withdraw does get a disabled Cancel with a reason, because the absence of that button on their own request is otherwise inexplicable.
+
+**Shipped:** `request` (with per-tier approval) and `cancel`. **Deferred, each blocked on a fact the projection cannot state honestly yet:** `approve`/`deny` need the pending request of *any* requester plus its id, and are queue affordances more than focus-page ones; `retry` needs the "found nothing" vs "indexer unreachable" distinction that lives in `want.last_error`; `pick`/`upgrade` need the candidate set and tier comparison; `effect.episodesAdded` needs the requester-union scope diff, which is deliberately never materialized; `effect.bytesEstimate` has no pre-grab size to read. Shipping a half-supported action is worse than omitting it — the client would render an affordance whose consequences the server is guessing at.
+
 ### Delivery
 
 Two events, one TanStack query key:
 
 | Event | Fires | Carries |
 | --- | --- | --- |
-| `title_status` | On state transitions | The full projection |
-| `title_progress` | Per tick during transfer | Numbers only — percent, bytes, ETA, and per-episode progress for what is actively moving |
+| `title_status` | On state transitions | Nothing but the title's identity — a kick to refetch |
+| `title_progress` | Per tick during transfer | Numbers only — progress, bytes/sec, ETA |
 
-Topics are title-scoped: `title.status:<mediaType>:<tmdbId>`. A focus page subscribes on mount and drops on navigate, which is what the [realtime](../realtime/README.md) scope qualifier exists for.
+**`title_status` is a kick, not a payload.** The projection is per-viewer: the requester's own request governs part of the headline, and the actions offered differ by grant. Pushing the computed projection means one derivation per watching session at emit time, and a payload that can be stale before it lands. Naming the title instead lets each client refetch through the endpoint that already applies its own lens, which by construction cannot disagree with what a reload would show. The cost is one round trip on an event that fires only on transitions — the rare one.
 
-**The tick is decoration.** `title_progress` carries no state and never changes what the UI believes is happening — only how far along it is. Ordering within a stream is guaranteed by SSE, so a tick cannot overtake the transition that precedes it. For the page-load race, the REST snapshot carries the event ID it was computed at, and ticks older than that are discarded.
+**`title_progress` carries its payload**, because a refetch per tick would be absurd for a number that moves every few seconds. That is safe precisely because progress is viewer-independent: a percentage is the same for everyone, so there is no lens to apply and nothing to withhold. The operator-only detail — which release, which indexer, which client — stays on `download_job_updated` behind `jobs.read`. Splitting them is what lets a progress bar reach a requester without the release title going with it.
 
-**Emission is coalesced server-side**, at most one `title_status` per title per interval. A season-pack import transitions nine episodes; that is one emit, not nine. This replaces the unbounded client debounce with a bounded server-side one — an important difference, because the current client debounce can be starved indefinitely by exactly this burst.
+Note what this implies: the per-viewer *payload* machinery is not needed yet. Recipient scoping decides who receives both events; neither varies its content by viewer. The doctrine stays in the [realtime spec](../realtime/README.md) for when something genuinely needs it.
+
+**The tick is decoration.** `title_progress` carries no state and never changes what the UI believes is happening — only how far along it is. A dropped or reordered tick is corrected by the next one, so no sequencing guard is required.
+
+**Emission is coalesced server-side**, at most one `title_status` per title per flush interval. A season-pack import transitions every episode of a season; that is one emit, not ten. This replaces the unbounded client debounce with a bounded server-side one — an important difference, because the current client debounce can be starved indefinitely by exactly this burst.
+
+**A sweep backs the explicit invalidations.** Every write path that moves acquisition state announces the affected title, but that is a contract across a dozen call sites and contracts like that decay. A periodic sweep re-reads which media items changed and announces them regardless, which is what keeps a forgotten announcement a latency bug rather than a stale-UI bug. The sweep window overlaps the previous one so a row committed late by a long transaction still lands inside a swept window.
 
 ### List surfaces get the same type, delivered differently
 
@@ -224,7 +236,7 @@ The progress ticker already runs on the required cadence for anything actively d
 
 Honest dependencies. The projection cannot ship without these.
 
-- **Per-user scoping in the broker.** Specified in [realtime](../realtime/README.md), not implemented — everything is `Broadcast` today. A per-viewer payload cannot be broadcast; it is incoherent, not merely leaky. **This is the hard prerequisite.**
+- ~~**Per-user scoping in the broker.**~~ Landed. Recipients are `user:<id>` / `capability:<key>` / `broadcast`, resolved once per session at attach. Both title events target `library.read`, which is what lets a requester see progress move without the operator payload going with it.
 - **A TMDB-keyed read.** Getting from `(tmdbId, mediaType)` to wants is three hops today, and no query joins them. The download side already has `ListDownloadJobsByTmdbMovieID` as precedent.
 - **Title identity on want events.** Whatever replaces `want_updated` internally must carry enough to locate the title without a client-side map.
 - **A unified tracking cache key.** The movie/series key split should be closed as part of this work rather than carried forward into a new type.

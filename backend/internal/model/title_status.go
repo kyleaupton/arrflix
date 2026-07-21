@@ -34,6 +34,11 @@ type TitleStatus struct {
 	Library TitleLibrary `json:"library"`
 	Counts  TitleCounts  `json:"counts"`
 
+	// Viewer and Actions are the only viewer-dependent parts of the projection.
+	// Everything above holds for anyone looking at the title.
+	Viewer  TitleViewer   `json:"viewer"`
+	Actions []TitleAction `json:"actions"`
+
 	// Episodes carries per-episode state for a series, in season/episode order.
 	// Nil for movies.
 	Episodes []TitleEpisodeStatus `json:"episodes,omitempty"`
@@ -61,4 +66,29 @@ type TitleEpisodeStatus struct {
 	EpisodeNumber int32      `json:"episodeNumber"`
 	State         string     `json:"state"`
 	AirDate       *time.Time `json:"airDate,omitempty"`
+}
+
+// TitleViewer is who the projection was computed for. It carries only what the
+// UI needs to phrase itself in the second person ("your request"); the grant set
+// itself never crosses the wire, only its consequences in Actions.
+type TitleViewer struct {
+	IsRequester bool `json:"isRequester"`
+}
+
+// TitleAction is an affordance plus its consequences. A disabled action is
+// present only when it needs to explain itself; one that simply does not apply
+// is omitted.
+type TitleAction struct {
+	Kind             string            `json:"kind"`
+	Enabled          bool              `json:"enabled"`
+	RequiresApproval bool              `json:"requiresApproval"`
+	Tiers            []TitleActionTier `json:"tiers,omitempty"`
+	DisabledReason   string            `json:"disabledReason,omitempty"`
+}
+
+// TitleActionTier is a tier the viewer may request at. Approval is per tier: a
+// viewer can be trusted with HD on their own and still need a decision for 4K.
+type TitleActionTier struct {
+	Tier             string `json:"tier"`
+	RequiresApproval bool   `json:"requiresApproval"`
 }
