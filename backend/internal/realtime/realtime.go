@@ -26,11 +26,15 @@ type Recipient = sse.Recipient
 // Broadcast targets every active session.
 var Broadcast = sse.Broadcast
 
-// Admins targets every session belonging to a current admin.
-var Admins = sse.Admins
-
 // User targets one specific user's sessions.
 func User(id uuid.UUID) Recipient { return sse.User(id) }
+
+// Capability targets sessions whose user holds the given authz permission key,
+// resolved once when the session attaches. This is how operator-scoped events
+// stay operator-scoped: an event tagged Capability(authz.JobsRead) never
+// reaches a session without that grant, so withholding it is routing rather
+// than a rendering decision the client is trusted to make.
+func Capability(key string) Recipient { return sse.Capability(key) }
 
 // Event is a single realtime message. Name is the wire `event:` line;
 // Recipient is the delivery tag the broker filters per session; Data is the
@@ -48,8 +52,10 @@ type Event struct {
 // so it satisfies the resume contract's "sortable, unique string" without a
 // new dependency.
 //
-// ctx is accepted for the recipient-resolution path (resolving Admins/User
-// targeting against live permissions) and is not read today.
+// ctx is accepted for producers that need request-scoped context when building
+// an event and is not read here — recipient filtering resolves against each
+// session's connect-time capability set, never against live permissions on the
+// emit path.
 func Emit(_ context.Context, broker *sse.Broker, e Event) {
 	if broker == nil {
 		return

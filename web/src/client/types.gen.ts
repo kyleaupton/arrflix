@@ -767,7 +767,7 @@ export type EventsSubscriptionsListOutputBody = {
      */
     readonly $schema?: string;
     /**
-     * The session's current topic filter. Empty means all events.
+     * The session's opt-in topic subscriptions. Empty means none are subscribed; default-delivery events are unaffected.
      */
     topics: Array<string> | null;
 };
@@ -3053,7 +3053,7 @@ export type EventsSubscriptionsAddInputBodyWritable = {
 
 export type EventsSubscriptionsListOutputBodyWritable = {
     /**
-     * The session's current topic filter. Empty means all events.
+     * The session's opt-in topic subscriptions. Empty means none are subscribed; default-delivery events are unaffected.
      */
     topics: Array<string> | null;
 };

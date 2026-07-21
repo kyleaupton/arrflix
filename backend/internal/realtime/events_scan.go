@@ -1,5 +1,7 @@
 package realtime
 
+import "github.com/kyleaupton/arrflix/internal/authz"
+
 // Scan event names. Snake_case on the wire; frontend consumers
 // (LibrarySettings.vue) listen for these literals.
 const (
@@ -47,22 +49,25 @@ type ScanFailedPayload struct {
 	Error     string `json:"error"`
 }
 
+// Scan events target library.read holders — a scan is library management,
+// and its payloads describe the operator's filesystem, not anyone's requests.
+
 // ScanStarted builds the scan_started event.
 func ScanStarted(p ScanStartedPayload) Event {
-	return Event{Name: NameScanStarted, Recipient: Broadcast, Data: mustMarshal(p)}
+	return Event{Name: NameScanStarted, Recipient: Capability(authz.LibraryRead), Data: mustMarshal(p)}
 }
 
 // ScanProgress builds the scan_progress event.
 func ScanProgress(p ScanProgressPayload) Event {
-	return Event{Name: NameScanProgress, Recipient: Broadcast, Data: mustMarshal(p)}
+	return Event{Name: NameScanProgress, Recipient: Capability(authz.LibraryRead), Data: mustMarshal(p)}
 }
 
 // ScanCompleted builds the scan_completed event.
 func ScanCompleted(p ScanCompletedPayload) Event {
-	return Event{Name: NameScanCompleted, Recipient: Broadcast, Data: mustMarshal(p)}
+	return Event{Name: NameScanCompleted, Recipient: Capability(authz.LibraryRead), Data: mustMarshal(p)}
 }
 
 // ScanFailed builds the scan_failed event.
 func ScanFailed(p ScanFailedPayload) Event {
-	return Event{Name: NameScanFailed, Recipient: Broadcast, Data: mustMarshal(p)}
+	return Event{Name: NameScanFailed, Recipient: Capability(authz.LibraryRead), Data: mustMarshal(p)}
 }

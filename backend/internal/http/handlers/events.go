@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/realtime"
+	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
 )
 
@@ -16,10 +17,29 @@ import (
 
 type Events struct {
 	broker *sse.Broker
+	svc    *service.Services
 }
 
-func NewEvents(broker *sse.Broker) *Events {
-	return &Events{broker: broker}
+func NewEvents(broker *sse.Broker, svc *service.Services) *Events {
+	return &Events{broker: broker, svc: svc}
+}
+
+// capabilitiesFor resolves the permission keys a session is eligible for, once
+// at connect. The broker filters capability-targeted events by set membership
+// against this, so no emit ever touches the permission system.
+//
+// The cost is bounded staleness: a grant change reaches a session only when it
+// reconnects. Resolution failure yields no capabilities — a session that can't
+// prove eligibility receives only broadcast and its own user-targeted events.
+func (h *Events) capabilitiesFor(ctx context.Context, userID uuid.UUID) []string {
+	if h.svc == nil || h.svc.Authz == nil {
+		return nil
+	}
+	keys, err := h.svc.Authz.EffectiveKeys(ctx, userID)
+	if err != nil {
+		return nil
+	}
+	return keys
 }
 
 // ----- Stream -----
@@ -54,14 +74,14 @@ func (h *Events) Stream(ctx context.Context, input *EventsStreamInput, send stre
 		return
 	}
 
-	// Fresh sessions start with an empty topic set, which the broker treats as
-	// "deliver all events this user is eligible for". Page-scoped narrowing
-	// happens later via the subscription control plane, not a connect-time
-	// filter.
+	// Fresh sessions start with no opt-in subscriptions and still receive every
+	// default-delivery event they're eligible for. Page-scoped streams are
+	// added later via the subscription control plane.
 	att := h.broker.Attach(sse.AttachParams{
-		SessionID:   input.Session,
-		UserID:      userID,
-		LastEventID: input.LastEventID,
+		SessionID:    input.Session,
+		UserID:       userID,
+		LastEventID:  input.LastEventID,
+		Capabilities: h.capabilitiesFor(ctx, userID),
 	})
 	defer att.Cancel()
 
@@ -143,7 +163,7 @@ type EventsSubscriptionsListInput struct {
 
 type EventsSubscriptionsListOutput struct {
 	Body struct {
-		Topics []string `json:"topics" doc:"The session's current topic filter. Empty means all events."`
+		Topics []string `json:"topics" doc:"The session's opt-in topic subscriptions. Empty means none are subscribed; default-delivery events are unaffected."`
 	}
 }
 

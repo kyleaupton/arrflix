@@ -1762,7 +1762,7 @@ components:
           readOnly: true
           type: string
         topics:
-          description: The session's current topic filter. Empty means all events.
+          description: The session's opt-in topic subscriptions. Empty means none are subscribed; default-delivery events are unaffected.
           items:
             type: string
           type:

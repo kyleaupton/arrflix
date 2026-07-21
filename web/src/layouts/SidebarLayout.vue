@@ -177,7 +177,10 @@ const isActive = (to: string) => route.path === to || route.path.startsWith(`${t
               v-if="item.disabled"
               class="relative flex select-none items-center gap-3 px-4 py-2.5"
             >
-              <span v-if="idx > 0" class="absolute left-[3.75rem] right-0 top-0 h-px bg-border/60" />
+              <span
+                v-if="idx > 0"
+                class="absolute left-[3.75rem] right-0 top-0 h-px bg-border/60"
+              />
               <span
                 class="flex size-8 items-center justify-center rounded-lg border border-border bg-muted text-foreground/40"
               >
@@ -192,7 +195,10 @@ const isActive = (to: string) => route.path === to || route.path.startsWith(`${t
               :to="item.to!"
               class="relative flex items-center gap-3 px-4 py-2.5 transition-colors active:bg-accent"
             >
-              <span v-if="idx > 0" class="absolute left-[3.75rem] right-0 top-0 h-px bg-border/60" />
+              <span
+                v-if="idx > 0"
+                class="absolute left-[3.75rem] right-0 top-0 h-px bg-border/60"
+              />
               <span
                 class="flex size-8 items-center justify-center rounded-lg border border-border bg-muted text-foreground"
               >

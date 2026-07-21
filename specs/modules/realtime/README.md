@@ -1,6 +1,6 @@
 # Realtime — SSE transport, broker, and producer API
 
-**Status:** Draft, iteration 2
+**Status:** Draft, iteration 3
 
 This doc defines how Arrflix delivers in-flight, ephemeral events from server to browser: the SSE transport choice, the multiplexed-subscription model, the per-user session broker, the typed producer API (`realtime.Emit`), the reliability primitives (heartbeats, `Last-Event-ID` resume, bounded replay), and the relationship to the [notifications](../notifications/README.md) system. It pins the contract around an existing working broker — the broker model is "evolve and harden," but the **transport writer is owned outright**: the huma SSE adapter can't carry the sortable string IDs that `Last-Event-ID` resume requires, so the wire layer is a small forked `Register` we maintain (see [Transport](#transport)). This doc does **not** pin column types, exact Go signatures, or per-feature event types — those are implementation or feature-spec concerns.
 
@@ -11,10 +11,12 @@ This doc defines how Arrflix delivers in-flight, ephemeral events from server to
 - **SSE, not WebSocket.** One-way server→client is what we actually need. SSE is HTTP-native, the browser handles reconnect, `Last-Event-ID` resume is in the spec, and the proxy story is one `proxy_buffering off` line instead of `Upgrade: websocket` everywhere. The codebase already has SSE running.
 - **We own the backend SSE writer; we keep the generated frontend client.** The huma SSE adapter (`humasse`) is dropped on the wire layer because its `Message.ID` is an `int` — it physically cannot carry the sortable ULID needed for restart-safe resume — and because it dispatches event names by Go reflection, forcing a distinct type per event. The replacement is a ~150-line forked `Register` that keeps the OpenAPI `oneOf` generation (so the typed TS client is unchanged), emits string IDs, lets the handler set response headers, and reads the event name from a field. The `@hey-api`-generated frontend client stays: it already tracks `id:` and resends `Last-Event-ID` on reconnect.
 - **Single stream endpoint + side-channel control plane.** Client opens one long-lived `GET /api/v1/events` and stays there. Subscribe/unsubscribe to topics happens via REST (`POST /api/v1/events/subscriptions`, `DELETE /api/v1/events/subscriptions/<topic>`). Multiplexing without dropping the connection; no WebSocket needed.
-- **Per-user scoping at the broker.** Every event carries a recipient (`user_id`, `admins`, or `broadcast`). The broker filters per subscriber before send — no client-side filter, no event ever crosses into a session that shouldn't see it.
+- **Per-user scoping at the broker.** Every event carries a recipient (`user:<id>`, `capability:<key>`, or `broadcast`). The broker filters per subscriber before send — no client-side filter, no event ever crosses into a session that shouldn't see it.
 - **`Last-Event-ID` + bounded replay buffer.** Per-subscriber ring buffer holds the last 5 minutes / 200 events. Clean resume across tab-sleep, brief drops, and redeploys. Beyond the window, the client refetches snapshots.
 - **Typed producer API: `realtime.Emit(ctx, sse_events.X(...))`.** Mirrors the notifications constructor pattern. Each event has a Go constructor with a typed payload, and **carries its event name as a field** (not via reflection on its Go type). The set of constructors is the *single* event registry — used both for runtime emit and for spec-gen — so there's no second hand-maintained name↔type map to drift. Grep finds it; the compiler enforces shape.
 - **Two distinct producer APIs, on purpose.** `realtime` is ephemeral (scan progress, download progress, transient state) — no DB. [`notifications`](../notifications/README.md) is durable (want available, hygiene errors) — owns the outbox. They coexist; the notification system's `in_app` channel adapter is a thin shim that emits a generic `notification.delivered` SSE event after writing the outbox row.
+- **Name events for what the UI renders, not what the DB stores.** An event named after a table pushes a join onto every client that receives it. Multiple surfaces doing that join independently will diverge — see [Naming](#naming-events-after-concepts-not-tables).
+- **Payloads may be per-viewer, not just routed per-viewer.** Recipient scoping decides *who gets an event*; a per-viewer payload also changes *what it contains*. Bounded by topic scope — see [Per-viewer payloads](#per-viewer-payloads).
 - **State delivery is per-feature.** Snapshot+delta (inline payload, mutate cache via `setQueryData`) for high-frequency, small, simple-auth state. Notify-and-refetch (kick + `invalidateQueries`) for low-frequency, mutated-via-REST state. The spec gives the heuristic; per-feature owners pick.
 - **TanStack Query is the default consumer.** API-shaped state lives in TanStack Query; SSE handlers mutate or invalidate query keys. Pinia stays the home for non-API global state (connection status, auth claims, dialog state, layout flags).
 
@@ -22,7 +24,7 @@ This doc defines how Arrflix delivers in-flight, ephemeral events from server to
 
 The codebase already has a working SSE pipeline: an [in-process broker](../../backend/internal/sse/broker.go), a [stream handler](../../backend/internal/http/handlers/events.go) with 9 declared event types, a [frontend Pinia store](../../web/src/stores/events.ts) with a pub/sub listener API, and a generated client from `@hey-api/openapi-ts`. It works, but it has known gaps:
 
-- **No per-user scoping** — every connected client sees every event.
+- **No per-user scoping** — every connected client saw every event. Fixed: recipients are filtered against a per-session capability set.
 - **No resume semantics** — `Last-Event-ID` is unused; brief disconnects cause missed events.
 - **Hardcoded event registry** — events are added by editing the handler file; no producer API; no compile-time enforcement of recipient or payload shape.
 - **Known infra debt** documented in `SSE_TRANSPORT_FINDINGS.md`: nginx buffering, stale-closure race in the frontend events store, retry-attempt counter that never resets after a successful connection.
@@ -70,7 +72,7 @@ DELETE /api/v1/events/subscriptions/<topic>    → remove a topic
 **The stream endpoint** is long-lived. JWT auth happens at chi middleware level (existing). On connect the server:
 
 1. Allocates a `session_id` (UUID).
-2. Resolves the user's eligibility (which `admins`/`broadcast` recipients apply).
+2. Resolves the user's capability set (the authz keys they hold), once.
 3. Loads initial subscription set from query params (back-compat with current `?type=foo` filter syntax).
 4. Emits a `ready` event whose payload includes the `session_id`.
 5. Begins the broker-subscribed loop.
@@ -79,7 +81,11 @@ DELETE /api/v1/events/subscriptions/<topic>    → remove a topic
 
 **Subscribe returns its snapshot in the REST response, not on the stream.** When a `POST /subscriptions` adds a topic whose feature uses [snapshot+delta](#pattern-a--snapshot--delta-payload-carries-state), the initial snapshot is the `POST`'s 200 body — *not* a separate event pushed onto the SSE stream. This sidesteps the ordering race (204 returns, but the snapshot would arrive async on a different channel the client has to correlate) and keeps snapshot production out of the broker. The stream then carries only deltas. Topics that are pure notify-and-refetch return 204 with no body.
 
-Topic-name shape: `<domain>.<event>[:<scope>]`. Examples: `scan.progress:library_42`, `download_jobs.updated`, `notifications.delivered`. The scope qualifier is optional; topics without scope match all events of that type the user can see. The scope qualifier is what makes dynamic subscription earn its keep — high-cardinality, page-bound streams (e.g. a single item's live progress) can be subscribed and dropped on navigation without tearing down the long-lived stream that carries the session's persistent topics.
+Topic-name shape: `<domain>.<event>[:<scope>]`. Examples: `scan.progress:library_42`, `title.status:movie:42`. The scope qualifier is what makes dynamic subscription earn its keep — high-cardinality, page-bound streams (a single title's live state) can be subscribed and dropped on navigation without tearing down the long-lived stream.
+
+**Subscribing is opt-in, never a filter.** An event either carries a topic or it doesn't. A topic-carrying event reaches only sessions subscribed to that exact topic; an event without one reaches every eligible session regardless of what it has subscribed to. So subscribing to a page-scoped stream can never blackhole the events a session gets by default.
+
+This replaced an additive-to-restrictive filter, where an empty topic set meant "everything" and the first subscription silently narrowed the session to only the named topics. It was inert only because nothing subscribed yet; the first page to use the control plane would have stopped receiving everything else.
 
 **Why REST for the control plane, not WebSocket-style messages-on-the-stream:** SSE is one-way. Putting subscribe/unsubscribe on a side channel keeps the transport pure, makes the operations standard REST (auditable, retryable, idempotent), and avoids inventing a control-message protocol just for this.
 
@@ -105,19 +111,67 @@ A single user can have many sessions (multiple tabs, mobile + desktop). Each is 
 
 Every event carries a `recipient` field. The broker filters per-session before emit:
 
-| Recipient   | Meaning                                                             | Delivery                                          |
-| ----------- | ------------------------------------------------------------------- | ------------------------------------------------- |
-| `user:<id>` | One specific user                                                   | Only that user's sessions                         |
-| `admins`    | All users with the relevant admin permission, resolved at emit time | Every active session belonging to a current admin |
-| `broadcast` | Everyone                                                            | Every active session                              |
+| Recipient          | Meaning                              | Delivery                                             |
+| ------------------ | ------------------------------------ | ---------------------------------------------------- |
+| `user:<id>`        | One specific user                    | Only that user's sessions                            |
+| `capability:<key>` | Holders of an authz permission key   | Sessions whose connect-time key set contains it      |
+| `broadcast`        | Everyone                             | Every active session                                 |
 
-`broadcast` is intentionally rare — it's for things like a `system.maintenance_mode` flag. Most events are `user:<id>` or `admins`.
+`broadcast` is intentionally rare — it's for things like a `system.maintenance_mode` flag. Most events are `user:<id>` or `capability:<key>`.
+
+**Capability targeting replaced an `admins` tag.** "Admins" was never a real thing here: the permission model has no admin role, only grants, so the tag had no honest implementation and shipped as a synonym for broadcast. A capability key is the same idea made checkable — `capability:jobs.read` names exactly the grant that gates the REST endpoint serving the same data, so the two cannot drift.
+
+**The zero recipient targets nobody.** Delivery fails closed, so an event that forgot its recipient surfaces as a missing update rather than as a silent disclosure.
+
+Capability keys match literally, which suits the flat keyspace. Resource-scoped eligibility — `library.read` on library 42 — belongs on the topic's scope qualifier, not the recipient.
 
 **No client-side filter for scoping.** The frontend events store sees only events for its user. This eliminates a class of bug where the wrong-tab-active sees data leaking from another user (today's broker fans out everything; even with HTTPS that's wrong on principle). (Client-side *listener* filtering still exists for the orthogonal job of "which of my eligible topics is this page interested in" — that's cheap and unrelated to scoping correctness.)
 
-**Recipient is a coarse tag; eligibility is resolved per-session at connect — not per-emit.** The event carries a recipient tag (`user:<id>` / `admins` / `broadcast`). Each *session* computes its eligibility set **once, at connect** (its `user_id`, and whether that user is currently an admin). The broker then filters by cheap set-membership — **no DB or permission-system call on the emit path.** This matters because high-frequency producers (scan progress per file, download progress per second) would otherwise hammer the permission system on every emit. The cost is bounded staleness: a newly-promoted admin doesn't see `admins` events until their next (re)connect, and a demoted admin keeps seeing them until then. At self-hosted scale and reconnect cadence that window is negligible, and it matches the resolve-at-creation posture of the [notifications](../notifications/README.md) spec.
+**Recipient is a coarse tag; eligibility is resolved per-session at connect — not per-emit.** The event carries a recipient tag (`user:<id>` / `capability:<key>` / `broadcast`). Each *session* resolves its capability set **once, at attach**. The broker then filters by cheap set-membership — **no DB or permission-system call on the emit path.** This matters because high-frequency producers (scan progress per file, download progress per second) would otherwise hammer the permission system on every emit. The cost is bounded staleness: a granted permission reaches a session at its next (re)connect, and a revoked one keeps applying until then — reattach re-resolves, so a reconnect is enough. At self-hosted scale and reconnect cadence that window is negligible, and it matches the resolve-at-creation posture of the [notifications](../notifications/README.md) spec.
 
 <a id="topic-eligibility"></a>**Topic eligibility is checked at subscribe time**, against the same connect-time eligibility set. Subscribing to `scan.progress:library_42` requires the user to hold `library.read:42`; the control-plane endpoint validates this once and admits the topic. On a permission change, the user's active sessions re-validate their subscription set (drop now-ineligible topics) — driven off the same signal that recomputes eligibility. The broker does not re-check eligibility on every emit; it trusts the admitted topic set.
+
+> **Status:** implemented. Sessions resolve their capability set at attach and the broker filters by set membership, with no permission lookup on the emit path. Download-job, import-task, proposal, and scan events are capability-targeted. `want_updated` is still broadcast — scoping it correctly needs the tracking's requesters resolved at emit, which is the per-viewer computation [title status](../title-status/README.md) does properly, so narrowing it here would be thrown away.
+
+<a id="per-viewer-payloads"></a>
+
+### Per-viewer payloads
+
+Recipient scoping answers *who receives an event*. Some producers additionally need the **payload itself** to differ per viewer — a requester and an operator looking at the same title get different available actions, and the operator's payload carries release candidates and file paths that the requester's simply does not include.
+
+This is a deliberate extension of the scoping model, and it inverts a cost assumption. A recipient tag lets one serialized payload fan out to N sessions; a per-viewer payload means **N payloads for one state change**.
+
+It is admissible when **the topic is narrow enough that N is small**. A title-scoped topic is subscribed by the sessions actually looking at that title — usually one, in a household perhaps two. Fan-out is bounded by real viewers rather than by user count, and the cost is paid on transitions rather than on ticks.
+
+Three rules keep it from becoming the default:
+
+1. **Per-viewer payloads are for scoped topics only.** A global topic with a per-viewer payload is a fan-out multiplier with no bound, and is not admissible.
+2. **The high-frequency channel stays viewer-independent.** Where a producer splits into a rare full event and a frequent tick, only the rare one may be per-viewer. Ticks carry numbers, and numbers are the same for everyone.
+3. **Withhold by omission, not by convention.** If a viewer should not see a field, that field is absent from their payload. Sending it and trusting the client not to render it is not scoping — it is a rendering decision applied to data that already leaked.
+
+The third rule is not hypothetical: requesters currently receive broadcast download-job payloads containing candidate release titles, which the status card declines to display. The data is in their cache regardless.
+
+### Naming events after concepts, not tables
+
+**An event is named after what a consumer renders, not after the row that changed.**
+
+An event named after a table carries no meaning on its own. `want_updated` tells a client that a row changed; it does not tell it what is now true about the thing the user is looking at. To get from one to the other, every consumer joins that event against whatever else it has cached — and consumers with different caches, written at different times, join differently.
+
+The failure mode is not that one of them is wrong. It is that **they are independently derived, so they diverge**, and each divergence looks like its own unrelated bug. Fixing them one at a time never converges, because the mechanism that produces them is untouched.
+
+The rule:
+
+- ✅ `title_status` — what is true about this title, for this viewer, now
+- ❌ `want_updated`, `tracking_updated`, `download_job_updated` — what row changed
+
+**A row event is fine when exactly one surface consumes it** and that surface owns the row — an admin table of download jobs, for instance. It stops being fine the moment a second surface needs the same concept, because that is the point at which two derivations exist.
+
+Two practical consequences:
+
+- **The payload must be self-locating.** A consumer keyed on TMDB id cannot use an event whose only title reference is an internal media id; it would have to maintain its own mapping, which is another derivation. An event carries enough identity to be applied without a lookup.
+- **Coalesce on the producer side.** A concept-level event fires when the concept changes, which may be once for nine underlying row changes. Coalescing belongs on the server, where the bound is known — a client-side debounce with no maximum wait can be starved indefinitely by exactly the burst it was added to smooth.
+
+[Title status](../title-status/README.md) is the worked example: one projection replacing six independent client-side derivations of the same concept.
 
 ### The producer API
 
@@ -141,7 +195,7 @@ realtime.Emit(ctx, sse_events.DownloadJobUpdated(sse_events.DownloadJobUpdatedPa
 Each constructor declares:
 
 1. **Event-type string** (`"scan.progress"`) — the topic name producers and subscribers reference. The wire writer emits it directly as the `event:` line (read from this field, **not** from `reflect.TypeOf`).
-2. **Recipient tag** (`user:<id>`, `admins`, or `broadcast` — usually derived from the payload). A coarse tag the broker filters against per-session eligibility; see [Per-user scoping](#per-user-scoping).
+2. **Recipient tag** (`user:<id>`, `capability:<key>`, or `broadcast` — usually derived from the payload). A coarse tag the broker filters against per-session eligibility; see [Per-user scoping](#per-user-scoping).
 3. **Payload type** (compile-time-enforced).
 4. **State pattern hint** (`SnapshotDelta` vs `NotifyRefetch` — documentary; affects whether the payload carries data or is a kick).
 
@@ -361,9 +415,10 @@ Component code rarely touches the events store directly; it composes against the
 | Neighbor                                                                        | How realtime interacts                                                                                                                                                     |
 | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **[Notifications](../notifications/README.md)**                                 | Notifications' `in_app` channel adapter calls `realtime.Emit(notification.delivered)` after writing the outbox row. Realtime never sees notification-specific event types. |
-| **[Users](../users/README.md)**                                                 | Recipient resolution for `admins` consults the permission system to enumerate current admins at emit time. JWT subject identifies the user on the stream.                  |
+| **[Users](../users/README.md)**                                                 | Supplies the authz keyspace capability recipients name, resolved per session at attach. JWT subject identifies the user on the stream.                                     |
 | **[Scan](../scan/README.md)**                                                   | Primary producer of `scan.*` events (started/progress/completed/failed). Pattern A — payload carries progress data.                                                        |
 | **[Acquisition](../acquisition/README.md)**                                     | Producer of `download_jobs.snapshot` (on connect) and `download_jobs.updated` (per change). Pattern A.                                                                     |
+| **[Title status](../title-status/README.md)**                                   | Producer of `title_status` (per-viewer, on transition) and `title_progress` (viewer-independent, per tick). The worked example of concept-named events and per-viewer payloads; depends on per-user scoping landing first. |
 | **[Hygiene](../hygiene/README.md)**                                             | Producer of `hygiene.audit_started` / `hygiene.audit_completed` and possibly per-finding deltas. Pattern depends on UI needs.                                              |
 | **[Connectivity-health pattern](../../patterns/connectivity-health/README.md)** | Producer of `<resource>.health` events on transitions. Pattern A — payload carries new status.                                                                             |
 | **[Matching](../matching/README.md)**                                           | Producer of `match.dropped_in` events for live unmatched-files UI. Pattern A or B per feature owner.                                                                       |
@@ -381,6 +436,13 @@ These were open in iteration 1 and are now committed; they're woven into the mod
 - **Reconnect reuses `session_id`** via `?session=<id>`; falls back to fresh allocation if evicted.
 - **Recipient is a coarse tag; eligibility is computed per-session at connect**, filtered by set-membership with no per-emit DB call. Topic eligibility checked at subscribe time, re-validated on permission change.
 - **Server→server work dispatch is out of scope** — it lives in the [work-dispatch pattern](../../patterns/work-dispatch/README.md).
+
+## Decisions locked (iteration 3)
+
+- **Events are named after concepts, not tables.** Row-shaped events are admissible only where a single surface owns the row. ([Naming](#naming-events-after-concepts-not-tables))
+- **Per-viewer payloads are admissible on scoped topics**, subject to three rules: scoped topics only, viewer-independent high-frequency channel, and withhold by omission rather than by client convention. ([Per-viewer payloads](#per-viewer-payloads))
+- **Per-user scoping is a prerequisite, not a hardening pass.** It blocks any per-viewer payload, and everything is `Broadcast` today.
+- **Coalescing belongs on the producer.** Client-side debouncing without a maximum wait is starvable by the bursts it exists to smooth.
 
 ## Open questions
 
@@ -413,8 +475,9 @@ Pulled forward from `SSE_TRANSPORT_FINDINGS.md`. These ship alongside the spec's
 
 ## Doc neighbors
 
+- [Title status](../title-status/README.md) — the acquisition read model; primary consumer of concept-named events and per-viewer payloads
 - [Notifications](../notifications/README.md) — sibling system; its `in_app` channel adapter emits `notification.delivered` via this spec's `realtime.Emit`
-- [Users](../users/README.md) — JWT subject identifies the user on the stream; `admins` recipient resolution consults the permission system
+- [Users](../users/README.md) — JWT subject identifies the user on the stream; supplies the keyspace capability recipients name
 - [Scan](../scan/README.md) — primary realtime producer for in-flight scan progress (pattern A)
 - [Acquisition](../acquisition/README.md) — primary realtime producer for download-jobs snapshot and updates (pattern A)
 - [Connectivity-health pattern](../../patterns/connectivity-health/README.md) — emits `<resource>.health` events on transitions, consumed by admin dashboards
