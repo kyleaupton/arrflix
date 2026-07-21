@@ -44,6 +44,7 @@ type Services struct {
 	Routing            *RoutingService
 	Scanner            *ScannerService
 	Sessions           *SessionService
+	TitleStatus        *TitleStatusService
 	Tracking           *TrackingService
 	Settings           *SettingsService
 	Setup              *SetupService
@@ -155,6 +156,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Settings:           settings,
 		Setup:              NewSetupService(r, users, settings, tmdb),
 		Tmdb:               tmdb,
+		TitleStatus:        NewTitleStatusService(r),
 		Tracking:           NewTrackingService(r, wants, authz),
 		UnmatchedFiles:     NewUnmatchedFilesService(r, l, tmdb),
 		Users:              users,

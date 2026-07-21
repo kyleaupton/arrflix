@@ -103,13 +103,20 @@ type Request struct {
 	Status string
 }
 
-// Item is one acquirable atom: a movie, or a single in-scope episode.
+// Item is one atom: a movie, or a single episode.
+//
+// InScope marks an atom the title is actually trying to acquire. Out-of-scope
+// atoms still get a state — a season grid shows every episode, including ones
+// nobody asked for — but they are excluded from the counts and the headline.
+// Without that split, a series whose in-scope episodes are all acquired reports
+// partially_available forever, held back by episodes it was never going to get.
 //
 // ObtainableAt is when the atom can first be gotten — a film's home release, an
 // episode's air date. Nil means obtainable now (or unknown, which is treated
 // the same: we look rather than assume). ActiveJob covers the hand-grab path,
 // where an operator started a download with no want behind it.
 type Item struct {
+	InScope      bool
 	HasFile      bool
 	Want         *Want
 	ActiveJob    bool
@@ -195,17 +202,27 @@ func Derive(in Input) Result {
 	res := Result{
 		State:      StateNotRequested,
 		ItemStates: make([]State, len(in.Items)),
-		Counts:     Counts{Total: len(in.Items)},
 	}
 
 	dominantPhase := PhaseNone
+	scoped := make([]State, 0, len(in.Items))
+
 	for i, item := range in.Items {
 		st := DeriveItem(item, in.Now)
 		res.ItemStates[i] = st
 
+		// A file counts toward the library whether or not the title still wants
+		// it — it is on disk either way.
 		if item.HasFile {
 			res.Library.FileCount++
 		}
+
+		if !item.InScope {
+			continue
+		}
+
+		scoped = append(scoped, st)
+		res.Counts.Total++
 		if st == StateAvailable {
 			res.Counts.Available++
 		}
@@ -218,13 +235,15 @@ func Derive(in Input) Result {
 	res.Library.HasFiles = res.Library.FileCount > 0
 	res.Phase = dominantPhase
 	res.Active = dominantPhase != PhaseNone
-	res.State = headline(in, res)
+	res.State = headline(in, res, scoped)
 
 	return res
 }
 
-// headline picks the title-level state from the already-derived item states.
-func headline(in Input, res Result) State {
+// headline picks the title-level state. scoped holds the derived states of the
+// in-scope atoms only — out-of-scope ones are visible in the grid but must not
+// speak for the title.
+func headline(in Input, res Result, scoped []State) State {
 	// A pending or denied request speaks only into a vacuum.
 	if reqState := requestHeadline(in.Request); reqState != "" {
 		if !res.Library.HasFiles && res.Counts.Working == 0 {
@@ -247,7 +266,7 @@ func headline(in Input, res Result) State {
 		return StateAvailable
 	}
 
-	return dominantState(res.ItemStates)
+	return dominantState(scoped)
 }
 
 // DeriveItem computes the state of a single atom. Exported because a season

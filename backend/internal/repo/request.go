@@ -116,6 +116,22 @@ func (r *Repository) FindPendingRequestForUser(ctx context.Context, userID uuid.
 	return toModelRequest(row), nil
 }
 
+// FindLatestRequestForUser returns the caller's most recent request for a title
+// (tmdb id + type) whatever its status. Returns a NotFound error when the user
+// has never requested it — callers that treat "no request" as a normal state
+// check the kind rather than propagating.
+func (r *Repository) FindLatestRequestForUser(ctx context.Context, userID uuid.UUID, tmdbID int64, typ string) (model.Request, error) {
+	row, err := r.Q.FindLatestRequestForUser(ctx, dbgen.FindLatestRequestForUserParams{
+		RequestedBy: pgtypeFromUUID(userID),
+		TmdbID:      tmdbID,
+		Type:        typ,
+	})
+	if err != nil {
+		return model.Request{}, apperrors.FromPg(err, "request for tmdb id %d (type %s)", tmdbID, typ)
+	}
+	return toModelRequest(row), nil
+}
+
 func (r *Repository) ListRequests(ctx context.Context) ([]model.Request, error) {
 	rows, err := r.Q.ListRequests(ctx)
 	if err != nil {

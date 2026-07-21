@@ -2492,6 +2492,40 @@ export type TierBinding = {
     tier: string;
 };
 
+export type TitleCounts = {
+    available: number;
+    total: number;
+    working: number;
+};
+
+export type TitleEpisodeStatus = {
+    airDate?: string;
+    episodeId: string;
+    episodeNumber: number;
+    seasonNumber: number;
+    state: string;
+};
+
+export type TitleLibrary = {
+    fileCount: number;
+    hasFiles: boolean;
+};
+
+export type TitleStatus = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    active: boolean;
+    counts: TitleCounts;
+    episodes?: Array<TitleEpisodeStatus> | null;
+    library: TitleLibrary;
+    mediaType: string;
+    phase?: string;
+    state: string;
+    tmdbId: number;
+};
+
 export type Trace = {
     children?: Array<Trace> | null;
     left?: Resolved;
@@ -3899,6 +3933,17 @@ export type TierBindingWritable = {
     domain: string;
     profileId: string;
     tier: string;
+};
+
+export type TitleStatusWritable = {
+    active: boolean;
+    counts: TitleCounts;
+    episodes?: Array<TitleEpisodeStatus> | null;
+    library: TitleLibrary;
+    mediaType: string;
+    phase?: string;
+    state: string;
+    tmdbId: number;
 };
 
 export type TrackingWritable = {
@@ -9232,6 +9277,40 @@ export type SetupTmdbResponses = {
 };
 
 export type SetupTmdbResponse2 = SetupTmdbResponses[keyof SetupTmdbResponses];
+
+export type TitleStatusGetData = {
+    body?: never;
+    path: {
+        /**
+         * Media type
+         */
+        mediaType: 'movie' | 'series';
+        /**
+         * TMDB id
+         */
+        tmdbId: number;
+    };
+    query?: never;
+    url: '/api/v1/titles/{mediaType}/{tmdbId}/status';
+};
+
+export type TitleStatusGetErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type TitleStatusGetError = TitleStatusGetErrors[keyof TitleStatusGetErrors];
+
+export type TitleStatusGetResponses = {
+    /**
+     * OK
+     */
+    200: TitleStatus;
+};
+
+export type TitleStatusGetResponse = TitleStatusGetResponses[keyof TitleStatusGetResponses];
 
 export type TrackingListData = {
     body?: never;

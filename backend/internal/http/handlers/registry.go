@@ -48,6 +48,7 @@ func RegisterHumachiHandlers(api huma.API, deps Deps) {
 	NewSetup(deps.Services).RegisterHumachi(api)
 	NewMedia(deps.Services).RegisterHumachi(api)
 	NewEvents(deps.Broker, deps.Services).RegisterHumachi(api)
+	NewTitleStatus(deps.Services).RegisterHumachi(api)
 	NewDownloadJobs(deps.Services).RegisterHumachi(api)
 	NewImportTasks(deps.Services).RegisterHumachi(api)
 	NewBootstrap(deps.Cfg, deps.Services).RegisterHumachi(api)

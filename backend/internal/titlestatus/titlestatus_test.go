@@ -12,11 +12,24 @@ func future() *time.Time { t := now.Add(24 * time.Hour); return &t }
 
 func held(h string) *Want { return &Want{Status: wantPending, Hold: &h} }
 func want(s string) *Want { return &Want{Status: s} }
-func movie(items ...Item) Input {
-	return Input{MediaType: MediaTypeMovie, Items: items, Now: now}
+
+// inScope marks every item as something the title is trying to acquire, which
+// is the case for all but the scope tests.
+func inScope(items []Item) []Item {
+	out := make([]Item, len(items))
+	for i, it := range items {
+		it.InScope = true
+		out[i] = it
+	}
+	return out
 }
+
+func movie(items ...Item) Input {
+	return Input{MediaType: MediaTypeMovie, Items: inScope(items), Now: now}
+}
+
 func series(items ...Item) Input {
-	return Input{MediaType: MediaTypeSeries, Items: items, Now: now}
+	return Input{MediaType: MediaTypeSeries, Items: inScope(items), Now: now}
 }
 
 func TestDeriveItem(t *testing.T) {
@@ -300,17 +313,17 @@ func TestDeriveRequestGovernsOnlyInAVacuum(t *testing.T) {
 		},
 		{
 			"pending request but the title is already in the library",
-			Input{MediaType: MediaTypeMovie, Request: pending, Items: []Item{{HasFile: true}}, Now: now},
+			Input{MediaType: MediaTypeMovie, Request: pending, Items: inScope([]Item{{HasFile: true}}), Now: now},
 			StateAvailable,
 		},
 		{
 			"denied request but someone else already got it",
-			Input{MediaType: MediaTypeMovie, Request: denied, Items: []Item{{HasFile: true}}, Now: now},
+			Input{MediaType: MediaTypeMovie, Request: denied, Items: inScope([]Item{{HasFile: true}}), Now: now},
 			StateAvailable,
 		},
 		{
 			"pending request but work is already underway",
-			Input{MediaType: MediaTypeMovie, Request: pending, Items: []Item{{Want: want(wantDownloading)}}, Now: now},
+			Input{MediaType: MediaTypeMovie, Request: pending, Items: inScope([]Item{{Want: want(wantDownloading)}}), Now: now},
 			StateDownloading,
 		},
 		{
@@ -359,3 +372,62 @@ func TestDeriveIsTotal(t *testing.T) {
 }
 
 func strp(s string) *string { return &s }
+
+// A series carries every episode for its grid, including ones outside what
+// anyone asked for. Those must not hold the title back: a tracking whose
+// in-scope episodes are all acquired is available, not partially available.
+func TestOutOfScopeItemsDoNotSpeakForTheTitle(t *testing.T) {
+	t.Parallel()
+
+	in := Input{
+		MediaType: MediaTypeSeries,
+		Now:       now,
+		Items: []Item{
+			{InScope: true, HasFile: true},
+			{InScope: true, HasFile: true},
+			// Never requested — present in the grid, irrelevant to the headline.
+			{},
+			{},
+		},
+	}
+
+	res := Derive(in)
+
+	if res.State != StateAvailable {
+		t.Fatalf("State = %q, want %q — out-of-scope episodes must not hold the title back", res.State, StateAvailable)
+	}
+	if res.Counts.Total != 2 || res.Counts.Available != 2 {
+		t.Fatalf("Counts = %+v, want totals over in-scope episodes only", res.Counts)
+	}
+	if len(res.ItemStates) != 4 {
+		t.Fatalf("ItemStates has %d entries, want 4 — the grid still needs every episode", len(res.ItemStates))
+	}
+	if res.ItemStates[2] != StateNotRequested {
+		t.Errorf("ItemStates[2] = %q, want %q", res.ItemStates[2], StateNotRequested)
+	}
+}
+
+// A file outside scope is still in the library, so it counts there even though
+// it says nothing about what the title is trying to acquire.
+func TestOutOfScopeFilesStillCountAsLibraryContent(t *testing.T) {
+	t.Parallel()
+
+	res := Derive(Input{
+		MediaType: MediaTypeSeries,
+		Now:       now,
+		Items: []Item{
+			{InScope: true, Want: want(wantPending)},
+			{HasFile: true},
+		},
+	})
+
+	if res.Library.FileCount != 1 || !res.Library.HasFiles {
+		t.Fatalf("Library = %+v, want the out-of-scope file counted", res.Library)
+	}
+	if res.Counts.Available != 0 {
+		t.Fatalf("Counts.Available = %d, want 0 — it is not something this title acquired", res.Counts.Available)
+	}
+	if res.State != StateSearching {
+		t.Fatalf("State = %q, want %q", res.State, StateSearching)
+	}
+}

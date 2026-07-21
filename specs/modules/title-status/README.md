@@ -132,6 +132,14 @@ Pinned while implementing the derivation, because the state vocabulary alone doe
 
 **Activity is orthogonal, and is read from wants rather than from states.** This is the subtle one. Deriving activity from the item states masks exactly the case the model exists to express: an available atom with a searching want reports `available`, so a rollup over states would conclude nothing is happening and the in-flight upgrade would vanish. Activity is computed from the wants directly, in parallel with the states, never from them.
 
+**Out-of-scope atoms are shown but do not speak for the title.** A season grid renders every episode, including ones nobody asked for. Those atoms get a state so the grid can draw them, and are excluded from the counts and the headline.
+
+Without that split the headline is simply wrong, and a live library proves it. Rick and Morty carries 128 episodes across ten seasons — but season 0 is 37 specials, and nothing wants them. A title that has acquired every episode of every real season would still report `partially_available`, permanently held back by specials it was never going to get. Specials are not a data artifact that will be cleaned up; every series with a season 0 has this shape forever. A title cannot be judged against work it isn't doing.
+
+A file outside scope still counts as library content, because it is on disk regardless of whether anything wants it.
+
+**Scope is inferred from the presence of a want.** Wants are created eagerly for everything in scope, so having one means the title wants that atom; a file or a live hand-grab counts too. The alternative — resolving effective scope per read — means re-running the requester-union resolution on every render, since [that union is deliberately not materialized](../../stories/05-multi-requester-scope-union.md). Reading the result of it instead is cheaper and cannot drift from what the reconciler actually did.
+
 **`searching` collapses the internal oscillation.** A want with nothing to grab cycles `pending` → `searching` → `pending` continuously as the worker claims and releases it. Any surface rendering the raw want status shows a flickering value that misrepresents a system doing exactly the right thing. The projection reports one stable state, satisfying `REQ-SEARCH-002` by shape rather than by patch.
 
 ### Derivation is pure

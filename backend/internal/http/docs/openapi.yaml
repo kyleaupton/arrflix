@@ -5569,6 +5569,96 @@ components:
         - domain
         - profileId
       type: object
+    TitleCounts:
+      additionalProperties: false
+      properties:
+        available:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+        working:
+          format: int64
+          type: integer
+      required:
+        - total
+        - available
+        - working
+      type: object
+    TitleEpisodeStatus:
+      additionalProperties: false
+      properties:
+        airDate:
+          format: date-time
+          type: string
+        episodeId:
+          type: string
+        episodeNumber:
+          format: int32
+          type: integer
+        seasonNumber:
+          format: int32
+          type: integer
+        state:
+          type: string
+      required:
+        - episodeId
+        - seasonNumber
+        - episodeNumber
+        - state
+      type: object
+    TitleLibrary:
+      additionalProperties: false
+      properties:
+        fileCount:
+          format: int64
+          type: integer
+        hasFiles:
+          type: boolean
+      required:
+        - hasFiles
+        - fileCount
+      type: object
+    TitleStatus:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/TitleStatus.json
+          format: uri
+          readOnly: true
+          type: string
+        active:
+          type: boolean
+        counts:
+          $ref: "#/components/schemas/TitleCounts"
+        episodes:
+          items:
+            $ref: "#/components/schemas/TitleEpisodeStatus"
+          type:
+            - array
+            - "null"
+        library:
+          $ref: "#/components/schemas/TitleLibrary"
+        mediaType:
+          type: string
+        phase:
+          type: string
+        state:
+          type: string
+        tmdbId:
+          format: int64
+          type: integer
+      required:
+        - mediaType
+        - tmdbId
+        - state
+        - active
+        - library
+        - counts
+      type: object
     Trace:
       additionalProperties: false
       properties:
@@ -11839,6 +11929,45 @@ paths:
       summary: Set TMDB API key
       tags:
         - setup
+  /api/v1/titles/{mediaType}/{tmdbId}/status:
+    get:
+      description: "The acquisition read model for one title, computed for the calling user: headline state, what the library holds, what work is in flight, and per-episode state for a series."
+      operationId: title-status-get
+      parameters:
+        - description: Media type
+          in: path
+          name: mediaType
+          required: true
+          schema:
+            description: Media type
+            enum:
+              - movie
+              - series
+            type: string
+        - description: TMDB id
+          in: path
+          name: tmdbId
+          required: true
+          schema:
+            description: TMDB id
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TitleStatus"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Get a title's acquisition status
+      tags:
+        - titles
   /api/v1/tracking:
     get:
       operationId: tracking-list
