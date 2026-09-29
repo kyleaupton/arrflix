@@ -50,7 +50,7 @@ func (s *TitleStatusService) Get(ctx context.Context, viewerID uuid.UUID, mediaT
 		Now:       s.now(),
 	}
 
-	req, err := s.viewerRequest(ctx, viewerID, mediaType, tmdbID)
+	req, ownRequest, err := s.viewerRequest(ctx, viewerID, mediaType, tmdbID)
 	if err != nil {
 		return model.TitleStatus{}, err
 	}
@@ -67,7 +67,7 @@ func (s *TitleStatusService) Get(ctx context.Context, viewerID uuid.UUID, mediaT
 	case apperrors.IsNotFound(err):
 		// Nothing local knows this title yet. A pending or denied request is
 		// still meaningful, so derive from that alone rather than 404ing.
-		return s.finish(in, nil, tmdbID, mediaType), nil
+		return s.finish(in, nil, tmdbID, mediaType, ownRequest), nil
 	case err != nil:
 		return model.TitleStatus{}, err
 	}
@@ -86,7 +86,7 @@ func (s *TitleStatusService) Get(ctx context.Context, viewerID uuid.UUID, mediaT
 		for _, e := range episodes {
 			in.Items = append(in.Items, e.item)
 		}
-		return s.finish(in, episodes, tmdbID, mediaType), nil
+		return s.finish(in, episodes, tmdbID, mediaType, ownRequest), nil
 	}
 
 	movie, err := s.movieItem(ctx, item.ID, tmdbID, wants)
@@ -94,13 +94,13 @@ func (s *TitleStatusService) Get(ctx context.Context, viewerID uuid.UUID, mediaT
 		return model.TitleStatus{}, err
 	}
 	in.Items = []titlestatus.Item{movie}
-	return s.finish(in, nil, tmdbID, mediaType), nil
+	return s.finish(in, nil, tmdbID, mediaType, ownRequest), nil
 }
 
 // finish runs the derivation and shapes the wire model. episodes is nil for
 // movies; when present it is index-aligned with in.Items so each cell picks up
 // its own derived state.
-func (s *TitleStatusService) finish(in titlestatus.Input, episodes []episodeItem, tmdbID int64, mediaType model.MediaType) model.TitleStatus {
+func (s *TitleStatusService) finish(in titlestatus.Input, episodes []episodeItem, tmdbID int64, mediaType model.MediaType, ownRequest *model.Request) model.TitleStatus {
 	res := titlestatus.Derive(in)
 
 	out := model.TitleStatus{
@@ -117,7 +117,18 @@ func (s *TitleStatusService) finish(in titlestatus.Input, episodes []episodeItem
 		},
 	}
 
+	// The request rides along only while it is live: a denied or canceled one
+	// affords nothing, so carrying its id would be an action-less handle and its
+	// tier would describe an ask no longer outstanding.
 	out.Viewer = model.TitleViewer{IsRequester: in.Viewer.IsRequester}
+	if in.Viewer.IsRequester && ownRequest != nil {
+		id := ownRequest.ID
+		out.Viewer.RequestID = &id
+		out.Viewer.Intent = &model.TitleIntent{
+			Tier:      ownRequest.Tier,
+			ScopeRule: ownRequest.ScopeRule,
+		}
+	}
 	for _, a := range res.Actions {
 		action := model.TitleAction{
 			Kind:             string(a.Kind),
@@ -152,18 +163,21 @@ func (s *TitleStatusService) finish(in titlestatus.Input, episodes []episodeItem
 
 // viewerRequest fetches the viewer's most recent request for the title. No
 // request is the common case and yields nil, not an error.
-func (s *TitleStatusService) viewerRequest(ctx context.Context, viewerID uuid.UUID, mediaType model.MediaType, tmdbID int64) (*titlestatus.Request, error) {
+//
+// The id is returned alongside the derivation input because the cancel action
+// needs something to act on, and the derivation itself has no use for it.
+func (s *TitleStatusService) viewerRequest(ctx context.Context, viewerID uuid.UUID, mediaType model.MediaType, tmdbID int64) (*titlestatus.Request, *model.Request, error) {
 	if viewerID == uuid.Nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	req, err := s.repo.FindLatestRequestForUser(ctx, viewerID, tmdbID, string(mediaType))
 	switch {
 	case apperrors.IsNotFound(err):
-		return nil, nil
+		return nil, nil, nil
 	case err != nil:
-		return nil, err
+		return nil, nil, err
 	}
-	return &titlestatus.Request{Status: req.Status}, nil
+	return &titlestatus.Request{Status: req.Status}, &req, nil
 }
 
 // wantsForItem returns the title's live wants keyed by episode id, with the

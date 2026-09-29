@@ -1,6 +1,6 @@
 # Title status — the acquisition read model
 
-**Status:** Draft, iteration 2 — derivation, scoping, read, and events implemented; `actions[]` and the frontend swap outstanding.
+**Status:** Draft, iteration 2 — derivation, scoping, read, events, `actions[]`, and the focus-page swap implemented. Outstanding: the batch read that list surfaces need, and the deferred action kinds.
 
 This doc defines **title status**: a single server-computed answer to *"what is happening with this title, for this viewer, right now."* It is the read model every acquisition-facing surface renders from — focus pages, poster chips, hero controls, status cards, season grids — and the payload of the realtime events that keep those surfaces live.
 
@@ -16,7 +16,7 @@ This doc owns the shape of the read model, its state vocabulary, how it is compu
 - **Two events on one query key.** `title_status` is a bare kick to refetch and fires on transitions; `title_progress` carries numbers and fires per tick. The split falls out of what each one is: the projection is per-viewer so it is fetched, progress is viewer-independent so it is pushed. Both land on the same TanStack key.
 - **The projection is per-viewer.** Two people looking at the same title get different `TitleStatus` — different actions, different intent, and different *fields*. Operator-only data is **absent** for a requester, not hidden by the client. That is also why the transition event is a kick: a per-viewer answer is fetched by the viewer, not pushed to them.
 - **State is not one enum.** A title can be *available* and *working* at once (an upgrade in flight), or partially available and still acquiring (a series mid-season). A headline state drives the chip; orthogonal facts carry the rest.
-- **`actions[]` is server-computed.** What this viewer may do, whether it needs approval, and what it would cost. The client renders buttons; it does not decide which buttons exist.
+- **`actions[]` is server-computed.** What this viewer may do, whether it needs approval, and what it would cost. The client renders buttons; it does not decide which buttons exist — and an offered action ships whatever taking it requires, or the client is back to joining caches to act on it.
 - **Derivation is a pure function.** Raw state tuple → `TitleState`, total, no I/O. Every requirement about *what state should show* becomes a table test with no database.
 - **Explicit invalidation plus a reconciler.** Mutation sites announce changes; a sweep over titles with active work recomputes and emits on diff. A forgotten call site becomes a latency bug rather than a correctness bug — which is the failure mode that produced the defect this work started from.
 
@@ -155,7 +155,7 @@ Per the [backend layering invariants](../../../.claude/rules/overview.md): the p
 `TitleStatus` is computed **per viewer**, not filtered per viewer. The difference matters:
 
 - **Different actions.** A requester sees cancel; a reviewer sees approve and deny; someone with no grant for this media type sees nothing.
-- **Different intent.** `viewer.intent` is *this* viewer's tier and scope, not the tracking's union.
+- **Different intent.** `viewer.intent` is *this* viewer's tier and scope, not the tracking's union. It reports the ask, which is not a promise: `tracking.quality_profile_id` is single-valued, so two requesters wanting different tiers cannot both be acted on.
 - **Different fields.** Operator-only data — candidate release titles, indexer names, per-file paths — is **absent** from a requester's projection.
 
 That last point is the fix for the leak above. Today the sensitive field is broadcast to everyone and withheld by client-side rendering; a per-viewer payload means it was never sent.
@@ -190,6 +190,8 @@ It also deletes the client-side tier filtering and the auto-approve check that c
 
 The line between the two is whether seeing the affordance helps. A viewer with no create grant does not get a greyed-out Request button — that permission is not a state that will change, and showing it only invites them to keep trying. A viewer looking at *their own* live request they may not withdraw does get a disabled Cancel with a reason, because the absence of that button on their own request is otherwise inexplicable.
 
+**An offered action must carry what taking it requires.** `cancel` needs the request's id, so `viewer.requestId` is part of the projection rather than something the client re-fetches — a client that has to look up the id is back in the cross-cache join this exists to delete. The same rule is what blocks `approve`/`deny` below.
+
 **Shipped:** `request` (with per-tier approval) and `cancel`. **Deferred, each blocked on a fact the projection cannot state honestly yet:** `approve`/`deny` need the pending request of *any* requester plus its id, and are queue affordances more than focus-page ones; `retry` needs the "found nothing" vs "indexer unreachable" distinction that lives in `want.last_error`; `pick`/`upgrade` need the candidate set and tier comparison; `effect.episodesAdded` needs the requester-union scope diff, which is deliberately never materialized; `effect.bytesEstimate` has no pre-grab size to read. Shipping a half-supported action is worse than omitting it — the client would render an affordance whose consequences the server is guessing at.
 
 ### Delivery
@@ -212,6 +214,38 @@ Note what this implies: the per-viewer *payload* machinery is not needed yet. Re
 **Emission is coalesced server-side**, at most one `title_status` per title per flush interval. A season-pack import transitions every episode of a season; that is one emit, not ten. This replaces the unbounded client debounce with a bounded server-side one — an important difference, because the current client debounce can be starved indefinitely by exactly this burst.
 
 **A sweep backs the explicit invalidations.** Every write path that moves acquisition state announces the affected title, but that is a contract across a dozen call sites and contracts like that decay. A periodic sweep re-reads which media items changed and announces them regardless, which is what keeps a forgotten announcement a latency bug rather than a stale-UI bug. The sweep window overlaps the previous one so a row committed late by a long transaction still lands inside a swept window.
+
+### What the swap deleted
+
+The focus pages now render the projection. Six independent derivations and one whole vocabulary went with them:
+
+| Deleted | Was |
+| --- | --- |
+| `MovieStatusCard`'s 7-state machine | files + tracking + wants + live job + request, joined in the component |
+| The series grid's 5-branch episode cell | want status, hold, per-episode job, and season-pack membership |
+| `Series.vue`'s job correlation | `activeJobsForSeries`, `getSeasonPackJob`, `getEpisodeJob`, `isPartOfSeasonPack`, and two near-identical progress-state functions |
+| `WantStatusPill` | one of the triplicated status→label→variant→icon maps |
+| `useDownloadJobs`'s tmdb-keyed helpers | `isJobActive`, `getMovieJob`, `jobsById` — the correlation surface every badge used |
+| The client tier filter and auto-approve re-check | `actions[].tiers`, each labeled |
+
+`Series.vue` went from 762 lines to ~530. What replaced all of it is `lib/titleStatus.ts`: one state → label/icon/variant table, and nothing else.
+
+**The line held is title vs. job vs. file.** Job status (`downloads/statusConfig.ts`) and file status (the local-files table) stayed exactly where they were. They are different concepts that happen to share vocabulary, and folding them into the projection would be the same conflation in reverse.
+
+### What the swap surfaced
+
+Three things only became visible once the surfaces were rebuilt on one source:
+
+- **`SeriesAcquisitionControl` was checking the wrong grant.** It read `auto_approve:series:HD` for the button face regardless of the selected tier, and `TrackSeriesDialog` offered both tiers unfiltered — so a viewer without `requests.create:series:4k` could pick 4K and collect a 403. Neither component had a tier filter at all; only the movie path did. `actions[].tiers` removes the class of bug rather than the instance.
+- **`isOperator` was conflating two grants.** The track dialog gated *both* quality choice and autonomy on `canAutoApprove('series','HD')`. They are different questions: quality follows the tiers offered, autonomy follows `jobs.manage`. Split accordingly.
+- **Request decisions had no realtime path at all.** Nothing invalidated `requestsList`, so an admin approving a request could not reach the requester's open tab. The `title_status` kick closes this, because request state is part of the projection — a case that was never designed for, only inherited.
+
+### Known regressions from the swap
+
+Recorded rather than quietly absorbed:
+
+- **The unreleased movie reads as `not_requested`.** No obtainable date is persisted for a movie (REQ-UNREL-003), so the projection cannot distinguish "not out yet" from "not asked for". `MovieStatusCard` renders the theatrical/digital dates beneath the headline from TMDB metadata it already holds, which preserves the information but not the state. Closing this means persisting a home-release date, not changing the derivation.
+- **The status card no longer shows the release name to operators.** It was the download headline for anyone with `jobs.read`. Reinstating it would mean re-joining the jobs cache in the one component the projection just freed, so it belongs on an operator surface — `AttentionCard` or the Downloads page, which both still carry it.
 
 ### List surfaces get the same type, delivered differently
 

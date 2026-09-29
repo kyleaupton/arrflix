@@ -11,10 +11,12 @@ import { Check, CircleX, Clock, Ban } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
 import type { BadgeVariants } from '@/components/ui/badge'
 
-// Pure render of a request's lifecycle state — the requester-facing counterpart
-// to WantStatusPill. approved and spawned collapse to one "Approved" face: from
-// the requester's side the distinction (queued for spawn vs already tracking) is
-// noise; the tracking/want pills carry the acquisition detail from there.
+// Pure render of a request's lifecycle state, for the approval queue — where the
+// row is a request rather than a title, so there is no projection to read. On a
+// title, TitleStatusPill is what renders state.
+//
+// approved and spawned collapse to one "Approved" face: from the requester's
+// side the distinction (queued for spawn vs already tracking) is noise.
 // Request.status is a plain string on the wire, narrowed in the switch here.
 const props = defineProps<{
   status: string

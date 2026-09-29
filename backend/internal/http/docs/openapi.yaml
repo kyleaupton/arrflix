@@ -5597,6 +5597,9 @@ components:
         requiresApproval:
           type: boolean
         tier:
+          enum:
+            - HD
+            - 4K
           type: string
       required:
         - tier
@@ -5640,6 +5643,23 @@ components:
         - seasonNumber
         - episodeNumber
         - state
+      type: object
+    TitleIntent:
+      additionalProperties: false
+      properties:
+        scopeRule:
+          enum:
+            - ""
+            - all
+            - future_only
+          type: string
+        tier:
+          enum:
+            - HD
+            - 4K
+          type: string
+      required:
+        - tier
       type: object
     TitleLibrary:
       additionalProperties: false
@@ -5739,8 +5759,12 @@ components:
     TitleViewer:
       additionalProperties: false
       properties:
+        intent:
+          $ref: "#/components/schemas/TitleIntent"
         isRequester:
           type: boolean
+        requestId:
+          type: string
       required:
         - isRequester
       type: object

@@ -1,40 +1,41 @@
 <script setup lang="ts">
 import { ref, computed, inject } from 'vue'
-import { useMutation, useQueryClient } from '@tanstack/vue-query'
-import {
-  requestsCreateMutation,
-  requestsListQueryKey,
-  trackingByTmdbQueryKey,
-} from '@/client/@tanstack/vue-query.gen'
+import { useMutation } from '@tanstack/vue-query'
+import { requestsCreateMutation } from '@/client/@tanstack/vue-query.gen'
 import { toast } from 'vue-sonner'
 import BaseDialog from './BaseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import TierSegmentedControl from '@/components/acquisition/TierSegmentedControl.vue'
-import { useAuthStore } from '@/stores/auth'
+import { useTitleInvalidation } from '@/composables/useTitleInvalidation'
 import { problemMessage } from '@/lib/api'
+import type { TitleActionTier } from '@/client/types.gen'
 
-type Tier = 'HD' | '4K'
+type Tier = TitleActionTier['tier']
 
-// The movie counterpart to TrackSeriesDialog. Only opened when the caller holds
-// more than one tier, so quality is a genuine choice. Auto-approve is granted per
-// (type, tier), so the selected tier decides the Add-vs-Request face — a user who
-// auto-approves HD but not 4K sees the verb flip when they pick 4K.
+// The movie counterpart to TrackSeriesDialog. Only opened when the request action
+// offers more than one tier, so quality is a genuine choice.
+//
+// The tiers arrive already filtered to what this viewer may pick, each labeled
+// with whether choosing it needs approval — approval is granted per (type, tier),
+// so a user who auto-approves HD but not 4K sees the verb flip when they pick 4K.
 const props = defineProps<{
   tmdbId: number
   title: string
-  availableTiers: Tier[]
+  tiers: TitleActionTier[]
   defaultTier?: Tier
 }>()
 
-const auth = useAuthStore()
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
-const queryClient = useQueryClient()
+const invalidateTitle = useTitleInvalidation('movie', () => props.tmdbId)
 
-const tier = ref<Tier>(props.defaultTier ?? props.availableTiers[0] ?? 'HD')
+const tier = ref<Tier>(props.defaultTier ?? props.tiers[0]?.tier ?? 'HD')
 const error = ref<string | null>(null)
 
-const autoApproves = computed(() => auth.canAutoApprove('movie', tier.value))
+const tierNames = computed(() => props.tiers.map((t) => t.tier))
+const autoApproves = computed(
+  () => props.tiers.find((t) => t.tier === tier.value)?.requiresApproval === false,
+)
 const expectation = computed(() =>
   autoApproves.value
     ? `We'll find the best ${tier.value} release and download it now.`
@@ -51,12 +52,7 @@ const createRequest = useMutation({
     } else {
       toast.success('Requested — pending approval')
     }
-    queryClient.invalidateQueries({
-      queryKey: trackingByTmdbQueryKey({ path: { tmdbId: props.tmdbId } }),
-    })
-    // Refresh the request list the control reads myPending from, so an await-approval
-    // submit flips the hero to its Pending face without a reload.
-    queryClient.invalidateQueries({ queryKey: requestsListQueryKey({}) })
+    invalidateTitle()
     dialogRef.value.close({ saved: true })
   },
   onError: (err) => {
@@ -81,7 +77,7 @@ function handleSubmit() {
 
       <div class="flex items-center justify-between gap-4">
         <Label>Quality</Label>
-        <TierSegmentedControl v-model="tier" :options="availableTiers" label="Quality tier" />
+        <TierSegmentedControl v-model="tier" :options="tierNames" label="Quality tier" />
       </div>
 
       <p class="text-sm text-muted-foreground">{{ expectation }}</p>

@@ -2502,7 +2502,7 @@ export type TitleAction = {
 
 export type TitleActionTier = {
     requiresApproval: boolean;
-    tier: string;
+    tier: 'HD' | '4K';
 };
 
 export type TitleCounts = {
@@ -2517,6 +2517,11 @@ export type TitleEpisodeStatus = {
     episodeNumber: number;
     seasonNumber: number;
     state: string;
+};
+
+export type TitleIntent = {
+    scopeRule?: '' | 'all' | 'future_only';
+    tier: 'HD' | '4K';
 };
 
 export type TitleLibrary = {
@@ -2555,7 +2560,9 @@ export type TitleStatusPayload = {
 };
 
 export type TitleViewer = {
+    intent?: TitleIntent;
     isRequester: boolean;
+    requestId?: string;
 };
 
 export type Trace = {
