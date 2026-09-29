@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, inject } from 'vue'
-import { useMutation, useQueryClient } from '@tanstack/vue-query'
-import {
-  requestsCreateMutation,
-  requestsListQueryKey,
-  trackingByTmdbQueryKey,
-} from '@/client/@tanstack/vue-query.gen'
+import { useMutation } from '@tanstack/vue-query'
+import { requestsCreateMutation } from '@/client/@tanstack/vue-query.gen'
 import { toast } from 'vue-sonner'
 import { Check } from 'lucide-vue-next'
 import BaseDialog from './BaseDialog.vue'
@@ -13,20 +9,24 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import AutonomySegmentedControl from '@/components/acquisition/AutonomySegmentedControl.vue'
 import TierSegmentedControl from '@/components/acquisition/TierSegmentedControl.vue'
+import { useTitleInvalidation } from '@/composables/useTitleInvalidation'
+import { useAuthStore } from '@/stores/auth'
 import { cn } from '@/lib/utils'
 import { problemMessage } from '@/lib/api'
+import type { TitleActionTier } from '@/client/types.gen'
 
 type Autonomy = 'auto' | 'propose' | 'manual'
 type ScopeRule = 'all' | 'future_only'
+type Tier = TitleActionTier['tier']
 
-// Two personas share this dialog. A requester sees at most one question —
-// scope, phrased as watch intent — and their submission may go to a pending
-// request. An operator (`isOperator`) additionally gets quality and per-segment
-// autonomy, and their submission spawns a tracking immediately. Quality and
-// autonomy are operator policy, so requesters never pick them; the backend
-// defaults both. `airedEpisodeCount` / `hasOngoing` decide whether the scope
-// question is even meaningful: with no back-catalog or no upcoming episodes
-// there is only one sensible answer, so the question is skipped entirely.
+// Three questions, each shown only when it is a real choice.
+//
+// Quality appears when `tiers` offers more than one — the list arrives already
+// filtered to what this viewer may pick, each labeled with whether choosing it
+// needs approval, so the dialog never offers a tier the API would reject.
+// Per-segment autonomy is operator policy and follows the jobs.manage grant.
+// Scope is skipped when `airedEpisodeCount` / `hasOngoing` leave only one
+// sensible answer.
 const props = withDefaults(
   defineProps<{
     tmdbId: number
@@ -34,8 +34,8 @@ const props = withDefaults(
     airedEpisodeCount: number
     seasonCount: number
     hasOngoing: boolean
-    isOperator: boolean
-    defaultTier?: 'HD' | '4K'
+    tiers: TitleActionTier[]
+    defaultTier?: Tier
     defaultScope?: ScopeRule
     defaultBackfill?: Autonomy
     defaultOngoing?: Autonomy
@@ -49,10 +49,18 @@ const props = withDefaults(
 )
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
-const queryClient = useQueryClient()
+const auth = useAuthStore()
+const invalidateTitle = useTitleInvalidation('series', () => props.tmdbId)
 
-const tier = ref<'HD' | '4K'>(props.defaultTier)
-const tierOptions: ('HD' | '4K')[] = ['HD', '4K']
+const tier = ref<Tier>(props.defaultTier ?? props.tiers[0]?.tier ?? 'HD')
+const tierOptions = computed(() => props.tiers.map((t) => t.tier))
+const askQuality = computed(() => props.tiers.length > 1)
+
+// Approval is per tier, so the submit verb tracks the selected one.
+const autoApproves = computed(
+  () => props.tiers.find((t) => t.tier === tier.value)?.requiresApproval === false,
+)
+const isOperator = computed(() => auth.canManageJobs)
 const scopeRule = ref<ScopeRule>(props.defaultScope)
 const backfill = ref<Autonomy>(props.defaultBackfill)
 const ongoing = ref<Autonomy>(props.defaultOngoing)
@@ -80,13 +88,9 @@ const scopeOptions = computed(() => [
 // Back-catalog autonomy only applies when backfill wants will exist: some
 // episodes aired and the chosen scope keeps them.
 const showBackfill = computed(
-  () => props.isOperator && effectiveScope.value === 'all' && props.airedEpisodeCount > 0,
+  () => isOperator.value && effectiveScope.value === 'all' && props.airedEpisodeCount > 0,
 )
-const showOngoing = computed(() => props.isOperator && props.hasOngoing)
-
-const trackingKey = computed(() =>
-  trackingByTmdbQueryKey({ path: { tmdbId: props.tmdbId }, query: { type: 'series' } }),
-)
+const showOngoing = computed(() => isOperator.value && props.hasOngoing)
 
 const createRequest = useMutation({
   ...requestsCreateMutation(),
@@ -98,10 +102,7 @@ const createRequest = useMutation({
     } else {
       toast.success('Requested — pending approval')
     }
-    queryClient.invalidateQueries({ queryKey: trackingKey.value })
-    // Refresh the request list so a pending (await-approval) series request shows
-    // its status on the focus page without a reload.
-    queryClient.invalidateQueries({ queryKey: requestsListQueryKey({}) })
+    invalidateTitle()
     dialogRef.value.close({ saved: true })
   },
   onError: (err) => {
@@ -117,7 +118,7 @@ function handleSubmit() {
       scopeRule: effectiveScope.value,
       // Quality and autonomy are operator policy; requesters omit them and the
       // backend applies its defaults (HD, auto/auto).
-      ...(props.isOperator
+      ...(isOperator.value
         ? { tier: tier.value, backfillAutonomy: backfill.value, ongoingAutonomy: ongoing.value }
         : {}),
     },
@@ -126,7 +127,7 @@ function handleSubmit() {
 </script>
 
 <template>
-  <BaseDialog :title="`${isOperator ? 'Track' : 'Request'} ${title}`">
+  <BaseDialog :title="`${autoApproves ? 'Track' : 'Request'} ${title}`">
     <div class="flex flex-col gap-5">
       <div
         v-if="error"
@@ -174,7 +175,7 @@ function handleSubmit() {
         }}
       </p>
 
-      <div v-if="isOperator" class="flex items-center justify-between gap-4">
+      <div v-if="askQuality" class="flex items-center justify-between gap-4">
         <Label>Quality</Label>
         <TierSegmentedControl v-model="tier" :options="tierOptions" label="Quality tier" />
       </div>
@@ -208,10 +209,10 @@ function handleSubmit() {
       <Button :disabled="createRequest.isPending.value" @click="handleSubmit">
         {{
           createRequest.isPending.value
-            ? isOperator
+            ? autoApproves
               ? 'Tracking…'
               : 'Requesting…'
-            : isOperator
+            : autoApproves
               ? 'Track series'
               : 'Request'
         }}

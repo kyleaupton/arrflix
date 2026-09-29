@@ -87,3 +87,15 @@ SET status = 'canceled',
     updated_at = now()
 WHERE id = sqlc.arg(id)
 RETURNING *;
+
+-- FindLatestRequestForUser returns the caller's most recent request for a title
+-- (tmdb id + type) whatever its status. The title-status projection folds the
+-- request into the headline state, and needs denied as well as pending — a
+-- denial is something the requester must be told about, not just a pending wait.
+-- name: FindLatestRequestForUser :one
+SELECT * FROM request
+WHERE requested_by = sqlc.arg(requested_by)
+  AND tmdb_id = sqlc.arg(tmdb_id)
+  AND type = sqlc.arg(type)
+ORDER BY created_at DESC
+LIMIT 1;

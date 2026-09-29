@@ -233,7 +233,7 @@ func newDownloadWorkerWithClient(t *testing.T, ctx context.Context, r *repo.Repo
 	if err := dm.Initialize(ctx); err != nil {
 		t.Fatalf("initialize downloader manager: %v", err)
 	}
-	return downloadworker.NewWithConfig(r, dm, logger.New(false), nil, downloadworker.Config{
+	return downloadworker.NewWithConfig(r, dm, logger.New(false), nil, nil, downloadworker.Config{
 		PollInterval: 10 * time.Millisecond,
 		ClaimLimit:   20,
 		MaxAttempts:  3,
@@ -258,7 +258,7 @@ func grabPackForSeason(t *testing.T, ctx context.Context, r *repo.Repository, se
 			return results, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
 	if _, outcome, err := svc.ProcessWant(ctx, want); err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	} else if outcome != service.OutcomeGrabbed {

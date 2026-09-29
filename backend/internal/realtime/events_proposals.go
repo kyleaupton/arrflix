@@ -1,6 +1,10 @@
 package realtime
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+
+	"github.com/kyleaupton/arrflix/internal/authz"
+)
 
 // Proposal event names. Snake_case on the wire.
 const (
@@ -16,12 +20,12 @@ type ProposalUpdatedPayload struct {
 }
 
 // ProposalUpdated builds the proposal_updated event for a tracking. It targets
-// Admins — proposals are an operator-scoped surface, and Admins is the delivery
-// primitive for that scoping.
+// jobs.manage holders — deciding a proposal is an operator action, and the
+// surface that renders it is gated on the same grant.
 func ProposalUpdated(trackingID uuid.UUID) Event {
 	return Event{
 		Name:      NameProposalUpdated,
-		Recipient: Admins,
+		Recipient: Capability(authz.JobsManage),
 		Data:      mustMarshal(ProposalUpdatedPayload{TrackingID: trackingID}),
 	}
 }

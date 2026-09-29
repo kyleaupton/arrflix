@@ -18,6 +18,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
+	"github.com/kyleaupton/arrflix/internal/titlenotify"
 )
 
 // Worker claims pending wants and hands each to AcquisitionService.ProcessWant.
@@ -27,6 +28,7 @@ type Worker struct {
 	scheduler *service.SchedulerService
 	log       *logger.Logger
 	broker    *sse.Broker
+	titles    *titlenotify.Notifier
 
 	pollInterval    time.Duration
 	claimLimit      int32
@@ -60,19 +62,20 @@ func DefaultConfig() Config {
 }
 
 // New creates a new acquisition worker with the default configuration.
-func New(r *repo.Repository, svc *service.AcquisitionService, scheduler *service.SchedulerService, log *logger.Logger, broker *sse.Broker) *Worker {
-	return NewWithConfig(r, svc, scheduler, log, broker, DefaultConfig())
+func New(r *repo.Repository, svc *service.AcquisitionService, scheduler *service.SchedulerService, log *logger.Logger, broker *sse.Broker, titles *titlenotify.Notifier) *Worker {
+	return NewWithConfig(r, svc, scheduler, log, broker, titles, DefaultConfig())
 }
 
 // NewWithConfig creates a new acquisition worker with explicit configuration —
 // the seam tests use to drive the loop on a fast cadence.
-func NewWithConfig(r *repo.Repository, svc *service.AcquisitionService, scheduler *service.SchedulerService, log *logger.Logger, broker *sse.Broker, cfg Config) *Worker {
+func NewWithConfig(r *repo.Repository, svc *service.AcquisitionService, scheduler *service.SchedulerService, log *logger.Logger, broker *sse.Broker, titles *titlenotify.Notifier, cfg Config) *Worker {
 	return &Worker{
 		repo:            r,
 		svc:             svc,
 		scheduler:       scheduler,
 		log:             log,
 		broker:          broker,
+		titles:          titles,
 		pollInterval:    cfg.PollInterval,
 		claimLimit:      cfg.ClaimLimit,
 		maxRetryBackoff: cfg.MaxRetryBackoff,
@@ -114,6 +117,7 @@ func (w *Worker) tick(ctx context.Context) {
 	for _, want := range wants {
 		// ClaimRunnableWants returned this want already flipped to 'searching'.
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
+		w.titles.Notify(want.MediaItemID)
 		w.handle(ctx, want)
 	}
 }
@@ -133,6 +137,7 @@ func (w *Worker) reap(ctx context.Context) {
 			Str("want_id", want.ID.String()).
 			Msg("reclaimed stale searching want")
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
+		w.titles.Notify(want.MediaItemID)
 	}
 }
 
@@ -149,6 +154,7 @@ func (w *Worker) handle(ctx context.Context, want model.Want) {
 		// updated row, so emit the transition for the frontend pill; the download
 		// worker drives the subsequent 'downloading' delta.
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(processed))
+		w.titles.Notify(processed.MediaItemID)
 	case service.OutcomeProposed:
 		// The pick was parked as a proposal; ProposalService already emitted the
 		// proposal and want deltas. Critically, do NOT recheck — the want is still
@@ -192,6 +198,7 @@ func (w *Worker) handleError(ctx context.Context, want model.Want, err error) {
 func (w *Worker) fail(ctx context.Context, wantID uuid.UUID, msg string) {
 	if want, ok, err := w.repo.MarkWantFailed(ctx, wantID, msg); err == nil && ok {
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(want))
+		w.titles.Notify(want.MediaItemID)
 	}
 }
 
@@ -227,6 +234,7 @@ func (w *Worker) recheck(ctx context.Context, want model.Want, lastError string)
 	})
 	if err == nil && ok {
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(updated))
+		w.titles.Notify(updated.MediaItemID)
 	}
 }
 
@@ -247,5 +255,6 @@ func (w *Worker) reschedule(ctx context.Context, want model.Want, lastError stri
 	})
 	if err == nil && ok {
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(updated))
+		w.titles.Notify(updated.MediaItemID)
 	}
 }

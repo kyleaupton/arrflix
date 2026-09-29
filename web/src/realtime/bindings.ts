@@ -4,9 +4,16 @@
 // useQuery. The cache is kept live globally, regardless of what's mounted.
 
 import type { QueryClient } from '@tanstack/vue-query'
-import { downloadJobsListQueryKey } from '@/client/@tanstack/vue-query.gen'
-import type { DownloadJobWithSummary, TrackingByTmdb, Want } from '@/client/types.gen'
+import { downloadJobsListQueryKey, titleStatusGetQueryKey } from '@/client/@tanstack/vue-query.gen'
+import type {
+  DownloadJobWithSummary,
+  TitleProgressPayload,
+  TitleStatusPayload,
+  TrackingByTmdb,
+  Want,
+} from '@/client/types.gen'
 import { on, onResync } from '@/realtime/connection'
+import { recordTitleProgress } from '@/realtime/titleProgress'
 
 // upsertJob merges a full download-job delta into the cached list.
 function upsertJob(
@@ -47,6 +54,30 @@ function coalesce(fn: () => void, ms = 300): () => void {
 
 export function installRealtime(qc: QueryClient) {
   const jobsKey = downloadJobsListQueryKey()
+
+  // The title projection is per-viewer, so the event is a kick and not a
+  // payload: it names the title that moved and the client refetches its own
+  // answer. Pushing the projection instead would mean the server derives it once
+  // per watching session and still races the refetch it would replace.
+  //
+  // Invalidating the exact key rather than partial-matching the operation is
+  // what keeps a busy library cheap — a season importing across ten titles
+  // refetches ten entries, not every title anyone has ever opened.
+  on('title_status', (data) => {
+    const { mediaType, tmdbId } = data as TitleStatusPayload
+    qc.invalidateQueries({
+      queryKey: titleStatusGetQueryKey({
+        path: { mediaType: mediaType as 'movie' | 'series', tmdbId },
+      }),
+    })
+  })
+
+  // Progress is viewer-independent and arrives at the downloader's poll cadence,
+  // so it goes straight to its own store — never the query cache, which would
+  // then need a refetch per tick to stay honest.
+  on('title_progress', (data) => {
+    recordTitleProgress(data as TitleProgressPayload)
+  })
 
   // Full-state payload → write the cache directly. The event carries the whole
   // enriched job, so this is accurate without a refetch and snappy at per-second

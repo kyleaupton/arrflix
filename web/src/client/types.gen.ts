@@ -767,7 +767,7 @@ export type EventsSubscriptionsListOutputBody = {
      */
     readonly $schema?: string;
     /**
-     * The session's current topic filter. Empty means all events.
+     * The session's opt-in topic subscriptions. Empty means none are subscribed; default-delivery events are unaffected.
      */
     topics: Array<string> | null;
 };
@@ -2492,6 +2492,79 @@ export type TierBinding = {
     tier: string;
 };
 
+export type TitleAction = {
+    disabledReason?: string;
+    enabled: boolean;
+    kind: string;
+    requiresApproval: boolean;
+    tiers?: Array<TitleActionTier> | null;
+};
+
+export type TitleActionTier = {
+    requiresApproval: boolean;
+    tier: 'HD' | '4K';
+};
+
+export type TitleCounts = {
+    available: number;
+    total: number;
+    working: number;
+};
+
+export type TitleEpisodeStatus = {
+    airDate?: string;
+    episodeId: string;
+    episodeNumber: number;
+    seasonNumber: number;
+    state: string;
+};
+
+export type TitleIntent = {
+    scopeRule?: '' | 'all' | 'future_only';
+    tier: 'HD' | '4K';
+};
+
+export type TitleLibrary = {
+    fileCount: number;
+    hasFiles: boolean;
+};
+
+export type TitleProgressPayload = {
+    bytesPerSecond?: number;
+    etaSeconds?: number;
+    mediaType: string;
+    progress: number;
+    tmdbId: number;
+};
+
+export type TitleStatus = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    actions: Array<TitleAction> | null;
+    active: boolean;
+    counts: TitleCounts;
+    episodes?: Array<TitleEpisodeStatus> | null;
+    library: TitleLibrary;
+    mediaType: string;
+    phase?: string;
+    state: string;
+    tmdbId: number;
+    viewer: TitleViewer;
+};
+
+export type TitleStatusPayload = {
+    mediaType: string;
+    tmdbId: number;
+};
+
+export type TitleViewer = {
+    intent?: TitleIntent;
+    isRequester: boolean;
+    requestId?: string;
+};
+
 export type Trace = {
     children?: Array<Trace> | null;
     left?: Resolved;
@@ -3053,7 +3126,7 @@ export type EventsSubscriptionsAddInputBodyWritable = {
 
 export type EventsSubscriptionsListOutputBodyWritable = {
     /**
-     * The session's current topic filter. Empty means all events.
+     * The session's opt-in topic subscriptions. Empty means none are subscribed; default-delivery events are unaffected.
      */
     topics: Array<string> | null;
 };
@@ -3899,6 +3972,19 @@ export type TierBindingWritable = {
     domain: string;
     profileId: string;
     tier: string;
+};
+
+export type TitleStatusWritable = {
+    actions: Array<TitleAction> | null;
+    active: boolean;
+    counts: TitleCounts;
+    episodes?: Array<TitleEpisodeStatus> | null;
+    library: TitleLibrary;
+    mediaType: string;
+    phase?: string;
+    state: string;
+    tmdbId: number;
+    viewer: TitleViewer;
 };
 
 export type TrackingWritable = {
@@ -5474,6 +5560,34 @@ export type EventsStreamResponses = {
          * The event name.
          */
         event: 'scan_started';
+        /**
+         * The event ID (sortable; used for Last-Event-ID resume).
+         */
+        id?: string;
+        /**
+         * The retry time in milliseconds.
+         */
+        retry?: number;
+    } | {
+        data: TitleProgressPayload;
+        /**
+         * The event name.
+         */
+        event: 'title_progress';
+        /**
+         * The event ID (sortable; used for Last-Event-ID resume).
+         */
+        id?: string;
+        /**
+         * The retry time in milliseconds.
+         */
+        retry?: number;
+    } | {
+        data: TitleStatusPayload;
+        /**
+         * The event name.
+         */
+        event: 'title_status';
         /**
          * The event ID (sortable; used for Last-Event-ID resume).
          */
@@ -9232,6 +9346,40 @@ export type SetupTmdbResponses = {
 };
 
 export type SetupTmdbResponse2 = SetupTmdbResponses[keyof SetupTmdbResponses];
+
+export type TitleStatusGetData = {
+    body?: never;
+    path: {
+        /**
+         * Media type
+         */
+        mediaType: 'movie' | 'series';
+        /**
+         * TMDB id
+         */
+        tmdbId: number;
+    };
+    query?: never;
+    url: '/api/v1/titles/{mediaType}/{tmdbId}/status';
+};
+
+export type TitleStatusGetErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type TitleStatusGetError = TitleStatusGetErrors[keyof TitleStatusGetErrors];
+
+export type TitleStatusGetResponses = {
+    /**
+     * OK
+     */
+    200: TitleStatus;
+};
+
+export type TitleStatusGetResponse = TitleStatusGetResponses[keyof TitleStatusGetResponses];
 
 export type TrackingListData = {
     body?: never;

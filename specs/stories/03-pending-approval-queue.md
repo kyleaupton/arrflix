@@ -1,254 +1,151 @@
 # Story 3 — Pending approval: two requests, one approved, one denied
 
-**Status:** Draft
+**Status:** Draft (triaged against the code)
 
-Two requesters submit two requests within seconds of each other. Neither has auto-approve for the relevant tier — Friend doesn't have `requests.auto_approve:movie:4k`, Cousin is a brand-new user with no auto-approve granted yet. Both land in `pending`. Admin gets notified, opens the approval queue, sees both with pre-flight context, approves Friend's 4K request, denies Cousin's with a reason. The approved request flows through a compressed Story 1 pipeline at 4K. Cousin gets an in-app notification with the denial reason.
+Two people submit requests within seconds of each other. Neither auto-approves. Both land in a queue. The admin reviews them with enough context to decide, approves one, denies the other with a reason, and both requesters learn what happened.
 
-This is the **approval-queue story** — the first one to exercise the human-in-the-loop bottleneck Story 1 deliberately bypassed. It validates the admin-side queue UX, both decision paths (approve and deny), denial-reason flow back to the requester, and the visibility-scoping rules that decide who sees what.
+This is the **human-in-the-loop story** — the bottleneck [the happy path](./01-happy-path-auto-approve.md) deliberately skips. It validates the queue, both decision paths, the reason flowing back to the requester, and who is allowed to see what.
 
-Follows the [Story 1](./01-happy-path-auto-approve.md) template.
+> **Triage note.** The decision mechanics and the queue itself shipped and work. Everything that *tells anyone about them* did not: **no admin is notified that a request is waiting, and no requester is notified of the outcome.** That inverts the story — the flow below reads as a communication story, and the communication is the unbuilt half. Field names and mechanism have been removed per [the stories contract](./README.md).
 
 ## Cast
 
-- **Friend** — familiar from prior stories. Updated config for this story:
-  - `requests.create:movie:hd: true`, `requests.create:movie:4k: true`
-  - `requests.auto_approve:movie:hd: true`, **`requests.auto_approve:movie:4k: false`**
-  - PWA installed, push enabled.
-- **Cousin** — new user, joined via invite three days ago. Default permissions:
-  - `requests.create:movie:hd: true`, `requests.create:movie:4k: false`
-  - **No auto-approve permissions yet** — admin's onboarding policy gives new users approval-required for 30 days.
-  - PWA installed; push subscription registered but only opted into the `my_requests` bundle.
-- **Admin** — familiar from [Story 10](./10-indexer-health-degraded-and-recovery.md). Holds `requests.approve` + `requests.deny`. Subscribed to `admin_alerts` bundle on push + in-app per [notifications](../modules/notifications/README.md#preferences-and-bundles) defaults.
+- **Friend** — an established user. May request HD or 4K movies; HD auto-approves, **4K does not**.
+- **Cousin** — joined recently. May request HD only, with **no auto-approval**.
+- **Admin** — holds approve and deny authority for movies.
 - **The system** — Arrflix.
-- **External** — TMDB, Prowlarr, qBittorrent, Plex.
 
 ## Preconditions
 
-- Neither requested movie is in the library.
-- Both movies exist in TMDB.
-- Indexers are healthy (this story is not about search failure).
-- Downloader has free slots.
-- Admin's push subscription is registered.
-- Cousin's push subscription is registered but they have not enabled push for any bundles (in-app only).
-- No other pending requests in the queue (clean slate).
+- Neither title is in the library.
+- Indexers and downloader are healthy — this story is not about search.
+- The queue is empty.
 
 ## Flow
 
-### Phase 1 — Friend submits 4K request (T+0s)
+### Phase 1 — Friend submits a 4K request (T+0)
 
-**User-visible:**
+**User-visible:** the tier picker offers HD and 4K, and is explicit about the consequence — 4K needs approval. Friend picks 4K, and the affordance says so before they commit: *"This will need admin approval."*
 
-- Friend opens PWA, searches "Mickey 17", taps the result.
-- Focus page loads. The tier picker shows two options: **HD** (auto-approves) and **4K** (requires approval).
-- Friend picks 4K. Below the button, pre-flight text updates: _"This will need admin approval. Typically reviewed within a day."_
-- Friend taps "Request". Button morphs to a pill: **"Awaiting approval"** (yellow, not the green spinner of Story 1).
-- Toast confirms: "Request submitted — we'll notify you when it's reviewed."
+They tap Request. The pill reads **"Awaiting approval"** — deliberately not the same treatment as work in progress, because nothing is progressing.
 
-**Behind the scenes:**
+**Behind the scenes:** the create grant is checked, auto-approval is found not to apply, and the request is held pending. **An admin is notified that something needs review.**
 
-- `POST /requests { tmdb_id, type: "movie", tier: "4k" }`
-- Request service:
-  1. Validates `Friend.requests.create:movie:4k` → ok.
-  2. Quota check: under the cap → eligible if permission held (binary quota, iteration 2).
-  3. Auto-approve check: `Friend.requests.auto_approve:movie:4k` → **not held** → auto-approve does not fire.
-  4. Writes `request` row: `{ id, requester_id: friend, tmdb_id, type: movie, tier: 4k, status: pending, auto_approved: false }`.
-  5. Emits `request.pending_review` event ([notifications](../modules/notifications/README.md), audience: `admin`).
-  6. Audit row written: `request.submitted { requester, tier }` per [audit](../patterns/audit/README.md).
+> **Unbuilt.** Nothing is emitted when a request lands in the queue. **No admin is told anything.** The queue is real and correct; discovering that it has something in it depends entirely on someone opening it.
 
-**Notifications:**
+### Phase 2 — Cousin submits an HD request (T+10s)
 
-- Push fan-out to all admins per [notifications](../modules/notifications/README.md#three-audiences). In this household: one admin → one outbox row for push, one for in-app.
+**User-visible:** Cousin sees HD as their only option, with the same up-front warning that new accounts are reviewed. Same pill, same toast.
 
-### Phase 2 — Cousin submits HD request (T+10s)
-
-**User-visible:**
-
-- Cousin (new to the household, exploring the PWA) searches "Longlegs", taps the result.
-- Focus page shows HD as the only tier option (Cousin lacks `create:movie:4k`).
-- Below the button: _"This will need admin approval (new accounts are reviewed for 30 days)."_
-- Cousin taps "Request". Same yellow pill: **"Awaiting approval"**.
-- Toast: "Request submitted."
-
-**Behind the scenes:**
-
-- Same flow as Phase 1. Cousin's request lands as `pending`.
-- Emits another `request.pending_review` event.
-
-**Notifications (the grouping question):**
-
-- This is the second admin notification in 10 seconds. Per [notifications](../modules/notifications/README.md) dedup, a `dedup_key` like `admin.pending_review_batch` would collapse both into one push if applied within a debounce window. Without it, two pushes fire.
-- **Lean per Story 10's experience**: producer-owned batching is the right tool. The Request service emits per-request events, but a small `pending_review_throttle` adapter (similar to hygiene's digest) coalesces multiple events within a short window (say 60s) into a single push: _"2 requests need review."_ The two underlying outbox rows still exist for history; the push channel uses the digest payload.
-- See [Open question #1](#open-questions).
+**Notifications, and the grouping question:** this is the second thing needing review inside ten seconds. Two separate alerts for what a reviewer will handle in one sitting is noise; they should arrive as one — *"2 requests need review."*
 
 ### Phase 3 — Admin reviews the queue (T+15 min)
 
-**User-visible (Admin):**
+**User-visible:** the queue lists both requests with enough context to decide **without leaving the queue**:
 
-- Admin's phone shows a push: **"2 requests need review"** (or two separate pushes — see [Open question #1](#open-questions)). Tap → opens app to the approval queue.
-- The queue view shows two rows:
+| Requester | Title | Tier | Storage est. | Their history | In library? |
+| --- | --- | --- | --- | --- | --- |
+| Friend | *Mickey 17* | 4K | ~80 GB | 2 pending, 12 approved, 0 denied | No |
+| Cousin | *Longlegs* | HD | ~12 GB | New — joined 3 days ago | No |
 
-  | Requester | Title     | Tier | Storage est. | Requester history                                     | Library state  |
-  | --------- | --------- | ---- | ------------ | ----------------------------------------------------- | -------------- |
-  | Friend    | Mickey 17 | 4K   | ~80GB        | 2 pending, 12 approved, 0 denied (30d)                | Not in library |
-  | Cousin    | Longlegs  | HD   | ~12GB        | 0 pending, 0 approved, 0 denied (new — joined 3d ago) | Not in library |
+**The context is the product here.** A reviewer deciding from a title and a name alone is rubber-stamping. Storage cost, the requester's track record, and whether the library already has it are what turn a decision into an informed one.
 
-- Each row is tappable for detail. Drill-in shows the full request context: requester notes (none in this story), pre-flight breakdown, _"other requesters who asked for this"_ (none), _"previously denied / cancelled requests for this title"_ (none for Mickey 17; see [Open question #2](#open-questions) for whether cross-user history is shown).
-
-**Behind the scenes:**
-
-- Approval queue is a query against `request WHERE status = 'pending' AND <visible to viewer>`. Visibility per [requests](../modules/requests/README.md#visibility-scoping): admin sees all pending requests.
-- Pre-flight data is computed on render: storage estimate from media metadata, requester history from request counts, library state from media_item presence.
+> **Partly unbuilt.** The queue exists, filters to pending, and scopes correctly by permission. The context columns do not — a queue row shows title, tier, status, and requester name. Everything that makes the decision *informed* is missing.
 
 ### Phase 4 — Admin decides (T+~16 min)
 
-**Friend's 4K request — approved:**
+**Approving Friend's request:** familiar requester, good history, space available. Admin approves, optionally attaching a note — *"Approved, but 4K is heavy on storage — HD next time if you don't mind."*
 
-- Admin reviews Friend's request. Familiar requester, healthy history, library has room.
-- Admin taps **Approve**. Optional note field. Admin types: _"Approved — try HD next time, 4K is heavy on storage."_
-- Confirmation modal: _"Approving Mickey 17 (4K, ~80GB)? Friend will be notified."_
-- Admin confirms.
+The request is approved and immediately spawns the acquisition machinery. From here it is [the happy path](./01-happy-path-auto-approve.md) at 4K.
 
-**Behind the scenes (approval):**
+**Denying Cousin's request:** Admin is short on space this month. They deny, with a required reason — *"We're tight on storage this month. Ask me again in a few weeks and I'll get it for you."*
 
-- Request service:
-  1. Validates admin holds `requests.approve` → ok.
-  2. Transactionally: request `status: pending → approved`, writes `approved_by: admin, approved_at: <now>, approver_note: "Approved — try HD..."`.
-  3. Spawn step (per [requests](../modules/requests/README.md#mapping-requests-to-downstream-state)): no existing want for `(media_item, 4K)` → create new `want` with tier 4K.
-  4. Request transitions: `approved → spawned`, writes `spawned_want_ids: [<id>]`.
-  5. Emits `want.created` (wakes AcquisitionWorker), `request.decision_made` event (audience: `user`, recipient: Friend).
-  6. Audit rows: `request.approved { actor: admin, note }`, `request.spawned { want_ids }`.
+**Denial requires a reason and approval does not**, which is deliberate: a denial without one reads as arbitrary, and the requester has no other channel to find out why.
 
-**Cousin's HD request — denied:**
+**The queue empties**, and the reviewer's pending-review alerts clear themselves — nobody should have to dismiss a notice about something they just handled.
 
-- Admin reviews Cousin's request. New user, unfamiliar with household conventions. Admin doesn't host horror.
-- Admin taps **Deny**. Required reason field. Admin types: _"Household doesn't host horror titles. Happy to discuss exceptions — message me. Welcome to the family!"_
-- Confirmation modal: _"Deny Longlegs? Cousin will be notified with this reason."_
-- Admin confirms.
+> **Unbuilt:** the approver's note has nowhere to live, and the self-clearing alert depends on a notification-resolution lifecycle that **does not exist**. This story was one of three treating that lifecycle as settled; see [the stories contract](./README.md#known-speccode-divergences).
 
-**Behind the scenes (denial):**
+### Phase 5 — Friend learns they were approved (T+~16 min)
 
-- Request service:
-  1. Validates admin holds `requests.deny` → ok.
-  2. Transactionally: request `status: pending → denied`, writes `denied_by: admin, denied_at: <now>, denied_reason: "Household doesn't host horror..."`.
-  3. Emits `request.decision_made` event (audience: `user`, recipient: Cousin).
-  4. Audit row: `request.denied { actor: admin, reason }`.
+**User-visible:** a notification that the request was approved, carrying the admin's note. The pill moves from *Awaiting approval* to ordinary acquisition status, and the film arrives.
 
-**Admin's queue:** both rows disappear from `pending`. Queue is now empty. The admins' in-app `request.pending_review` entries **resolve**: on decision, the request service calls `notifications.Resolve("request.<id>.pending_review")`, flipping the active rows to `resolved` (cleared from the bell's attention count, kept as history) and cancelling any not-yet-sent push. Per the [resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle).
+> **Unbuilt.** No decision notification exists. Friend's page will eventually reflect reality if they look at it; nothing tells them.
 
-### Phase 5 — Friend's approved request flows through (T+~16 min → T+~25 min)
+### Phase 6 — Cousin learns they were denied (T+~16 min)
 
-The compressed Story 1 tail at the 4K tier:
+**User-visible:** a notification carrying the reason, and their requests view showing the title as denied with that reason inline. In-app rather than push — a denial is not urgent, and pushing bad news feels heavier than it needs to.
 
-- AcquisitionWorker picks up `want.created`. Search → quality gate (against the 4K profile, which has different cutoffs than HD) → score → pick → routing → download_job.
-- qBittorrent downloads.
-- ImportWorker hardlinks into the library per the 4K name template.
-- Plex confirms via webhook → want `available`.
+The request is terminal and read-only. Cousin can ask again; nothing structurally prevents it.
 
-**Notifications:**
-
-- 📱 Push to Friend: **"Mickey 17 (4K) is ready to watch."** Plus an in-app entry: **"Approved by Admin — note: 'try HD next time, 4K is heavy on storage'"** that links to the original request (now `spawned`).
-- Friend's pill on the request page: **"Awaiting approval"** → **"Approved • Downloading"** → **"Available on Plex — watch now"**.
-
-### Phase 6 — Cousin's denied request resolves (T+~16 min, same moment)
-
-- 🔔 In-app notification to Cousin: **"Your request for Longlegs was denied. Reason: 'Household doesn't host horror titles. Happy to discuss exceptions — message me. Welcome to the family!'"**
-  - No push fires — Cousin opted in only to `my_requests` in-app, not push. (Per the [notifications](../modules/notifications/README.md) preference matrix; the bundle covers `request.decision_made` events.)
-  - Even if push were on, the denial is non-urgent; lean is in-app default for denials, push opt-in. See [Open question #4](#open-questions).
-- Cousin's "my requests" page shows Longlegs with a red **Denied** tag and the reason inline. The original request is in terminal `denied` state — read-only.
-
-> Dev note: that's a dumb example lol
+> **Unbuilt.** Same as Phase 5 — the reason is stored and displayed on the request, but nothing delivers it.
 
 ## Postconditions
 
-- **2 `request` rows**:
-  - Friend's: `status: spawned`, `auto_approved: false`, `approved_by: admin`, `approver_note: "..."`, `spawned_want_ids: [<id>]`. Ultimately `fulfilled` semantically (fulfillment state is derived from the spawned want's lifecycle).
-  - Cousin's: `status: denied`, `denied_by: admin`, `denied_reason: "Household doesn't host horror..."`. Terminal.
-- **1 `want` row** (Friend's, ending `available` per Story 1's tail).
-- **0 `want` rows** for Cousin's denied request — denial doesn't spawn anything.
-- **1 `media_item`, 1 `media_file`** for Mickey 17 (4K).
-- **~6 audit rows**: `request.submitted` × 2, `request.approved`, `request.spawned`, `request.denied`, plus the standard acquisition rows for Friend's want.
-- **Notification outbox**:
-  - `request.pending_review` × 2 admin events (or 1 batched — see [Open question #1](#open-questions)), delivered.
-  - `request.decision_made` to Friend (push + in-app), delivered.
-  - `request.decision_made` to Cousin (in-app only), delivered.
-  - `want.available` to Friend (push + in-app), delivered.
-- **Friend's "my requests" page** shows Mickey 17 as fulfilled with the approver's note attached.
-- **Cousin's "my requests" page** shows Longlegs as denied with the reason inline.
+- Two requests, one spawned into acquisition and one terminally denied, both retained as history with who decided and when.
+- One acquisition, ending available; nothing spawned for the denial.
+- The reviewer's queue empty and their attention cleared.
+- Both requesters informed.
 
 ## What must be true (foundation requirements)
 
-Most requirements are already declared in [requests](../modules/requests/README.md), [users](../modules/users/README.md), and [notifications](../modules/notifications/README.md). Story-driven additions:
+Requirements carry stable ids per [the stories contract](./README.md#conventions).
 
-### Approval queue UI
+### A decision reaches a decider
 
-- **Queue view** — list of `pending` requests visible to the viewer per [requests visibility scoping](../modules/requests/README.md#visibility-scoping). Sortable by submitted time (default), tier, requester. Filterable by requester.
-- **Per-row pre-flight columns**: requester, title, tier, storage estimate, requester history (counts over 30d), library state. The data per [requests pre-flight visibility](../modules/requests/README.md#pre-flight-visibility) is required.
-- **Drill-in detail page** — full request, requester notes, prior request history for this title (lean: across all users for admins, see [Open question #2](#open-questions)), approver UI.
-- **Decision actions** — Approve (with optional note) and Deny (with required reason). Both produce confirmation modals.
-- **Empty state** — when the queue is empty: "Nothing waiting. Last 5 decisions: …" with quick links to recent admin-action audit entries.
+- **REQ-APPROVE-001** — A request needing review must reach someone able to decide it, without them having to check. **Not currently true:** nothing is emitted when a request enters the queue.
+- **REQ-APPROVE-002** — Multiple requests arriving close together must not produce one alert each.
+- **REQ-APPROVE-003** — Deciding a request must clear it from every reviewer's attention, including reviewers who did not act on it. **Unbuilt**, and dependent on the missing resolution lifecycle.
 
-### Notification grouping for pending reviews
+### The decision is informed
 
-- Per Phase 2: the producer side should batch `request.pending_review` events within a short debounce window (lean: 60s) to avoid push storms when multiple requests arrive in close succession.
-- Implementation: small adapter at the producer that buffers + emits a single aggregated event after the debounce window. The underlying outbox rows still exist per-request for accurate history.
-- Single-request submissions skip batching (fire immediately after a brief wait). Multi-request batches use a different template: "_2 requests need review_" with deep link to the queue.
+- **REQ-APPROVE-004** — A reviewer must be able to decide from the queue itself: what it costs, who asked, what their history is, and whether the library already has it. **Not currently true** — the queue shows title, tier, status, and requester.
+- **REQ-APPROVE-005** — A reviewer must only see requests they are permitted to act on. *Currently true.*
+- **REQ-APPROVE-006** — Two reviewers acting on the same request must not both succeed. *Currently true* — the second attempt is refused and the interface handles it.
 
-### Notification resolution on decision
+### The outcome reaches the requester
 
-- `request.pending_review` is declared **`resolvable`** with `dedup_key = "request.<id>.pending_review"`. When the request transitions to `approved` or `denied`, the request service calls `notifications.Resolve(dedup_key)`: in-app rows flip to `resolved` (kept as history, dropped from the attention count), and any not-yet-sent push is cancelled. Admins don't see stale "needs review" bell entries for already-decided requests.
-- This is the same [resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle) Stories [4](./04-failed-search-recovery.md) and [10](./10-indexer-health-degraded-and-recovery.md) use — three stories, one mechanism, now settled in the notifications spec.
+- **REQ-APPROVE-007** — A requester must learn the outcome of their request without checking. **Not currently true** for either outcome.
+- **REQ-APPROVE-008** — A denial must carry a reason, and the requester must see it. *Half true:* the reason is required and stored, and nothing delivers it.
+- **REQ-APPROVE-009** — An approver's note, where given, must reach the requester. **Unbuilt** — there is nowhere to record one.
+- **REQ-APPROVE-010** — Bad news must not be delivered more loudly than good news. A denial defaults to a quieter channel than an approval.
 
-### Decision visibility & notification routing
+### Nothing waits forever
 
-- Per [requests](../modules/requests/README.md#visibility-scoping): denied request's reason is visible only to the requester + anyone with `requests.view:all` (admins). Cousin sees their reason; another non-admin user would not, even if they could see that a denial occurred.
-- Requester's optional submission note (none in this story) follows the same rule — visible to the approver and admins.
-- `request.decision_made` event payload includes the decision (`approved` / `denied`), the note/reason, the actor. Template renders only what's appropriate per channel.
+- **REQ-APPROVE-011** — A request must not sit pending indefinitely with no resolution and no signal. **Unbuilt** — there is no expiry, and an unreviewed request waits forever in silence.
 
-### Audit rows
+### The requester knows before they ask
 
-- Per [requests](../modules/requests/README.md#audit): `submitted`, `approved` / `denied`, `spawned` are all separate rows in the decision-artifact stream.
-- Per [users](../modules/users/README.md#admin-action-audit): a separate admin-action audit row is **not** written for the per-request decision — those are decision-artifact events. Admin-action audit only fires for changes to permissions, roles, policies (e.g., if Admin granted Cousin `requests.auto_approve:movie:hd` mid-flight).
+- **REQ-APPROVE-012** — A user must know that a choice will require approval **before** they commit to it. *Currently true* — the tier picker only offers tiers they hold, and the consequence is stated up front.
 
 ### Time targets (UX commitments)
 
-- Submission → "Awaiting approval" pill: <1s (same as Story 1's submission target).
-- Submission → admin push: <60s typically (within the batching debounce window).
-- Approval → `want.created` event: <1s (same transaction).
-- Denial → requester in-app notification: <30s.
-- The end-to-end human-bottleneck time (submit → decision) is unbounded — pinned at 14–30 days by the request expiration ([requests open question #5](../modules/requests/README.md#open-questions)) before the request auto-expires.
+- Submission → "Awaiting approval": **< 1s**
+- Submission → the reviewer knows: **within a minute**, allowing for grouping
+- Decision → acquisition begins: **< 1s**
+- Decision → requester knows: **under a minute**
 
 ## Out of scope (variant stories)
 
-- **Over-quota rejection** — user holds auto-approve but is at or over their hard quota cap; submission is rejected at submit with a structured 422 (iteration 2 has no soft-threshold band — quota is binary). Brief variant. Pre-flight still shows the running count ("this user is at 4/5 weekly HD") so the wall isn't a surprise.
-- **Approve-with-modification** — admin drops the tier from 4K to HD before approving Friend. Currently spec says no, deny-with-reason is the workaround. Variant story would re-evaluate.
-- **Auto-expiration** — Friend's 4K request sits in queue for 14+ days because admin doesn't notice. Auto-transitions to `expired` with a notification to Friend. Edge case; brief variant.
-- **Cancellation by requester before decision** — Friend cancels their pending 4K request because they decided HD is fine and submitted that separately (which auto-approves). The cancel cascade is in the requests spec; deserves a brief story.
-- **Re-request after denial** — Cousin requests Longlegs again 5 minutes later (or 3 days later). Per [requests open question #14](../modules/requests/README.md#open-questions): no model-level gate; pre-flight should warn "you were denied this 3 days ago — sure?". Variant story exercises that warning.
-- **Bulk operations** — admin selects 5 pending requests and approves all at once. UX-heavy variant; the model supports it trivially.
-- **Multi-admin concurrent decision race** — Admin1 is reading the queue while Admin2 approves the same request. Admin1's decision attempt fails with a 409 (already decided). Edge case; brief variant.
-- **Cousin re-requests with explanation** — denial reason invited "discuss exceptions"; Cousin sends a new request with a note explaining why they want it. Exercises the requester-note → approver-context flow that this story sets up but doesn't trigger.
-- **Denial cascade for series tracking** — if the request had been for a series and a tracking already existed with other requesters, denying Cousin's request would remove them from the tracking's requester set. Series-specific variant.
-- **Awkward edge: quota changes mid-pending** — Friend's request submitted within budget, but by the time admin reviews, Friend has used quota up. Approve still works (the request was within quota at submission and the approver explicitly overrode any check). Worth nailing in the requests spec; not exercised here.
-- **Visibility for the queue across non-admin viewers** — a co-admin with `requests.approve:movie` but not `requests.approve` sees only movie requests. Story 03 doesn't exercise scope-qualified approve permissions.
+- **The acquisition that follows approval** — [the happy path](./01-happy-path-auto-approve.md).
+- **Choosing how the release gets picked at approve time** — [autonomy and proposals](./08-autonomy-and-proposals.md), which owns approve-and-choose.
+- **Withdrawing before a decision** — [a requester cancels](./07-requester-cancels.md).
+- **Approving a series request that joins an existing tracking** — [multi-requester, scope union](./05-multi-requester-scope-union.md).
+- **Quotas** — being over a cap at submission. No quota model exists.
+- **Approve-with-modification** — dropping 4K to HD rather than denying. Currently the answer is deny-with-reason; worth revisiting.
+- **Bulk decisions** — approving several at once. The model supports it; the interface doesn't.
+- **Re-requesting after denial** — nothing prevents it. Whether it should warn is a product question.
 
 ## Open questions
 
-1. **Pending-review notification batching window.** Two requests in 10 seconds: one push or two? Lean: 60-second producer-side debounce, single push within the window with a "_N requests need review_" template, underlying per-request outbox rows preserved for history. Pin in [notifications](../modules/notifications/README.md).
+1. **How long should the grouping window be?** Long enough to collapse a burst, short enough that a lone request isn't delayed. **Lean:** around a minute, with single requests effectively immediate.
 
-2. **Cross-user prior-request history in the drill-in.** When an admin reviews Cousin's request for Longlegs, should the detail page show that Friend has _also_ previously requested Longlegs (and was approved/denied/cancelled)? Lean: yes for admins (it's useful context), no for non-admin co-approvers (privacy across users). The requests spec touches this in [pre-flight visibility](../modules/requests/README.md#pre-flight-visibility) but doesn't pin who sees what across users.
+2. **Does a reviewer see other users' history for the same title?** *"Two other people also asked for this"* is useful context and a small privacy disclosure. **Lean:** yes for reviewers, never for ordinary requesters.
 
-3. **Notification resolution on decision — resolved.** Option (c): the `pending_review` rows flip to `resolved` (kept as history, cleared from the attention count) via the [notifications resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle), not auto-dismissed (which would lose history). Same mechanism as Stories 4 and 10. The remaining nicety — whether the resolved entry reads "resolved: approved by you" with the deciding actor — is a payload/template detail, not a mechanism question.
+3. **Should denial reasons have shortcuts?** Admins denying often want canned reasons — storage, household policy, coverage. **Lean:** a small editable set with free-text override, once denial volume justifies it.
 
-4. **Denial push policy.** Denial is non-urgent and potentially face-saving; pushing it feels heavy. Lean: in-app default, push opt-in. Approval pushes (the good news) stay on by default. Pin in [notifications](../modules/notifications/README.md) bundle defaults for `request.decision_made`.
+4. **Is the approver's note visible to anyone but the requester?** **Lean:** requester and reviewers, nobody else — symmetric with the denial reason.
 
-5. **Denial reason templates / shortcuts.** Admins denying frequently want canned reasons ("library full", "indexer coverage poor", "household policy"). Lean: small per-install set of reason templates, free-text override per decision. Defer to v2 if implementation cost is high.
+5. **How long until a request expires, and what happens then?** A pending request is a promise nobody made. **Lean:** expire after a few weeks with a notification, and let the user re-ask — but this is the requirement that most needs a real number.
 
-6. **Approver-note visibility on approval.** Friend sees the approver's note "_try HD next time_" inline on their request page. Is the same note visible to other users who can see the request (e.g., another co-admin browsing fulfilled requests)? Lean: yes for admins, no for non-admin co-viewers. Symmetric with denial reason visibility.
-
-7. **What "fulfilled" means for an approved-then-spawned request.** Per the request lifecycle the request is `spawned` once the want is created — the want then has its own lifecycle. The UI says "fulfilled" once the want reaches `available`. Is that derived in the UI, or does the request entity grow a `fulfilled_at` timestamp updated by the want? Story 1's open question #1 flagged this; Story 3 doesn't add new information but inherits the ambiguity.
-
-8. **Cousin's request expiration.** If admin had _not_ acted, Cousin's request would auto-expire. Per [requests open question #5](../modules/requests/README.md#open-questions), the window is 14 or 30 days. For a brand-new user this might want to be shorter (so they get fast feedback). Per-user-policy override is the model; pin the default + per-policy behavior.
-
-9. **First-decision UX for new admins.** This is potentially the admin's first manual decision in the app. Pre-flight columns and the approve/deny flow should be self-explanatory; consider a brief one-time intro overlay ("Approving sends X to the user; denying requires a reason"). UX detail; not blocking.
-
-10. **Audit row for "decision made on behalf of household."** When an admin denies on a household-policy basis ("we don't host horror"), the audit row captures the reason text. Worth indexing/searching this in the activity view for cross-decision pattern visibility ("admin has denied 3 horror requests this month — maybe add a household preference filter at submit time?"). Lean: nice-to-have; not v1 required, but the audit row supports the future feature.
+6. **What does the requester see between approval and availability?** The request is spawned and frozen while a want carries the work. The interface says "fulfilled" once the file lands. **Lean:** derive it — introducing a second source of truth on the request is how these things drift.

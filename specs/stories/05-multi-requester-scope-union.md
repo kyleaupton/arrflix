@@ -1,232 +1,149 @@
 # Story 5 — Two requesters, one series: scope union, widening, and departure
 
-**Status:** Draft
+**Status:** Draft (triaged against the code)
 
-Alice is already tracking Severance, but only Season 3 — she came in mid-run and doesn't care about the back catalog. Bob discovers the show and requests the whole thing. Instead of creating a second tracking record, Bob **joins** Alice's existing tracking; the effective scope **widens** from `season(3)` to `all`, and 19 new wants spawn for Seasons 1 and 2. Both requesters coexist on one tracking. Days later Bob cancels; the effective scope **narrows** back to `season(3)`, in-flight S1/S2 wants cancel, but already-acquired files persist (untracked, not deleted).
+Alice already follows a series, but only its current season — she came in mid-run and doesn't care about the back catalogue. Bob discovers the show and asks for all of it. Rather than starting a second effort, Bob **joins** Alice's. The effective scope **widens**, nineteen new episodes are queued, and both requesters coexist on one tracking. Days later Bob leaves; the scope **narrows** back, work not yet started is stood down, and everything already acquired stays exactly where it is.
 
-This is the **multi-requester story** — the one that proves the three primitives ([request](../modules/requests/README.md), [tracking](../modules/tracking/README.md), [want](../modules/acquisition/README.md)) compose the way the specs claim: requests stay 1:1 with users, tracking collapses to one-per-series and unions scope, wants dedupe across requesters. It directly forces [tracking open question #1](../modules/tracking/README.md#open-questions) (scope storage shape) and the scope-narrowing-on-departure semantics.
+This is the **multi-requester story** — the one proving that requests, tracking, and wants compose the way the specs claim: requests stay one-per-person, tracking collapses to one-per-title and unions intent, and work is never duplicated.
 
-Follows the [Story 1](./01-happy-path-auto-approve.md) template.
+> **Triage note.** This is the most accurate of the original stories — the join, union, widen, and narrow spine is implemented essentially as described. Three things were wrong: the tracking does **not** cache the union (it recomputes live, which is simpler and better), per-requester intent is **not** editable after the fact, and the departure half of the story is **not** wired. Those are marked below.
 
 ## Cast
 
-- **Alice** — existing user. Came to Severance mid-Season-3.
-  - `requests.create:series:hd: true`, `requests.auto_approve:series:hd: true`.
-  - Already has an active tracking for Severance, scope `season(3)`.
-- **Bob** — another non-admin user. Wants the whole show.
-  - `requests.create:series:hd: true`, `requests.auto_approve:series:hd: true`.
-  - PWA installed, push enabled.
+- **Alice** — an existing user, already following the series' current season only.
+- **Bob** — another user, who wants the whole show. Push enabled.
 - **The system** — Arrflix.
-- **External** — TMDB, Prowlarr, qBittorrent, Plex.
 
 ## Preconditions
 
-- **Alice's tracking already exists**: Severance, `state: active`, `scope_rule: season(3)`, `requesters: [Alice]`, `quality_profile: hd`, `schedule_strategy: smart`.
-- The episode tree is already synced (from Alice's tracking activation per [Story 2](./02-series-mid-season-auto-approve.md)): 29 `media_episode` rows across 3 seasons, S3E05–E10 still airing weekly.
-- **In the library**: S3E01–E04 (acquired under Alice's scope). Possibly S3E05+ as they've aired.
-- **Not in the library**: all of S1 (9 episodes) and S2 (10 episodes) — outside Alice's `season(3)` scope, so no wants were ever created for them.
-- Bob has no existing request or tracking for Severance.
-- Indexers + downloader healthy; S1 and S2 season packs are available.
+- Alice's tracking exists and is active, scoped to season 3.
+- The episode tree is synced: 29 episodes across three seasons, with season 3 still airing weekly.
+- **In the library:** the season 3 episodes acquired under Alice's scope.
+- **Not in the library:** all of seasons 1 and 2 — outside Alice's scope, so no work was ever created for them.
+- Bob has no existing request for the series.
 
 ## Flow
 
-### Phase 1 — Bob discovers a partially-tracked series (T+0s)
+### Phase 1 — Bob finds a partially-tracked series (T+0)
 
-**User-visible (Bob):**
+**User-visible (Bob):** the season grid reflects current reality — season 3 partly in the library and being followed, seasons 1 and 2 absent. The request affordance tells him what *his* request would add:
 
-- Bob searches "Severance", taps the result.
-- Focus page loads with the season grid. It reflects **current library + tracking state**:
-  - S3E01–E04: green check ("in library")
-  - S3E05–E10: "airing — tracked"
-  - S1, S2: greyed, "not in library"
-- The Request button subtitle reads: _"Season 3 is already being followed. Requesting will add Seasons 1–2 and keep following new episodes."_
-- Pre-flight summary: _"You'd add 19 episodes (S1 × 9, S2 × 10), ~46GB."_
+> *Season 3 is already being followed. Requesting will add Seasons 1–2 and keep following new episodes.* You'd add 19 episodes, ~46 GB.
 
-**Behind the scenes:**
+**Bob is not told that Alice is the one following it.** Requester identity is not disclosed between requesters by default; "already being followed" is the honest ceiling.
 
-- Focus page calls media service: "do we have this? is it tracked? by whom? what's in scope?"
-- API answers: tracking exists (scope `season(3)`), S3 partially in library, S1/S2 absent. The scope-aware diff ("what would my `all` request add?") is computed against the synced episode tree.
-- Note: Bob is **not** told Alice by name unless visibility scoping allows it — see [Open question #1](#open-questions). The default phrasing is requester-agnostic ("already being followed").
+> **Unbuilt.** The scope-aware diff — *what would my request actually add?* — does not exist, and it is the thing that makes joining an existing effort comprehensible rather than mysterious.
 
 ### Phase 2 — Bob requests the whole show (T+1s)
 
-**User-visible:**
+**Behind the scenes:** Bob's request is auto-approved and, finding an existing tracking, **joins it** rather than creating a second one. His request records that it joined, and keeps its own original scope as frozen history.
 
-- Bob picks "whole series", taps Request.
-- Pill: **"Subscribing… adding Seasons 1–2"**.
-- Toast: "Request submitted — we'll grab the back catalog and keep following."
+**The dedup boundary is the title, not the request.** Two people wanting one show produce one tracking, one set of wants, and one download per release — never two parallel efforts racing each other.
 
-**Behind the scenes:**
-
-- `POST /requests { tmdb_id, type: "series", tier: "hd", scope: "all" }` — the two request choices (`scope: all` includes future episodes; no separate `monitor_future` flag).
-- Request service:
-  1. Validates `Bob.requests.create:series:hd` → ok.
-  2. Quota check under the cap; `requests.auto_approve:series:hd` held → auto-approve fires.
-  3. Writes Bob's `request` row: `{ requester_id: bob, tier: hd, scope: all, status: approved, auto_approved: true }`. **Bob's request stores its own pre-union scope (`all`)** per [requests](../modules/requests/README.md#scope-series-only).
-  4. Spawn step: tracking for this series **already exists** → Bob **joins** it (per [requests → series mapping](../modules/requests/README.md#series)), rather than creating a second tracking.
-  5. Bob's request transitions `approved → spawned`, recording `spawned_tracking_id: <existing tracking>`.
-
-### Phase 3 — Join, scope union, and widening (T+1s → T+~10s)
+### Phase 3 — Join, union, and widening (T+1s → T+~10s)
 
 **Behind the scenes:**
 
-- TrackingService applies [multi-requester semantics](../modules/tracking/README.md#multi-requester-semantics):
-  - `requesters: [Alice]` → `[Alice, Bob]`
-  - **Effective scope** = union of each requester's scope = `union(season(3), all)` = **`all`**.
-  - The tracking's effective scope widens from `season(3)` to `all`.
-- TrackingService re-evaluates scope against the episode tree:
-  - Previously in-scope: S3 (10 episodes) — wants already exist (Alice's).
-  - Now in-scope: all 29 episodes.
-  - **Delta**: S1 (9) + S2 (10) = 19 episodes newly in scope, none in the library, no existing wants.
-- WantService creates **19 new wants** for S1 + S2. The S3 wants are untouched — no duplication, because the want already exists and now simply has two requesters' tracking behind it.
-- Emits 19 `want.created` events.
+- The requester set becomes Alice and Bob.
+- **Effective scope is the union of what each requester wants** — season 3, unioned with everything, is everything.
+- Re-evaluating against the episode tree finds nineteen newly in-scope episodes with no files and no existing work. Nineteen wants are created.
+- **Season 3's existing wants are untouched.** They already exist; they now simply have two people behind them.
 
-**The scope-storage question, made concrete:**
+**Where per-requester intent lives:** on the association between a requester and a tracking — seeded from their request, and the source of truth for recomputation. The request itself stays frozen as origin history and is deliberately *not* the recompute source, because a frozen row cannot reflect a later change of mind.
 
-- The tracking could store only the computed union (`all`), or each requester's scope separately. Story 05 makes the trade-off visible: **on Bob's later departure (Phase 7), the union must be recomputed** — which requires knowing Alice's _current_ `season(3)`.
-- Resolution this story commits to: **per-requester scope lives on a [`tracking_requester` association row](../modules/tracking/README.md#multi-requester-semantics)** — one per `(tracking, user)`, seeded from the request at spawn and _mutable_ thereafter. Tracking caches the union and recomputes it from the surviving association rows on join/leave/edit. The [request](../modules/requests/README.md) keeps its original scope as frozen audit history but is **not** the recompute source — because requests are immutable after spawn, recomputing from them would miss any post-spawn scope edit (e.g. Alice narrowing her scope). This satisfies [tracking open question #1](../modules/tracking/README.md#open-questions).
+> **Correction to the original story.** It claimed the tracking *caches* the union and recomputes it on change. It does not — there is no cached union, and effective scope is recomputed live from the surviving associations on every evaluation. That's simpler and has no staleness to manage. The story was wrong; the implementation is better.
 
-**User-visible:**
+**User-visible:** Bob sees the back catalogue queued. **Alice sees nothing** — her scope and her episodes are unaffected, and nothing about her experience changed.
 
-- Bob's "my subscriptions" now lists Severance with S1/S2 showing "queued" and S3 showing current state.
-- **Alice's experience is unchanged** — she wanted S3, she still gets S3. No notification fires to Alice by default (her scope and her wants are unaffected). See [Open question #2](#open-questions).
+### Phase 4 — The back catalogue arrives (T+~10s → T+~hours)
 
-### Phase 4 — Acquisition of the back catalog (T+~10s → T+~hours)
+A compressed [series mid-season](./02-series-mid-season-auto-approve.md) flow: season packs cover the two complete seasons, each one acquisition serving many wants, and the files land.
 
-Compressed [Story 2](./02-series-mid-season-auto-approve.md#phase-4--auto-select--grab-t15s--t3-min) flow:
+**Notification audience is where this gets interesting.** Bob should hear about the back catalogue arriving. **Alice should not** — those episodes were never in her scope and are not what she asked for.
 
-- AcquisitionWorker processes the 19 new wants.
-- S1 season pack chosen → one `download_job` linked to all 9 S1 wants via `download_job_want` M:N.
-- S2 season pack chosen → one `download_job` linked to all 10 S2 wants.
-- Downloads → imports → per-file want fulfillment → Plex confirms → wants reach `available`.
+> **Not currently true.** Every requester on a tracking is notified about every want that becomes available, with no scope filter. Alice would be told about all nineteen of Bob's episodes. This is the story's own open question, answered by the code in the way the story explicitly rejects.
 
-**Notifications:**
+### Phase 5 — Steady state
 
-- 📱 Grouped push to **Bob**: "Severance: 9 episodes from Season 1 are ready" then "…10 from Season 2."
-- **Alice** gets nothing — these episodes were never in her scope. The notification audience for `tracking.episode_imported` is resolved to the requesters **whose scope includes that episode** — not every requester on the tracking. See [Open question #3](#open-questions).
+Two requesters, one tracking, one copy of each file. New episodes are wanted by both, so both hear about them. The back catalogue is wanted by Bob alone.
 
-### Phase 5 — Steady state: two requesters, one tracking (T+~hours → days)
+**Scope and tier are per-requester; the acquired files are shared.** There is exactly one copy of each episode on disk regardless of how many people wanted it.
 
-- Tracking: `requesters: [Alice, Bob]`, effective scope `all`, `state: active`.
-- New S3 episodes continue to air; both Alice and Bob want S3, so S3 episode-imported notifications go to **both**.
-- New S1/S2 content is moot (complete seasons), but upgrade-watching now applies to S1/S2 as well (the tracking's `upgrade_behavior` covers them).
-- The library has all 29 episodes (modulo unaired S3). One physical copy of each; both requesters "want" the S3 ones, only Bob "wants" the S1/S2 ones.
+> Divergent *tiers* across requesters — Alice at HD, Bob at 4K — is the case this story deliberately excludes and [upgrades and divergent tiers](./06-upgrades-and-divergent-tiers.md) owns. It is also, as that story records, silently broken today.
 
-### Phase 6 — What is (and isn't) per-requester (illustrative)
+### Phase 6 — Bob departs (T+~days)
 
-This phase illustrates the per-requester intent distinction without changing state:
-
-- **Scope and tier are per-requester.** Each requester's scope (Alice `season(3)`, Bob `all`) and tier live independently on their `tracking_requester` row and coexist on the one tracking. If they wanted different tiers (Alice HD, Bob 4K) those would coexist too — that's the divergent-tier / upgrade case, [out of scope here](#out-of-scope-variant-stories) (Story 06).
-- **Retention is *not* per-requester.** Iteration 1 modeled a per-request `retention` flag plus a hardlink-aware "watch-once for Alice, keep-forever for Bob on one file" scheme. Iteration 2 removed it: keeping and cleanup are now a single library-wide [hygiene](../modules/hygiene/README.md) policy, and per-user multi-retention is parked for a later storage iteration. So there is no per-requester retention divergence to arbitrate — the shared S3 file is governed by one library policy regardless of who tracks it.
-
-### Phase 7 — Bob departs: scope narrows (T+~days)
-
-**User-visible (Bob):**
-
-- Bob decides he only cared about Season 3 after all (or is cleaning up his subscriptions). He cancels his Severance request / unsubscribes.
-- His "my subscriptions" removes Severance. Toast: "Unsubscribed from Severance."
+**User-visible (Bob):** he unsubscribes. Toast confirms; the series leaves his list.
 
 **Behind the scenes:**
 
-- Per [requests cancellation cascade](../modules/requests/README.md#cancellation-cascade) → [tracking leaving semantics](../modules/tracking/README.md#multi-requester-semantics):
-  1. Bob's `tracking_requester` row is removed: requesters `[Alice, Bob]` → `[Alice]`.
-  2. Effective scope **recomputed** from the surviving association rows: `union(Alice: season(3))` = **`season(3)`**.
-  3. Tracking's effective scope narrows `all` → `season(3)`.
-  4. Tracking stays `active` (Alice still wants it) — not paused, because an association row remains.
-- TrackingService re-evaluates against the narrower scope:
-  - S1, S2 are now **out of scope**.
-  - **In-flight S1/S2 wants** (if any remain in `searching`/`pending`) → canceled (no requester wants them anymore). Example: if S2E10 was still searching when Bob left, that want cancels.
-  - **Already-acquired S1/S2 files** → **persist**. They are not deleted. They become "in library, untracked" — the tracking simply stops monitoring them for new episodes (moot; complete) and for upgrades.
-- Bob's `request` row → terminal `cancelled`. It remains as audit history.
+- Bob's association is removed. The requester set is Alice alone.
+- **Effective scope recomputes** from the surviving association: back to season 3.
+- Seasons 1 and 2 are now out of scope. **Work not yet started is stood down; anything already acquired stays.**
+- The tracking remains active — Alice still wants it. It does not pause, because somebody is still there.
 
-**The "what happens to acquired files" decision, committed:**
+**The committed decision on acquired files:** narrowing scope changes what the tracking *will do*, never what is already on disk. Deleting acquired content because a requester left would be hostile and surprising. Those files become library content like any other, governed by [hygiene](../modules/hygiene/README.md).
 
-- Scope narrowing affects what the tracking **wants going forward** (future acquisition + upgrade-watching), **not** what's already on disk. Deleting acquired content because a requester left would be hostile and surprising.
-- The S1/S2 files are now governed only by the library-wide [hygiene](../modules/hygiene/README.md) retention policy — there's no per-request retention to lose when Bob leaves (retention isn't a request concern in iteration 2). Whether they eventually become cleanup-eligible is hygiene's call, not tracking's. See [Open question #5](#open-questions).
+> **Not currently true.** Departure removes the association but **never re-evaluates the tracking**, so work that only Bob justified keeps running. This is the phase's headline behavior and it is a latent gap — recorded as a requirement in [a requester cancels](./07-requester-cancels.md), which owns the withdrawal path in detail.
 
-**User-visible (Alice):**
-
-- Nothing. Her scope (`season(3)`) and her wants are exactly as before. The narrowing returned the tracking to her original intent.
+**User-visible (Alice):** nothing. The narrowing returned the tracking to exactly her original intent.
 
 ## Postconditions
 
-- **2 `request` rows** (frozen origin/audit, never the recompute source):
-  - Alice's: `status: spawned`, original `scope: season(3)`, references the tracking.
-  - Bob's: `status: cancelled` (after Phase 7), original `scope: all`, references the same tracking.
-- **`tracking_requester` rows** (live per-requester intent; what the union recompute reads):
-  - During Phases 3–6: 2 rows — Alice `season(3)`, Bob `all`.
-  - After Phase 7: 1 row — Alice `season(3)`. Bob's row removed on departure.
-- **1 `tracking` row** throughout (never two): effective scope `season(3)` after Phase 7 (cached union of the surviving association rows), `state: active`. During Phases 3–6 the effective scope was `all`.
-- **`want` rows**:
-  - S3 wants: untouched throughout (Alice's; Bob's join and departure never affected them).
-  - 19 S1/S2 wants: created in Phase 3, most reaching `available`. On Phase 7 departure, any still in-flight cancel; the rest leave their `media_file`s in place.
-- **`media_file` rows**: S1/S2 files acquired before Phase 7 persist in the library, now untracked.
-- **Audit rows**: Bob's `request.submitted`, `request.spawned` (join), `request.cancelled`; tracking requester-set transitions; want cancellations on departure.
-- **No duplicate tracking, no duplicate wants** at any point.
+- Two requests: Alice's active, Bob's terminally cancelled — both retained, neither the source of truth for what happens next.
+- One tracking throughout — never two — with one surviving association and effective scope recomputed from it.
+- Season 3's work untouched by Bob's arrival or departure.
+- Seasons 1 and 2 on disk, no longer tracked, not deleted.
 
 ## What must be true (foundation requirements)
 
-Most of [Story 2](./02-series-mid-season-auto-approve.md)'s requirements carry over (tracking, series sync, season-pack M:N, SearchScheduler). Net new for multi-requester:
+Requirements carry stable ids per [the stories contract](./README.md#conventions). Most of [series mid-season](./02-series-mid-season-auto-approve.md)'s requirements carry over.
 
-### Tracking requester-set + scope recomputation
+### One effort per title
 
-- **`tracking_requester` association** — one row per `(tracking, user)`, holding that user's live per-requester intent (scope + per-episode overrides, tier). Insert on join, remove on leave, mutate on edit. (Iteration 1 also stored retention + `monitor_future` here; retention is now a library-wide hygiene policy and `monitor_future` is subsumed by scope.)
-- **Effective-scope recomputation** on every join/leave/edit, sourced from the surviving association rows. Tracking caches the union but recomputes from the association rows — _not_ from the frozen request rows, which would miss post-spawn edits. This is the concrete resolution to [tracking open question #1](../modules/tracking/README.md#open-questions).
-- **Scope-delta evaluation** — on a widening, spawn wants for newly in-scope episodes lacking files; on a narrowing, cancel in-flight wants for newly out-of-scope episodes and leave acquired files in place.
+- **REQ-UNION-001** — Two requesters wanting the same title must produce one tracking and one set of wants, never parallel efforts. *Currently true*, with the title as the dedup boundary.
+- **REQ-UNION-002** — A requester joining an existing tracking must never duplicate work that already exists for it. *Currently true.*
 
-### Request → tracking join/leave wiring
+### Intent is per-requester and live
 
-- Series request spawn must detect an existing tracking and **join** rather than create. (Per [requests](../modules/requests/README.md#series); Story 5 is the first to exercise the join branch.)
-- Cancellation cascade must remove the requester, trigger scope recomputation, and handle the want-cancellation + file-persistence split.
+- **REQ-UNION-003** — Each requester's intent must be held independently, and effective scope must be the union of everyone currently attached. *Currently true.*
+- **REQ-UNION-004** — Effective scope must be derived from live per-requester intent, never from the frozen request. *Currently true* — and the reason is that a request cannot reflect a later change of mind.
+- **REQ-UNION-005** — A requester must be able to change their own intent after the fact. **Not currently true:** there is no way to alter scope once a request has spawned, so the "mutable thereafter" this model depends on exists only in principle. It also means most of this story's interesting variants cannot be exercised at all.
 
-### Notification audience scoping for shared tracking
+### Joining and leaving are safe
 
-- `tracking.episode_imported` (and similar per-episode events) must resolve recipients to **the requesters whose scope includes that episode**, not all requesters on the tracking. Bob's S1/S2 imports notify Bob, not Alice; S3 imports notify both. This is a more precise audience resolution than "all requesters." See [Open question #3](#open-questions).
+- **REQ-UNION-006** — Widening must queue only what is genuinely newly in scope and lacking a file. *Currently true.*
+- **REQ-UNION-007** — Removing a requester must re-evaluate the tracking so work only they justified is stood down. **Not currently true** — see [a requester cancels](./07-requester-cancels.md).
+- **REQ-UNION-008** — Narrowing must never delete acquired files. Scope governs future work, not existing content.
+- **REQ-UNION-009** — A tracking must remain active while any requester remains, and stand down only when the last one leaves. *Currently true* via the withdrawal path, though [a requester cancels](./07-requester-cancels.md) records a way to bypass it.
 
-### Pre-flight scope-diff on the focus page
+### Nobody learns about what they didn't ask for
 
-- "What would my request add?" computed against current library + tracking state: the scope-aware diff (Bob's `all` minus what's already covered = S1 + S2). Per [requests pre-flight visibility](../modules/requests/README.md#pre-flight-visibility), extended to the shared-tracking case.
-
-### Per-requester intent independence
-
-- Each requester's **scope and tier** intent is stored on **their `tracking_requester` row** and carried independently (seeded from their request, then live). Retention is no longer per-requester — it moved to a library-wide [hygiene](../modules/hygiene/README.md) policy in iteration 2, and per-user multi-retention (the same-file-different-lifetime idea) is parked. So the association carries scope + tier; there is no per-requester retention to arbitrate.
-
-### Time targets
-
-- Join + scope widening + new-want spawn: < a few seconds (same transaction class as Story 2's spawn).
-- Departure + scope narrowing + want cancellation: < a few seconds.
-- No user-visible latency difference between "first requester" and "joining requester" on the request action.
+- **REQ-UNION-010** — A requester must only be notified about content their own intent covers. **Not currently true:** every requester is notified about every want on the tracking.
+- **REQ-UNION-011** — A requester must not be told who else wants a title. *Currently true by omission* — nothing surfaces it, though nothing enforces it either.
 
 ## Out of scope (variant stories)
 
-- **Divergent tiers across requesters** — Alice wants HD, Bob wants 4K. The tracking's effective tier rises to 4K; existing HD files become upgrade candidates. This is upgrade territory (proposed Story 06); deliberately kept same-tier here.
-- **Per-user multi-retention** — the parked idea where one hardlinked file serves a "watch-once" intent for one user and "keep-forever" for another. Removed from the per-request model in iteration 2 (retention is now a single library-wide [hygiene](../modules/hygiene/README.md) policy); revisit as a storage feature in a later iteration. A future story exercises watch-based cleanup once hygiene's `lifecycle/*` rules and watch-state land.
-- **Last requester leaves** — if Alice (not Bob) had left and Bob remained, fine; but if **both** leave, the tracking moves to `paused` (not canceled), per [tracking lifecycle](../modules/tracking/README.md#lifecycle). Brief variant.
-- **Admin-anchored tracking** — admin added the tracking; a user joins then leaves. The tracking doesn't pause on the user's departure because the admin anchors it. Variant.
-- **Movie duplicate** — two users want the same movie; the second joins the existing single-atom **tracking**'s requester set (the tracking, not the want, is the dedup boundary — uniform with the series case). Worth a short companion story or a paragraph.
-- **Join during in-flight acquisition** — Bob joins while Alice's S3 wants are mid-download. Bob's join adds S1/S2 but also makes Bob a requester on the in-flight S3 wants. Edge timing; mostly covered but worth validating the S3-want requester-set update.
-- **Per-episode overrides interacting with union** — Alice has `season(3)` + explicit-exclude S3E07; Bob has `all`. Does the union re-include S3E07 (Bob wants it) or honor Alice's exclude? Per the model, union means Bob's inclusion wins. Variant worth pinning.
-- **Pending approval on the joining request** — if Bob lacked auto-approve, his join would wait in the approval queue (Story 3), and the scope wouldn't widen until approved. Composition of Story 3 + Story 5; brief variant.
-- **Re-widening after narrowing** — Bob re-subscribes a week after canceling. Scope widens again; S1/S2 files still on disk (never deleted) → no re-acquisition needed, just re-tracking. Nice efficiency case; brief variant.
+- **Divergent tiers** — one requester at HD, another at 4K. [Upgrades and divergent tiers](./06-upgrades-and-divergent-tiers.md).
+- **The withdrawal path in detail** — what cancelling means at each stage. [A requester cancels](./07-requester-cancels.md).
+- **The last requester leaving** — covered as the terminal case in that story.
+- **Joining while acquisition is in flight** — Bob arrives mid-download. Mostly covered; the requester-set update on already-running work is worth validating.
+- **Joining a request that needs approval** — the scope wouldn't widen until approved. Composition with [pending approval queue](./03-pending-approval-queue.md).
+- **Re-joining after leaving** — the files are still on disk, so nothing is re-acquired. A pleasing efficiency case.
+- **Per-user retention** — one file serving different lifetimes for different people. Removed from the model; retention is a library-wide [hygiene](../modules/hygiene/README.md) policy.
 
 ## Open questions
 
-1. **Requester identity disclosure in pre-flight.** Bob's focus page says "already being followed" — does it name Alice? Lean: no by default (privacy across users); admins with `requests.view:all` may see "tracked by Alice." Pin against the [requests visibility scoping](../modules/requests/README.md#visibility-scoping) predicate.
+1. **Is a joining requester told the title is already followed, and how much?** **Lean:** yes that it is, never by whom — the scope diff is the useful part, the identity isn't.
 
-2. **Does a widening notify existing requesters?** When Bob joins and scope widens to `all`, does Alice get any signal? Her scope is unaffected, so lean: no notification. But if Bob's join changed something Alice cares about (e.g., raised the tier ceiling, triggering upgrades on her S3 files), she might. Lean: notify only when an existing requester's effective experience changes. Pin the rule.
+2. **Does widening notify existing requesters?** Alice's scope is unaffected, so probably not. But if a join changed something she'd notice — raising the quality target, for instance — she plausibly should hear about it. **Lean:** notify only when an existing requester's own experience changes.
 
-3. **Per-episode notification audience on shared tracking.** `tracking.episode_imported` should notify only requesters whose scope includes that episode. This requires resolving, per episode, which requesters' scopes cover it — a per-event scope evaluation against the requester set. Confirm this is the model (vs. the simpler "notify all requesters") and pin in [notifications](../modules/notifications/README.md) + [tracking](../modules/tracking/README.md).
+3. **Per-episode notification audience — resolved, and unimplemented.** A requester hears only about content their scope covers. The code notifies everyone. Captured as REQ-UNION-010.
 
-4. **Scope storage — resolved.** Per-requester scope lives on a `tracking_requester` join table (live, mutable, seeded from each request); the tracking caches the union and recomputes from those rows on join/leave/edit. We deliberately do _not_ recompute from the request rows: requests are frozen after spawn, so they'd miss post-spawn scope edits. The "duplication" with the request's original scope is intentional — request = frozen origin, association = live state. See [tracking open question #1](../modules/tracking/README.md#open-questions).
+4. **Where per-requester intent lives — resolved.** On the requester-tracking association, live and recomputed, with the request kept as frozen origin.
 
-5. **Acquired files after scope narrowing.** This story commits to "files persist; scope narrowing only affects future wants + upgrade-watching." But who governs the orphaned S1/S2 files' eventual fate? With Bob gone, the files are governed by the library-wide [hygiene](../modules/hygiene/README.md) retention policy (there's no per-request retention to lose in iteration 2). Do they persist indefinitely, become `lifecycle/*` cleanup candidates, or surface as "untracked content" for review? Lean: persist indefinitely unless an explicit cleanup policy claims them; hygiene may surface them as "untracked content" for optional review.
+5. **Who governs files left behind after narrowing?** With Bob gone, seasons 1 and 2 are in the library and nothing wants them. **Lean:** they persist indefinitely unless a cleanup policy claims them, and are worth surfacing as untracked content rather than silently orphaning them.
 
-6. **In-flight want cancellation on narrowing — partial packs.** If a season pack covering S2E01–E10 is mid-download when Bob leaves, do we cancel the download (wasting the bandwidth already spent) or let it complete (acquiring files no one is tracking)? Lean: let in-flight downloads complete (bandwidth already committed), cancel only `searching`/`pending` wants. Symmetric with [Story 2 open question #9](./02-series-mid-season-auto-approve.md#open-questions).
+6. **Should the interface distinguish tracked from merely-present content?** After Bob leaves, seasons 1 and 2 are in the library but nothing is watching them for new content or better releases. **Lean:** yes, quietly — it explains why they behave differently from the rest of the show.
 
-7. **Per-episode overrides under union — resolved.** Alice excludes S3E07; Bob wants `all`. Union says Bob's inclusion wins (S3E07 stays in scope). On Bob's departure, S3E07 falls back out (Alice excluded it). This works because overrides live **per-requester on the `tracking_requester` row** (seeded from the request, mutable thereafter), so recomputation from the surviving association rows is correct.
-
-8. **Want requester-set vs tracking requester-set.** A want (especially a shared S3 want) conceptually has requesters too (for notification + cancellation). Is the want's requester set derived from the tracking's (all requesters whose scope covers this episode), or stored explicitly? Lean: derived — a want's requesters are the `tracking_requester` rows whose scope (incl. overrides) covers this episode, a query rather than a stored set. Pin in acquisition.
-
-9. **"Untracked content" surfacing.** After Phase 7, S1/S2 are in the library but no tracking wants them. Should the UI distinguish "tracked" vs "in library but untracked" content? Useful for the user to understand why new S1 special editions won't auto-upgrade. Lean: yes, a subtle badge; not v1-blocking.
-
-10. **Concurrent join race.** Bob and a third user Carol both request Severance within the same second, both joining Alice's tracking. Two concurrent scope-recomputations must not lose an update. Lean: serialize requester-set mutations per tracking — association-row inserts/deletes plus the cache recompute under one lock (row or advisory lock on the tracking id). Pin in tracking.
+7. **Concurrent joins.** Two people requesting the same title in the same second. Association writes are idempotent and there is no cached union to lose an update on, so the original concern is moot rather than solved.

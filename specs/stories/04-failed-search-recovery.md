@@ -1,221 +1,150 @@
-# Story 4 — Failed search, eventual recovery: friend requests something the indexers don't have yet
+# Story 4 — Failed search, eventual recovery: the indexers don't have it yet
 
-**Status:** Draft
+**Status:** Draft (triaged against the code)
 
-Same friend as [Story 1](./01-happy-path-auto-approve.md), same auto-approve, same HD tier — but this time the movie is a brand-new theatrical release that just opened over the weekend, and the indexers don't have a usable release yet. The system searches, finds nothing, comes back later, finds only cam-quality rips (all rejected), backs off, keeps trying, and finally a 1080p WEB-DL surfaces about 30 hours later. The want resolves normally from there.
+Same friend as [the happy path](./01-happy-path-auto-approve.md), same auto-approve, same HD tier — but this time the film's **home release landed yesterday**, and nothing usable is on the indexers yet. The system searches, finds nothing, comes back, finds only junk, backs off, keeps trying, and about thirty hours later a decent release surfaces. It resolves normally from there.
 
-This is the **most common non-happy path** in real-world usage: the request is fine, the user is fine, the system is fine — the source material just isn't out there yet. Story 4 exists to pin down what the user sees during that gap, what the system writes to the decision log, and how the back-off and recovery actually behave.
+This is the **most common non-happy path**: the request is fine, the user is fine, the system is fine — the source material just isn't out there yet. This story pins down what the user sees during that gap, what the system records about it, and how backing off and recovering actually behave.
 
-Follows the [Story 1](./01-happy-path-auto-approve.md) template: Cast → Preconditions → Flow → Postconditions → What must be true → Out of scope → Open questions.
+> **Triage notes.** Two things changed.
+>
+> **The premise moved.** This story originally opened on a film in cinemas. That case now belongs to [asking for something that isn't out yet](./09-not-out-yet.md) — a film in theatres isn't obtainable, and the system should not be searching for it at all. Story 4 begins **after** a title becomes obtainable. The boundary is the obtainable date: before it, story 9; after it, this one.
+>
+> **Mechanism was removed.** Retry curves, event names, and field names have been replaced by the requirements they were serving, per [the stories contract](./README.md). Several things this story described as working are unbuilt, and are now marked.
 
 ## Cast
 
-- **Friend** — identical config to [Story 1](./01-happy-path-auto-approve.md):
-  - `requests.create:movie:hd: true`, `requests.create:movie:4k: false`
-  - `requests.auto_approve:movie:hd: true`
-  - PWA installed, push notifications enabled
-- **Admin** — passive. Same prior config as Story 1.
-  - HD quality profile rejects `cam`, `ts`, `telesync`, and missing-codec releases via hard gates.
-- **The system** — Arrflix: web UI, API, background workers.
-- **External** — TMDB, Prowlarr, qBittorrent, Plex.
+- **Friend** — as in [the happy path](./01-happy-path-auto-approve.md): holds the HD create and auto-approve grants, no 4K, push enabled.
+- **Admin** — passive. Their HD profile **hard-rejects** cam and telesync sources rather than merely scoring them low.
+- **The system** — Arrflix.
 
 ## Preconditions
 
-- "Sentinel" (a hypothetical action movie that opened in theaters last weekend) is not in any library.
-- No existing [[want]] for it.
-- TMDB has metadata.
-- Indexers are healthy.
-- Downloader has free slots.
-- The HD quality profile is configured such that **cam-quality releases hard-gate-reject** (not just score low).
-- Friend's push subscription is registered.
-- _The differentiator from Story 1_: nothing currently on indexers passes the profile. Specifically:
-  - At T+0: indexers return zero results for the title.
-  - At T+~2h: cam releases start appearing.
-  - At T+~30h: a 1080p WEB-DL surfaces.
+- The film's home release was yesterday. It is obtainable; the question is only whether a good release exists.
+- Nobody has requested it; it isn't in the library.
+- Indexers are healthy — the system can see what's out there, and what's out there is bad.
+- The differentiator: **at first nothing usable exists.** Junk rips appear within hours; something acceptable takes about thirty.
 
 ## Flow
 
-### Phase 1 — Discovery & request (T+0s → T+1s)
+### Phase 1 — Request (T+0)
 
-Indistinguishable from [Story 1 Phases 1–2](./01-happy-path-auto-approve.md#phase-1--discovery-t0s). Friend taps Request. Button morphs to a pill: **"Searching for HD release…"** A `request` row is created (`auto_approved: true`); it spawns a single-atom **tracking** (anchored on the movie's `release_date`), which creates a `want` in `pending` and fires `want.created`.
+Indistinguishable from [the happy path](./01-happy-path-auto-approve.md). Friend taps Request; the pill reads *"Searching for an HD release…"*.
 
-The only difference from Story 1 is that the pre-flight summary on the Request button shows **"Note: this just released — may take a day or two to find a quality release"** based on a heuristic over `release_date` ≤ N days. (See [Open question #1](#open-questions).)
+The only difference is a quiet note on the request affordance for very recent titles — *"this only just released; a good copy may take a day or two"* — setting expectations before the wait rather than explaining it afterward. **Unbuilt.**
 
-### Phase 2 — First search wave: zero results (T+~15s)
+### Phase 2 — First wave: nothing at all (T+~15s)
 
-**User-visible:**
+**User-visible:** the pill stays as it is. Nothing to report.
 
-- Pill stays at **"Searching for HD release…"**
+**Behind the scenes:** indexers are queried and return nothing. The attempt is recorded — including that it happened and which indexers answered — so "we did try" is later provable. Another search is scheduled.
 
-**Behind the scenes:**
+**Notifications:** none. One empty search is not news.
 
-- AcquisitionWorker picks up the `want.created` event.
-- Builds the search query, hits the indexer service via Prowlarr.
-- Indexers respond with **zero results** for all queried sources.
-- AcquisitionWorker:
-  - Writes a **search_run** audit row noting zero results across N indexers, per the [audit pattern](../patterns/audit/README.md).
-  - Does **not** write per-release decision rows (there were no releases).
-  - Emits `want.search_failed { reason: no_results, indexers_queried: [...], count: 0 }`.
-  - Hands the want back to the **SearchScheduler**, which schedules retries per the movie tracking's smart schedule (anchored on `release_date` instead of an episode air date):
-    - First retry: +30 min
-    - Then: +1h, +2h, +4h, +8h, +24h, then daily — exponential within tiers, per [tracking smart scheduling](../modules/tracking/README.md#smart-scheduling). Same curve as an episode; only the anchor differs.
-
-**Notifications:** none. A single empty search is not yet noteworthy.
-
-### Phase 3 — Second wave: cam releases, all rejected (T+~2h)
+### Phase 3 — Second wave: junk, all rejected (T+~2h)
 
 **User-visible:**
 
-- Pill updates: **"Searching for HD release • last checked 2h ago"**
-- A drill-down (tap the pill) reveals: _"5 releases considered, all rejected. Tap for details."_ Drill in: a per-release table — title, indexer, score column (mostly N/A because gating happened first), reject reason ("cam-quality release; profile rejects cam"), seeders, age.
+- The pill gains freshness: *"Searching for an HD release · last checked 2h ago"*.
+- Tapping it reveals *"5 releases considered, all rejected"* and, drilling in, a per-release table — title, indexer, why it was rejected, seeders, age.
 
-**Behind the scenes:**
+**Behind the scenes:** five cam rips return. Every one fails a hard gate before scoring even matters. Each rejection is recorded with a structured reason, tied to the search that found it.
 
-- SearchScheduler triggers retry at +2h.
-- AcquisitionWorker hits indexers; 5 results return — all variations of `Sentinel.2026.CAM.HDRip.XviD-RG` style.
-- Quality profile engine:
-  - Each release fails the hard gate on `source != cam` (or equivalent rule).
-  - Returns 5 `(release, reject, reason)` tuples.
-- AcquisitionWorker:
-  - Writes one **decision_log** row per release (per [audit](../patterns/audit/README.md)): `decision: rejected`, structured reason (`gate: source_blocklist`, `value: cam`), release identity (indexer, guid, infohash, title), search_run reference.
-  - Emits `want.search_failed { reason: all_rejected, count: 5, breakdown: {gate_source_blocklist: 5} }`.
-  - Schedules next retry per the back-off.
+**Notifications:** still none. Five rejected cam rips are not actionable — the user cannot make a better release exist.
 
-**Notifications:** still none. Five rejected cam releases is not actionable; the user can't tell the indexers to make a 1080p release appear.
+> **Unbuilt.** Nothing records searches or per-release decisions today. There is no search history, no rejection reasons, no drill-down. When a want sits unfulfilled, the system cannot answer *"what have you tried?"* — which is the single most valuable thing this story asks for.
 
-### Phase 4 — Back-off and the long wait (T+~2h → T+~30h)
+### Phase 4 — Backing off, and the long wait (T+~2h → T+~30h)
 
 **User-visible:**
 
-- Pill cycles through retries: **"Searching for HD release • last checked 4h ago"**, **"…8h ago"**, **"…14h ago"**.
-- "My requests" page shows Sentinel with a yellow "still searching" indicator (not red — yellow because the system is working, just waiting).
-- Eventually (default: at the **+24h mark**, configurable), a **"still searching"** in-app notification is generated:
+- The pill keeps its freshness marker as checks grow further apart. The requests view shows the film as **still working, not broken** — the distinction the colour choice has to carry.
+- Around the one-day mark, a message appears in-app:
 
-  > **"We're still looking for _Sentinel_."** It just released and quality releases sometimes take a day or two. We'll keep trying. _[See what we've tried]_ · _[Cancel request]_
+  > **We're still looking for _Sentinel_.** It only just released, and good copies sometimes take a day or two. We'll keep trying. *[See what we've tried]* · *[Cancel request]*
 
-  (Push delivery for this event is **off by default** — in-app only — to avoid push fatigue. See [Open question #2](#open-questions).) This is a **resolvable** notification (`dedup_key = "want.<id>.search_stalled"`) — it clears itself when the want recovers, per the [resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle).
+  In-app only by default — a push here would be fatigue for something the user cannot act on, and the good news is coming later anyway.
 
-**Behind the scenes:**
+**Behind the scenes:** searches continue, spacing out as the odds of something new appearing drop.
 
-- Each retry adds rows to decision_log: more cam-quality rejects, the occasional `dvdscr` or `hdcam` reject, etc.
-- The retry interval grows per the back-off curve. After ~6 attempts the cadence is daily.
-- Friend taps **"See what we've tried"** → debug surface: per-search_run timeline, per-release decision rows, aggregate stats ("47 releases considered across 8 search runs over 28 hours; all rejected — primary reason: cam-quality (43), insufficient seeders (3), missing audio codec (1)"). This is the same [audit-view](../patterns/audit/README.md) UI surface as Story 1's "why did this grab?" answer, in inverse.
+> **Unbuilt.** There is no still-searching message, and the mechanism it was specified to use — a notification that clears itself when the situation resolves — **does not exist**. This story was one of three that treated that lifecycle as settled; see [the stories contract](./README.md#known-speccode-divergences).
 
-### Phase 5 — 1080p surfaces, normal pipeline resumes (T+~30h)
+### Phase 5 — Something good surfaces, normal pipeline resumes (T+~30h)
 
-**User-visible:**
+**User-visible:** *"Found a release · Queued"* → *"Downloading 8% · ~5 min"*. Back to the happy path's tempo.
 
-- Pill updates: **"Found a release • Queued"** → **"Downloading 8% • ~5 min"** (back to Story 1's tempo from here).
+**Behind the scenes:** twelve results this time; ten still junk and hard-rejected, two acceptable, the better one picked and handed to the downloader. The still-searching message clears itself — the user should not have to dismiss a problem that solved itself.
 
-**Behind the scenes:**
+### Phase 6 — Download, import, available (T+~30h → +8 min)
 
-- SearchScheduler triggers retry at the next daily slot.
-- AcquisitionWorker hits indexers; 12 results return this time — most still cam, but **two 1080p WEB-DLs** appear.
-- Quality profile engine:
-  - Hard-gates: 10 cam/ts releases rejected.
-  - 2 survivors scored normally.
-  - Best scorer (higher seeders + better release group) picked.
-- AcquisitionWorker:
-  - Writes decision_log rows for all 12 (10 rejected, 1 runner_up, 1 grabbed).
-  - Evaluates routing rules → picks downloader, library, name template.
-  - Creates `download_job`, links to the want.
-  - Want transitions: `searching → grabbed → downloading` (back-to-back).
-  - Emits `want.grabbed` event.
+Indistinguishable from [the happy path](./01-happy-path-auto-approve.md). The file is imported and verified on disk, which is what makes it available; the requester is notified.
 
-**Notifications:**
+## What the failure phase must not do
 
-- The "still searching" notification **resolves**: the AcquisitionWorker calls `notifications.Resolve("want.<id>.search_stalled")` on `want.grabbed`. The in-app entry flips to `resolved` (drops out of the bell's attention count, stays in history); if a "still searching" push was queued but not yet sent, it's cancelled (`superseded`). Per the [resolution lifecycle](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle).
-- No push yet — push fires only on `available`, same as Story 1.
+Three failure modes this story exists to rule out:
 
-### Phase 6 — Download → Import → Plex confirms → Available (T+~30h → T+~30h 8min)
-
-Indistinguishable from [Story 1 Phases 4–5](./01-happy-path-auto-approve.md#phase-4--download--import-t7-min). qBit downloads, ImportWorker hardlinks + renames, `import_task` carries `want_id`, `media_file` row created, want → `imported`. Plex partial-refresh + `library.new` webhook → want → `available`.
-
-**Notifications:**
-
-- 📱 Push to Friend: **"_Sentinel_ is ready to watch."** Tap → Plex deep link.
-- In-app pill: **"Available on Plex"**.
-- The "still searching" notification, if not already resolved at grab, is resolved now.
+| Must not | Why |
+| --- | --- |
+| Give up | Nothing is wrong. The release will exist eventually, and a request that quietly died is worse than one still waiting. |
+| Look broken | "Still searching" after a day is fine *if* the user can see the system is working. Without that, patience reads as failure. |
+| Look identical to "not out yet" | Waiting for a date needs no attention; waiting for a good release might. [Story 9](./09-not-out-yet.md) owns the first. |
 
 ## Postconditions
 
-- **1 `request` row**, `status: spawned` (frozen once tracking + want exist; the failure phase doesn't touch the request entity).
-- **1 single-atom `tracking` row**, `active` throughout the 30h search (it only archives once the want is `available` at-cutoff). This is the scheduling home for the retries.
-- **1 `want` row** (parented to the tracking), ending at `available`. Crucially, the want **never left `searching`** across the failure phase — it didn't transition to a `failed` terminal state. (See [Open question #3](#open-questions).)
-- **1 `media_item`, 1 `media_file`, 1 `media_file_state`** — identical to Story 1.
-- **1 `download_job`, status `completed`** — created only on the successful pick at T+~30h, not on the earlier failures.
-- **~8–10 `search_run` rows** with timestamps spanning T+0 through T+~30h.
-- **~50 `decision_log` rows total** — 47 rejected across the failure phase, plus 1 grabbed + 1 runner_up + 10 rejected from the final successful search.
-- **1 in-app notification** (the "still searching" message), `resolution_state: resolved` once the want recovered — visible in history, cleared from the attention count.
-- Friend's "my requests" page shows Sentinel as fulfilled, with the back-history collapsed under a "took 30 hours, 47 rejected" detail toggle.
+- One request, frozen; one tracking, active throughout; one want, ending available.
+- One download job, created only on the successful pick — not on any earlier attempt.
+- A record of every search and every rejection across the thirty hours, so the wait is explicable after the fact.
+- The still-searching message resolved, retained as history rather than as an open item.
 
 ## What must be true (foundation requirements)
 
-Most of Story 1's requirements carry over unchanged. Net new for Story 4:
+Requirements carry stable ids per [the stories contract](./README.md#conventions). Most of [the happy path](./01-happy-path-auto-approve.md)'s requirements carry over; these are net new.
 
-### Back-off & scheduling
+### Patience is not failure
 
-- **One scheduling home, for movies and episodes alike — resolved.** Every want has a tracking parent (movies are single-atom trackings, per the [universal-intent model](../modules/tracking/README.md#movies-under-this-model)), so there is no "non-tracking want" special case. A movie tracking reuses the smart-schedule curve anchored on the movie's `release_date` (option (a) from the earlier draft); a not-yet-released movie anchors on request time until a release date is known. This is what Story 4 forced, and the universal-intent change settles it.
-- **Back-off resets on first new result.** If a search returns even one new release (regardless of whether it passes gates), the back-off may reset or relax — otherwise the system stays slow on long-running failures even after fresh indexer activity. Need to pick a heuristic.
+- **REQ-SEARCH-001** — A want must never reach a terminal failed state merely because no acceptable release exists yet. *Currently true*, and worth keeping true: failure is for things that actively went wrong, not for waiting.
+- **REQ-SEARCH-002** — The state shown to a user must stay stable while the want cycles internally. **Not currently true:** a want that finds nothing returns to pending and is re-claimed on the next cycle, so it oscillates continuously between two internal states. Anything rendering the raw want status shows a flickering value that misrepresents a system doing exactly the right thing.
+- **REQ-SEARCH-003** — A user must be able to distinguish *"working, just waiting"* from *"stuck, needs you."* These are different situations and only one of them wants attention.
 
-### Audit & decision log
+### The system can say what it tried
 
-- **`search_run` row** even when zero releases returned, with `indexers_queried` and per-indexer `(count, latency_ms, error?)` so "we did try" is visible.
-- **`decision_log.search_run_id` FK** — every per-release decision links to its search run, enabling "show me the timeline" UI.
-- **Aggregate reject summary** — the UI needs a fast "47 cam-rejected" view without scanning every row. Either a derived materialized view, or a per-want rollup column, or just a fast query — implementation choice. Pin in audit data-shape iteration.
-- **Decision_log retention for failed-then-recovered wants.** A want that fails for 30h and then succeeds has ~50 audit rows. Multiply by realistic load and the table grows fast. Per the [audit pattern](../patterns/audit/README.md), retention is centralized — but the recovery case may warrant separate retention (success rows kept longer, failure rows pruned faster, since they're noise once the want resolves).
+- **REQ-SEARCH-004** — For any unfulfilled want, the system must be able to show what was considered and why each candidate was rejected. **Unbuilt** — no search history, no per-release decisions, no reasons. This is the story's headline requirement and the thing a user actually wants at hour twenty.
+- **REQ-SEARCH-005** — A search that returns nothing must still be recorded, along with which indexers answered. *"We found nothing"* and *"we didn't look"* are different claims, and only a record distinguishes them.
+- **REQ-SEARCH-006** — Any progress figure shown to a user must reflect real cumulative effort. **Not currently true:** the attempt counter resets on each unsuccessful cycle, so a count of attempts can never rise above one — and the interface copy that would display it is unreachable code.
 
-### Notification semantics
+### Searching backs off, sensibly
 
-- **A "still searching" event type**, audience: requester, channel default in-app, declared **`resolvable`** with `dedup_key = "want.<id>.search_stalled"`. Producers: AcquisitionWorker after N consecutive failed search_runs OR M hours since `want.created` without a successful grab. Per [notifications](../modules/notifications/README.md) — typed constructor; payload includes the want, the aggregate reject breakdown, deep link to debug surface. Because it's resolvable, repeat enqueues **replace** (latest "N considered" count) rather than stacking.
-- **Resolution semantics — provided by the notifications resolution lifecycle.** When the want transitions to `grabbed`, the AcquisitionWorker calls `notifications.Resolve(dedup_key)`: active in-app rows flip to `resolved` (kept as history, dropped from the unread count) and any not-yet-sent push is cancelled. No bespoke supersede mechanism — see [notifications](../modules/notifications/README.md#resolvable-notifications-resolution-lifecycle).
-- **Push opt-out for this event by default** — confirmed in [Open question #2](#open-questions); this story's recommendation is that "still searching" is **in-app only by default** with an opt-in for push.
+- **REQ-SEARCH-007** — Search frequency must reflect how likely a new release is, growing sparser as a title ages, and must be bounded so a long wait never becomes an indefinite silence. *Broadly true* — the cadence is time-since-release rather than attempt-count, which is a better model than this story originally specified.
+- **REQ-SEARCH-008** — A user must be able to ask the system to look again now, subject to a rate limit. **Partly built:** retry exists at the tracking level, not for a single want, and is not rate-limited.
+- **REQ-SEARCH-009** — A release that already failed to download must not be picked again for the same want. *Currently true* — this exists and the original story never mentioned it.
 
-### UI surfaces
+### The wait is communicated, once
 
-- **Want pill states** beyond Story 1's set — all renders of the same `(state, annotation, freshness)` projection ([acquisition → Want status](../modules/acquisition/README.md#want-status-the-two-axes)), not bespoke strings:
-  - state `searching`, no annotation → "Searching for HD release…"
-  - state `searching`, annotation `backing_off`, `last_searched_at` 4h ago → "Searching • last checked 4h ago"
-  - state `searching`, annotation `backing_off`, `considered_count` 47 → "Still searching • 47 considered"
-  - The differentiation is the annotation + freshness fields; pill copy is derived centrally, so tone (warmer / cooler / yellow) stays consistent across stories.
-- **Drill-down debug view** — "see what we've tried" link from any want's pill. Renders the search_run timeline + decision rows + aggregate stats. This is the same [audit](../patterns/audit/README.md) surface as Story 1's "why did this grab?" — bidirectional.
-- **"Force search now" affordance** — see [Open question #4](#open-questions). Lean: yes, but rate-limited.
-
-### Time targets (UX commitments)
-
-- First search attempt: <30s of `want.created` (unchanged from Story 1).
-- "Still searching" notification: not before T+24h on default config. (Configurable.)
-- Recovery latency: bounded by the back-off curve, which itself is bounded by the worst-case daily cadence after T+~12h. Force-search bypasses this.
+- **REQ-SEARCH-010** — A wait that exceeds a threshold must proactively tell the requester the system is still working, without requiring them to check. **Unbuilt.**
+- **REQ-SEARCH-011** — That message must clear itself when the want recovers, and must not stack on repeat. **Unbuilt**, and dependent on a notification-resolution lifecycle that does not exist.
 
 ## Out of scope (variant stories)
 
-- **Terminal give-up flow** — the user wants to stop trying after N days, or the system declares the request unfulfillable. This is the structural fork from Story 4 — its own variant story. Open questions: how long is "give up," does the system propose cancellation or just keep retrying forever, what happens to the request entity.
-- **All-rejected for a non-new release** — failure mode isn't "indexers haven't gotten there yet" but "user's quality profile is too strict for what exists." Different UX (the right answer is "loosen profile," not "wait"). Variant story.
-- **Indexer down during the failure window** — overlaps with connectivity-health (proposed Story 10); the failure mode is "we can't tell whether nothing exists or we just can't see it." Different shape.
-- **Tier preference vs. availability** — a user wants 4K but only HD has surfaced. Iteration 2 has no request-time floor/ceiling range: a request picks exactly one tier. "Accept HD now, upgrade to 4K later" is [tracking](../modules/tracking/README.md) `upgrade_behavior`, not a request-level fallback. A dedicated story exercises the request-4K-but-only-HD-exists path (wait, or grab HD and upgrade-watch).
-- **User uses interactive search mid-failure** — Friend gets impatient, opens the manual search view, finds a 720p release, grabs it manually overriding the profile. Story 1 alluded to this; deserves a dedicated story exercising the interactive flow + audit row marked `manual_override`.
-- **Series episode never surfaces** — Story 2's tracking + smart scheduling has built-in back-off but no terminal give-up. Variant story for the "this episode just never released" case (rare but real for cancelled / bootleg-only content).
-- **Failure during download or import** — qBit reports failed download; or import fails on disk full / permission denied. Different failure axis (post-grab); its own story.
-- **Hardlocked storage / quota cancellation** — admin's library is full; new wants can't even start. Connects to hygiene / connectivity-health.
+- **It isn't out yet** — [asking for something that isn't out yet](./09-not-out-yet.md). The boundary is the obtainable date.
+- **Giving up deliberately** — the user stops waiting. [A requester cancels](./07-requester-cancels.md).
+- **Accepting something worse now** — grabbing a poor release deliberately and improving later. [Upgrades and divergent tiers](./06-upgrades-and-divergent-tiers.md).
+- **Picking one by hand mid-wait** — impatience resolved through interactive search. [Autonomy and proposals](./08-autonomy-and-proposals.md) owns the manual path.
+- **The profile is simply too strict** — the failure isn't "not yet" but "not ever, at these settings." Different diagnosis, different advice ("loosen the profile," not "wait"). Deserves its own story.
+- **Indexers are down** — the failure mode is *"we can't tell whether nothing exists or we just can't see it."* [Indexer health](./10-indexer-health-degraded-and-recovery.md).
+- **Failure after the grab** — download or import failures. A different axis entirely.
 
 ## Open questions
 
-1. **Pre-flight "may take a day or two" warning.** Worth showing on the Request button for newly-released titles? Heuristic candidates: `release_date` within last 14 days for movies; `air_date` within last few hours for episodes. Risk: false positives feel like the system is making excuses. Lean: yes for very recent releases (< 7 days), tone it down to a small footnote, don't block submission.
+1. **Pre-flight expectation-setting.** Worth warning on the request affordance for very recent titles? Risk: false positives read as the system making excuses. **Lean:** yes for the first week after a home release, as a quiet footnote that never blocks submission.
 
-2. **"Still searching" delivery channel default.** Push vs. in-app vs. both. Push risks fatigue (most users won't act, and the "good news" push comes later anyway). In-app is invisible if the user isn't looking. Recommendation: in-app by default, push opt-in per user, configurable per `notification_preference`. Pin in [notifications](../modules/notifications/README.md).
+2. **When does "still searching" fire, and how loudly?** **Lean:** around a day, in-app only by default, push opt-in — the user can't act on it, and the good news push is coming anyway.
 
-3. **Does a long-failing want ever enter a `failed` terminal state?** Today's spec implies `failed` is reachable for non-recoverable conditions (download cancelled, import error). For "no releases" failures, the want stays `searching` indefinitely with back-off. Should there be a `failed` transition after N days of consistent emptiness? Lean: no — `failed` is for active failures, not patience. But pin the rule.
+3. **Does a long-failing want ever fail terminally? — resolved.** No. Failure is for active failures, not for patience. This matches the implementation. Captured as REQ-SEARCH-001.
 
-4. **"Force search now" button.** Useful for impatient users; risks indexer abuse. Lean: yes, rate-limited (one force per want per hour), prominently visible on the pill drill-down. Audit row written for the user-initiated search_run.
+4. **Should backing off reset when fresh releases appear?** Without a reset the system stays slow after real indexer activity; with one, a flood of fresh-but-bad releases keeps it busy on a futile search. **Lean:** reset only when something clears the hard gates, not on raw new-result count.
 
-5. **Aggregate audit retention for the rejected-pile case.** A want with 47 cam-rejects on the way to success — does the system keep those 47 rows forever? They're noise once the want resolves; keeping them helps the "what didn't work?" forensic story; pruning them keeps the audit table lean. Lean: keep for 30 days after want resolution, then prune via [hygiene](../modules/hygiene/README.md). Pin in [audit](../patterns/audit/README.md).
+5. **How long is search history worth keeping?** A want that fails for thirty hours and then succeeds accumulates a lot of rejection records that are mostly noise once it resolves — but they're exactly what answers *"why did this take so long?"* **Lean:** keep for a period after the want resolves, then prune. Owned by [audit](../patterns/audit/README.md).
 
-6. **Cross-indexer dedup of identical rejected releases.** If 3 indexers all carry `Sentinel.2026.CAM.HDRip.XviD-RG` (same infohash, different sources), do we write 1 decision_log row or 3? Lean: 1 row keyed on infohash, with `indexers_seen` as an array. Reduces noise dramatically on popular releases.
+6. **Do identical releases across indexers collapse into one record?** Three indexers carrying the same rip is one decision, not three. **Lean:** collapse on release identity with the indexers listed — but note nothing durable identifies a release across indexers today, so this needs that first.
 
-7. **Back-off reset trigger.** If a search after a long back-off period returns _new_ releases (even if all still hard-gated), does the back-off reset? Without reset, the system stays slow even after fresh indexer activity. With reset, a flood of fresh-but-bad releases keeps the system busy on a futile search. Lean: reset only when at least one release passes hard gates (regardless of whether it wins the pick), not on raw new-result count.
-
-8. **"What we've tried" UI scoping.** The drill-down can show: every search_run (chronological), or aggregated reject breakdown (grouped by reason), or both. UX call; both are valuable.
-
-9. **Heuristic for detecting "this won't resolve on its own."** After ~7 days of all-cam-rejected, the situation is qualitatively different from "we just need to wait" — it's probably not coming. Worth a separate heuristic (e.g., transition the still-searching notification to "we're not finding HD; consider 720p?") with a suggested user action. Lean: yes for v2; out of scope for v1 spec.
-
-10. **Search-run as audit citizen.** Story 4 treats `search_run` as a first-class audit-pattern record. Story 1 doesn't surface it (the search succeeds immediately so the search_run is invisible). Worth promoting to a documented audit row type — see [audit](../patterns/audit/README.md) — with the same retention / drill-down treatment as decision_log rows. Pin in audit iteration.
+7. **"This isn't going to resolve on its own."** After about a week of nothing but junk, the situation is qualitatively different from "wait a bit" — it probably isn't coming at this quality. Worth detecting and saying so, with a suggested action. **Lean:** valuable, but later.

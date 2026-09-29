@@ -105,7 +105,7 @@ func newProposeSvcs(r *repo.Repository, results []indexer.SearchResult) (*servic
 		},
 	}
 	quality := service.NewQualityProfileService(r)
-	proposals := service.NewProposalService(r, quality, nil, logger.New(true))
+	proposals := service.NewProposalService(r, quality, nil, nil, logger.New(true))
 	acq := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), quality, proposals)
 	return acq, proposals
 }

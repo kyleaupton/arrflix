@@ -1,72 +1,67 @@
 <template>
   <div class="flex flex-wrap items-center gap-3">
-    <!-- Tracked: a series has one want per in-scope episode, so there is no
-         single pill to show — surface the tracking state and an available count.
-         Everything you do *to* the tracking lives in the kebab. -->
-    <template v-if="isTracked">
-      <Badge variant="secondary" class="gap-1">
-        <Check class="size-3" />
-        Tracking
-      </Badge>
-      <span class="text-sm text-muted-foreground">
-        {{ availableCount }} / {{ totalCount }} available
-      </span>
+    <!-- The ask. A series always affords asking for more, so this survives a
+         fully-acquired one — later seasons are always askable. -->
+    <Button v-if="requestAction" @click="openTrackDialog">
+      <Plus class="mr-2 size-4" />
+      {{ requestLabel }}
+    </Button>
 
-      <TrackingActionsMenu
-        v-if="trackingId && auth.canManageJobs"
-        type="series"
-        :tmdb-id="tmdbId"
-        :tracking-id="trackingId"
-        :autonomy-backfill="tracking?.tracking?.autonomyBackfill"
-        :autonomy-ongoing="tracking?.tracking?.autonomyOngoing"
-      />
+    <!-- Otherwise the state speaks for itself, with the count beside it: a series
+         has one want per in-scope episode, so "how far along" is the useful
+         second fact that a single state cannot carry. -->
+    <template v-else-if="status">
+      <TitleStatusPill :state="status.state" />
+      <span v-if="status.counts.total" class="text-sm text-muted-foreground">
+        {{ status.counts.available }} / {{ status.counts.total }} available
+      </span>
     </template>
 
-    <!-- A genuine (non-404) load failure: 404 is the untracked signal, anything
-         else is a real error worth showing rather than offering a stale Add. -->
     <p v-else-if="loadError" class="text-sm text-destructive">{{ loadError }}</p>
 
-    <!-- Not tracked, but the caller has a pending request: show its status
-         read-only. Withdrawal lives on the /requests page. -->
-    <template v-else-if="!isLoading && myPending">
-      <RequestStatusPill :status="myPending.status" />
-    </template>
+    <Button
+      v-if="cancelAction"
+      variant="outline"
+      :disabled="!cancelAction.enabled || cancelRequest.isPending.value"
+      :title="cancelAction.disabledReason || undefined"
+      @click="handleCancel"
+    >
+      {{ cancelRequest.isPending.value ? 'Withdrawing…' : 'Withdraw request' }}
+    </Button>
 
-    <!-- Not tracked: open the track dialog, where quality, scope, and per-segment
-         autonomy are chosen before anything is added. The button face depends on
-         whether this user auto-approves. -->
-    <template v-else-if="!isLoading">
-      <Button @click="openTrackDialog">
-        <Plus class="mr-2 size-4" />
-        {{ primaryLabel }}
-      </Button>
-    </template>
+    <TrackingActionsMenu
+      v-if="trackingId && auth.canManageJobs"
+      type="series"
+      :tmdb-id="tmdbId"
+      :tracking-id="trackingId"
+      :autonomy-backfill="tracking?.tracking?.autonomyBackfill"
+      :autonomy-ongoing="tracking?.tracking?.autonomyOngoing"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useQuery } from '@tanstack/vue-query'
-import { Check, Plus } from 'lucide-vue-next'
-import { trackingByTmdbOptions } from '@/client/@tanstack/vue-query.gen'
+import { useQuery, useMutation } from '@tanstack/vue-query'
+import { Plus } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
+import { trackingByTmdbOptions, requestsCancelMutation } from '@/client/@tanstack/vue-query.gen'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { useModal } from '@/composables/useModal'
 import { useAuthStore } from '@/stores/auth'
+import { useTitleStatus } from '@/composables/useTitleStatus'
+import { useTitleInvalidation } from '@/composables/useTitleInvalidation'
 import TrackSeriesDialog from '@/components/modals/TrackSeriesDialog.vue'
-import RequestStatusPill from './RequestStatusPill.vue'
+import TitleStatusPill from './TitleStatusPill.vue'
 import TrackingActionsMenu from './TrackingActionsMenu.vue'
-import { isProblem, problemMessage } from '@/lib/api'
+import { problemMessage } from '@/lib/api'
 
-// availableCount/totalCount are computed by the parent from the already-loaded
-// series detail. airedEpisodeCount / seasonCount / hasOngoing feed the track
-// dialog's scope cards and decide which questions can apply (no back-catalog,
-// or an ended series).
+// airedEpisodeCount / seasonCount / hasOngoing feed the track dialog's scope
+// cards and decide which questions can apply (no back-catalog, or an ended
+// series). They are series metadata the page already holds.
 const props = defineProps<{
   tmdbId: number
   title: string
-  availableCount?: number
-  totalCount?: number
   airedEpisodeCount?: number
   seasonCount?: number
   hasOngoing?: boolean
@@ -74,58 +69,66 @@ const props = defineProps<{
 
 const auth = useAuthStore()
 const modal = useModal()
+const tmdbId = computed(() => props.tmdbId)
 
-// Acquisition status for this series: the tracking + its per-episode wants, plus
-// the caller's own pending request. Untracked / un-requested is a normal 200 with
-// null fields (not a 404), read directly by the branches below.
-const {
-  data: tracking,
-  isLoading,
-  error,
-} = useQuery(
+const { status, requestAction, cancelAction, error } = useTitleStatus('series', tmdbId)
+const invalidateTitle = useTitleInvalidation('series', tmdbId)
+
+// The tiers this viewer may actually pick, each labeled with whether choosing it
+// needs a decision. Previously this control assumed the HD grant on both counts
+// and the dialog offered 4K unconditionally, so a viewer without the 4K series
+// grant could pick it and collect a 403.
+const tiers = computed(() => requestAction.value?.tiers ?? [])
+
+// With one tier the outcome is settled and the button can state it. With more
+// than one it depends on which tier is picked, and the dialog is where that
+// happens — approval is per tier, so the verb belongs next to the choice.
+const requestLabel = computed(() => {
+  if (tiers.value.length > 1) return 'Add to Library'
+  return requestAction.value?.requiresApproval ? 'Request' : 'Add to Library'
+})
+
+// The automation configuration behind the kebab — a setting, not a state.
+const { data: tracking } = useQuery(
   computed(() =>
     trackingByTmdbOptions({ path: { tmdbId: props.tmdbId }, query: { type: 'series' } }),
   ),
 )
-
-const isTracked = computed(() => !!tracking.value?.tracking)
-
-// Present only when tracked — gates the overflow menu.
 const trackingId = computed(() => tracking.value?.tracking?.id ?? null)
 
-// The caller's own pending request rides along on the status payload, so the
-// pending badge needs no separate request-list fetch. The endpoint returns only a
-// pending request (denied/canceled never surface here), so a re-request stays open.
-const myPending = computed(() => tracking.value?.myRequest ?? null)
+const cancelRequest = useMutation({
+  ...requestsCancelMutation(),
+  onSuccess: () => {
+    toast.success('Request withdrawn')
+    invalidateTitle()
+  },
+  onError: (err) => {
+    toast.error(problemMessage(err, 'Failed to withdraw request'))
+  },
+})
 
-const availableCount = computed(() => props.availableCount ?? 0)
-const totalCount = computed(() => props.totalCount ?? 0)
-
-// Series picks its tier inside the track dialog, so the hero label keys off the
-// default HD grant rather than a selected tier.
-const primaryLabel = computed(() =>
-  auth.canAutoApprove('series', 'HD') ? 'Add to Library' : 'Request',
-)
+function handleCancel() {
+  const id = status.value?.viewer.requestId
+  if (!id) return
+  cancelRequest.mutate({ path: { id } })
+}
 
 // The dialog owns quality/scope/autonomy selection and fires the create request
-// atomically, so the chosen config lands before any search runs. It invalidates
-// the tracking query itself on success.
+// atomically, so the chosen config lands before any search runs.
 function openTrackDialog() {
   modal.open(TrackSeriesDialog, {
     props: {
       tmdbId: props.tmdbId,
       title: props.title,
+      tiers: tiers.value,
       airedEpisodeCount: props.airedEpisodeCount ?? 0,
       seasonCount: props.seasonCount ?? 0,
       hasOngoing: props.hasOngoing ?? false,
-      isOperator: auth.canAutoApprove('series', 'HD'),
     },
   })
 }
 
-// Untracked is a normal 200, so any error here is a genuine load failure worth
-// showing rather than offering a stale Add.
 const loadError = computed(() =>
-  isProblem(error.value) ? problemMessage(error.value, 'Failed to load tracking state') : null,
+  error.value ? problemMessage(error.value, 'Failed to load acquisition state') : null,
 )
 </script>

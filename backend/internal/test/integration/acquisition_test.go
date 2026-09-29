@@ -286,7 +286,7 @@ func TestAcquisition_ProcessWant_HappyPath(t *testing.T) {
 			return []indexer.SearchResult{cannedResult()}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
 
 	_, outcome, err := svc.ProcessWant(ctx, want)
 	grabbed := outcome == service.OutcomeGrabbed
@@ -363,7 +363,7 @@ func TestAcquisition_ProcessWant_PicksQualified(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
 
 	_, outcome, err := svc.ProcessWant(ctx, want)
 	grabbed := outcome == service.OutcomeGrabbed
@@ -434,7 +434,7 @@ func TestAcquisition_ProcessWant_AllGatedOut(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
 
 	_, outcome, err := svc.ProcessWant(ctx, want)
 	grabbed := outcome == service.OutcomeGrabbed
@@ -493,7 +493,7 @@ func TestAcquisition_ProcessWant_RejectsWrongTitle(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
 
 	_, outcome, err := svc.ProcessWant(ctx, want)
 	grabbed := outcome == service.OutcomeGrabbed
@@ -530,7 +530,7 @@ func TestAcquisition_ProcessWant_NoRelease(t *testing.T) {
 			return nil, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
 
 	_, outcome, err := svc.ProcessWant(ctx, want)
 	grabbed := outcome == service.OutcomeGrabbed
@@ -843,7 +843,7 @@ func TestAcquisition_ProcessWant_SeriesHappyPath(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
 
 	_, outcome, err := svc.ProcessWant(ctx, want)
 	grabbed := outcome == service.OutcomeGrabbed
@@ -935,7 +935,7 @@ func TestAcquisition_ProcessWant_SeriesGatesNonEpisode(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
 
 	_, outcome, err := svc.ProcessWant(ctx, want)
 	grabbed := outcome == service.OutcomeGrabbed
@@ -1031,7 +1031,7 @@ func TestAcquisition_ProcessWant_DedupesSupersededGrab(t *testing.T) {
 			return []indexer.SearchResult{cannedResult()}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
 
 	// First run: the CAS owns the 'searching' want, grabs it, creates one job.
 	_, outcome, err := svc.ProcessWant(ctx, want)
@@ -1102,8 +1102,8 @@ func TestAcquisition_RetryableErrorNeverFails(t *testing.T) {
 			return nil, errors.New("indexer unreachable")
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
-	w := acquisitionworker.NewWithConfig(r, svc, service.NewSchedulerService(r, logger.New(true)), logger.New(true), nil, retryTestConfig())
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
+	w := acquisitionworker.NewWithConfig(r, svc, service.NewSchedulerService(r, logger.New(true)), logger.New(true), nil, nil, retryTestConfig())
 
 	workerCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -1195,8 +1195,8 @@ func TestAcquisition_NonRetryableErrorFails(t *testing.T) {
 			return []indexer.SearchResult{cannedResult()}, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
-	w := acquisitionworker.NewWithConfig(r, svc, service.NewSchedulerService(r, logger.New(true)), logger.New(true), nil, retryTestConfig())
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
+	w := acquisitionworker.NewWithConfig(r, svc, service.NewSchedulerService(r, logger.New(true)), logger.New(true), nil, nil, retryTestConfig())
 
 	workerCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

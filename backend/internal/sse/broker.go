@@ -39,6 +39,15 @@ type Event struct {
 	ID        string          // sortable SSE event id (UUIDv7); drives Last-Event-ID resume
 	At        time.Time       // server timestamp; used for ring age eviction
 	Recipient Recipient       // delivery tag; the broker filters by it per session
+
+	// Topic, when non-empty, makes the event opt-in: only sessions that have
+	// subscribed to this exact topic receive it. An empty Topic means the event
+	// is delivered to every eligible session, whatever it has subscribed to.
+	//
+	// This is what keeps subscribing safe. A session's topic set is purely an
+	// opt-in list for page-scoped, high-cardinality streams; it can never
+	// blackhole the events a session gets by default.
+	Topic string
 }
 
 // Session is one logical SSE subscription. It outlives a single TCP connection:
@@ -53,9 +62,14 @@ type Session struct {
 	// mu guards every mutable field below. Lock order is broker.mu before
 	// session.mu, never the reverse.
 	mu sync.Mutex
-	// topics is the session's topic filter. An empty set means "all events".
+	// topics is the session's opt-in subscription set, consulted only for
+	// events that carry a Topic. It never restricts default-delivery events.
 	topics map[string]bool
-	replay *ring
+	// capabilities is the permission keyspace this session is eligible for,
+	// resolved once per attach. Refreshed on reattach so a grant change lands
+	// at the next reconnect rather than never.
+	capabilities map[string]bool
+	replay       *ring
 	// out is the current attachment's outbound channel; nil while detached.
 	out chan Event
 	// kick signals the attached handler to tear down (overflow → lossless
@@ -72,7 +86,7 @@ type Session struct {
 
 // AttachParams carries what the handler resolves before attaching: an optional
 // prior session to reattach to, the authenticated user, the client's resume
-// point, and the connect-time topic filter.
+// point, any opt-in topics, and the user's resolved capability set.
 type AttachParams struct {
 	// SessionID, when non-zero, requests reattach to an existing session.
 	SessionID uuid.UUID
@@ -81,6 +95,9 @@ type AttachParams struct {
 	// ring. Ignored on a fresh attach.
 	LastEventID string
 	Topics      []string
+	// Capabilities is the permission keyspace the handler resolved for this
+	// user. Nil means no capability-targeted event reaches this session.
+	Capabilities []string
 }
 
 // Attachment is what Attach hands back to the handler. Out and Kick are the
@@ -163,6 +180,9 @@ func (b *Broker) reattach(s *Session, params AttachParams) Attachment {
 	s.out = make(chan Event, outboundDepth)
 	s.kick = make(chan struct{}, 1)
 	s.detachedAt = nil
+	// Re-resolved by the handler on every connect, so a promotion or revocation
+	// takes effect here rather than persisting for the session's whole life.
+	s.capabilities = stringSet(params.Capabilities)
 
 	replay, gapped := s.replay.since(params.LastEventID)
 
@@ -178,22 +198,16 @@ func (b *Broker) reattach(s *Session, params AttachParams) Attachment {
 
 // fresh allocates a new session. The caller holds broker.mu.
 func (b *Broker) fresh(params AttachParams) Attachment {
-	topics := make(map[string]bool, len(params.Topics))
-	for _, t := range params.Topics {
-		if t != "" {
-			topics[t] = true
-		}
-	}
-
 	s := &Session{
-		ID:          uuid.New(),
-		UserID:      params.UserID,
-		topics:      topics,
-		replay:      newRing(replayMaxLen, replayMaxAge, b.now),
-		out:         make(chan Event, outboundDepth),
-		kick:        make(chan struct{}, 1),
-		epoch:       1,
-		connectedAt: b.now(),
+		ID:           uuid.New(),
+		UserID:       params.UserID,
+		topics:       stringSet(params.Topics),
+		capabilities: stringSet(params.Capabilities),
+		replay:       newRing(replayMaxLen, replayMaxAge, b.now),
+		out:          make(chan Event, outboundDepth),
+		kick:         make(chan struct{}, 1),
+		epoch:        1,
+		connectedAt:  b.now(),
 	}
 	b.sessions[s.ID] = s
 
@@ -238,12 +252,8 @@ func (b *Broker) Publish(ev Event) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for _, s := range b.sessions {
-		if !recipientMatches(ev.Recipient, s) {
-			continue
-		}
-
 		s.mu.Lock()
-		if !s.topicAllowed(ev.Type) {
+		if !s.eligible(ev) {
 			s.mu.Unlock()
 			continue
 		}
@@ -313,9 +323,10 @@ func (b *Broker) ownedSession(sessionID, userID uuid.UUID) (*Session, bool) {
 	return s, true
 }
 
-// Topics returns the session's current topic filter (sorted) if the session
-// exists and is owned by userID. The bool is false for a missing/foreign
-// session. An empty slice means "all events" per topicAllowed.
+// Topics returns the session's current opt-in subscriptions (sorted) if the
+// session exists and is owned by userID. The bool is false for a
+// missing/foreign session. An empty slice means no opt-in streams are
+// subscribed — not that nothing is delivered.
 func (b *Broker) Topics(sessionID, userID uuid.UUID) ([]string, bool) {
 	s, ok := b.ownedSession(sessionID, userID)
 	if !ok {
@@ -331,17 +342,13 @@ func (b *Broker) Topics(sessionID, userID uuid.UUID) ([]string, bool) {
 	return out, true
 }
 
-// AddTopics adds topics to the session's filter. Returns false for a
+// AddTopics adds topics to the session's opt-in set. Returns false for a
 // missing/foreign session.
 //
-// LANDMINE: the topic set is additive-to-restrictive. A fresh session has an
-// empty set, which topicAllowed treats as "all events". The first AddTopics
-// call flips it restrictive — the session then receives ONLY the named topics.
-// Today the app opens one stream and never calls this, so it's inert. The first
-// page that subscribes to a scoped topic (e.g. "scan_progress") would silently
-// stop receiving everything else (download_job_updated, etc.). Resolve the
-// additive-vs-restrictive semantics (a separate "narrow to" set, or per-topic
-// opt-in that doesn't collapse the implicit-all) before wiring a real caller.
+// Subscribing is purely additive: it admits events that carry a matching
+// Event.Topic and has no effect on the default-delivery events the session
+// already receives. A page can subscribe to its own scoped stream on mount and
+// drop it on navigate without disturbing anything else on the connection.
 func (b *Broker) AddTopics(sessionID, userID uuid.UUID, topics []string) bool {
 	s, ok := b.ownedSession(sessionID, userID)
 	if !ok {
@@ -370,19 +377,31 @@ func (b *Broker) RemoveTopic(sessionID, userID uuid.UUID, topic string) bool {
 	return true
 }
 
-// recipientMatches reports whether an event's recipient tag targets the given
-// session, using each session's connect-time eligibility. Caller may hold
-// session.mu, but this reads only immutable fields (UserID), so it doesn't
-// require it.
-func recipientMatches(r Recipient, s *Session) bool {
+// eligible reports whether this session should receive the event: the recipient
+// tag must target it, and an opt-in event must have been subscribed to. Caller
+// holds session.mu.
+func (s *Session) eligible(ev Event) bool {
+	if !s.recipientMatches(ev.Recipient) {
+		return false
+	}
+	if ev.Topic == "" {
+		return true
+	}
+	return s.topics[ev.Topic]
+}
+
+// recipientMatches reports whether an event's recipient tag targets this
+// session, against its connect-time eligibility. Caller holds session.mu.
+//
+// Unrecognized kinds — including the zero Recipient — match nothing. An event
+// that forgot its recipient reaches no one, which surfaces as a missing update
+// rather than as a silent disclosure.
+func (s *Session) recipientMatches(r Recipient) bool {
 	switch r.Kind {
 	case RecipientBroadcast:
 		return true
-	case RecipientAdmins:
-		// Single eligibility tier: every authenticated session is treated as
-		// admin-eligible. Real admin resolution (resolved once per session at
-		// connect, then filtered by set-membership) goes here.
-		return true
+	case RecipientCapability:
+		return s.capabilities[r.Capability]
 	case RecipientUser:
 		return s.UserID == r.UserID
 	default:
@@ -390,11 +409,13 @@ func recipientMatches(r Recipient, s *Session) bool {
 	}
 }
 
-// topicAllowed reports whether the event type passes the session's connect-time
-// `?type=` filter. An empty filter matches all types. Caller holds session.mu.
-func (s *Session) topicAllowed(t string) bool {
-	if len(s.topics) == 0 {
-		return true
+// stringSet builds a lookup set, dropping empties.
+func stringSet(vals []string) map[string]bool {
+	set := make(map[string]bool, len(vals))
+	for _, v := range vals {
+		if v != "" {
+			set[v] = true
+		}
 	}
-	return s.topics[t]
+	return set
 }

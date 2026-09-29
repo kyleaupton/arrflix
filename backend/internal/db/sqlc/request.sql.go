@@ -80,6 +80,47 @@ func (q *Queries) CreateRequest(ctx context.Context, arg CreateRequestParams) (R
 	return i, err
 }
 
+const findLatestRequestForUser = `-- name: FindLatestRequestForUser :one
+SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto FROM request
+WHERE requested_by = $1
+  AND tmdb_id = $2
+  AND type = $3
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type FindLatestRequestForUserParams struct {
+	RequestedBy pgtype.UUID `json:"requested_by"`
+	TmdbID      int64       `json:"tmdb_id"`
+	Type        string      `json:"type"`
+}
+
+// FindLatestRequestForUser returns the caller's most recent request for a title
+// (tmdb id + type) whatever its status. The title-status projection folds the
+// request into the headline state, and needs denied as well as pending — a
+// denial is something the requester must be told about, not just a pending wait.
+func (q *Queries) FindLatestRequestForUser(ctx context.Context, arg FindLatestRequestForUserParams) (Request, error) {
+	row := q.db.QueryRow(ctx, findLatestRequestForUser, arg.RequestedBy, arg.TmdbID, arg.Type)
+	var i Request
+	err := row.Scan(
+		&i.ID,
+		&i.RequestedBy,
+		&i.TmdbID,
+		&i.Type,
+		&i.Tier,
+		&i.Status,
+		&i.SpawnedTrackingID,
+		&i.DeniedReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScopeRule,
+		&i.DecidedBy,
+		&i.DecidedAt,
+		&i.DecisionAuto,
+	)
+	return i, err
+}
+
 const findPendingRequestForUser = `-- name: FindPendingRequestForUser :one
 SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto FROM request
 WHERE requested_by = $1

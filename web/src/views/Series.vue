@@ -50,14 +50,9 @@
           <div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
             <div class="flex min-w-0 flex-col gap-6">
               <SeriesStatusCard
+                :tmdb-id="id"
                 :tracking="tracking?.tracking ?? null"
-                :my-request="tracking?.myRequest ?? null"
                 :ongoing="hasOngoing"
-                :available-count="availableEpisodeCount"
-                :total-count="totalEpisodeCount"
-                :aired-total-count="airedEpisodeCount"
-                :active-download-count="activeJobsForSeries.length"
-                :episodes-downloading="episodesDownloading"
               />
               <AttentionCard v-if="auth.canManageJobs" :tmdb-id="id" type="series" />
               <NextEpisodeBanner v-if="data.nextEpisodeToAir" :episode="data.nextEpisodeToAir" />
@@ -117,42 +112,20 @@
                         </div>
                       </CollapsibleTrigger>
 
-                      <!-- Season-level action: pack progress / episode-download hint /
-                       manual download. Absent once the season is complete. -->
+                      <!-- Season-level action. A season already moving says so and
+                       offers nothing; manual search is an operator action on a
+                       season that is neither complete nor in flight. -->
                       <div class="flex shrink-0 justify-end">
-                        <template v-if="getSeasonPackJob(season.seasonNumber)">
-                          <CircularProgress
-                            :state="getSeasonProgressState(season.seasonNumber)"
-                            :value="getSeasonProgressValue(season.seasonNumber)"
-                            size="sm"
-                          />
-                        </template>
-                        <template v-else-if="hasActiveEpisodeDownloads(season)">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger as-child>
-                                <span class="flex items-center">
-                                  <CircularProgress state="indeterminate" size="sm" />
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {{ getActiveEpisodeCount(season) }} episode(s) downloading
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </template>
-                        <!-- Manual season search is an operator action; requesters
-                         see only the progress states above. -->
-                        <template v-else-if="!seasonComplete(season) && auth.canManageJobs">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            @click="searchForSeasonCandidates(season.seasonNumber)"
-                          >
-                            <Download class="mr-2 size-4" />
-                            Get
-                          </Button>
-                        </template>
+                        <TitleStatusPill v-if="seasonActive(season)" state="downloading" />
+                        <Button
+                          v-else-if="!seasonComplete(season) && auth.canManageJobs"
+                          size="sm"
+                          variant="outline"
+                          @click="searchForSeasonCandidates(season.seasonNumber)"
+                        >
+                          <Download class="mr-2 size-4" />
+                          Get
+                        </Button>
                       </div>
                     </div>
 
@@ -181,115 +154,31 @@
                               {{ formatShortDate(episode.airDate) }}
                             </span>
 
-                            <!-- Status/action cell — one of five states. -->
-                            <div class="flex min-w-[7rem] shrink-0 justify-end">
-                              <!-- Available and idle. -->
-                              <template
+                            <!-- Status/action cell. The state is the server's
+                             answer; the only choice made here is whether an
+                             operator is additionally offered a hand-grab. -->
+                            <div class="flex min-w-[7rem] shrink-0 items-center justify-end gap-2">
+                              <TitleStatusPill
+                                v-if="episodeState(episode.episodeId)"
+                                :state="episodeState(episode.episodeId)"
+                              />
+                              <Button
                                 v-if="
-                                  episode.available &&
-                                  !getEpisodeJob(season.seasonNumber, episode.episodeNumber) &&
-                                  !isPartOfSeasonPack(season.seasonNumber)
+                                  auth.canManageJobs && canHandGrab(episodeState(episode.episodeId))
+                                "
+                                size="sm"
+                                variant="outline"
+                                class="h-7 text-xs"
+                                @click="
+                                  searchForEpisodeCandidates(
+                                    season.seasonNumber,
+                                    episode.episodeNumber,
+                                  )
                                 "
                               >
-                                <Badge
-                                  variant="secondary"
-                                  class="flex h-7 items-center gap-1 px-2 text-xs"
-                                >
-                                  <Check class="size-3" />
-                                  Available
-                                </Badge>
-                              </template>
-                              <!-- A live want drives this episode: surface its
-                               lifecycle state (with download progress). A held
-                               want offers the same manual Download as an untracked
-                               episode so the user can fulfill it. -->
-                              <template v-else-if="getEpisodeWant(episode.episodeId)">
-                                <div class="flex items-center gap-2">
-                                  <WantStatusPill
-                                    :status="getEpisodeWant(episode.episodeId)!.status"
-                                    :attempt-count="getEpisodeWant(episode.episodeId)!.attemptCount"
-                                    :last-error="getEpisodeWant(episode.episodeId)!.lastError"
-                                    :progress="
-                                      getEpisodeWantProgress(
-                                        season.seasonNumber,
-                                        episode.episodeNumber,
-                                      )
-                                    "
-                                    :hold="getEpisodeWant(episode.episodeId)!.hold"
-                                  />
-                                  <Button
-                                    v-if="
-                                      getEpisodeWant(episode.episodeId)!.hold === 'needs_pick' &&
-                                      auth.canManageJobs
-                                    "
-                                    size="sm"
-                                    variant="outline"
-                                    class="h-7 text-xs"
-                                    @click="
-                                      searchForEpisodeCandidates(
-                                        season.seasonNumber,
-                                        episode.episodeNumber,
-                                      )
-                                    "
-                                  >
-                                    <Download class="mr-1.5 size-3" />
-                                    Download
-                                  </Button>
-                                </div>
-                              </template>
-                              <!-- Downloading individually. -->
-                              <template
-                                v-else-if="
-                                  getEpisodeJob(season.seasonNumber, episode.episodeNumber)
-                                "
-                              >
-                                <CircularProgress
-                                  :state="
-                                    getEpisodeProgressState(
-                                      season.seasonNumber,
-                                      episode.episodeNumber,
-                                    )
-                                  "
-                                  :value="
-                                    getEpisodeProgressValue(
-                                      season.seasonNumber,
-                                      episode.episodeNumber,
-                                    )
-                                  "
-                                  size="sm"
-                                />
-                              </template>
-                              <!-- Part of an active season-pack download. -->
-                              <template v-else-if="isPartOfSeasonPack(season.seasonNumber)">
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger as-child>
-                                      <span class="flex items-center">
-                                        <CircularProgress state="indeterminate" size="sm" />
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent> Downloading as season pack </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              </template>
-                              <!-- Not available: operators get a manual download;
-                               requesters see an empty cell (no manual action). -->
-                              <template v-else-if="auth.canManageJobs">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  class="h-7 text-xs"
-                                  @click="
-                                    searchForEpisodeCandidates(
-                                      season.seasonNumber,
-                                      episode.episodeNumber,
-                                    )
-                                  "
-                                >
-                                  <Download class="mr-1.5 size-3" />
-                                  Download
-                                </Button>
-                              </template>
+                                <Download class="mr-1.5 size-3" />
+                                Download
+                              </Button>
                             </div>
                           </li>
                         </ul>
@@ -321,16 +210,12 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
-import { Download, Check, ChevronRight } from 'lucide-vue-next'
+import { Download, ChevronRight } from 'lucide-vue-next'
 import { mediaGetSeriesOptions, trackingByTmdbOptions } from '@/client/@tanstack/vue-query.gen'
-import type { SeasonDetail, Want } from '@/client/types.gen'
+import type { SeasonDetail } from '@/client/types.gen'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Progress } from '@/components/ui/progress'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import CircularProgress from '@/components/ui/progress/CircularProgress.vue'
-import type { CircularProgressState } from '@/components/ui/progress/CircularProgress.vue'
 import MediaHero from '@/components/media/MediaHero.vue'
 import MediaHeroSkeleton from '@/components/media/MediaHeroSkeleton.vue'
 import RatingBadge from '@/components/media/RatingBadge.vue'
@@ -342,19 +227,18 @@ import NextEpisodeBanner from '@/components/media/NextEpisodeBanner.vue'
 import { useModal } from '@/composables/useModal'
 import { buildMetadataSubtitle, formatRuntime } from '@/lib/utils'
 import { statusLabel } from '@/lib/mediaStatus'
-import { useDownloadJobs, isJobActive, type DownloadJob } from '@/composables/useDownloadJobs'
+import { useTitleStatus } from '@/composables/useTitleStatus'
 import DownloadCandidatesDialog from '@/components/download-candidates/DownloadCandidatesDialog.vue'
 import SeriesAcquisitionControl from '@/components/acquisition/SeriesAcquisitionControl.vue'
 import SeriesStatusCard from '@/components/acquisition/SeriesStatusCard.vue'
 import AttentionCard from '@/components/acquisition/AttentionCard.vue'
-import WantStatusPill from '@/components/acquisition/WantStatusPill.vue'
+import TitleStatusPill from '@/components/acquisition/TitleStatusPill.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
 const modal = useModal()
 const auth = useAuthStore()
-const { jobsById } = useDownloadJobs()
 
 const id = computed(() => {
   const castAttept = Number(Array.isArray(route.params.id) ? route.params.id[0] : route.params.id)
@@ -369,63 +253,42 @@ const { isLoading, isError, data } = useQuery(
   computed(() => mediaGetSeriesOptions({ path: { id: id.value } })),
 )
 
-// Per-episode acquisition state. Untracked is a normal 200 with no wants, read as
-// an empty map below. The want_updated SSE binding patches this query's cache in
-// place (matched by trackingId), so a fulfilling series stays live without refetch.
+// Automation configuration — what happens to episodes that don't exist yet.
+// That is a setting rather than a state, so no amount of current acquisition
+// data answers it and it stays on its own query.
 const { data: tracking } = useQuery(
   computed(() => trackingByTmdbOptions({ path: { tmdbId: id.value }, query: { type: 'series' } })),
 )
 
-// Wants keyed by episodeId — the join the rows need, since wants reference
-// episodeId while the episode rows key on (season, episode) numbers.
-const wantByEpisode = computed(() => {
-  const map = new Map<string, Want>()
-  for (const w of tracking.value?.wants ?? []) {
-    if (w.episodeId) map.set(w.episodeId, w)
-  }
+// The acquisition read for this series: the headline state, the counts, and one
+// derived state per episode. The season grid and the title chip come out of the
+// same call, which is what stops them disagreeing.
+const { status: titleStatus } = useTitleStatus('series', id)
+
+// Episode states keyed by episode id. Deprecated episodes are absent — the
+// projection drops them, since an episode pulled upstream is neither acquirable
+// nor something a grid should account for.
+const episodeStateById = computed(() => {
+  const map = new Map<string, string>()
+  for (const e of titleStatus.value?.episodes ?? []) map.set(e.episodeId, e.state)
   return map
 })
 
-// The want that should drive an episode's action area: a live one mid-flight or
-// failed. 'available' shows via the file indicator; 'canceled' falls through to
-// the manual Download so the episode can be re-grabbed.
-function getEpisodeWant(episodeId?: string): Want | undefined {
-  if (!episodeId) return undefined
-  const want = wantByEpisode.value.get(episodeId)
-  if (!want || want.status === 'available' || want.status === 'canceled') return undefined
-  return want
+function episodeState(episodeId?: string): string | null {
+  if (!episodeId) return null
+  return episodeStateById.value.get(episodeId) ?? null
 }
 
-// Download progress (0-100) for a want-driven episode, from its live job.
-function getEpisodeWantProgress(seasonNumber: number, episodeNumber: number): number | null {
-  const job = getEpisodeJob(seasonNumber, episodeNumber)
-  if (!job) return null
-  return Math.round((job.progress ?? 0) * 100)
+// Only in-scope episodes count toward the title's totals: a series carries every
+// episode for its grid, including specials nobody asked for, and those must not
+// hold the headline back. The projection has already applied that split.
+const availableEpisodeCount = computed(() => titleStatus.value?.counts.available ?? 0)
+const totalEpisodeCount = computed(() => titleStatus.value?.counts.total ?? 0)
+
+// Operators may hand-grab anything not already on disk and not already moving.
+function canHandGrab(state: string | null): boolean {
+  return state !== 'available' && state !== 'downloading' && state !== 'importing'
 }
-
-const availableEpisodeCount = computed(
-  () =>
-    data.value?.seasons?.reduce(
-      (sum, s) => sum + (s.episodes?.filter((e) => e.available).length ?? 0),
-      0,
-    ) ?? 0,
-)
-const totalEpisodeCount = computed(
-  () => data.value?.seasons?.reduce((sum, s) => sum + (s.episodes?.length ?? 0), 0) ?? 0,
-)
-
-// Episodes in flight, counted from the wants rather than the download jobs: one
-// grabbed season pack is many episodes, and a requester thinks in episodes, not
-// jobs. Want-derived, so it's requester-safe and stays live via want_updated.
-// 'grabbed' is the handed-to-downloader state; import ('imported') reads as
-// available-imminent, so it's excluded from the "downloading" count.
-const episodesDownloading = computed(() => {
-  let n = 0
-  for (const w of wantByEpisode.value.values()) {
-    if (w.status === 'grabbed') n++
-  }
-  return n
-})
 
 // Aired episodes are the back-catalog the tracking would backfill. Counting them
 // (air date on-or-before now, specials excluded — scope presets never select
@@ -585,8 +448,11 @@ watch(
   { immediate: true },
 )
 
+// Season rollups read the projection rather than the detail payload's file flag,
+// so the bar, the "Missing N" line, and the per-episode pills are three views of
+// one answer instead of three reads of two sources.
 function seasonAvailable(season: SeasonDetail): number {
-  return season.episodes?.filter((e) => e.available).length ?? 0
+  return season.episodes?.filter((e) => episodeState(e.episodeId) === 'available').length ?? 0
 }
 
 function seasonTotal(season: SeasonDetail): number {
@@ -638,106 +504,19 @@ function formatFullDate(iso?: string): string {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-// Get all active download jobs for this series
-const activeJobsForSeries = computed(() => {
-  if (!data.value?.tmdbId) return []
-  return Object.values(jobsById.value).filter(
-    (job) => job.mediaType === 'series' && job.tmdbId === data.value?.tmdbId && isJobActive(job),
-  )
-})
-
-// Get season pack job (if any) for a season - season packs have no episode_id
-function getSeasonPackJob(seasonNumber: number): DownloadJob | undefined {
-  return activeJobsForSeries.value.find(
-    (job) => job.seasonNumber === seasonNumber && !job.episodeId,
-  )
-}
-
-// Get episode job (if any) for a specific episode
-function getEpisodeJob(seasonNumber: number, episodeNumber: number): DownloadJob | undefined {
-  return activeJobsForSeries.value.find(
-    (job) => job.seasonNumber === seasonNumber && job.episodeNumber === episodeNumber,
-  )
-}
-
-// Check if season has any individual episode downloads active
-function hasActiveEpisodeDownloads(season: SeasonDetail): boolean {
+// A season is moving when any of its episodes is. Read off the projection, so a
+// season pack (one job, many episodes) and per-episode grabs look the same here —
+// the distinction is a transfer detail the grid has no reason to model.
+function seasonActive(season: SeasonDetail): boolean {
   return (
-    season.episodes?.some((ep) => getEpisodeJob(season.seasonNumber, ep.episodeNumber)) ?? false
+    season.episodes?.some((e) => {
+      const st = episodeState(e.episodeId)
+      return st === 'downloading' || st === 'importing'
+    }) ?? false
   )
 }
 
-// Get count of active episode downloads for a season
-function getActiveEpisodeCount(season: SeasonDetail): number {
-  return (
-    season.episodes?.filter((ep) => getEpisodeJob(season.seasonNumber, ep.episodeNumber)).length ??
-    0
-  )
-}
-
-// Check if an episode is part of an active season pack download
-function isPartOfSeasonPack(seasonNumber: number): boolean {
-  return !!getSeasonPackJob(seasonNumber)
-}
-
-// Get progress state for season pack
-function getSeasonProgressState(seasonNumber: number): CircularProgressState {
-  const job = getSeasonPackJob(seasonNumber)
-  if (!job) return 'indeterminate'
-
-  // Downloading phase
-  if (['created', 'enqueued', 'downloading'].includes(job.status)) {
-    return (job.progress ?? 0) > 0 ? 'progress' : 'indeterminate'
-  }
-  // Import phase
-  if (['awaiting_import', 'importing'].includes(job.importStatus)) {
-    return 'indeterminate'
-  }
-  return 'indeterminate'
-}
-
-// Get progress value for season pack (0-100)
-function getSeasonProgressValue(seasonNumber: number): number {
-  const job = getSeasonPackJob(seasonNumber)
-  if (!job) return 0
-  return Math.round((job.progress ?? 0) * 100)
-}
-
-// Get progress state for individual episode
-function getEpisodeProgressState(
-  seasonNumber: number,
-  episodeNumber: number,
-): CircularProgressState {
-  const job = getEpisodeJob(seasonNumber, episodeNumber)
-  if (!job) return 'indeterminate'
-
-  // Downloading phase
-  if (['created', 'enqueued', 'downloading'].includes(job.status)) {
-    return (job.progress ?? 0) > 0 ? 'progress' : 'indeterminate'
-  }
-  // Import phase
-  if (['awaiting_import', 'importing'].includes(job.importStatus)) {
-    return 'indeterminate'
-  }
-  return 'indeterminate'
-}
-
-// Get progress value for individual episode (0-100)
-function getEpisodeProgressValue(seasonNumber: number, episodeNumber: number): number {
-  const job = getEpisodeJob(seasonNumber, episodeNumber)
-  if (!job) return 0
-  return Math.round((job.progress ?? 0) * 100)
-}
-
-const isDownloading = computed(() => {
-  // Check if any active downloads exist for this series
-  if (activeJobsForSeries.value.length > 0) return true
-  // Fallback: check file status from API response
-  return (
-    data.value?.seasons?.some((s) => s.episodes?.some((e) => e.file?.status === 'downloading')) ??
-    false
-  )
-})
+const isDownloading = computed(() => titleStatus.value?.phase === 'downloading')
 
 const searchForSeasonCandidates = (seasonNumber: number) => {
   modal.open(DownloadCandidatesDialog, {
