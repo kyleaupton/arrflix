@@ -1,6 +1,10 @@
 package realtime
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+
+	"github.com/kyleaupton/arrflix/internal/authz"
+)
 
 // Import event names. Snake_case on the wire.
 const (
@@ -14,11 +18,12 @@ type ImportTaskUpdatedPayload struct {
 	TaskID uuid.UUID `json:"taskId"`
 }
 
-// ImportTaskUpdated builds the import_task_updated event for the given task.
+// ImportTaskUpdated builds the import_task_updated event for the given task. It
+// targets jobs.read holders: the import queue it drives is an operator surface.
 func ImportTaskUpdated(taskID uuid.UUID) Event {
 	return Event{
 		Name:      NameImportTaskUpdated,
-		Recipient: Broadcast,
+		Recipient: Capability(authz.JobsRead),
 		Data:      mustMarshal(ImportTaskUpdatedPayload{TaskID: taskID}),
 	}
 }

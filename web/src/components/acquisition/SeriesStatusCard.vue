@@ -1,80 +1,57 @@
 <script setup lang="ts">
-import { computed, type Component } from 'vue'
-import { Check, Clock, Download, Search } from 'lucide-vue-next'
-import type { Request, Tracking } from '@/client/types.gen'
+import { computed } from 'vue'
+import { Check, Search } from 'lucide-vue-next'
+import type { Tracking } from '@/client/types.gen'
 import { Progress } from '@/components/ui/progress'
+import { useTitleStatus } from '@/composables/useTitleStatus'
+import { present, headlineOf } from '@/lib/titleStatus'
 
 // The requester-facing acquisition story for a series — the sibling of
 // MovieStatusCard, sitting atop the left column so a requester always sees what's
 // happening without decoding the per-episode pills in the accordion. Visible to
 // everyone; AttentionCard is the operator counterpart directly below it.
 //
-// Pure presentation: Series.vue owns the tracking query and the episode/job
-// aggregation and passes the derived counts in. The card renders nothing when
-// there is no story to tell — untracked with no pending request, or a complete +
-// ended series — since the hero and accordion already carry those.
+// `tracking` is the automation configuration, not acquisition state — it answers
+// "what will happen to future episodes", which no amount of current state can
+// tell you. Everything else comes from the projection.
 const props = defineProps<{
+  tmdbId: number
   tracking: Tracking | null
-  myRequest: Request | null
+  // Whether the series may still get new episodes, from its TMDB status.
   ongoing: boolean
-  availableCount: number
-  totalCount: number
-  airedTotalCount: number
-  // Jobs in flight (season packs + singles) — drives the download-vs-search icon.
-  activeDownloadCount: number
-  // Episodes in flight, counted from the wants — what the subline reports, since a
-  // requester thinks in episodes rather than the packs behind activeDownloadCount.
-  episodesDownloading: number
 }>()
 
-type CardState = 'requested' | 'inProgress' | 'caughtUp'
+const tmdbId = computed(() => props.tmdbId)
+const { status } = useTitleStatus('series', tmdbId)
 
-// Compared against aired (not total) episodes: an ongoing series with episodes
-// still to air should read as caught up once everything aired is on disk, not
-// perpetually in-progress against a denominator it can't yet reach.
-const allAiredOnDisk = computed(() => props.availableCount >= props.airedTotalCount)
+const state = computed(() => status.value?.state ?? null)
+const counts = computed(() => status.value?.counts)
+const intent = computed(() => status.value?.viewer.intent)
 
-const state = computed<CardState | null>(() => {
-  if (!props.tracking) {
-    // The endpoint only surfaces a *pending* request, but guard anyway.
-    return props.myRequest?.status === 'pending' ? 'requested' : null
-  }
-  if (allAiredOnDisk.value) {
-    // Complete + ended has no story worth a persistent card; ongoing is "watching".
-    return props.ongoing ? 'caughtUp' : null
-  }
-  return 'inProgress'
+// A series that has everything it is trying to get is caught up rather than
+// finished — an ongoing one is still watching for more. The distinction is the
+// series' TMDB status, which the projection has no view of.
+const caughtUp = computed(() => state.value === 'available')
+
+// Nothing to say: an untracked series with no request, or a complete and ended
+// one. The hero and the accordion already carry those.
+const hidden = computed(() => {
+  if (!state.value) return true
+  if (state.value === 'not_requested') return true
+  return caughtUp.value && !props.ongoing
 })
 
-const downloading = computed(() => props.activeDownloadCount > 0)
-
-const icon = computed<Component>(() => {
-  switch (state.value) {
-    case 'requested':
-      return Clock
-    case 'caughtUp':
-      return Check
-    default:
-      return downloading.value ? Download : Search
-  }
-})
+const icon = computed(() => (caughtUp.value ? Check : present(state.value).icon))
 
 const headline = computed(() => {
-  switch (state.value) {
-    case 'requested':
-      return 'Your request is awaiting approval'
-    case 'caughtUp':
-      return 'Up to date'
-    case 'inProgress':
-      return downloading.value ? 'Getting your series' : 'Looking for your episodes'
-    default:
-      return ''
-  }
+  if (caughtUp.value) return 'Up to date'
+  if (state.value === 'searching') return 'Looking for your episodes'
+  return headlineOf(state.value)
 })
 
 // Only the two scope presets are ever created; anything else falls through blank.
 const scopeLabel = computed(() => {
-  switch (props.myRequest?.scopeRule) {
+  switch (intent.value?.scopeRule) {
     case 'future_only':
       return 'New episodes only'
     case 'all':
@@ -85,45 +62,46 @@ const scopeLabel = computed(() => {
 })
 
 const subline = computed(() => {
-  switch (state.value) {
-    case 'requested':
-      return [scopeLabel.value, props.myRequest?.tier].filter(Boolean).join(' · ')
-    case 'caughtUp':
-      switch (props.tracking?.autonomyOngoing) {
-        case 'auto':
-          return 'New episodes are added automatically.'
-        case 'propose':
-          return 'New episodes will be suggested for approval.'
-        default:
-          return 'Watching for new episodes.'
-      }
-    case 'inProgress':
-      return [
-        props.episodesDownloading > 0
-          ? `${props.episodesDownloading} episode${props.episodesDownloading === 1 ? '' : 's'} downloading`
-          : null,
-        `${props.availableCount} of ${props.totalCount} available`,
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    default:
-      return ''
+  if (caughtUp.value) {
+    switch (props.tracking?.autonomyOngoing) {
+      case 'auto':
+        return 'New episodes are added automatically.'
+      case 'propose':
+        return 'New episodes will be suggested for approval.'
+      default:
+        return 'Watching for new episodes.'
+    }
   }
+  if (state.value === 'awaiting_approval') {
+    return [scopeLabel.value, intent.value?.tier].filter(Boolean).join(' · ')
+  }
+  const c = counts.value
+  if (!c) return ''
+  return [
+    c.working > 0 ? `${c.working} episode${c.working === 1 ? '' : 's'} in flight` : null,
+    `${c.available} of ${c.total} available`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 })
 
 // The bar means library completeness (available/total), not download speed — it
-// answers "how much of my series do I have?". Only the in-progress state shows it;
-// caught-up would sit below 100% for an ongoing series and read as contradictory.
-const showProgress = computed(() => state.value === 'inProgress')
-const progressPct = computed(() =>
-  props.totalCount > 0 ? Math.round((props.availableCount / props.totalCount) * 100) : 0,
-)
+// answers "how much of my series do I have?". Caught-up hides it: it would sit
+// below 100% for an ongoing series and read as contradictory.
+const showProgress = computed(() => !caughtUp.value && (counts.value?.total ?? 0) > 0)
+const progressPct = computed(() => {
+  const c = counts.value
+  if (!c?.total) return 0
+  return Math.round((c.available / c.total) * 100)
+})
+
+const iconComponent = computed(() => icon.value ?? Search)
 </script>
 
 <template>
-  <div v-if="state" class="rounded-lg border bg-card p-4">
+  <div v-if="!hidden" class="rounded-lg border bg-card p-4">
     <div class="flex items-start gap-3">
-      <component :is="icon" class="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+      <component :is="iconComponent" class="mt-0.5 size-5 shrink-0 text-muted-foreground" />
       <div class="min-w-0 flex-1">
         <p class="truncate font-medium">{{ headline }}</p>
         <p v-if="subline" class="mt-0.5 text-sm text-muted-foreground">{{ subline }}</p>

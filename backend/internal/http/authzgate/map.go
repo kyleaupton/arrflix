@@ -74,6 +74,7 @@ var operationPerms = map[string]requirement{
 	"media-get-movie":      perm(authz.LibraryRead),
 	"media-get-series":     perm(authz.LibraryRead),
 	"media-get-person":     perm(authz.LibraryRead),
+	"title-status-get":     perm(authz.LibraryRead),
 	"feed-get":             perm(authz.LibraryRead),
 	"files-match-decision": perm(authz.LibraryRead),
 	"tracking-list":        perm(authz.LibraryRead),

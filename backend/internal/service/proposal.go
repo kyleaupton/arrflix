@@ -14,6 +14,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/realtime"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/sse"
+	"github.com/kyleaupton/arrflix/internal/titlenotify"
 )
 
 // ProposalService owns the propose rung of acquisition autonomy: it parks a
@@ -26,11 +27,12 @@ type ProposalService struct {
 	repo    *repo.Repository
 	quality *QualityProfileService
 	broker  *sse.Broker
+	titles  *titlenotify.Notifier
 	log     *logger.Logger
 }
 
-func NewProposalService(r *repo.Repository, quality *QualityProfileService, broker *sse.Broker, log *logger.Logger) *ProposalService {
-	return &ProposalService{repo: r, quality: quality, broker: broker, log: log}
+func NewProposalService(r *repo.Repository, quality *QualityProfileService, broker *sse.Broker, titles *titlenotify.Notifier, log *logger.Logger) *ProposalService {
+	return &ProposalService{repo: r, quality: quality, broker: broker, titles: titles, log: log}
 }
 
 // ProposeOrSupersede parks a picked release as a proposal for a propose-segment
@@ -326,11 +328,14 @@ func (s *ProposalService) ListForTracking(ctx context.Context, trackingID uuid.U
 
 // emitWantUpdates fans WantUpdated deltas over the broker for the given want sets
 // so the series pills flip (to "Suggested" on hold, back to "Searching" on
-// re-arm/grab) without a refetch.
+// re-arm/grab) without a refetch, and announces the affected titles so any
+// mounted projection refetches. A pack proposal covers many wants across one
+// title; the notifier collapses those into a single kick.
 func (s *ProposalService) emitWantUpdates(ctx context.Context, sets ...[]model.Want) {
 	for _, set := range sets {
 		for _, w := range set {
 			realtime.Emit(ctx, s.broker, realtime.WantUpdated(w))
+			s.titles.Notify(w.MediaItemID)
 		}
 	}
 }

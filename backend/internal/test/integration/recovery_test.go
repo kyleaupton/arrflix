@@ -43,7 +43,7 @@ func grabMovieWant(t *testing.T, ctx context.Context, r *repo.Repository, want m
 			return results, nil
 		},
 	}
-	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+	svc := service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
 	if _, outcome, err := svc.ProcessWant(ctx, claimed); err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	} else if outcome != service.OutcomeGrabbed {
@@ -184,7 +184,7 @@ func TestRecovery_ExcludedReleaseNotRepicked(t *testing.T) {
 				return results, nil
 			},
 		}
-		return service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, logger.New(true)))
+		return service.NewAcquisitionService(r, logger.New(true), source, service.NewRoutingService(r), service.NewQualityProfileService(r), service.NewProposalService(r, service.NewQualityProfileService(r), nil, nil, logger.New(true)))
 	}
 
 	// Offered only the excluded release → no grab.

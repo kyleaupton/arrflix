@@ -1,12 +1,29 @@
 import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
-import { watch } from 'vue'
+import { readonly, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
+import Home from '@/views/Home.vue'
 
 // Prevent the browser's native scroll restoration from fighting Vue Router
 if ('scrollRestoration' in history) {
   history.scrollRestoration = 'manual'
 }
+
+// Safari's back/forward swipe paints its own snapshot of the destination entry
+// and drops it the instant the traversal commits, leaving the live DOM on screen
+// with no grace frames. An enter transition layered on top of that reads as a
+// flash of the page the user just swiped away from, so pop navigations render
+// without one (see App.vue). This listener runs synchronously while vue-router's
+// own popstate handler is still queueing its guards as microtasks, so the flag
+// is always set before the beforeEach below consumes it.
+const popNavigation = ref(false)
+let pendingPop = false
+
+window.addEventListener('popstate', () => {
+  pendingPop = true
+})
+
+export const isPopNavigation = readonly(popNavigation)
 
 // Master–detail section trees (Settings, Preferences) show a full-screen list at
 // their bare index on mobile, so the index must remain a real, renderable route
@@ -23,7 +40,14 @@ const forwardIndexOnDesktop =
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  scrollBehavior(_to, _from, savedPosition) {
+  scrollBehavior(to, _from, savedPosition) {
+    // A kept-alive view comes back with its DOM — and therefore its full scroll
+    // height — already intact, so its saved offset applies in the same frame it
+    // renders. Everything else mounts empty, where an immediate restore would
+    // clamp to 0, so give it two frames to paint first.
+    if (savedPosition && to.meta.keepAlive) {
+      return savedPosition
+    }
     return new Promise((resolve) => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -34,13 +58,17 @@ const router = createRouter({
   },
   routes: [
     {
+      // Statically imported, not lazy: '/' is the landing route and the target of
+      // every swipe-back from a media page, and resolving an async component
+      // costs a paint of the outgoing page before the swap.
       path: '/',
-      component: () => import('@/views/Home.vue'),
-      meta: { layout: 'immersive' },
+      component: Home,
+      meta: { layout: 'immersive', keepAlive: 'Home' },
     },
     {
       path: '/library',
       component: () => import('@/views/Library.vue'),
+      meta: { keepAlive: 'Library' },
     },
     {
       path: '/library/matching',
@@ -49,6 +77,7 @@ const router = createRouter({
     {
       path: '/search',
       component: () => import('@/views/Search.vue'),
+      meta: { keepAlive: 'Search' },
     },
     {
       path: '/downloads',
@@ -189,6 +218,21 @@ const router = createRouter({
       meta: { layout: 'immersive' },
     },
   ],
+})
+
+// Component names of the views that survive navigation, for <KeepAlive :include>.
+// `meta.keepAlive` carries the name because <script setup> infers it from the
+// filename, and KeepAlive can only match on it.
+export const keepAliveViews = router
+  .getRoutes()
+  .map((record) => record.meta.keepAlive)
+  .filter((name): name is string => typeof name === 'string')
+
+// Resolve the navigation's direction before any other guard runs, so the whole
+// navigation — guards, render, transition — sees one stable value.
+router.beforeEach(() => {
+  popNavigation.value = pendingPop
+  pendingPop = false
 })
 
 router.beforeEach(async (to) => {

@@ -1236,3 +1236,19 @@ func (r *Repository) ListFailedImports(ctx context.Context, limit int32) ([]mode
 	}
 	return out, nil
 }
+
+// ListMediaItemsTouchedSince returns the media items whose acquisition-relevant
+// rows changed at or after since. Backs the title-status sweep.
+func (r *Repository) ListMediaItemsTouchedSince(ctx context.Context, since time.Time) ([]uuid.UUID, error) {
+	rows, err := r.Q.ListMediaItemsTouchedSince(ctx, since)
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list media items touched since %s", since)
+	}
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		if id := uuidFromPgtype(row); id != uuid.Nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}

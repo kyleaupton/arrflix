@@ -112,7 +112,8 @@ import DataTable from '@/components/tables/DataTable.vue'
 import { movieFilesColumns } from '@/components/tables/configs/movieFilesTableConfig'
 import { buildMetadataSubtitle, formatRuntime } from '@/lib/utils'
 import { statusLabel } from '@/lib/mediaStatus'
-import { useDownloadJobs, isJobActive } from '@/composables/useDownloadJobs'
+import { useDownloadJobs } from '@/composables/useDownloadJobs'
+import { useTitleStatus } from '@/composables/useTitleStatus'
 import AcquisitionControl from '@/components/acquisition/AcquisitionControl.vue'
 import AttentionCard from '@/components/acquisition/AttentionCard.vue'
 import MovieStatusCard from '@/components/acquisition/MovieStatusCard.vue'
@@ -122,7 +123,7 @@ import type { FileInfo } from '@/client/types.gen'
 const route = useRoute()
 const isImmersive = computed(() => route.meta.layout === 'immersive')
 const auth = useAuthStore()
-const { getJobById, getMovieJob } = useDownloadJobs()
+const { getJobById } = useDownloadJobs()
 
 const id = computed(() => {
   const castAttept = Number(Array.isArray(route.params.id) ? route.params.id[0] : route.params.id)
@@ -219,49 +220,29 @@ const movieChips = computed(() => {
   return chips
 })
 
-// Merge API files with real-time download job updates
+// File rows carry live job progress, which the detail payload froze at page
+// load. This is the *file's* status, not the title's — a distinct concept from
+// titleStatus, and the operator table is the only thing that reads it.
 const filesWithProgress = computed(() => {
   if (!data.value?.files) return []
 
   return data.value.files.map((file): FileInfo => {
-    // If file has downloadJobId, get latest progress from the live jobs cache
-    if (file.downloadJobId) {
-      const job = getJobById(file.downloadJobId)
-      if (job) {
-        return {
-          ...file,
-          progress: job.progress ?? file.progress,
-          status: mapJobStatusToFileStatus(job.status),
-        }
-      }
+    if (!file.downloadJobId) return file
+    const job = getJobById(file.downloadJobId)
+    if (!job) return file
+    return {
+      ...file,
+      progress: job.progress ?? file.progress,
+      status: job.status === 'importing' ? 'importing' : 'downloading',
     }
-    return file
   })
 })
 
-// Whether the poster shows the downloading treatment. Read live from the shared
-// jobs cache by tmdbId rather than the file→job link on the detail payload: that
-// link is captured at page load, so a freshly-started download (no file row yet)
-// wouldn't light it. The jobs cache is SSE-patched, so this tracks the download
-// as it starts and finishes without a reload.
-const isDownloading = computed(() => {
-  const job = getMovieJob(id.value)
-  return !!job && isJobActive(job)
-})
-
-// Map download job status to file status
-function mapJobStatusToFileStatus(jobStatus: string): string {
-  switch (jobStatus) {
-    case 'created':
-    case 'enqueued':
-    case 'downloading':
-      return 'downloading'
-    case 'importing':
-      return 'importing'
-    default:
-      return 'downloading' // fallback
-  }
-}
+// The poster's downloading treatment, read from the title projection rather than
+// joined out of the jobs cache — the same answer the status card renders, so the
+// two cannot disagree about whether this movie is moving.
+const { status: titleStatus } = useTitleStatus('movie', id)
+const isDownloading = computed(() => titleStatus.value?.phase === 'downloading')
 </script>
 
 <style scoped></style>

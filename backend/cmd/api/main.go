@@ -8,12 +8,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/kyleaupton/arrflix/internal/config"
 	"github.com/kyleaupton/arrflix/internal/db"
 	"github.com/kyleaupton/arrflix/internal/downloader"
 	"github.com/kyleaupton/arrflix/internal/downloader/qbittorrent"
 	"github.com/kyleaupton/arrflix/internal/email"
 	emailsmtp "github.com/kyleaupton/arrflix/internal/email/smtp"
+	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/http"
 	acquisitionworker "github.com/kyleaupton/arrflix/internal/jobs/acquisition"
 	downloadworker "github.com/kyleaupton/arrflix/internal/jobs/download"
@@ -29,6 +32,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
+	"github.com/kyleaupton/arrflix/internal/titlenotify"
 )
 
 func main() {
@@ -59,8 +63,29 @@ func main() {
 	// In-process SSE broker
 	broker := sse.NewBroker(ctx)
 
+	// Title-status notifier. Everything that moves a title's acquisition state
+	// announces it here; the notifier coalesces a burst into one event per title
+	// and sweeps for anything that changed without announcing itself. The two
+	// closures are the only place this wiring touches the repository — the
+	// notifier itself holds none.
+	titles := titlenotify.New(broker, func(ctx context.Context, mediaItemID uuid.UUID) (titlenotify.Ref, error) {
+		item, err := repo.GetMediaItem(ctx, mediaItemID)
+		if err != nil {
+			return titlenotify.Ref{}, err
+		}
+		if item.TmdbID == nil {
+			// Clients key on TMDB id, so an item without one has no address to
+			// send a kick to. Nothing to emit.
+			return titlenotify.Ref{}, apperrors.NotFoundf("media item %s has no tmdb id", mediaItemID)
+		}
+		return titlenotify.Ref{MediaType: item.Type, TmdbID: *item.TmdbID}, nil
+	}, repo.ListMediaItemsTouchedSince, logg)
+
 	// Services
-	services := service.New(ctx, repo, logg, &cfg, broker, service.WithJWTSecret(cfg.JWTSecret))
+	services := service.New(ctx, repo, logg, &cfg, broker,
+		service.WithJWTSecret(cfg.JWTSecret),
+		service.WithTitleNotifier(titles),
+	)
 
 	// Seed settings from env vars (e.g. TMDB_API_KEY) for backwards compat
 	if err := services.Settings.SeedDefaults(ctx, &cfg); err != nil {
@@ -112,10 +137,10 @@ func main() {
 	// Download and import workers
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	services.Scanner.SetContext(workerCtx)
-	dlWorker := downloadworker.New(repo, downloaderManager, logg, broker)
-	impWorker := importworker.New(repo, downloaderManager, logg, broker, services.Notifications)
+	dlWorker := downloadworker.New(repo, downloaderManager, logg, broker, titles)
+	impWorker := importworker.New(repo, downloaderManager, logg, broker, services.Notifications, titles)
 	enrichWorker := enrichmentworker.New(services.Enrichment, logg)
-	acqWorker := acquisitionworker.New(repo, services.Acquisition, services.Scheduler, logg, broker)
+	acqWorker := acquisitionworker.New(repo, services.Acquisition, services.Scheduler, logg, broker, titles)
 	// The notification worker drains the outbox over the in_app, email, and push
 	// channels. Wiring an adapter makes template Verify demand that channel's
 	// templates at construction — a missing one is a startup fatal, not a
@@ -128,6 +153,7 @@ func main() {
 		logg.Fatal().Err(err).Msg("failed to build notification worker")
 	}
 	sessWorker := sessionworker.New(services.Sessions, logg)
+	go titles.Run(workerCtx)
 	go dlWorker.Run(workerCtx)
 	go impWorker.Run(workerCtx)
 	go enrichWorker.Run(workerCtx)

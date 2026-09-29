@@ -1393,6 +1393,50 @@ func (q *Queries) ListMediaItemsPaginated(ctx context.Context, arg ListMediaItem
 	return items, nil
 }
 
+const listMediaItemsTouchedSince = `-- name: ListMediaItemsTouchedSince :many
+select distinct t.media_item_id
+from (
+    select w.media_item_id from want w where w.updated_at >= $1
+    union all
+    select dj.media_item_id from download_job dj where dj.updated_at >= $1
+    union all
+    select f.media_item_id from file f where f.updated_at >= $1
+) t
+where t.media_item_id is not null
+`
+
+// Media items whose acquisition-relevant rows changed at or after @since.
+//
+// Backs the title-status sweep: a write that lands without an explicit
+// invalidation is picked up here within one sweep interval, which is what keeps
+// a forgotten Notify call a latency bug rather than a stale-UI bug.
+//
+// file_state is deliberately excluded. Its last_verified_at bumps on every scan
+// pass whether or not anything changed, so including it would sweep the whole
+// library on each scan. A re-verified unchanged file does not move the
+// projection. download_job is included even though its updated_at bumps on every
+// progress poll: the resulting redundant kick for an in-flight download is
+// cheaper than missing a job that transitioned without touching a want.
+func (q *Queries) ListMediaItemsTouchedSince(ctx context.Context, since time.Time) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listMediaItemsTouchedSince, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var media_item_id pgtype.UUID
+		if err := rows.Scan(&media_item_id); err != nil {
+			return nil, err
+		}
+		items = append(items, media_item_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMissingFiles = `-- name: ListMissingFiles :many
 select f.id, f.library_id, f.path, f.media_item_id, f.episode_id, f.edition, f.created_at, f.updated_at, f.deleted_at, fs.size_bytes, fs.last_verified_at
 from file f

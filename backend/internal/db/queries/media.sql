@@ -456,3 +456,26 @@ insert into media_item_external_id (media_item_id, source, external_id)
 values (sqlc.arg(media_item_id), sqlc.arg(source), sqlc.arg(external_id))
 on conflict (media_item_id, source)
 do update set external_id = excluded.external_id, updated_at = now();
+
+-- name: ListMediaItemsTouchedSince :many
+-- Media items whose acquisition-relevant rows changed at or after @since.
+--
+-- Backs the title-status sweep: a write that lands without an explicit
+-- invalidation is picked up here within one sweep interval, which is what keeps
+-- a forgotten Notify call a latency bug rather than a stale-UI bug.
+--
+-- file_state is deliberately excluded. Its last_verified_at bumps on every scan
+-- pass whether or not anything changed, so including it would sweep the whole
+-- library on each scan. A re-verified unchanged file does not move the
+-- projection. download_job is included even though its updated_at bumps on every
+-- progress poll: the resulting redundant kick for an in-flight download is
+-- cheaper than missing a job that transitioned without touching a want.
+select distinct t.media_item_id
+from (
+    select w.media_item_id from want w where w.updated_at >= sqlc.arg(since)
+    union all
+    select dj.media_item_id from download_job dj where dj.updated_at >= sqlc.arg(since)
+    union all
+    select f.media_item_id from file f where f.updated_at >= sqlc.arg(since)
+) t
+where t.media_item_id is not null;

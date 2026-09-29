@@ -27,6 +27,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/sse"
 	"github.com/kyleaupton/arrflix/internal/template"
+	"github.com/kyleaupton/arrflix/internal/titlenotify"
 )
 
 // Worker processes import tasks: hardlinks/copies files from downloads to library.
@@ -44,6 +45,7 @@ type Worker struct {
 	// notification is a best-effort side effect, never part of the import's
 	// correctness).
 	notifications *service.NotificationService
+	titles        *titlenotify.Notifier
 
 	pollInterval time.Duration
 	claimLimit   int32
@@ -67,7 +69,7 @@ func DefaultConfig() Config {
 }
 
 // New creates a new import worker.
-func New(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker *sse.Broker, notifications *service.NotificationService) *Worker {
+func New(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker *sse.Broker, notifications *service.NotificationService, titles *titlenotify.Notifier) *Worker {
 	cfg := DefaultConfig()
 	return &Worker{
 		repo:          r,
@@ -78,6 +80,7 @@ func New(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker
 		sm:            state.NewImportTaskMachine(),
 		mediaInfo:     mediainfo.NewAnalyzer(*log),
 		notifications: notifications,
+		titles:        titles,
 		pollInterval:  cfg.PollInterval,
 		claimLimit:    cfg.ClaimLimit,
 		maxAttempts:   cfg.MaxAttempts,
@@ -341,7 +344,7 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 	// guard above), so the want advances 'imported' → 'available' — Arrflix's own
 	// authority that the file is on disk, reachable with no media server. MirrorWant
 	// no-ops on the interactive/legacy path (no want).
-	want, becameAvailable := jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, task.WantID, model.WantAvailable)
+	want, becameAvailable := jobutil.MirrorWant(ctx, w.repo, w.broker, w.titles, w.log, task.WantID, model.WantAvailable)
 
 	// Notify the want's requesters exactly once, keyed off the real transition
 	// (not a terminal-sticky no-op). Best-effort: the file is already imported, so
@@ -506,7 +509,7 @@ func (w *Worker) handleError(ctx context.Context, task model.ImportTask, err err
 	// Non-retryable errors fail immediately.
 	if !apperrors.IsRetryable(err) {
 		_, _ = w.repo.SetImportTaskFailed(ctx, task.ID, msg, kind)
-		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, task.WantID, model.WantFailed)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.titles, w.log, task.WantID, model.WantFailed)
 		w.publishTaskUpdated(ctx, task)
 		return
 	}
@@ -522,7 +525,7 @@ func (w *Worker) handleError(ctx context.Context, task model.ImportTask, err err
 		_, _ = w.repo.SetImportTaskFailed(ctx, task.ID,
 			fmt.Sprintf("max attempts (%d) exceeded: %s", maxAttempts, msg),
 			kind)
-		jobutil.MirrorWant(ctx, w.repo, w.broker, w.log, task.WantID, model.WantFailed)
+		jobutil.MirrorWant(ctx, w.repo, w.broker, w.titles, w.log, task.WantID, model.WantFailed)
 		w.publishTaskUpdated(ctx, task)
 		return
 	}

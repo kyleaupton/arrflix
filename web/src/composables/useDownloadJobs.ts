@@ -19,15 +19,6 @@ const COMPLETED_STATUSES = ['fully_imported', 'download_cancelled']
 
 const listKey = downloadJobsListQueryKey()
 
-// isJobActive reports whether a job is still in flight — the single predicate
-// behind every "is this media downloading" badge and status card. importStatus is
-// the derived summary that folds both phases into one axis: 'download_pending'
-// covers the raw download (created/enqueued/downloading), and awaiting_import /
-// importing cover the post-download import. Terminal summaries fall through.
-export function isJobActive(job: DownloadJob): boolean {
-  return ACTIVE_STATUSES.includes(job.importStatus)
-}
-
 // useDownloadJobs reads the download-jobs list from TanStack Query. The list is
 // kept live globally by the realtime cache bindings (realtime/bindings.ts) —
 // per-job `download_job_updated` events upsert into this query key regardless of
@@ -70,20 +61,10 @@ export function useDownloadJobs() {
     return jobsById.value[id]
   }
 
-  // The in-flight job for a movie, read from the shared live list. A movie
-  // tracking is single-atom (one want, one job at a time), and `jobs` is
-  // newest-first, so the first match is the one advancing the current want.
-  // Callers get SSE-patched progress without a second per-movie fetch.
-  function getMovieJob(tmdbId: number): DownloadJob | undefined {
-    return jobs.value.find((j) => j.mediaType === 'movie' && j.tmdbId === tmdbId)
-  }
-
   return {
     isLoading: query.isLoading,
     jobs,
-    jobsById,
     getJobById,
-    getMovieJob,
     activeJobs,
     needsAttentionJobs,
     completedJobs,
