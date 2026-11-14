@@ -157,3 +157,54 @@ func (s *NameTemplatesService) unsetOtherDefaultsExcluding(ctx context.Context, 
 
 	return nil
 }
+
+// Default templates installed on startup. Optional parts (edition, media
+// info, release group) carry their leading separator inside the conditional,
+// so a missing part leaves no doubled space or empty brackets.
+const (
+	defaultMovieTemplate    = `{{.Media.CleanTitle}} ({{.Media.Year}}){{if .Identity.Edition}} {edition-{{.Identity.Edition}}}{{end}} [{{.Quality.Full}}]{{if .MediaInfo.AudioCodec}}[{{.MediaInfo.AudioCodec}} {{.MediaInfo.AudioChannels}}]{{end}}{{if .MediaInfo.HDR}}[{{.MediaInfo.HDR}}]{{end}}{{if .MediaInfo.VideoCodec}}[{{.MediaInfo.VideoCodec}}]{{end}}{{if .Encode.ReleaseGroup}}-{{.Encode.ReleaseGroup}}{{end}}`
+	defaultMovieDirTemplate = `{{.Media.CleanTitle}} ({{.Media.Year}}) {tmdb-{{.Media.TmdbID}}}`
+
+	defaultSeriesTemplate       = `{{.Media.Title}} - S{{.Media.Season}}E{{.Media.Episode}} - {{clean .Media.EpisodeTitle}} [{{.Quality.Full}}]{{if .MediaInfo.AudioCodec}}[{{.MediaInfo.AudioCodec}} {{.MediaInfo.AudioChannels}}]{{end}}{{if .MediaInfo.HDR}}[{{.MediaInfo.HDR}}]{{end}}{{if .MediaInfo.VideoCodec}}[{{.MediaInfo.VideoCodec}}]{{end}}{{if .Encode.ReleaseGroup}}-{{.Encode.ReleaseGroup}}{{end}}`
+	defaultSeriesShowTemplate   = `{{.Media.Title}} ({{.Media.Year}})`
+	defaultSeriesSeasonTemplate = `Season {{.Media.Season}}`
+)
+
+// SeedDefaults installs a default movie and series template for each type
+// that has none, so routing can always resolve a template. It is idempotent
+// and never touches a type that already has a default (including one the user
+// created or edited).
+func (s *NameTemplatesService) SeedDefaults(ctx context.Context) error {
+	movieDir, showDir, seasonDir := defaultMovieDirTemplate, defaultSeriesShowTemplate, defaultSeriesSeasonTemplate
+	seeds := []repo.CreateNameTemplateParams{
+		{
+			Name:             "Default Movie Template",
+			Type:             "movie",
+			Template:         defaultMovieTemplate,
+			MovieDirTemplate: &movieDir,
+			IsDefault:        true,
+		},
+		{
+			Name:                 "Default Series Template",
+			Type:                 "series",
+			Template:             defaultSeriesTemplate,
+			SeriesShowTemplate:   &showDir,
+			SeriesSeasonTemplate: &seasonDir,
+			IsDefault:            true,
+		},
+	}
+
+	for _, p := range seeds {
+		if _, err := s.repo.GetDefaultNameTemplate(ctx, p.Type); err == nil {
+			continue
+		} else if !apperrors.IsNotFound(err) {
+			return err
+		}
+		// A concurrent seeder or a same-named user template surfaces as a
+		// conflict; the unique default index keeps the result at most one.
+		if _, err := s.repo.CreateNameTemplate(ctx, p); err != nil && !apperrors.IsConflict(err) {
+			return err
+		}
+	}
+	return nil
+}
