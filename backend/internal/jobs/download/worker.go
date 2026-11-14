@@ -495,12 +495,16 @@ func (w *Worker) releaseUncoveredWants(ctx context.Context, jobID uuid.UUID, wan
 		if _, ok := matched[epNum]; ok {
 			continue
 		}
-		if _, _, err := w.repo.ReleaseWantFromGrab(ctx, wantID, "season pack did not contain this episode; re-searching"); err != nil {
-			w.log.Warn().Err(err).Str("want_id", wantID.String()).Int("episode", epNum).Msg("failed to release under-covered want")
-			continue
-		}
-		if err := w.repo.UnlinkDownloadJobWant(ctx, jobID, wantID); err != nil {
-			w.log.Warn().Err(err).Str("want_id", wantID.String()).Str("job_id", jobID.String()).Msg("failed to unlink under-covered want from job")
+		// Release and unlink commit together: no reader may see the want back in
+		// 'pending' (re-searchable) while it is still linked to the pack job.
+		err := w.repo.InTx(ctx, func(tx *repo.Repository) error {
+			if _, _, err := tx.ReleaseWantFromGrab(ctx, wantID, "season pack did not contain this episode; re-searching"); err != nil {
+				return err
+			}
+			return tx.UnlinkDownloadJobWant(ctx, jobID, wantID)
+		})
+		if err != nil {
+			w.log.Warn().Err(err).Str("want_id", wantID.String()).Str("job_id", jobID.String()).Int("episode", epNum).Msg("failed to release under-covered want")
 			continue
 		}
 		w.log.Info().
@@ -555,8 +559,18 @@ func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJ
 			continue
 		}
 
-		released, ok, err := w.repo.ReleaseWantFromGrab(ctx, want.ID,
-			fmt.Sprintf("download failed (%s); release excluded, re-searching", lastError))
+		var released model.Want
+		var ok bool
+		err := w.repo.InTx(ctx, func(tx *repo.Repository) error {
+			var err error
+			released, ok, err = tx.ReleaseWantFromGrab(ctx, want.ID,
+				fmt.Sprintf("download failed (%s); release excluded, re-searching", lastError))
+			if err != nil || !ok {
+				return err
+			}
+			released, err = restampManualHold(ctx, tx, released)
+			return err
+		})
 		if err != nil {
 			w.log.Warn().Err(err).Str("want_id", want.ID.String()).Msg("failed to release want after download failure")
 			continue
@@ -567,7 +581,6 @@ func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJ
 		}
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(released))
 		w.titles.Notify(released.MediaItemID)
-		w.restampManualHold(ctx, released)
 	}
 }
 
@@ -575,21 +588,21 @@ func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJ
 // tracking segment is manual. The grab cleared the hold, and ReleaseWantFromGrab
 // leaves it cleared; without this a want owned by a manual segment would fall into
 // the auto-search pool rather than waiting for the user to pick again. Mirrors
-// rearmMovieWant's re-stamp. One extra query per recovered want — failures are
-// rare.
-func (w *Worker) restampManualHold(ctx context.Context, released model.Want) {
-	tracking, err := w.repo.GetTracking(ctx, released.TrackingID)
+// rearmMovieWant's re-stamp.
+//
+// tx must be the transaction that released the want: committing the release
+// without the hold would let the acquisition worker claim a manual want as if it
+// were auto. Returns the want as it stands after the restamp.
+func restampManualHold(ctx context.Context, tx *repo.Repository, released model.Want) (model.Want, error) {
+	tracking, err := tx.GetTracking(ctx, released.TrackingID)
 	if err != nil {
-		w.log.Warn().Err(err).Str("want_id", released.ID.String()).Msg("failed to load tracking for manual-hold restamp")
-		return
+		return model.Want{}, err
 	}
 	hold := model.HoldForNewWant(tracking, model.WantSegment(released.Segment))
 	if hold == nil {
-		return
+		return released, nil
 	}
-	if _, err := w.repo.SetWantHold(ctx, released.ID, hold); err != nil {
-		w.log.Warn().Err(err).Str("want_id", released.ID.String()).Msg("failed to restamp manual hold")
-	}
+	return tx.SetWantHold(ctx, released.ID, hold)
 }
 
 func (w *Worker) resolveEpisodeID(ctx context.Context, mediaItemID uuid.UUID, targetSeason *int, epNum int) (uuid.UUID, error) {
