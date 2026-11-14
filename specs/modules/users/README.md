@@ -1,17 +1,22 @@
+---
+status: v1
+---
+
 # Users — identity, roles, and permissions
 
-**Status:** Draft, iteration 1
+> **Beyond what's built:** custom roles, the `plex_friends` strategy and per-strategy default roles (§Onboarding), `user_policy` quotas, §Activity-visibility scoping ("view as"), and the admin-action half of §Admin-action audit describe unbuilt design. The four-role starter set and custom roles are **superseded by [V1.md](../../V1.md#roles-and-permissions-decided)** (two perspectives, `requester | admin`, per-user auto-approve and 4K toggles, no role editor); quotas are V2.
 
-This doc defines how Arrflix models users, how they get into the system, and what they're allowed to do. It captures the identity model, the role-and-permission system, onboarding strategies, per-user policy state, and the "what's mine" scoping that the [audit pattern](../../patterns/audit/README.md) defers here. It does **not** pin down table columns, API shapes, or the [request entity](../requests/README.md) itself — those live in iteration 2 and the sibling spec.
+This doc defines how Arrflix models users, how they get into the system, and what they're allowed to do. It captures the identity model, sessions, the role-and-permission system, onboarding strategies, and the "what's mine" scoping that the [audit pattern](../../patterns/audit/README.md) defers here. It does **not** own the [request entity](../requests/README.md) itself.
 
 ## TL;DR
 
-- Two layers. **Permissions** answer "can this user do X?" — bundled into **roles** and assignable directly to users. **`user_policy`** answers "with what limits and per-user defaults?" — only quotas and state that *can't* be expressed as a permission.
+- **Permissions** answer "can this user do X?" — bundled into **roles** and assignable directly to users. Per-user limits that *can't* be expressed as a permission (quotas) are V2; there is no `user_policy` table.
+- **Authentication is session-based.** Login opens a `user_session` row; a short-lived access JWT is a stateless projection of it, and a rotating refresh token (HttpOnly cookie) mints new ones.
 - **Tier and type are encoded in the permission key**, not in separate columns. `requests.create:movie:hd`, `requests.auto_approve:series:4k`. Per-library scope uses the existing `resource_id` column on the grant — enum-shaped attributes stay in keys, opaque UUIDs stay tabular.
 - **Auto-approve is a permission, not a flag.** If you hold `requests.auto_approve:movie:hd`, your HD movie requests bypass the approval queue. Uniform with every other capability.
 - **Roles are bundles of grants, not magic.** Built-in roles are pre-seeded; custom roles work identically. `built_in=true` just prevents deletion. Effective permission set = union of role grants ⊕ direct user grants, with deny overriding allow.
-- **Three onboarding strategies**: `invite_only` (default — admin pre-creates email; user signs up; invite is claimed), `open` (anyone with an email), and `plex_friends` (auto-onboard anyone on the admin's Plex friends list). Strategy is a system setting.
-- **`auth_audit` is the home for admin-action history** — who promoted whom, who approved which request, who changed strategy. Different shape from the [decision-artifact pattern](../../patterns/audit/README.md): that's automated decisions; this is humans-touching-other-humans.
+- **Onboarding strategies**: `invite_only` (default — admin issues a magic-link invite carrying a target role; the invitee redeems it) and `open` (anyone can self-register). `plex_friends` (auto-onboard anyone on the admin's Plex friends list) is unbuilt. Strategy is a system setting.
+- **`auth_audit` is the home for auth and admin-action history.** It records session lifecycle events today; admin actions (who promoted whom, who approved which request, who changed strategy) are unbuilt. Different shape from the [decision-artifact pattern](../../patterns/audit/README.md): that's automated decisions; this is humans-touching-other-humans.
 - This spec **does not own the request entity, the approval flow, or notification delivery** (see [notifications](../notifications/README.md)). It defines the permission keys those things consult.
 
 ## Why this is its own spec
@@ -35,13 +40,23 @@ A single account can have multiple identities — the canonical case is "user si
 
 Adding a new provider (Discord, GitHub, whatever) is an `ALTER TYPE ... ADD VALUE` plus a service-layer flow; the data model already accommodates it.
 
+## Sessions
+
+A **`user_session`** row is the source of truth for "this device is logged in as this user" (`SessionService`, `internal/service/session.go`).
+
+- **Login** (`auth-login`, `auth-plex-exchange`, `auth-accept-invite`) authenticates, then opens a session. The response carries a signed HS256 **access JWT** (default TTL 24h) whose `sid` claim binds it to the session, and sets an opaque **refresh token** `<sessionId>.<secret>` in an HttpOnly cookie (session TTL `SESSION_TTL`, default 90 days).
+- **Only `sha256(secret)` is stored** (`refresh_hash`). `POST /auth/refresh` rotates the secret on every use; the previous hash stays valid for a one-minute grace window so a multi-tab race doesn't trip reuse detection. A secret matching neither generation is treated as theft and revokes the session.
+- **Revocation** — `auth-logout` revokes the cookie's session; `/auth/sessions` lists the caller's active sessions (joined to their push subscriptions as a devices list) and revokes one or all others. The access JWT is verified statelessly (`ChiJWT`), so a revoked session's outstanding access token stays valid until it expires.
+- Sessions record a best-effort `user_agent` and `ip`; the `label` column (a user-renamable device name) is not written by any endpoint. A background sweeper (`internal/jobs/session`) deletes rows that have been revoked or expired past a retention window.
+- Session create / refresh / revoke / reuse-detected events are written to [`auth_audit`](#admin-action-audit-auth_audit).
+
 ## Roles
 
 A role is a named bundle of permission grants.
 
 - **Roles are not magic.** A role grant and a directly-granted user permission compose the same way — they're both `permission_grant` rows with different `subject_type` values. The runtime check doesn't branch on subject kind.
-- **`role.built_in = true`** marks system-seeded roles. Built-in roles can be edited (grants added/removed) but not deleted. Custom roles can be created and deleted freely.
-- **A user can have many roles.** The `user_role` join table is many-to-many. The current "assign role replaces all" behavior in `UsersService` is a UI choice, not a model constraint — multi-role assignment becomes available via the same join table once the UI catches up.
+- **`role.built_in = true`** marks system-seeded roles. Built-in roles can be edited (grants added/removed) but not deleted. Custom roles can be created and deleted freely. **Unbuilt:** the API exposes only `roles-list`; there is no role or grant editing, and V1.md rules out custom roles.
+- **A user can have many roles.** The `user_role` join table is many-to-many. `UsersService.AssignRole` (`PUT /users/{id}/role`) replaces all of a user's roles with one; that is an API choice, not a model constraint.
 - **No role inheritance.** Roles don't include other roles. If you want a "trusted_friend" role that's "requester plus 4K," create it as its own bundle. Inheritance adds resolution complexity for marginal gain at this scale.
 
 ### Starter built-in roles
@@ -55,7 +70,7 @@ The exact per-role grants are pinned in [Seed grants](#seed-grants-frozen--itera
 | `requester`    | Browse + request HD content. No 4K, no approval power, no admin. The default new-user role. |
 | `viewer`       | Browse only. No requests, no admin. Read-only friend / houseguest.                  |
 
-The current seeded roles (`admin` / `manager` / `user` / `guest`) map cleanly: `manager → co_admin`, `user → requester`, `guest → viewer`. Since there's one user today (Kyle), the existing seed migration is replaced rather than data-migrated.
+All four are seeded (migration `0022_rbac_catalog_freeze`). Per V1.md, `co_admin` and `viewer` stay seeded but hidden: invite and role pickers offer only `requester | admin`. **Unbuilt:** the invite API's `role` enum still accepts `requester, viewer, co_admin, admin`.
 
 Custom-role examples sit on top of this without changing the model: a `family` role granting HD movie + series request and auto-approve; a `kids` role with `library.read` scoped to a specific library UUID; a `co_admin` variant without the `admin.settings.write` they hold by default.
 
@@ -178,13 +193,19 @@ Direct user grants are an **exception path**, not the main mechanism. The expect
 
 ### Resolution caching
 
-Permission checks fire on most authenticated requests. Re-querying the database for every check is wasteful. The expected shape: build the user's effective grant set once per request (or cache for the JWT's lifetime) and check against the in-memory set. v1's invariant is forgiving — a user has at most a few roles with a few dozen grants each, well below a hundred rows.
+Permission checks fire on most authenticated requests. `AuthzService` (`internal/service/authz.go`) builds each user's effective grant set once (`authz.NewEffectiveSet`, the pure resolver in `internal/authz`) and caches it in-process with no TTL; `Bust(userID)` drops it, and role assignment is the only call site. The invariant is forgiving — a user has at most a few roles with a few dozen grants each, well below a hundred rows.
 
-The cache shape and invalidation strategy are implementation. The model is what's load-bearing.
+### Enforcement
+
+- **Operation gate.** `internal/http/authzgate` maps every huma operation ID to a requirement — public, authenticated, one key, or any-of — and denies operations missing from the table (a coverage test keeps it complete). It runs before the body is parsed, so body- or owner-dependent checks are only a floor there.
+- **Service refinement.** Services refine the floor: `requests.create:<type>:<tier>` from the request body, `requests.approve|deny:<type>` from the request's type, and `.own` / `.any` pairs via `AuthzService.CanOwnAny`.
+- **Frontend.** `/auth/me` returns the user's global-scope effective keys so the UI can gate controls without a second round-trip. Resource-scoped grants never leave the server.
 
 ## `user_policy`
 
-Per-user state that **can't** be expressed as a permission. v1 fields are minimal:
+> **Unbuilt (V2).** No `user_policy` table exists; per-user quotas are V2 per [V1.md](../../V1.md#out--later), which reshapes them as a rolling GB quota enforced at grab time. The fields below are the earlier design.
+
+Per-user state that **can't** be expressed as a permission:
 
 | Field                    | Purpose                                                                          |
 | ------------------------ | -------------------------------------------------------------------------------- |
@@ -202,27 +223,29 @@ Future quota-shaped fields (monthly request count, monthly bytes) fit the same p
 
 ## Onboarding
 
-How users come to exist. The active strategy is a system setting (`auth.signup_strategy`); the **default is `invite_only`**.
+How users come to exist. The active strategy is a system setting (`auth.signup_strategy`); the **default is `invite_only`**. The settings validator accepts only `invite_only` and `open`.
 
 ### Strategies
 
 | Strategy        | Flow                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------ |
-| `invite_only`   | Admin adds email to `user_invite`. User signs up (local form or Plex SSO) with matching email. Invite is claimed (`claimed_at` set). Account created with the strategy's default role. |
-| `open`          | Anyone can sign up. Default role assigned. Useful for fully-public setups; rare.            |
-| `plex_friends`  | Anyone on the admin's Plex friends list can sign in via Plex SSO and is auto-onboarded with the default role. The invite path still works alongside. |
+| `invite_only`   | Admin creates a `user_invite` for an email with a target role (default `requester`). This mints a magic link: the raw token lives only in the link (copyable, and emailed best-effort when SMTP is configured) and only its sha256 is stored; it expires after 7 days. The invitee redeems it at `auth-accept-invite` (choosing username + password), which creates the account with the invite's role, claims the invite (`claimed_at` set), and opens a session. Plex SSO for a new user also claims an unclaimed invite by matching the Plex-verified email. Local self-signup is Forbidden. |
+| `open`          | Anyone can self-register (`auth-signup`) and gets `requester`. Intended for instances behind a trusted network perimeter.            |
+| `plex_friends`  | **Unbuilt.** Anyone on the admin's Plex friends list can sign in via Plex SSO and is auto-onboarded with the default role. The invite path still works alongside. |
 
 `plex_friends` matches Overseerr's onboarding model. It depends on the admin's account being able to enumerate friends via the Plex API; the strategy fails open to "Plex SSO with no auto-onboard" if the friends API is unreachable.
 
 ### Default role per strategy
 
-Each strategy has a configurable default role for newly-created users. `requester` is the seeded default for `invite_only` and `plex_friends`; `viewer` is the seeded default for `open`. The default can be changed per-strategy in settings.
+Each strategy has a configurable default role for newly-created users. `requester` is the seeded default for `invite_only` and `plex_friends`; `viewer` is the seeded default for `open`. The default can be changed per-strategy in settings. **Unbuilt:** `requester` is hardcoded for open signup and Plex onboarding; an invite carries its own role.
 
 ### Inactive accounts
 
-`app_user.is_active = false` blocks all authentication paths. Admins disable rather than delete when a user might come back — disabling preserves the row, all request history, and any tracking the user was a requester for. Deletion is a separate path that cascades through `user_role`, identity rows, and request authorship (which becomes orphaned or reassigned to a tombstone user, TBD in iteration 2).
+`app_user.is_active = false` blocks login (local and Plex). Admins disable rather than delete when a user might come back — disabling preserves the row, all request history, and any tracking the user was a requester for. **Unbuilt:** disabling doesn't revoke existing sessions, and refresh doesn't re-check `is_active`. Deletion is a hard delete that cascades through `user_role`, identity rows, and sessions; `request.requested_by` is `ON DELETE RESTRICT`, so a user with requests can't be deleted. Deleting the last admin is a Conflict.
 
 ## Activity-visibility scoping
+
+**Unbuilt.** There is no activity feed or "view as" yet; request visibility is enforced per-request via `requests.view.own` / `.any`.
 
 The [audit pattern](../../patterns/audit/README.md) defers "what does a non-admin see in the activity feed?" to this spec. The answer:
 
@@ -240,17 +263,11 @@ The scoping predicate is a single function the activity-view renderer calls per 
 
 ## Admin-action audit (`auth_audit`)
 
-The dormant `auth_audit` table is the home for **human-on-human actions**: who promoted whom, who disabled which account, who approved which request, who changed the signup strategy, who created which custom role. It's distinct from the per-decision audit pattern — that's automated decisions; this is administrative changes.
+The `auth_audit` table is the home for auth events and **human-on-human actions**: who promoted whom, who disabled which account, who approved which request, who changed the signup strategy. It's distinct from the per-decision audit pattern — that's automated decisions; this is administrative changes.
 
-Conceptually each row carries:
+Each row carries `user_id` (nullable, `ON DELETE SET NULL` so the trail survives account deletion), `event` (typed name), `detail` JSONB (event-specific payload), and `created_at`. **Unbuilt:** an admin action needs both an actor and a target user, and the table has only the one `user_id`.
 
-- `actor_user_id` — who took the action
-- `event` — typed event name (`role.assigned`, `user.disabled`, `invite.created`, `request.approved`, `strategy.changed`, `view_as.started`, ...)
-- `target_user_id` (nullable) — who was affected, when there is one
-- `detail` JSONB — event-specific payload
-- `created_at`
-
-Write points include:
+The only writer is `SessionService`: `session.created`, `session.refreshed` (when the IP changes), `session.revoked`, `session.reuse_detected`. **Unbuilt:** the admin-action write points:
 
 - Role assignment / unassignment
 - Permission grant / revoke (direct user grants)
@@ -270,13 +287,12 @@ Retention follows the same configurable cadence as the [decision-artifact retent
 - **The tier registry** — [quality profiles](../quality-profiles/README.md). The permission-key qualifier `<tier>` references that registry by name.
 - **Per-decision audit rows** — [audit pattern](../../patterns/audit/README.md).
 - **Watch state** — future Plex/Jellyfin integration.
-- **JWT shape and session management** — implementation, not spec.
 
 ## Interactions
 
 | Neighbor                                              | How users interacts                                                                                          |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **[Requests](../requests/README.md)**                 | Consumes `requests.create:<type>:<tier>` and `requests.auto_approve:<type>:<tier>` keys. Reads `user_policy.max_pending_requests` for quota enforcement. Writes admin-action audit rows on approve / deny. |
+| **[Requests](../requests/README.md)**                 | Consumes `requests.create:<type>:<tier>`, `requests.auto_approve:<type>:<tier>`, `requests.approve|deny:<type>`, and the `requests.view` / `requests.cancel` `.own`/`.any` pairs. |
 | **[Tracking](../tracking/README.md)**                 | Requesters set is `app_user` IDs. Tracking-level visibility scoping uses this spec's predicate.              |
 | **[Quality profiles](../quality-profiles/README.md)** | Tier registry. Permission keys reference tier names; profile bindings to tiers happen there.                 |
 | **[Routing](../routing/README.md)**                   | Open Q5 (per-user routing rules) reads user context — role IDs, user ID — from this spec's identity primitives. |
@@ -286,26 +302,24 @@ Retention follows the same configurable cadence as the [decision-artifact retent
 
 ## Open questions
 
-1. **Built-in role set finalization.** The starter (`admin` / `co_admin` / `requester` / `viewer`) is directional. Should `co_admin` exist as built-in, or is it a custom role most installs don't need? Lean: keep it built-in; multi-admin households are common.
-2. **Wildcard grants vs explicit seeding.** *Resolved (iteration 2): no wildcards.* Admins get every key via explicit seed grants (see [Seed grants](#seed-grants-frozen--iteration-2)); the runtime check stays string-equality. Adding a permission key — including a new tier's `requests.*` keys — requires an admin grant backfill, documented as part of "adding a permission key" in the contributor docs.
-3. **Permission-key catalog freeze.** *Resolved (iteration 2):* the [catalog](#catalog-frozen--iteration-2) and [per-role seed grants](#seed-grants-frozen--iteration-2) are pinned above, and the [dot/colon rule](#the-dotcolon-rule-frozen--iteration-2) reconciles the earlier naming drift (`approve`/`deny` split and type-qualified; `view`/`cancel` scoped with `.own`/`.any`).
-4. **Cache invalidation strategy.** Role and grant changes need to propagate. Options: short JWT TTL (15min) so caches expire naturally; explicit cache-bust on change; cache keyed by `(user_id, settings_version)`. Lean: explicit bust via in-process pub/sub; we're single-instance for the foreseeable future.
-5. **Deny grants — worth keeping?** Real use cases are narrow ("revoke 4K from this one user temporarily"). The composition rule (deny wins) is standard. Risk is admin confusion at scale. Lean: ship `deny` since the column exists and the semantics are well-trodden; surface it sparingly in UI.
-6. **Plex friends sync cadence.** On every login, periodic sweep, or both? Periodic catches removals (was a friend, no longer is); on-login is the natural pivot point. Lean: on-login check + a daily sweep for removals.
-7. **"View as user" mechanics.** Session-scoped impersonation (audit row + masquerade for N minutes) or per-request `?as=` parameter (audited per request)? Lean: session-scoped with a persistent visible banner so the admin can't forget they're in someone else's view.
-8. **Last-admin protection scope.** Currently delete protects against removing the last admin. Should disabling protect too? What about removing the `admin` role from the last admin (a different code path that today would orphan the system)? Lean: protect all three.
-9. **Deletion vs disable vs tombstone.** When a user with request history is deleted, what happens to the authorship link? Options: cascade-null (history orphaned), reassign to a tombstone user, soft-delete (`deleted_at` column, row preserved). Lean: soft-delete via `is_active=false`, real delete cascades to authorship-null. Pin in iteration 2.
-10. **Multi-role UI shape.** Today the UI assigns one role. The model already supports many. When the multi-role UI lands, is there a "primary role" for display purposes, or does the user just have a list? Lean: display shows the highest-permission role with a "+N more" indicator.
+1. **Built-in role set finalization.** The starter (`admin` / `co_admin` / `requester` / `viewer`) is directional. Should `co_admin` exist as built-in, or is it a custom role most installs don't need? Lean: keep it built-in; multi-admin households are common. **Superseded by [V1](../../V1.md):** `co_admin` is hidden; only `requester` and `admin` are offered (REQ-ROLE-001).
+2. **Wildcard grants vs explicit seeding.** *Resolved (iteration 2): no wildcards.* Admins get every key via explicit seed grants (see [Seed grants](#seed-grants-frozen--iteration-2)); the runtime check stays string-equality. Adding a permission key — including a new tier's `requests.*` keys — requires an admin grant backfill, documented as part of "adding a permission key" in the contributor docs. **Answered by the code:** Explicit seed grants (`0022_rbac_catalog_freeze.up.sql:54-90`).
+3. **Permission-key catalog freeze.** *Resolved (iteration 2):* the [catalog](#catalog-frozen--iteration-2) and [per-role seed grants](#seed-grants-frozen--iteration-2) are pinned above, and the [dot/colon rule](#the-dotcolon-rule-frozen--iteration-2) reconciles the earlier naming drift (`approve`/`deny` split and type-qualified; `view`/`cancel` scoped with `.own`/`.any`). **Answered by the code:** The catalog is frozen in `0022_rbac_catalog_freeze.up.sql:14-30`.
+4. **Cache invalidation strategy.** Role and grant changes need to propagate. Options: short JWT TTL (15min) so caches expire naturally; explicit cache-bust on change; cache keyed by `(user_id, settings_version)`. Lean: explicit bust via in-process pub/sub; we're single-instance for the foreseeable future. — *Answered by the code: an in-process per-user cache with no TTL, dropped by `AuthzService.Bust` on role assignment.*
+5. **Deny grants — worth keeping?** Real use cases are narrow ("revoke 4K from this one user temporarily"). The composition rule (deny wins) is standard. Risk is admin confusion at scale. Lean: ship `deny` since the column exists and the semantics are well-trodden; surface it sparingly in UI. **Answered by the code:** Deny grants are kept and deny wins (`authz/resolve.go:47-59`); V1 surfaces none.
+6. **Plex friends sync cadence.** On every login, periodic sweep, or both? Periodic catches removals (was a friend, no longer is); on-login is the natural pivot point. Lean: on-login check + a daily sweep for removals. *Frozen — beyond V1.*
+7. **"View as user" mechanics.** Session-scoped impersonation (audit row + masquerade for N minutes) or per-request `?as=` parameter (audited per request)? Lean: session-scoped with a persistent visible banner so the admin can't forget they're in someone else's view. *Frozen — beyond V1.*
+8. **Last-admin protection scope.** Currently delete protects against removing the last admin. Should disabling protect too? What about removing the `admin` role from the last admin (a different code path that today would orphan the system)? **Decided:** protect all three.
+9. **Deletion vs disable vs tombstone.** When a user with request history is deleted, what happens to the authorship link? Options: cascade-null (history orphaned), reassign to a tombstone user, soft-delete (`deleted_at` column, row preserved). Lean: soft-delete via `is_active=false`, real delete cascades to authorship-null. Pin in iteration 2. **Answered by the code:** `request.requested_by` is `ON DELETE RESTRICT`, so users with requests can't be deleted; disable is `is_active` (`0016_tracking.up.sql:65`).
+10. **Multi-role UI shape.** Today the UI assigns one role. The model already supports many. When the multi-role UI lands, is there a "primary role" for display purposes, or does the user just have a list? Lean: display shows the highest-permission role with a "+N more" indicator. **Superseded by [V1](../../V1.md):** Every user holds exactly one role (REQ-ROLE-001).
 
 ## What we're explicitly not deciding here
 
-- Exact `user_policy` schema and column types
 - API endpoint shapes for user / role / permission management
 - The permission-check helper's exact Go signature
 - Permission cache implementation
 - Plex friends API integration details (auth, pagination, rate limits)
 - Two-factor authentication or other strengthened-auth flows
-- Session management beyond JWT (refresh tokens, revocation lists)
 - The UI for the permission editor (a checkbox grid is the assumed shape; exact layout is implementation)
 - The exact admin-action audit event vocabulary — directional only
 - Whether multiple admins per install need any coordination primitives beyond audit-log visibility

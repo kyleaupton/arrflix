@@ -1,6 +1,8 @@
-# Work dispatch — non-poll worker wake-ups over a durable queue
+---
+status: deferred
+---
 
-**Status:** Draft, iteration 1
+# Work dispatch — non-poll worker wake-ups over a durable queue
 
 This doc defines a **cross-cutting pattern**: how background workers pick up newly-available work *promptly* without busy-polling, while keeping the at-least-once guarantee that work is never silently dropped. It is the server→server sibling of [realtime](../../modules/realtime/README.md), which is server→browser. The two look similar ("something happened, react to it") but have **opposite reliability contracts**, and conflating them is a correctness bug — see [Why this is separate from realtime](#why-this-is-separate-from-realtime).
 

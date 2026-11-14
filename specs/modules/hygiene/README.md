@@ -1,6 +1,8 @@
-# Library hygiene — finding and fixing entropy over time
+---
+status: deferred
+---
 
-**Status:** Draft, iteration 1
+# Library hygiene — finding and fixing entropy over time
 
 This doc defines **library hygiene**: the system for detecting, surfacing, and remediating the slow accumulation of disorder in a media library — broken hardlinks, phantom files, duplicates, naming drift, quality drift. It captures _what hygiene means in Arrflix_, _what the catalog of findings looks like_, _how findings are computed and configured_, and _how the health score works_. It does **not** pin down table names, columns, or wire formats — those come in a later iteration.
 

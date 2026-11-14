@@ -1,41 +1,45 @@
+---
+status: as-built
+---
+
 # Title status — the acquisition read model
 
-**Status:** Draft, iteration 2 — derivation, scoping, read, events, `actions[]`, and the focus-page swap implemented. Outstanding: the batch read that list surfaces need, and the deferred action kinds.
+> **Beyond what's built:** the built slice is the per-title projection (`GET /api/v1/titles/{mediaType}/{tmdbId}/status`, rendered by the movie and series focus pages), the `request` and `cancel` actions, and the `title_status` / `title_progress` events. §List surfaces (batch `TitleStatus[]`), the `obtainableAt` / `library.best` / `work.startedAt` / `work.lastCheckedAt` / season-rollup fields of §The model, operator-only fields, and `Action.effect` describe unbuilt design. Poster chips and rails still read `HydratedTitle`'s `isInLibrary` / `isDownloading`.
 
-This doc defines **title status**: a single server-computed answer to *"what is happening with this title, for this viewer, right now."* It is the read model every acquisition-facing surface renders from — focus pages, poster chips, hero controls, status cards, season grids — and the payload of the realtime events that keep those surfaces live.
+This doc defines **title status**: a single server-computed answer to *"what is happening with this title, for this viewer, right now."* It is the read model acquisition-facing surfaces render from — focus pages, hero controls, status cards, season grids — and the subject of the realtime events that keep those surfaces live.
 
-It exists because that question currently has **six different answers** in the frontend, each derived independently from a different join across four caches. They disagree, and the disagreement is not a bug to be fixed once — it is the guaranteed steady state of the current design.
+It exists because, derived client-side, that question gets **a different answer on every surface**: each derives it independently from a different join across four caches. They disagree, and the disagreement is not a bug to be fixed once — it is the guaranteed steady state of client-side derivation.
 
 This doc owns the shape of the read model, its state vocabulary, how it is computed, and when it is emitted. It does **not** own the SSE transport ([realtime](../realtime/README.md)), the acquisition pipeline that produces the underlying state ([acquisition](../acquisition/README.md)), or the durable notification of events ([notifications](../notifications/README.md)).
 
 ## TL;DR
 
-- **One type, every surface.** `TitleStatus` is computed server-side and rendered — never re-derived — by the poster chip, the hero control, the status card, and the season grid. Identical shape everywhere is what makes those surfaces structurally incapable of disagreeing.
+- **One type, every surface.** `TitleStatus` is computed server-side and rendered — never re-derived — by the hero control, the status card, and the season grid (and, once [list surfaces](#list-surfaces-get-the-same-type-delivered-differently) exist, the poster chip). Identical shape everywhere is what makes those surfaces structurally incapable of disagreeing.
 - **Name events for what the UI renders, not what the DB stores.** `title_status`, not `want_updated`. An event named after a table pushes a join onto every client that receives it; three clients doing that join three ways is how we got here.
-- **This finishes an existing pattern, it doesn't invent one.** `HydratedTitle`/`MovieRail` already carry server-computed `isInLibrary`/`isDownloading`, and rails/search/library already consume them with no derivation. The focus pages were left behind.
+- **This finishes an existing pattern, it doesn't invent one.** `HydratedTitle`/`MovieRail` already carry server-computed `isInLibrary`/`isDownloading`, and rails/search/library already consume them with no derivation. The projection extends that to the focus pages.
 - **Two events on one query key.** `title_status` is a bare kick to refetch and fires on transitions; `title_progress` carries numbers and fires per tick. The split falls out of what each one is: the projection is per-viewer so it is fetched, progress is viewer-independent so it is pushed. Both land on the same TanStack key.
 - **The projection is per-viewer.** Two people looking at the same title get different `TitleStatus` — different actions, different intent, and different *fields*. Operator-only data is **absent** for a requester, not hidden by the client. That is also why the transition event is a kick: a per-viewer answer is fetched by the viewer, not pushed to them.
 - **State is not one enum.** A title can be *available* and *working* at once (an upgrade in flight), or partially available and still acquiring (a series mid-season). A headline state drives the chip; orthogonal facts carry the rest.
 - **`actions[]` is server-computed.** What this viewer may do, whether it needs approval, and what it would cost. The client renders buttons; it does not decide which buttons exist — and an offered action ships whatever taking it requires, or the client is back to joining caches to act on it.
 - **Derivation is a pure function.** Raw state tuple → `TitleState`, total, no I/O. Every requirement about *what state should show* becomes a table test with no database.
-- **Explicit invalidation plus a reconciler.** Mutation sites announce changes; a sweep over titles with active work recomputes and emits on diff. A forgotten call site becomes a latency bug rather than a correctness bug — which is the failure mode that produced the defect this work started from.
+- **Explicit invalidation plus a reconciler.** Mutation sites announce changes; a periodic sweep re-announces every title whose acquisition rows changed. A forgotten call site becomes a latency bug rather than a correctness bug — which is the failure mode that produced the defect this work started from.
 
 ## Why this is its own spec
 
 ### The concrete defect
 
-A user requests a movie. The poster's chip updates. The hero chip and the status card do not.
+The defect that motivated this model: a user requests a movie. The poster's chip updates. The hero chip and the status card do not.
 
 Two independent causes, producing one symptom:
 
 1. **`want_updated` carries no title identity.** It carries the full want, whose only title reference is `mediaItemId`. The frontend keys on TMDB id. `download_job_updated` *does* carry `tmdbId`. So the poster chip — which reads the jobs cache — could locate the title, and the card — which reads the tracking cache — could not.
-2. **The binding drops the event.** `web/src/realtime/bindings.ts:92` discards any `want_updated` whose cached tracking entry is null. For a title that was untracked when the page loaded — exactly the case where someone just pressed Request — the cache holds `tracking: null`, so the patch is discarded and nothing refetches.
+2. **The binding drops the event.** The `want_updated` binding in `web/src/realtime/bindings.ts` discards any want whose cached tracking entry is null. For a title that was untracked when the page loaded — exactly the case where someone just pressed Request — the cache holds `tracking: null`, so the patch is discarded and nothing refetches.
 
 Either alone would have been a two-line fix. Together they look arbitrary, and that arbitrariness is the tell: the client is doing a join it has no business doing, with partial data, in two places, differently.
 
 ### The systemic cause
 
-Every acquisition event is named after a database table. None of them means anything on its own, so each consumer reconstructs meaning by joining across four caches:
+The row-level acquisition events are named after database tables. None of them means anything on its own, so a consumer that renders title state from them reconstructs meaning by joining across four caches:
 
 | Cache | Carries |
 | --- | --- |
@@ -44,25 +48,24 @@ Every acquisition event is named after a database table. None of them means anyt
 | `mediaGetMovie` / `mediaGetSeries` | files, per-episode availability |
 | `requestsList` | request lifecycle |
 
-Six surfaces perform that join independently: a 7-state machine in `MovieStatusCard`, a 5-branch template in the series grid, a 4-branch hero control, a shape-branching library check in `Poster`, plus two more. They encode the same concept in six vocabularies, and the status→label→variant→icon mapping is triplicated across six files.
+Before the projection, six surfaces performed that join independently — a 7-state machine in `MovieStatusCard`, a 5-branch template in the series grid, a 4-branch hero control, a shape-branching library check in `Poster`, plus two more — encoding the same concept in six vocabularies.
 
-Three surfaces independently deriving one concept will eventually disagree. Fixing the six current disagreements does not change that; only deleting the derivation does.
+Surfaces independently deriving one concept will eventually disagree. Fixing each disagreement does not change that; only deleting the derivation does.
 
-### What else is broken underneath
+### Related problems underneath
 
-Reconnaissance turned up problems that the projection either fixes or is blocked by. They are listed here because a reader deciding whether this work is worth it should see the real scope.
+Problems adjacent to the projection, which it either fixes or leaves standing:
 
-- **Nothing is scoped.** `want_updated`, `download_job_updated`, and `import_task_updated` are all `Broadcast`. Every connected session receives every want and job update for every title in the system, regardless of who it concerns. The per-user scoping described in [realtime](../realtime/README.md) is specified and not implemented.
-- **Operator-only data reaches requesters.** Requesters do not fetch the jobs REST baseline (`enabled: auth.canViewJobs`) but *do* receive broadcast job payloads including `candidateTitle`, which the status card deliberately declines to render. The data is in their cache; only the rendering is withheld.
-- **Request state is not realtime at all.** No `request_*` or `tracking_*` event exists. Approve, deny, and cancel are invisible until a manual refetch — so an admin approving a request is something the requester's open tab cannot learn.
-- **The debounce has no maximum wait.** `bindings.ts` coalesces refetches with a trailing-only debounce. A sustained event stream at under the debounce interval postpones the refetch indefinitely — and a season-pack import is precisely that stream.
+- **Row events and scoping.** `download_job_updated` and `import_task_updated` target `jobs.read`, so operator-only fields such as `candidateTitle` reach operators only. `want_updated` is still `Broadcast`: every connected session receives every want update for every title.
+- **Request state reaches open tabs through the projection.** No `request_*` or `tracking_*` event exists; approve, deny, and cancel change the projection, and the `title_status` kick is what tells a requester's open focus page. Other request surfaces (`requestsList`) still learn only on refetch.
+- **The client debounce has no maximum wait.** `bindings.ts` coalesces its invalidate-based refetches (import tasks, media detail, proposals) with a trailing-only debounce. A sustained event stream at under the debounce interval postpones the refetch indefinitely — and a season-pack import is precisely that stream. `title_status` avoids this by coalescing server-side with a bounded interval.
 - **One operation, two cache keys.** Movie callers omit `query`, series callers pass `query: {type: 'series'}`, producing two distinct cache entries for `trackingByTmdb`. Every broad invalidation works around this with a partial-match key, and one component reconstructs the argument shape conditionally to force a cache hit.
 
 ## The model
 
 ### One type, two granularities
 
-`TitleStatus` answers the question for one title and one viewer. Series carry an episode dimension; movies do not.
+`TitleStatus` answers the question for one title and one viewer. Series carry an episode dimension; movies do not. The wire type is `model.TitleStatus`; the pure derivation is `internal/titlestatus`, assembled by `TitleStatusService` in `internal/service/title_status.go`.
 
 ```
 TitleStatus
@@ -70,30 +73,26 @@ TitleStatus
   tmdbId
 
   state                the headline — what the chip renders
-  obtainableAt?        when this becomes gettable, if it isn't yet
+  phase?               searching | downloading | importing (empty when nothing is in flight)
+  active               work in flight, independent of state
 
   library              what we have
     hasFiles
     fileCount
-    best?              quality bin of the best copy
 
-  work                 what is happening
-    active
-    phase?             searching | waiting | downloading | importing
-    startedAt?
-    lastCheckedAt?     freshness, for "last checked 2h ago"
-    wants              { total, done, working }
-
-  episodes?            series only
-    inScope, available, aired, working
-    seasons[]          { number, total, available, state }
-    items[]            { episodeId, seasonNumber, episodeNumber, state, airsAt? }
+  counts               { total, available, working } over in-scope atoms
 
   viewer               computed for the requesting user
     isRequester
+    requestId?         the viewer's live request — what cancel acts on
     intent?            { tier, scopeRule } — this viewer's own intent
-    actions[]
+  actions[]
+
+  episodes[]?          series only, in season/episode order
+                       { episodeId, seasonNumber, episodeNumber, state, airDate? }
 ```
+
+**Unbuilt fields** from the design: `obtainableAt` (when the title becomes gettable), `library.best` (quality bin of the best copy), `work.startedAt` / `work.lastCheckedAt` (freshness, for "last checked 2h ago"), and server-computed episode rollups (`inScope` / `aired` counts and a per-season `{ number, total, available, state }` array). Per-episode not-yet-aired state is derived from the air date and does reach the headline as `unreleased`.
 
 **The episode array lives in the projection**, rather than in a second query the grid joins against. Splitting it would recreate the two-sources problem this document exists to delete. A 200-episode series is a few KB of compact tokens, and it changes rarely.
 
@@ -104,12 +103,12 @@ A single enum cannot express the states the product requires, because several ar
 - A title with a file that is being upgraded is **available and working** ([upgrades and divergent tiers](../../stories/06-upgrades-and-divergent-tiers.md)).
 - A series mid-season is **partially available and still acquiring** ([series mid-season](../../stories/02-series-mid-season-auto-approve.md)).
 
-So `state` is what the chip says, and `library` / `work` carry the orthogonal facts. An upgrade in flight is `state: available` with `work.active: true` — not a distinct state, which is what keeps the vocabulary from multiplying combinatorially.
+So `state` is what the chip says, and `library` / `active` / `phase` carry the orthogonal facts. An upgrade in flight is `state: available` with `active: true` — not a distinct state, which is what keeps the vocabulary from multiplying combinatorially.
 
 | `state` | Means |
 | --- | --- |
 | `not_requested` | Nothing exists for this title |
-| `unreleased` | Not obtainable yet; `obtainableAt` says when |
+| `unreleased` | Not obtainable yet (episodes: not yet aired). **Unbuilt:** `obtainableAt` on the wire, and any obtainable date for movies |
 | `awaiting_approval` | A request is pending a decision |
 | `denied` | A request was refused |
 | `searching` | Looking for an acceptable release |
@@ -124,7 +123,7 @@ So `state` is what the chip says, and `library` / `work` carry the orthogonal fa
 
 ### Three precedence rules
 
-Pinned while implementing the derivation, because the state vocabulary alone does not determine the answer when several inputs disagree.
+The state vocabulary alone does not determine the answer when several inputs disagree; these rules do (see `titlestatus.Derive`).
 
 **A file on disk wins.** An atom with a file is `available` whatever its want says. The file is ground truth; the want may be a stale cancellation, or an upgrade still running. Nothing about a want should be able to make an existing file appear absent.
 
@@ -154,11 +153,11 @@ Per the [backend layering invariants](../../../.claude/rules/overview.md): the p
 
 `TitleStatus` is computed **per viewer**, not filtered per viewer. The difference matters:
 
-- **Different actions.** A requester sees cancel; a reviewer sees approve and deny; someone with no grant for this media type sees nothing.
+- **Different actions.** A requester sees cancel; a reviewer sees approve and deny (**unbuilt** — see below); someone with no grant for this media type sees nothing.
 - **Different intent.** `viewer.intent` is *this* viewer's tier and scope, not the tracking's union. It reports the ask, which is not a promise: `tracking.quality_profile_id` is single-valued, so two requesters wanting different tiers cannot both be acted on.
-- **Different fields.** Operator-only data — candidate release titles, indexer names, per-file paths — is **absent** from a requester's projection.
+- **Different fields.** Operator-only data — candidate release titles, indexer names, per-file paths — is **absent** from a requester's projection. **Unbuilt:** the projection carries no operator-only fields for anyone yet; operators read them from the jobs surfaces.
 
-That last point is the fix for the leak above. Today the sensitive field is broadcast to everyone and withheld by client-side rendering; a per-viewer payload means it was never sent.
+A per-viewer payload means sensitive data is never sent, rather than sent and withheld by client-side rendering.
 
 **Requester identity is never disclosed between requesters.** A viewer learns that a title is already being followed — the useful part — and not by whom.
 
@@ -172,19 +171,21 @@ Action
   enabled
   requiresApproval?   this will need a decision before anything happens
   tiers?              [{ tier, requiresApproval }] — which tiers this viewer may choose
-  effect?             { episodesAdded, bytesEstimate }
+  effect?             { episodesAdded, bytesEstimate }   (unbuilt)
   disabledReason?
 ```
 
+Only `request` and `cancel` exist as kinds (`titlestatus.ActionRequest` / `ActionCancel`); the rest are design, per **Shipped** below.
+
 **Approval is per tier, not per user.** A viewer can be trusted to pull HD on their own and still need a decision for 4K — the grant catalog says so directly (`requests.auto_approve:<type>:<tier>`). So the flag lives on each tier, and the top-level `requiresApproval` is set only when *every* offered tier needs a decision, letting a single-tier UI read it without walking the list.
 
-This absorbs three requirements that would otherwise each need their own endpoint:
+This absorbs three requirements that would otherwise each need their own endpoint (only the first is built):
 
 - **`REQ-APPROVE-012`** — a user must know a choice requires approval *before* committing. That is `requiresApproval` on the request action.
 - **`REQ-UNION-*` scope diff** — *"Season 3 is already being followed. Requesting will add Seasons 1–2."* That is `effect.episodesAdded`.
 - **`REQ-SERIES-007`** — the pre-flight size of what you are asking for. That is `effect.bytesEstimate`.
 
-It also deletes the client-side tier filtering and the auto-approve check that currently decide the CTA's face — the server holds both the grant set and the state, so it should be the one deciding.
+It also removes client-side tier filtering and auto-approve checks from deciding the CTA's face — the server holds both the grant set and the state, so it should be the one deciding.
 
 **Disabled actions are still sent** when the affordance needs to explain itself. An action that simply does not apply is omitted; an action that is unavailable *for a reason the user should know* is present, disabled, and carries the reason.
 
@@ -211,75 +212,57 @@ Note what this implies: the per-viewer *payload* machinery is not needed yet. Re
 
 **The tick is decoration.** `title_progress` carries no state and never changes what the UI believes is happening — only how far along it is. A dropped or reordered tick is corrected by the next one, so no sequencing guard is required.
 
-**Emission is coalesced server-side**, at most one `title_status` per title per flush interval. A season-pack import transitions every episode of a season; that is one emit, not ten. This replaces the unbounded client debounce with a bounded server-side one — an important difference, because the current client debounce can be starved indefinitely by exactly this burst.
+**Emission is coalesced server-side** by `internal/titlenotify`: at most one `title_status` per title per 250ms flush interval. A season-pack import transitions every episode of a season; that is one emit, not ten. A bounded server-side interval, unlike a trailing-only client debounce, cannot be starved indefinitely by exactly this burst.
 
-**A sweep backs the explicit invalidations.** Every write path that moves acquisition state announces the affected title, but that is a contract across a dozen call sites and contracts like that decay. A periodic sweep re-reads which media items changed and announces them regardless, which is what keeps a forgotten announcement a latency bug rather than a stale-UI bug. The sweep window overlaps the previous one so a row committed late by a long transaction still lands inside a swept window.
+**A sweep backs the explicit invalidations.** Every write path that moves acquisition state announces the affected media item (`titlenotify.Notifier.Notify`), but that is a contract across a dozen call sites and contracts like that decay. A sweep every 30s re-reads which media items changed and announces them regardless, which is what keeps a forgotten announcement a latency bug rather than a stale-UI bug. The sweep window overlaps the previous one by a 10s grace so a row committed late by a long transaction still lands inside a swept window.
 
-### What the swap deleted
+### Frontend consumers
 
-The focus pages now render the projection. Six independent derivations and one whole vocabulary went with them:
+The movie and series focus pages render the projection through `composables/useTitleStatus.ts`: `MovieStatusCard`, `SeriesStatusCard`, `AcquisitionControl`, `SeriesAcquisitionControl`, and the series episode grid. `lib/titleStatus.ts` holds the one state → label/icon/variant table, and nothing else. Live progress arrives through `realtime/titleProgress.ts`, a store fed by `title_progress`, never the query cache.
 
-| Deleted | Was |
-| --- | --- |
-| `MovieStatusCard`'s 7-state machine | files + tracking + wants + live job + request, joined in the component |
-| The series grid's 5-branch episode cell | want status, hold, per-episode job, and season-pack membership |
-| `Series.vue`'s job correlation | `activeJobsForSeries`, `getSeasonPackJob`, `getEpisodeJob`, `isPartOfSeasonPack`, and two near-identical progress-state functions |
-| `WantStatusPill` | one of the triplicated status→label→variant→icon maps |
-| `useDownloadJobs`'s tmdb-keyed helpers | `isJobActive`, `getMovieJob`, `jobsById` — the correlation surface every badge used |
-| The client tier filter and auto-approve re-check | `actions[].tiers`, each labeled |
+**The line held is title vs. job vs. file.** Job status (`downloads/statusConfig.ts`) and file status (the local-files table) stay outside the projection. They are different concepts that happen to share vocabulary, and folding them into the projection would be the same conflation in reverse.
 
-`Series.vue` went from 762 lines to ~530. What replaced all of it is `lib/titleStatus.ts`: one state → label/icon/variant table, and nothing else.
+Two grant rules follow from rendering one source:
 
-**The line held is title vs. job vs. file.** Job status (`downloads/statusConfig.ts`) and file status (the local-files table) stayed exactly where they were. They are different concepts that happen to share vocabulary, and folding them into the projection would be the same conflation in reverse.
+- **Tier choice follows `actions[].tiers`.** A surface offers exactly the tiers the server lists, so a viewer without `requests.create:series:4k` is never offered 4K and cannot collect a 403 for picking it.
+- **Quality choice and autonomy are different questions.** In the track dialog, quality follows the tiers offered; autonomy is operator policy and follows `jobs.manage`.
 
-### What the swap surfaced
-
-Three things only became visible once the surfaces were rebuilt on one source:
-
-- **`SeriesAcquisitionControl` was checking the wrong grant.** It read `auto_approve:series:HD` for the button face regardless of the selected tier, and `TrackSeriesDialog` offered both tiers unfiltered — so a viewer without `requests.create:series:4k` could pick 4K and collect a 403. Neither component had a tier filter at all; only the movie path did. `actions[].tiers` removes the class of bug rather than the instance.
-- **`isOperator` was conflating two grants.** The track dialog gated *both* quality choice and autonomy on `canAutoApprove('series','HD')`. They are different questions: quality follows the tiers offered, autonomy follows `jobs.manage`. Split accordingly.
-- **Request decisions had no realtime path at all.** Nothing invalidated `requestsList`, so an admin approving a request could not reach the requester's open tab. The `title_status` kick closes this, because request state is part of the projection — a case that was never designed for, only inherited.
-
-### Known regressions from the swap
-
-Recorded rather than quietly absorbed:
+### Known gaps
 
 - **The unreleased movie reads as `not_requested`.** No obtainable date is persisted for a movie (REQ-UNREL-003), so the projection cannot distinguish "not out yet" from "not asked for". `MovieStatusCard` renders the theatrical/digital dates beneath the headline from TMDB metadata it already holds, which preserves the information but not the state. Closing this means persisting a home-release date, not changing the derivation.
-- **The status card no longer shows the release name to operators.** It was the download headline for anyone with `jobs.read`. Reinstating it would mean re-joining the jobs cache in the one component the projection just freed, so it belongs on an operator surface — `AttentionCard` or the Downloads page, which both still carry it.
+- **The status card does not show the release name to operators.** Showing it would mean re-joining the jobs cache in a component the projection frees from it, so it belongs on an operator surface — `AttentionCard` or the Downloads page, which both carry it.
 
 ### List surfaces get the same type, delivered differently
+
+**Unbuilt.** No list endpoint returns `TitleStatus[]` yet; rails, search, library, and the request list use their own shapes.
 
 A browse page with fifty posters cannot subscribe to fifty topics, and does not need per-tick progress in a grid.
 
 **List endpoints return `TitleStatus[]`, batch-computed, refreshed by notify-and-refetch.** The shape is identical to what the focus page receives; only the delivery differs. Identical shape is the entire point — it is what makes the poster chip and the hero chip unable to disagree, since they render the same type from the same producer.
 
-This also resolves the request-list N+1, where each row currently fetches full media detail for a title and a poster.
+This also resolves the request-list N+1, where each row fetches full media detail for a title and a poster.
 
 ### Keeping it correct
 
 Two mechanisms, deliberately overlapping:
 
-1. **Explicit invalidation.** Services that mutate acquisition state announce the affected title. Greppable, immediate, and easy to forget.
-2. **A reconciler.** A periodic sweep recomputes the projection for titles with active work and emits when it differs from what was last sent.
+1. **Explicit invalidation.** Services that mutate acquisition state announce the affected media item. Greppable, immediate, and easy to forget.
+2. **A sweep.** Every 30s, `titlenotify` asks which media items had acquisition-relevant rows change since its last watermark and kicks each of them. It does not recompute or diff the projection: a kick is cheap, and the client's refetch is what applies the lens.
 
-The reconciler is what makes this robust. A missed call site becomes a bounded latency, not a permanently wrong UI — and a missed call site is *precisely* the class of defect that started this work. It also recovers state after a restart, when in-process session state is gone but downloads are still running.
+The sweep is what makes this robust. A missed call site becomes a bounded latency, not a permanently wrong UI — and a missed call site is *precisely* the class of defect that motivated this model. Its watermark starts at process start, so after a restart it covers work that keeps writing rows (running downloads), not changes made while the process was down; clients refetch on reconnect for those.
 
-The progress ticker already runs on the required cadence for anything actively downloading, so the sweep is close to free where it matters most.
+## Dependencies
 
-## What this requires that doesn't exist
-
-Honest dependencies. The projection cannot ship without these.
-
-- ~~**Per-user scoping in the broker.**~~ Landed. Recipients are `user:<id>` / `capability:<key>` / `broadcast`, resolved once per session at attach. Both title events target `library.read`, which is what lets a requester see progress move without the operator payload going with it.
-- **A TMDB-keyed read.** Getting from `(tmdbId, mediaType)` to wants is three hops today, and no query joins them. The download side already has `ListDownloadJobsByTmdbMovieID` as precedent.
-- **Title identity on want events.** Whatever replaces `want_updated` internally must carry enough to locate the title without a client-side map.
-- **A unified tracking cache key.** The movie/series key split should be closed as part of this work rather than carried forward into a new type.
+- **Recipient scoping in the broker.** Recipients are `User(id)` / `Capability(key)` / `Broadcast`, resolved once per session at attach. Both title events target `library.read`, which is what lets a requester see progress move without the operator payload going with it.
+- **A TMDB-keyed read.** `TitleStatusService` resolves `(tmdbId, mediaType)` to the media item (`GetMediaItemByTmdbIDAndType`), then its wants, files, and jobs (`ListDownloadJobsByTmdbMovieID` for movies).
+- **Title identity on kicks.** Callers announce a media item id; `titlenotify` resolves it to `(mediaType, tmdbId)` before emitting, so no client-side map is needed.
+- **A unified tracking cache key.** Open: the movie/series `trackingByTmdb` key split still exists on the frontend.
 
 ## Known limits
 
 - **No score is persisted per file.** `file_origin` caches the quality bin triple, but the custom-format score exists nowhere on disk. So `library.best` can express bin-based comparison and **cannot** express score-based upgrade eligibility without recomputation. This is the concrete blocker under [upgrades and divergent tiers](../../stories/06-upgrades-and-divergent-tiers.md), and it is narrower than "upgrades are unbuilt."
 - **`tracking.quality_profile_id` is single-valued.** Divergent tiers across requesters are deferred at the schema level. `viewer.intent.tier` can report what a viewer asked for; the system cannot yet act on two different answers.
-- **Effective scope is not materialized.** It is recomputed live from surviving requester associations. The projection follows suit and computes it at emit — correct, and worth knowing before someone adds a cache.
+- **Effective scope is not materialized.** It is recomputed live from surviving requester associations. The projection infers scope from the presence of a want at read time — correct, and worth knowing before someone adds a cache.
 - **Spelling.** `want`, `tracking`, and `request` use `canceled`; `download_job` and `import_task` use `cancelled`. The projection is a new type and normalizes to **`canceled`**, matching the majority and the domain models. Noted so it is not "corrected" back.
 
 ## Requirements this satisfies
@@ -289,13 +272,13 @@ Traceability to the [stories](../../stories/README.md). This is the design half 
 | Requirement | How |
 | --- | --- |
 | `REQ-SEARCH-002` — state stays stable while the want cycles | `searching` collapses the `pending`↔`searching` oscillation |
-| `REQ-SEARCH-003` — distinguish "working" from "stuck" | `work.active` is orthogonal to `state`; `unavailable` is distinct from `searching` |
+| `REQ-SEARCH-003` — distinguish "working" from "stuck" | `active` is orthogonal to `state`; `unavailable` is distinct from `searching` |
 | `REQ-APPROVE-012` — know a choice needs approval before committing | `Action.requiresApproval` |
-| `REQ-SERIES-007` — see the size of what you are asking for | `Action.effect.bytesEstimate` |
-| `REQ-SERIES-008` — series progress without composing per-episode state | `episodes` rollups are server-computed |
-| `REQ-UNION-010` — only hear about what your intent covers | Per-viewer computation; scoped delivery |
+| `REQ-SERIES-007` — see the size of what you are asking for | `Action.effect.bytesEstimate` (**unbuilt**) |
+| `REQ-SERIES-008` — series progress without composing per-episode state | `counts` and per-episode `state` are server-computed; per-season rollups are **unbuilt** |
+| `REQ-UNION-010` — only hear about what your intent covers | Per-viewer computation (**unbuilt:** delivery is scoped to `library.read`, not to intent) |
 | `REQ-UNION-011` — not told who else wants a title | Requester identity is never in the payload |
-| `REQ-UNREL-*` — "not out yet" is distinct from "can't find it" | `unreleased` + `obtainableAt`, distinct from `searching` |
+| `REQ-UNREL-*` — "not out yet" is distinct from "can't find it" | `unreleased`, distinct from `searching` (episodes by air date; movie dates and `obtainableAt` **unbuilt**) |
 
 Requirements this **does not** satisfy, listed so the gap stays visible: the notification-side requirements (`REQ-SERIES-009`, `REQ-APPROVE-001`, `REQ-APPROVE-007`) are [notifications](../notifications/README.md)' territory. A live-updating page is not a substitute for telling someone who isn't looking at it.
 
@@ -314,7 +297,7 @@ Requirements this **does not** satisfy, listed so the gap stays visible: the not
 | --- | --- |
 | [Realtime](../realtime/README.md) | Emits `title_status` / `title_progress` through it; depends on its per-user scoping |
 | [Acquisition](../acquisition/README.md) | The state being projected; announces changes |
-| [Requests](../requests/README.md) | Request lifecycle folds into `state` and `actions[]` — which closes the missing-`request_updated` gap without a row event |
+| [Requests](../requests/README.md) | Request lifecycle folds into `state` and `actions[]`, so a focus page learns of approve/deny/cancel without a `request_updated` row event |
 | [Tracking](../tracking/README.md) | Autonomy dial produces `needs_pick` / `proposed`; requester associations produce `viewer.intent` |
 | [Quality profiles](../quality-profiles/README.md) | Supplies bins and cutoff for `library.best` and upgrade eligibility |
 | [Notifications](../notifications/README.md) | Sibling. Same underlying events, different bus and different guarantees |
@@ -322,7 +305,7 @@ Requirements this **does not** satisfy, listed so the gap stays visible: the not
 
 ## Open questions
 
-1. **Coalescing interval.** Long enough to collapse a season-pack burst, short enough that a single transition feels immediate. **Lean:** around 250ms, measured against the import burst rather than guessed.
+1. **Coalescing interval.** Long enough to collapse a season-pack burst, short enough that a single transition feels immediate. **Lean:** around 250ms, measured against the import burst rather than guessed. — *Answered by the code: `titlenotify` flushes every 250ms.*
 
 2. **Does the episode array scale to the worst case?** A long-running daily show is thousands of episodes. **Lean:** carry them all until a real series proves it hurts, then paginate by season — the grid is already season-organised, so that shape exists if needed.
 

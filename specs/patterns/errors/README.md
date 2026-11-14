@@ -1,3 +1,7 @@
+---
+status: as-built
+---
+
 # Error handling
 
 This is the spec for arrflix's typed error model. It covers both the design (why it's shaped this way) and the patterns (how to write code against it).
@@ -6,7 +10,7 @@ If you're writing service or repo code, **read the [Layer patterns](#layer-patte
 
 ## TL;DR
 
-- One semantic axis: **`Kind`**. Drives HTTP status, derives retry behavior. 7 values total, enforced end-to-end (Go type, Postgres `error_kind` ENUM, SQLC type override).
+- One semantic axis: **`Kind`**. Drives HTTP status, derives retry behavior. 7 values total, enforced end-to-end (Go type, Postgres `error_kind` ENUM, repo-layer cast).
 - Wire format: **RFC 9457 `application/problem+json`**. Same shape huma emits natively.
 - Error mapping happens at the **repo layer** via `apperrors.FromPg`. Services pass typed errors through; they only `Wrap` when they have better context (e.g., a slug instead of a UUID).
 - Constructors return `*Error` and chain: `apperrors.Internalf("...").Op("Foo").NotRetryable()`. Builder methods are copy-on-modify; the receiver is never mutated.
@@ -15,11 +19,11 @@ If you're writing service or repo code, **read the [Layer patterns](#layer-patte
 
 ## Why typed errors
 
-Before this work, the backend had three problems:
+Without a typed model, a backend runs into three problems:
 
-1. **HTTP status codes were guessed by string-matching.** Handlers used `strings.Contains(err.Error(), "no invite")` to pick 403 vs 409 vs 500. Any rewording silently broke the contract.
-2. **Internal error text leaked to clients.** `c.JSON(500, map[string]string{"error": err.Error()})` exposed SQL column names, file paths, and pgx internals.
-3. **No shared vocabulary.** Services returned naked `error`. Handlers had no machine-readable way to distinguish "this was a NotFound" from "this was a Conflict" from "this is internal."
+1. **HTTP status codes get guessed by string-matching.** A handler that uses `strings.Contains(err.Error(), "no invite")` to pick 403 vs 409 vs 500 breaks silently on any rewording.
+2. **Internal error text leaks to clients.** Rendering `err.Error()` into a 500 body exposes SQL column names, file paths, and pgx internals.
+3. **No shared vocabulary.** With naked `error` returns, handlers have no machine-readable way to distinguish "this was a NotFound" from "this was a Conflict" from "this is internal."
 
 The typed error model fixes these by giving every error a stable `Kind`, mapping that kind to a stable HTTP status and wire-format identifier, and splitting user-facing detail from internal context.
 
@@ -44,7 +48,7 @@ The kind taxonomy is enforced end-to-end:
 
 - **Go**: `apperrors.Kind` is a typed string with named constants.
 - **Postgres**: a native `error_kind` ENUM with the same values, used as the column type on `download_job.error_kind` and `import_task.error_kind`. The DB rejects invalid values.
-- **SQLC**: a type override maps the postgres enum directly to `apperrors.Kind`, so generated queries take/return the same Go type.
+- **SQLC / repo**: the enum is deliberately *not* overridden to `apperrors.Kind` in `sqlc.yaml` (the aliased import broke API doc generation). SQLC emits `dbgen.ErrorKind`, and the repo casts between it and `apperrors.Kind` — the string values are identical, so the cast is free (`nullableKind` / `kindFromNullable`).
 
 Adding a new kind therefore requires three coordinated changes (Go constant, ENUM `ALTER TYPE ... ADD VALUE`, sqlc regen). That friction is the point: kinds are part of the public API contract and shouldn't be added casually.
 
@@ -89,16 +93,19 @@ The `type` field is a **stable identifier**. Frontends branch on it. It is part 
 
 ## Layer patterns
 
-The patterns below are enforced by `CLAUDE.md` files in the relevant directories. Read those before writing code; this section is the rationale.
+The patterns below are enforced by the per-layer rules in `.claude/rules/` (`backend-repo.md`, `backend-service.md`, `backend-handlers.md`). Read those before writing code; this section is the rationale.
 
 ### Repo layer: `FromPg` always
 
 Every repo method that wraps a SQLC query routes the result through `apperrors.FromPg`:
 
 ```go
-func (r *Repository) GetLibrary(ctx context.Context, id pgtype.UUID) (dbgen.Library, error) {
-    lib, err := r.Q.GetLibrary(ctx, id)
-    return lib, apperrors.FromPg(err, "library %s not found", id)
+func (r *Repository) GetLibrary(ctx context.Context, id uuid.UUID) (model.Library, error) {
+    row, err := r.Q.GetLibrary(ctx, pgtypeFromUUID(id))
+    if err != nil {
+        return model.Library{}, apperrors.FromPg(err, "library %s not found", id)
+    }
+    return toModelLibrary(row), nil
 }
 ```
 
@@ -120,7 +127,7 @@ This layer is also where postgres-error-code knowledge lives. Services don't kno
 Most service methods just consume the repo's typed error unchanged:
 
 ```go
-func (s *LibrariesService) Get(ctx context.Context, id pgtype.UUID) (dbgen.Library, error) {
+func (s *LibrariesService) Get(ctx context.Context, id uuid.UUID) (model.Library, error) {
     return s.repo.GetLibrary(ctx, id)  // typed error from repo passes through
 }
 ```
@@ -129,10 +136,10 @@ Use `apperrors.Wrap` **only** when you have better context than the repo had:
 
 ```go
 // Service got a slug from the URL; repo only knows the UUID.
-func (s *MediaService) GetBySlug(ctx context.Context, slug string) (dbgen.Media, error) {
+func (s *MediaService) GetBySlug(ctx context.Context, slug string) (model.Media, error) {
     id, err := s.resolveSlug(ctx, slug)
     if err != nil {
-        return dbgen.Media{}, err
+        return model.Media{}, err
     }
     m, err := s.repo.GetMedia(ctx, id)
     if apperrors.IsNotFound(err) {
@@ -153,7 +160,7 @@ Rule of thumb:
 For input validation, use `apperrors.Validation` with field-level details:
 
 ```go
-func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath string, ...) (dbgen.Library, error) {
+func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath string, ...) (model.Library, error) {
     var fields []apperrors.FieldError
     if name == "" {
         fields = append(fields, apperrors.Field("body.name", "required"))
@@ -162,7 +169,7 @@ func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath strin
         fields = append(fields, apperrors.Field("body.type", "must be 'movie' or 'series'"))
     }
     if len(fields) > 0 {
-        return dbgen.Library{}, apperrors.Validation("invalid library", fields...)
+        return model.Library{}, apperrors.Validation("invalid library", fields...)
     }
     return s.repo.CreateLibrary(ctx, ...)
 }
@@ -187,31 +194,37 @@ Builder methods are copy-on-modify: the receiver is never mutated, so an error r
 
 ### Handler layer: render to RFC 9457
 
-> Not yet implemented. As of writing, handlers still use Echo and inline `c.JSON(...)` patterns. When we migrate handlers (in coordination with the huma migration), this section will be filled in. The pattern will be:
->
-> ```go
-> if err != nil {
->     return renderError(c, err)  // emits application/problem+json with the right status
-> }
-> ```
->
-> Until then, existing handlers continue to function as written. New handler work should still emit typed errors from services so the eventual migration is mechanical.
+Handlers are humachi operations (`internal/http/handlers/`). They return the service's error unchanged; they don't construct business errors or pick status codes:
+
+```go
+lib, err := h.svc.Libraries.Get(ctx, input.ID)
+if err != nil {
+    return nil, err  // rendered as application/problem+json with the kind's status
+}
+```
+
+Rendering is installed once by `internal/http/humaerr`, which replaces `huma.NewError`:
+
+- If any error in the chain is an `*apperrors.Error`, it renders via `ToProblem` (kind → status, `type` URI, field details, the no-leak rule for 500s).
+- Otherwise — huma's own binding and schema-validation failures — it synthesizes an `*apperrors.Error` from huma's status and `*huma.ErrorDetail` entries, so framework errors share the exact wire shape of service errors.
+
+`cmd/genspec` imports `humaerr` too, so the OpenAPI spec documents `ProblemDetails` as the error schema. The chi-level gates below huma (JWT, setup mode) write the same problem shape directly. On the frontend, errors arrive as typed `ProblemDetails` and are surfaced via `problemMessage(err, fallback)`.
 
 ### Worker layer: typed kinds + `IsRetryable`
 
-Workers (`internal/jobs/*`) construct typed errors and route the retry decision through `apperrors.IsRetryable(err)`:
+Workers (`internal/jobs/*` — download, import, acquisition, notification) construct typed errors and route the retry decision through `apperrors.IsRetryable(err)`:
 
 ```go
-func (w *Worker) handleError(ctx context.Context, job dbgen.DownloadJob, err error) {
+func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err error) {
     msg := err.Error()
     kind := apperrors.KindOf(err)
 
     if !apperrors.IsRetryable(err) {
-        _, _ = w.repo.MarkDownloadJobFailed(ctx, job.ID, msg, kind)
+        w.failJobAndRecoverWants(ctx, job, msg, kind)
         return
     }
 
-    // ... attempt-count check, exponential backoff, ScheduleDownloadJobRetry ...
+    // ... attempt-count check, exponential backoff, retry scheduling ...
 }
 ```
 
@@ -236,13 +249,13 @@ Defined in `backend/internal/errors/`.
 
 **Wrap-style helpers** (take `error`, return `error`, nil-safe, not chainable) — `Wrap` (replace detail, preserve kind), `WithOp` (record op on a non-typed error), `FromPg` (the repo-layer translation point).
 
-**Persistence** — `error_kind` Postgres ENUM mirrors the Go `Kind` type. Mapped via SQLC override in `sqlc.yml`; column appears on `download_job` and `import_task` (nullable; NULL for naked-error fallback).
+**Persistence** — `error_kind` Postgres ENUM mirrors the Go `Kind` type. SQLC emits `dbgen.ErrorKind`; the repo casts it to and from `apperrors.Kind`. The column appears on `download_job` and `import_task` (nullable; NULL for naked-error fallback).
 
 **Predicates** — `KindOf`, `IsKind`, `IsNotFound`, `IsConflict`, `IsValidation`, `IsForbidden`, `IsUnauthenticated`, `IsBadGateway`, `IsInternal`, `IsRetryable`.
 
 **Adapters** — `FromPg` (the standard repo-layer translation point).
 
-**Wire** — `ToProblem(err) ProblemDetails`, `HTTPStatus(err) int`, `ContentType` constant.
+**Wire** — `ToProblem(err) ProblemDetails`, `HTTPStatus(err) int`, `ContentType` constant. `Problem(kind, detail, fields)` builds an error from an explicit kind (used by `humaerr`'s fallback). `OpOf` / `FieldsOf` read the op and field details back out of a chain.
 
 **Logging** — `*Error` implements `slog.LogValue`. Pass errors directly to slog and you get `kind`, `msg`, `op`, `fields`, and `stack` as structured attributes.
 
@@ -261,7 +274,7 @@ If you find yourself wanting one of these, push back first: the cost of every ki
 Captured here so we don't relitigate them.
 
 - **Single Kind axis, not Kind × Category.** Industry standard (gRPC, Kubernetes, Stripe). Retry derives from kind. The `.NotRetryable()` builder method handles the rare override case.
-- **Kind enforced end-to-end via Postgres ENUM + SQLC override.** Same vocabulary in Go, the DB, and the wire. Adding a kind requires migration + Go change + sqlc regen — that friction is intentional, since kinds are stable contract.
+- **Kind enforced end-to-end via Postgres ENUM + repo cast.** Same vocabulary in Go, the DB, and the wire. Adding a kind requires migration + Go change + sqlc regen — that friction is intentional, since kinds are stable contract.
 - **Validation = 422, not 400.** Aligns with huma's binding errors. 400 is for unparseable, 422 is for "parsed fine, semantically invalid."
 - **Repo-layer Pg-error mapping.** Pg-error knowledge belongs at the storage boundary. Services consume typed errors and `Wrap` only when adding context.
 - **`Wrap` replaces user-facing detail; preserves kind + chain + stack.** This is the override mechanism that lets services improve on the repo's default identifier without re-implementing translation.
@@ -275,15 +288,10 @@ These are intentional trade-offs documented so future readers know they're chose
 
 - **`last_error` is stored unfiltered.** The worker persists `err.Error()` directly to `download_job.last_error` and `import_task.last_error`. For typed errors with `%w` wrapping, that string contains the original upstream error text. This is fine for arrflix today because it's self-hosted and single-tenant — the user IS the admin, and seeing their own job's error details is the intended behavior. **If multi-tenancy is ever added, revisit:** `last_error` would need to be sanitized (e.g., `KindOf(err)`-aware truncation) before persistence, or the API needs to filter the column out of public responses. The leak that `ToProblem` closes for HTTP responses is reopened through this column for any handler that returns the raw job row.
 
-- **`IsRetryable` walks `errors.Unwrap`, not `errors.Join`.** Multi-error values produced by `errors.Join(...)` (Go 1.20+) implement `Unwrap() []error`, which `errors.Unwrap` does not traverse. Nothing in arrflix uses `errors.Join` today; if that changes, the predicate will need updating to walk multi-wrap chains.
+- **`IsRetryable` walks `errors.Unwrap`, not `errors.Join`.** Multi-error values produced by `errors.Join(...)` (Go 1.20+) implement `Unwrap() []error`, which `errors.Unwrap` does not traverse. The one `errors.Join` use (`metadata.classifyUpstream`, joining `ErrUpstreamUnavailable` with the TMDB error) wraps untyped errors, so it is invisible to `IsRetryable` and `KindOf`; if a typed error ever sits inside a join, the predicates will need updating to walk multi-wrap chains.
 
 - **`.NotRetryable()` is runtime-only, not persisted.** A failed job's row records `error_kind` and `status='failed'` but not whether the override flipped retryability. Three failure modes (permanent / retryable-but-exhausted / kind-default-no-retry) collapse to the same DB state. Today nothing queries this distinction post-failure; when something does, the principled fix is sharper kinds (e.g., a future `KindFailedPrecondition`), not a persisted boolean override.
 
-## Migration status
+## Adoption
 
-- ✅ `internal/errors` package implemented (`Kind`, constructors, `Wrap`, predicates, `ProblemDetails`, `FromPg`, `slog.LogValue`).
-- ✅ Postgres `error_kind` ENUM, `error_kind` columns on `download_job` and `import_task`, SQLC override mapping the enum to `apperrors.Kind`.
-- ✅ Worker code (`internal/jobs/download`, `internal/jobs/import`) uses typed kinds and `IsRetryable`; the legacy `Category` API is gone.
-- ⏳ Service and repo layers — not yet migrated. Existing code continues to function; new code should follow the layer patterns above.
-- ⏳ Handler layer — not migrated. Pending the huma migration; handler patterns will be added to this spec when that work begins.
-- ⏳ Existing service-layer sentinels (e.g., `service.ErrScanAlreadyRunning`) — to be replaced with `Conflictf` constructors over time. Not blocking.
+The model is applied across every layer: repo methods route through `FromPg`, services and workers return typed errors, and handlers render them via `humaerr`. There are no bare `errors.New` / `fmt.Errorf` returns in `internal/service` or `internal/repo`. Package-level sentinels remain in three domain packages — `downloader.ErrUnsupported`, `push.ErrSubscriptionGone`, and `metadata.ErrProviderUnavailable` / `ErrUpstreamUnavailable`. Their callers (including the dev-downloader and push-test handlers) branch on them with `errors.Is` rather than letting them reach the wire.

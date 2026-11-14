@@ -1,6 +1,8 @@
-# Story 8 — Who picks the release: autonomy and proposals
+---
+status: deferred
+---
 
-**Status:** Draft
+# Story 8 — Who picks the release: autonomy and proposals
 
 Scope decides *which* things are wanted. **Autonomy decides who picks the release that fulfills each want** — the system, or a person. [Tracking § acquisition autonomy](../modules/tracking/README.md#acquisition-autonomy--who-picks-the-release) owns the model and the three behaviors; this story owns what it feels like to use, and the requirements that follow.
 

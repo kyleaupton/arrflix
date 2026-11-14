@@ -1,8 +1,12 @@
+---
+status: as-built
+---
+
 # Quality profiles — which release do we grab
 
-**Status:** Draft, iteration 1
+> **Beyond what's built:** The engine (`internal/qualityprofile`), persistence, tier bindings, presets, and the admin API/UI are built and drive every autonomous pick. Unbuilt design: §Import-time re-gate (the engine's `ReGate` exists but nothing calls it), §Upgrade detection (the engine's `StrictlyBetter` exists but no upgrade flow uses it), indexer scoping (stored on the profile, applied nowhere), the gate/score display in §Interactive search escape hatch, and §Decision log.
 
-This doc defines how Arrflix decides *which release* to grab when multiple are available. It captures the **tier ↔ profile** split, the selection algorithm at a conceptual level, the hard-gate / soft-score distinction, and the interactive-search escape hatch. It does **not** pin down data shapes, custom-format syntax, or wire formats — those come in later iterations.
+This doc defines how Arrflix decides *which release* to grab when multiple are available. It captures the **tier ↔ profile** split, the selection algorithm at a conceptual level, the hard-gate / soft-score distinction, and the interactive-search escape hatch. It does **not** pin down data shapes or wire formats; those live in migration `0015_quality_profiles` and the handlers.
 
 This doc is the companion to [tracking](../tracking/README.md). Tracking decides *when* to grab; quality profiles decide *what* to grab.
 
@@ -11,12 +15,12 @@ This doc is the companion to [tracking](../tracking/README.md). Tracking decides
 - Two concepts: a **tier** is the user-facing simple choice (HD, 4K); a **profile** is the admin-managed config behind it.
 - A tier resolves to a profile **per media type** — an HD-movie profile and an HD-series profile are distinct, because movie and episode releases have incompatible size ranges, release-group ecosystems, and quality lists. One user-facing label, type-scoped configs behind it. Profiles can also exist outside of tier designation, for admin / tracking use.
 - Profile owns: quality list + ordering, cutoff, hard gates, soft scoring (custom formats), indexer scoping.
-- **Bin vocabulary is per domain, rendered by parsing.** [Parsing](../parsing/README.md#the-quality-attribute-core) is now domain-dispatched, so it both detects the quality core AND renders the bin (`Bluray-2160p Remux` for series, `Remux-2160p` / `BR-DISK` for movies). The profile consumes the rendered bin; it doesn't own the vocabulary tables. Same detection, two vocabularies; safe because every consumer (and parsing itself) is now domain-scoped. See [Per-domain quality vocabulary](#per-domain-quality-vocabulary).
+- **Bin vocabulary is per domain, owned by parsing.** [Parsing](../parsing/README.md#the-quality-attribute-core) is domain-dispatched: it detects the quality core and owns the projection `parsing.BinFor(source, resolution, modifier, domain)` onto the per-domain bin (`Bluray-2160p Remux` for series, `Remux-2160p` / `BR-DISK` for movies). The profile keys on the projected bin identity; it doesn't own the vocabulary tables. Same detection, two vocabularies; safe because every consumer (and parsing itself) is domain-scoped. See [Per-domain quality vocabulary](#per-domain-quality-vocabulary).
 - Three admin-UX tiers: **preset** (90% of users), **profile editor** (power), **custom formats** (advanced). Defaults must be great; advanced surfaces stay hidden.
 - Selection algorithm: filter by hard gates → pick best allowed quality bin with a release → pick highest-scored release in that bin → deterministic tie-break.
 - **Hard gates remove**, **soft scores order**. Mixing them is the TRaSH-guides trap.
-- **The same gates and scores run twice:** on the release's _advertised_ attributes to decide the grab, then on the file's _asserted_ (`ffprobe`) attributes at import — the **import-time re-gate**. Hard-fail on the real file → reject + blocklist + re-search; soft-fail → keep, penalize, log a hygiene finding. The file's recorded quality stays the **advertised** parse — the re-gate just validates it (a resolution lie hard-fails; `Source` is unverifiable either way).
-- Interactive search is always one click away and bypasses automated selection, but still writes audit rows.
+- **The same gates and scores run twice** (the second run is unbuilt): on the release's _advertised_ attributes to decide the grab, then on the file's _asserted_ (`ffprobe`) attributes at import — the **import-time re-gate**. Hard-fail on the real file → reject + blocklist + re-search; soft-fail → keep, penalize, log a hygiene finding. The file's recorded quality stays the **advertised** parse — the re-gate just validates it (a resolution lie hard-fails; `Source` is unverifiable either way).
+- Interactive search is always one click away and bypasses automated selection (no profile runs on it today; audit rows are unbuilt).
 - Requesters get zero in-tier control. Admins get all the knobs.
 
 ## Why "tier + profile" and not one knob
@@ -56,9 +60,9 @@ A profile encodes the following concerns:
 1. **Quality list with ordering** — a ranked list of acceptable bins (e.g., `2160p Bluray > 2160p WEB-DL > 1080p Bluray > 1080p WEB-DL > 1080p WEBRip`). Position = preference; first match wins. The list is drawn from the profile's domain bin vocabulary — a movie profile orders `Remux-2160p` / `BR-DISK`, a series profile orders `Bluray-2160p Remux`; the vocabularies themselves live in [parsing](../parsing/README.md#the-quality-attribute-core). The profile references each entry by its **bin identity** — the post-projection `(Source, Resolution, Modifier)` triple — never by the rendered display name (see [Bins as keys, not strings](#bins-as-keys-not-strings)).
 2. **Quality size definitions** — per-bin `min` / `preferred` / `max` file sizes, runtime-scaled (Sonarr/Radarr's `QualityDefinition`). The **defaults are global per domain** — one movie size table, one series size table, mirroring *arr — because a sane movie size band rejects every episode and vice-versa (this is also why movie and series profiles are separate configs). A profile **references** these defaults and may **override** per-bin; the override layer is profile-owned, the defaults are not. One band feeds three places — a hard gate (outside `[min, max]` → reject), a soft score (closeness to `preferred` → bump), and the tie-break (size nearest `preferred`).
 3. **Cutoff** — the quality at which we stop searching for upgrades. Once we have a file at or above cutoff, no further auto-search for this item.
-4. **Hard gates** — filters that reject a release outright (min seeders, min/max size, blocklisted groups, indexer eligibility). Each gate declares the **attribute axis** it reads and whether that axis is **`ffprobe`-verifiable**, so the [import-time re-gate](#import-time-re-gate) re-runs the verifiable subset automatically. See [Hard gates vs soft scoring](#hard-gates-vs-soft-scoring).
-5. **Soft scoring** — preferences that contribute to a release's score within its quality bin (preferred release groups, codec preferences, audio, HDR variants, proper/repack). **Iteration 1 ships a fixed, closed set of structured scorers — not a custom-format DSL** (see [open questions](#open-questions)). Each scorer is a [rule-substrate](../../patterns/rules/README.md) condition tree + a weight; the closed structured form is a constrained authoring surface that emits the same trees. **v1 phase cap (accepted):** only signals parsing populates at `search` influence the grab pick — preferred release groups (`encode.release_group`) and proper/repack (`quality.is_repack`). **Codec / HDR / audio scoring is `import`-phase only** — advertised codec/HDR/audio aren't registered `search`-phase fields until parsing's codec/HDR/audio extraction lands, so those scorers inform the [re-gate](#import-time-re-gate) and the [upgrade comparison](#upgrade-detection), not the initial selection. See same section.
-6. **Indexer scoping** — which indexers are eligible for searches under this profile. Default: all healthy indexers. Power-user feature, important for anime / region-specific content.
+4. **Hard gates** — filters that reject a release outright. Built: structural checks (bin allowed, `min_seeders`, runtime-scaled size band) then named condition-tree gates (`quality_profile.gates`, e.g. a blocklisted group). **Unbuilt:** indexer eligibility, and the per-gate `ffprobe`-verifiable tagging — each gate is designed to declare the **attribute axis** it reads and whether that axis is **`ffprobe`-verifiable**, so the [import-time re-gate](#import-time-re-gate) re-runs the verifiable subset automatically. See [Hard gates vs soft scoring](#hard-gates-vs-soft-scoring).
+5. **Soft scoring** — preferences that contribute to a release's score within its quality bin (preferred release groups, codec preferences, audio, HDR variants, proper/repack). **There is no custom-format DSL** (see [open questions](#open-questions)): each scorer is a named `custom_format` row holding a [rule-substrate](../../patterns/rules/README.md) condition tree, and a profile assigns it a weight via `quality_profile_format`. The presets seed one (proper/repack); the API supports custom-format CRUD, while the UI shows them read-only. **v1 phase cap (accepted):** only signals parsing populates at `search` influence the grab pick — preferred release groups (`encode.release_group`) and proper/repack (`quality.is_repack`). **Codec / HDR / audio scoring is `import`-phase only** — advertised codec/HDR/audio aren't registered `search`-phase fields until parsing's codec/HDR/audio extraction lands, so those scorers inform the [re-gate](#import-time-re-gate) and the [upgrade comparison](#upgrade-detection), not the initial selection. See same section.
+6. **Indexer scoping** — which indexers are eligible for searches under this profile. Default: all healthy indexers. Power-user feature, important for anime / region-specific content. **Unbuilt:** `quality_profile.indexers` (a `[]uuid.UUID`) is stored and round-tripped but nothing applies it — there is no UUID-keyed indexer entity yet (see [indexers OQ#9](../indexers/README.md#open-questions)).
 
 **Notably *not* in the profile:**
 
@@ -76,13 +80,13 @@ Initial tier set:
 - **HD** — the default tier. Resolves to the admin's HD movie / HD series profiles.
 - **4K** — opt-in tier. Resolves to the admin's 4K profiles if 4K is enabled; otherwise absent from the request UI.
 
-Tier registry is extensible (admins may want SD, 8K, "Source", or **"Best available"** — the no-ceiling tier whose profile orders every bin top-to-bottom with the cutoff at the ceiling — eventually), but iteration 1 keeps it to HD and 4K. The `(tier, media_type) → profile` binding is a table seeded with the HD and 4K rows; adding a tier later is one enum value + one binding row + one permission + one curated preset, with no schema change. **"Best available" is a tier, not a preset or a profile flag** — it needs no mechanism HD and 4K don't already have (its "no ceiling" semantic is just a quality list spanning all bins with the cutoff at the top). Adding tiers later doesn't break existing requests because tier is a forward-compatible enum, not a freeform string.
+Tier registry is extensible (admins may want SD, 8K, "Source", or **"Best available"** — the no-ceiling tier whose profile orders every bin top-to-bottom with the cutoff at the ceiling — eventually), but it is HD and 4K today. The `(tier, media_type) → profile` binding is the `tier_binding` table, seeded (with the four preset profiles from `qualityprofile.DefaultProfiles()`) by `QualityProfileService.SeedDefaults` at startup. Adding a tier later is one tier value (the `tier_binding.tier` CHECK and `qualityprofile.AllTiers`) + one binding row + one permission + one curated preset. **"Best available" is a tier, not a preset or a profile flag** — it needs no mechanism HD and 4K don't already have (its "no ceiling" semantic is just a quality list spanning all bins with the cutoff at the top). Adding tiers later doesn't break existing requests because tier is a forward-compatible enum, not a freeform string.
 
-Requesters select tier at request time, gated by their permissions (`can_request_movie_hd`, `can_request_4k`, etc. — see [Story 1](../../stories/01-happy-path-auto-approve.md)).
+Requesters select tier at request time, gated by the `requests.create:<type>:<tier>` permissions (e.g. `requests.create:movie:4k` — see [users](../users/README.md) and [Story 1](../../stories/01-happy-path-auto-approve.md)).
 
 ## Per-domain quality vocabulary
 
-Movies and series **name the same release differently** — and the difference is domain-meaningful, not cosmetic. [Parsing](../parsing/README.md#the-quality-attribute-core) is domain-dispatched: it takes the domain at the call site, runs the domain-appropriate detection logic (Sonarr's for series, Radarr's for movies), produces the orthogonal **attribute core** `(Source, Resolution, Modifier, Revision)` as its internal representation, and renders the per-domain **bin name** as a parse output. The profile consumes the rendered bin to build its quality list:
+Movies and series **name the same release differently** — and the difference is domain-meaningful, not cosmetic. [Parsing](../parsing/README.md#the-quality-attribute-core) is domain-dispatched: it takes the domain at the call site, runs the domain-appropriate detection logic (Sonarr's for series, Radarr's for movies), produces the orthogonal **attribute core** `(Source, Resolution, Modifier, Revision)` as its internal representation, and owns the projection onto the per-domain **bin**. The profile keys its quality list on the projected bin:
 
 ```
 input + domain  ──►  parsing detection (per upstream, verbatim)
@@ -90,7 +94,7 @@ input + domain  ──►  parsing detection (per upstream, verbatim)
                           ▼
                      QualityCore (Source, Resolution, Modifier, Revision)   [orthogonal, lossless]
                           │
-                     parsing: bin(core, domain)  (rendered at parse time)
+                     parsing.BinFor(core, domain)
                           ├──► series bin vocabulary (Sonarr names)  ──► series quality lists
                           └──► movie  bin vocabulary (Radarr names)  ──► movie  quality lists
 ```
@@ -118,32 +122,33 @@ Same core, projected two ways. The rows that **agree** (shared heritage — WEB-
 
 ### Why per-domain bins are safe
 
-Quality profiles are already `(tier, media_type)`-scoped — a profile applies to a movie library or a series library, never both (see [Tiers](#tiers)). And parsing is now also domain-scoped at the call site. So per-domain bins create **zero** cross-domain inconsistency: every step from search candidate to import knows the domain authoritatively. A movie profile speaks `Remux-2160p`, a series profile speaks `Bluray-1080p`, the parse already rendered the right one, and that's exactly what a Sonarr + Radarr user expects.
+Quality profiles are already `(tier, media_type)`-scoped — a profile applies to a movie library or a series library, never both (see [Tiers](#tiers)). And parsing is also domain-scoped at the call site. So per-domain bins create **zero** cross-domain inconsistency: every step from search candidate to import knows the domain authoritatively. A movie profile speaks `Remux-2160p`, a series profile speaks `Bluray-1080p`, the parse already rendered the right one, and that's exactly what a Sonarr + Radarr user expects.
 
 ### Bins as keys, not strings
 
-A profile **references** bins to order and gate them, so a bin is a stable per-domain **key** (with a display name as a separate render), mirroring Sonarr/Radarr's quality-definition tables — not a free string the parser emits. The two vocabulary tables (the bin set + default ordering per domain) are profile-owned data, and they are what makes **per-tool community config interop** (TRaSH-style custom formats, written separately for Sonarr and Radarr) possible at all.
+A profile **references** bins to order and gate them, so a bin is a stable per-domain **key** (with a display name as a separate render), mirroring Sonarr/Radarr's quality-definition tables — not a free string the parser emits. The two vocabulary tables (the bin set + default ordering per domain, `parsing.Vocabulary(domain)`) are what makes **per-tool community config interop** (TRaSH-style custom formats, written separately for Sonarr and Radarr) possible at all.
 
-Concretely, the key is the bin's `(Source, Resolution, Modifier)` triple **after projection** — the normalized, post-fold identity `BinFor` returns, which is 1:1 within a domain (a series BR-DISK release folds to the `Bluray-2160p` bin and keys as `(BluRay, 2160p, NONE)`). **Two keys coexist and must not be conflated:** the [persisted parse](../parsing/README.md#persisted-parse) stores the orthogonal **core** (pre-projection), while the profile's allowed-list, cutoff, and gates store **bin identities** (post-projection). Parsing already projects and exposes the bin identity, so the selection engine compares identity-to-identity with no re-projection. The trap to avoid is storing a raw core in the profile: a series profile listing `(BluRay, 2160p, BR-DISK)` would never match, because a real BR-DISK release projects to the `(BluRay, 2160p, NONE)` bin and the raw core never reaches the comparison. The rendered name is display-only — never persisted, never compared.
+Concretely, the key is the bin's `(Source, Resolution, Modifier)` triple **after projection** — the normalized, post-fold identity `BinFor` returns, which is 1:1 within a domain (a series BR-DISK release folds to the `Bluray-2160p` bin and keys as `(BluRay, 2160p, NONE)`). **Two keys coexist and must not be conflated:** the [persisted parse](../parsing/README.md#persisted-parse) (`file_origin.parsed`) stores the orthogonal **core** (pre-projection) — alongside the projected `bin_*` columns — while the profile's allowed-list (`quality_profile.bins`), cutoff, and size overrides store **bin identities** (post-projection, `parsing.BinKey`). The engine projects each candidate's core once via `parsing.BinFor` (`qualityprofile.BinOf`) and compares identity-to-identity. The trap to avoid is storing a raw core in the profile: a series profile listing `(BluRay, 2160p, BR-DISK)` would never match, because a real BR-DISK release projects to the `(BluRay, 2160p, NONE)` bin and the raw core never reaches the comparison. The rendered name is display-only — never persisted, never compared.
 
 ### Ownership
 
 - **Parsing owns** the attribute core (`Source`, `Resolution`, `Modifier`, `Revision`), its per-domain detection logic, the bin rendering `bin(core, domain)`, and the two vocabulary tables (`seriesBins`, `movieBins`).
-- **Quality profiles own** the ranked allowed-bin list, any per-bin size overrides (the size defaults are a global per-domain table, not profile-owned), the cutoff, hard gates, soft scoring, and indexer scoping. The profile consumes a `ParsedRelease` and reads the parsed **bin identity** (and the underlying core) directly — parsing already projected, so the profile doesn't re-project and doesn't own the vocabulary.
+- **Quality profiles own** the ranked allowed-bin list, any per-bin size overrides (the size defaults are the global per-domain `quality_size_default` table, not profile-owned), the cutoff, hard gates, soft scoring, and indexer scoping. The profile consumes a `ParsedRelease`, calls parsing's projection to get the **bin identity**, and doesn't own the vocabulary.
 
-Per-domain dispatch shrinks the static parity allowlist to one principled class: identity-independent quality (parsing OQ#13, retained as a class-shaped `allowlistPredicate`). The ~17 Radarr `.mkv` extension-default entries disappear by construction (per-domain extension tables); the bin field is `enforced=true` against both tools.
+With per-domain dispatch, the static parity allowlist holds one principled class: identity-independent quality (parsing OQ#13, a class-shaped `allowlistPredicate`). Radarr's `.mkv` extension defaults are handled by per-domain extension tables, and the bin field is `enforced=true` against both tools.
 
 ## The selection algorithm
 
-Given a list of indexer search results for one want, the quality engine runs:
+Given a list of indexer search results for one want (already filtered by acquisition's exclusion and relevance gates), `Profile.Pick` runs:
 
-1. **Hard-gate filter.** Each release is checked against the profile's hard gates (seeders, size, blocklist, indexer eligibility). Any failure → reject, log reason.
-2. **Quality detection.** Each surviving release carries a parsed [attribute core](../parsing/README.md#the-quality-attribute-core) AND its rendered bin (parsing knew the domain at the call site). The engine matches on the bin's **identity** — the post-projection `(Source, Resolution, Modifier)` triple — against the profile's allowed list; releases whose bin identity isn't in the list → reject. No string comparison on the display name, no re-projection — parsing already projected (see [Bins as keys, not strings](#bins-as-keys-not-strings)).
-3. **Bin grouping.** Surviving releases are grouped by quality bin per the profile's ranked list.
-4. **Soft scoring.** Within each bin, every release gets a score from the custom format rules.
-5. **Pick best bin.** Highest-ranked bin (per the profile's ordering) that contains at least one release.
-6. **Pick best release in bin.** Highest-scored release in the chosen bin.
-7. **Tie-break (deterministic).** If multiple releases tie on score, fall back to: seeders descending → size closest to per-quality target → release date descending → infohash lexicographic. Last resort is arbitrary but deterministic so we don't flap on repeat searches.
+1. **Quality detection.** Each release carries a parsed [attribute core](../parsing/README.md#the-quality-attribute-core) (parsing knew the domain at the call site), projected to its bin **identity** — the post-projection `(Source, Resolution, Modifier)` triple. No string comparison on the display name (see [Bins as keys, not strings](#bins-as-keys-not-strings)).
+2. **Hard-gate filter** (`Profile.Gate`, first failure wins): bin not in the allowed list → reject; below `min_seeders` → reject; outside the runtime-scaled size band (when the bin has a band and runtime is known) → reject; then each named gate tree that evaluates `True` → reject. The reason is kept on the evaluation.
+3. **Soft scoring.** Every surviving release gets a score: the sum of weights of custom formats whose tree evaluates `True`.
+4. **Pick best bin.** Highest-ranked bin (per the profile's ordering) that contains at least one release.
+5. **Pick best release in bin.** Highest-scored release in the chosen bin.
+6. **Tie-break (deterministic).** If multiple releases tie on score, fall back to: seeders descending → size closest to the bin's scaled preferred size (smaller size when no band/runtime) → guid lexicographic. Deterministic so we don't flap on repeat searches.
+
+The result is a `Selection`: the winner (nil if everything was gated out) plus every candidate's `Evaluation` (disposition, bin, score, reject reason, rule traces). A profile can be exercised against a single release title via `POST /api/v1/quality-profiles/{id}/test`.
 
 **Critical property: bin-first, not score-mixed.** A 720p with crazy good scoring should NOT beat a 1080p WEB-DL just because of custom formats. Quality bin dominates; scoring orders *within* bins. This matches Sonarr/Radarr default behavior.
 
@@ -155,12 +160,12 @@ This distinction is load-bearing. Mixing them is what makes Sonarr quality confi
 
 | Behaviour              | Hard gate                                  | Soft score                                  |
 | ---------------------- | ------------------------------------------ | ------------------------------------------- |
-| Seeders                | Below min → reject                         | Higher seeders → small score bump           |
-| Size                   | Above max → reject; below min → reject     | Closer to ideal → small bump                |
+| Seeders                | Below min → reject                         | Higher seeders → small score bump (unbuilt; seeders only tie-break) |
+| Size                   | Above max → reject; below min → reject     | Closer to ideal → small bump (unbuilt; closeness only tie-breaks) |
 | Release group          | In blocklist → reject                      | In preferred list → big bump                |
 | Quality bin            | Not in profile's allowed list → reject     | Position in list determines bin pick        |
 | Codec                  | (Rare) banned codec → reject               | Preferred codec → bump                      |
-| Indexer                | Not in profile's allowed set → reject      | (Not scored)                                |
+| Indexer                | Not in profile's allowed set → reject (unbuilt) | (Not scored)                           |
 | Audio / HDR variant    | (Rare) require Atmos? Probably soft only   | HDR10+/Atmos → bumps                        |
 | Repack / Proper        | Not gated                                  | Bump for proper/repack                      |
 
@@ -168,7 +173,7 @@ This distinction is load-bearing. Mixing them is what makes Sonarr quality confi
 
 ## Import-time re-gate
 
-The selection algorithm above runs on the release's **advertised** attributes — the [parsed](../parsing/README.md) title is all we have before download. Advertised attributes are a _claim_. The same profile is therefore run a **second time at import**, against the file's **asserted** attributes (`ffprobe`/mediainfo on the actual bytes), to confirm we got what we grabbed.
+**Unbuilt in the pipeline.** The pure `Profile.ReGate` exists (gates → hard-fail; formats that scored at search but not at import → penalty + findings) but the importer doesn't call it. The selection algorithm above runs on the release's **advertised** attributes — the [parsed](../parsing/README.md) title is all we have before download. Advertised attributes are a _claim_. The same profile is therefore run a **second time at import**, against the file's **asserted** attributes (`ffprobe`/mediainfo on the actual bytes), to confirm we got what we grabbed.
 
 The re-gate reuses the existing gate + score machinery — no new comparison system. The outcome maps onto the same gate-vs-score distinction:
 
@@ -178,7 +183,7 @@ The re-gate reuses the existing gate + score machinery — no new comparison sys
 | **Hard-gate fail** (e.g., advertised 2160p, the stream is 1080p; or a quality bin we don't accept) | **Reject the import, blocklist the release, return the want to `searching`** so the pipeline re-grabs. The auto-recovery loop. |
 | **Soft-score drop** (e.g., the "Atmos" claim is false but it's a fine 1080p) | **Keep the file**, apply the score penalty (lowering its recorded score), and log a [`quality/advertised-mismatch`](../hygiene/README.md) finding. No user notification — soft mismatches are common; the finding is there for anyone who cares. |
 
-**What the re-gate can and cannot reject.** It only re-evaluates attributes `ffprobe` can actually assert — resolution, codec, HDR/DV, audio format, channels, bit depth. It **cannot** assert **source** (BluRay vs WEB-DL), edition, or release group (see the [parsing verifiable taxonomy](../parsing/README.md#what-ffprobe-can-and-cannot-verify)). So a hard gate on resolution _can_ reject a downloaded file; a hard gate on source _cannot_ — source-based gates stay advertised-trusted at import. The reject-vs-penalize partition is an [open question](#open-questions).
+**What the re-gate can and cannot reject.** It only re-evaluates attributes `ffprobe` can actually assert — resolution, codec, HDR/DV, audio format, channels, bit depth. It **cannot** assert **source** (BluRay vs WEB-DL), edition, or release group (see the [parsing verifiable taxonomy](../parsing/README.md#what-ffprobe-can-and-cannot-verify)). So a hard gate on resolution _can_ reject a downloaded file; a hard gate on source _cannot_ — source-based gates stay advertised-trusted at import. The reject-vs-penalize partition is settled structurally in [open question 11](#open-questions).
 
 **The file's recorded quality is the advertised parse, validated.** Arrflix persists the advertised `Quality` (the [parse snapshot](../parsing/README.md#persisted-parse)) as the file's recorded quality — there is **no** separate asserted bin, and `Quality` is never reconciled or mutated. The re-gate is what makes it trustworthy: a resolution mismatch hard-fails *before* the file is recorded, and `Source` is advertised-only (`ffprobe` can't see it). This recorded quality is what [upgrade detection](#upgrade-detection) compares and [name templates](../name-templates/README.md) render.
 
@@ -186,7 +191,7 @@ The re-gate reuses the existing gate + score machinery — no new comparison sys
 
 ## Upgrade detection
 
-Once a want has been fulfilled (file imported), should we keep looking for better releases?
+**Unbuilt in the pipeline.** The pure comparisons exist — `Profile.BelowCutoff`, `Profile.StrictlyBetter` (with an anti-flap delta), and `StrictlyBetterQuality` (used today only to supersede an open acquisition proposal with a better pick) — but no flow looks for upgrades after `available`, and `tracking.upgrade_behavior` is stored but inert. Once a want has been fulfilled (file imported), should we keep looking for better releases?
 
 A release is **strictly better** than the current file if:
 
@@ -215,15 +220,15 @@ Auto-select is for monitoring and request-driven grabs. **Interactive search is 
 Properties:
 
 - Always available regardless of profile config.
-- Shows *all* eligible results from all healthy indexers. The profile's hard gates and scoring still inform the *display* (rejected releases are shown but marked, scored releases are sorted), but the user can pick any release.
+- Shows *all* results from Prowlarr. **Unbuilt:** the profile's hard gates and scoring informing the *display* (rejected releases shown but marked, scored releases sorted) — today no profile runs on interactive results, and the user can pick any release.
 - A user-picked release still flows through the same download → import pipeline.
-- The choice is logged in the decision log as a manual override, with the user ID.
+- **Unbuilt:** the choice logged in the decision log as a manual override, with the user ID.
 
 Interactive search bypasses the automated selection algorithm; it does not bypass the system. Hardlinks, name templates, library logic all still apply.
 
 ## Decision log
 
-Every release considered by the quality engine produces an audit row, written by [acquisition](../acquisition/README.md) as part of the system-wide [decision-artifact pattern](../../patterns/audit/README.md). This is what powers the "why didn't this download?" debugger.
+**Unbuilt** — the `Selection` is logged, not persisted. Every release considered by the quality engine produces an audit row, written by [acquisition](../acquisition/README.md) as part of the system-wide [decision-artifact pattern](../../patterns/audit/README.md). This is what powers the "why didn't this download?" debugger.
 
 Fields (conceptual — not data shape):
 
@@ -241,11 +246,11 @@ The decision log is **append-only**, retained for some bounded window (TBD — l
 
 To keep scope tight, these adjacent concerns live elsewhere:
 
-- **Search execution** — the search scheduler reads tracking config, runs searches, and hands results to the quality engine. The profile is consulted; it doesn't run.
+- **Search execution** — the [acquisition](../acquisition/README.md) worker runs searches and hands results to the quality engine. The profile is consulted; it doesn't run.
 - **Tracking lifecycle** — tracking owns `active / paused / archived / canceled`.
 - **Upgrade behavior strategy** — tracking decides `auto / propose / none`.
 - **Notification routing** — when an upgrade is proposed or a grab happens, [notifications](../notifications/README.md) routes the event. Profile just provides the data ("here's the proposed release").
-- **Quality detection / release-name parsing** — owned by [parsing](../parsing/README.md), which produces the domain-agnostic [attribute core](../parsing/README.md#the-quality-attribute-core). The profile consumes that core (and asserted `ffprobe` attributes); it parses neither. The profile **does** own the per-domain [bin projection](#per-domain-quality-vocabulary) on top of the core — parsing emits no bin.
+- **Quality detection / release-name parsing and bin projection** — owned by [parsing](../parsing/README.md), which produces the [attribute core](../parsing/README.md#the-quality-attribute-core) and the per-domain [bin projection](#per-domain-quality-vocabulary). The profile consumes both (and, by design, asserted `ffprobe` attributes); it parses neither.
 - **The asserted-attributes extractor** (`ffprobe`/mediainfo) — a sibling extractor ([importer](../importer/README.md) / [scan](../scan/README.md)); the profile consumes `MediaInfo`, it doesn't probe.
 - **Re-gate orchestration and want recovery** — the import-time re-gate's _logic_ lives here, but the _pipeline step_, the blocklist, and the want-back-to-`searching` transition are [acquisition](../acquisition/README.md)'s.
 - **The advertised-vs-asserted mismatch finding** — surfaced by [hygiene](../hygiene/README.md) (`quality/advertised-mismatch`); the profile produces the delta, hygiene presents it.
@@ -258,15 +263,15 @@ To keep scope tight, these adjacent concerns live elsewhere:
 | Neighbor                | How quality profile interacts                                                                 |
 | ----------------------- | --------------------------------------------------------------------------------------------- |
 | **Tracking**            | Tracking references a profile by ID. Same profile can be used by many tracking records.       |
-| **Requests**            | Request specifies a tier; request service resolves `(tier, media type) → profile` when creating the want (media type is known at want-spawn). |
-| **Wants**               | Each want carries the resolved `quality_profile_id` from its origin (tier resolution or tracking). |
-| **Auto-select worker**  | Reads the profile to gate + score search results.                                             |
-| **Indexer service**     | Profile references the indexer set (full or scoped) for searches.                             |
+| **Requests**            | Request specifies a tier; request service resolves `(tier, media type) → profile` when spawning the tracking (media type is known at spawn). |
+| **Wants**               | Each want snapshots the tracking's `quality_profile_id` at creation. NULL for a manual grab (no selection policy). |
+| **[Acquisition](../acquisition/README.md) worker** | `QualityProfileService.Pick` resolves the want's profile and gates + scores search results. |
+| **Indexer service**     | Profile references the indexer set (full or scoped) for searches (unbuilt).                   |
 | **[Parsing](../parsing/README.md)** | Produces advertised quality from titles and (via the `ffprobe` extractor) asserted `MediaInfo`; the profile consumes both, parses neither. |
-| **[Importer](../importer/README.md)** | Runs the import-time re-gate before placement: provides asserted attributes, calls the profile, acts on pass / penalize / hard-fail. |
+| **[Importer](../importer/README.md)** | Unbuilt: runs the import-time re-gate before placement — provides asserted attributes, calls the profile, acts on pass / penalize / hard-fail. |
 | **[Hygiene](../hygiene/README.md)** | Surfaces the advertised-vs-asserted delta as `quality/advertised-mismatch`. |
-| **Decision log**        | Every gate/score decision becomes a log entry.                                                |
-| **Interactive search**  | Bypasses gating/scoring for selection but still displays them and logs the override.          |
+| **Decision log**        | Every gate/score decision becomes a log entry (unbuilt).                                      |
+| **Interactive search**  | Bypasses gating/scoring for selection; displaying them and logging the override is unbuilt.   |
 | **[Notifications](../notifications/README.md)** | Profile + tracking together produce upgrade-available events that notifications routes. |
 
 ## UI naming

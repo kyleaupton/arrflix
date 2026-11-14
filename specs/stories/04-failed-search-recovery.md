@@ -1,6 +1,8 @@
-# Story 4 — Failed search, eventual recovery: the indexers don't have it yet
+---
+status: v1
+---
 
-**Status:** Draft (triaged against the code)
+# Story 4 — Failed search, eventual recovery: the indexers don't have it yet
 
 Same friend as [the happy path](./01-happy-path-auto-approve.md), same auto-approve, same HD tier — but this time the film's **home release landed yesterday**, and nothing usable is on the indexers yet. The system searches, finds nothing, comes back, finds only junk, backs off, keeps trying, and about thirty hours later a decent release surfaces. It resolves normally from there.
 
@@ -103,19 +105,19 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 ### Patience is not failure
 
 - **REQ-SEARCH-001** — A want must never reach a terminal failed state merely because no acceptable release exists yet. *Currently true*, and worth keeping true: failure is for things that actively went wrong, not for waiting.
-- **REQ-SEARCH-002** — The state shown to a user must stay stable while the want cycles internally. **Not currently true:** a want that finds nothing returns to pending and is re-claimed on the next cycle, so it oscillates continuously between two internal states. Anything rendering the raw want status shows a flickering value that misrepresents a system doing exactly the right thing.
-- **REQ-SEARCH-003** — A user must be able to distinguish *"working, just waiting"* from *"stuck, needs you."* These are different situations and only one of them wants attention.
+- **REQ-SEARCH-002** — The state shown to a user must stay stable while the want cycles internally. *Currently true* on title surfaces. A want that finds nothing still returns to pending and is re-claimed on the next cycle, oscillating between two internal states, but the [title-status](../modules/title-status/README.md) projection folds both into one *searching* state, and title surfaces render the projection rather than the raw want status.
+- **REQ-SEARCH-003** — A user must be able to distinguish *"working, just waiting"* from *"stuck, needs you."* These are different situations and only one of them wants attention. **Partly true:** states waiting on a person (a pick needed, a suggestion to review, a request awaiting approval) are marked as needing attention, and a terminally failed want reads as *couldn't find it*. A want whose searches keep failing because indexers are unreachable still reads as *searching*.
 
 ### The system can say what it tried
 
 - **REQ-SEARCH-004** — For any unfulfilled want, the system must be able to show what was considered and why each candidate was rejected. **Unbuilt** — no search history, no per-release decisions, no reasons. This is the story's headline requirement and the thing a user actually wants at hour twenty.
-- **REQ-SEARCH-005** — A search that returns nothing must still be recorded, along with which indexers answered. *"We found nothing"* and *"we didn't look"* are different claims, and only a record distinguishes them.
-- **REQ-SEARCH-006** — Any progress figure shown to a user must reflect real cumulative effort. **Not currently true:** the attempt counter resets on each unsuccessful cycle, so a count of attempts can never rise above one — and the interface copy that would display it is unreachable code.
+- **REQ-SEARCH-005** — A search that returns nothing must still be recorded, along with which indexers answered. *"We found nothing"* and *"we didn't look"* are different claims, and only a record distinguishes them. **Unbuilt** — an empty search leaves only a "no eligible release" note on the want.
+- **REQ-SEARCH-006** — Any progress figure shown to a user must reflect real cumulative effort. **Not currently true:** the attempt counter resets on each unsuccessful cycle, so a count of attempts can never rise above one. No surface displays it.
 
 ### Searching backs off, sensibly
 
 - **REQ-SEARCH-007** — Search frequency must reflect how likely a new release is, growing sparser as a title ages, and must be bounded so a long wait never becomes an indefinite silence. *Broadly true* — the cadence is time-since-release rather than attempt-count, which is a better model than this story originally specified.
-- **REQ-SEARCH-008** — A user must be able to ask the system to look again now, subject to a rate limit. **Partly built:** retry exists at the tracking level, not for a single want, and is not rate-limited.
+- **REQ-SEARCH-008** — A user must be able to ask the system to look again now, subject to a rate limit. **Partly built:** retry exists at the tracking level for operators only, not for a single want or for the requester, and is not rate-limited.
 - **REQ-SEARCH-009** — A release that already failed to download must not be picked again for the same want. *Currently true* — this exists and the original story never mentioned it.
 
 ### The wait is communicated, once
@@ -135,16 +137,16 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ## Open questions
 
-1. **Pre-flight expectation-setting.** Worth warning on the request affordance for very recent titles? Risk: false positives read as the system making excuses. **Lean:** yes for the first week after a home release, as a quiet footnote that never blocks submission.
+1. **Pre-flight expectation-setting.** Worth warning on the request affordance for very recent titles? Risk: false positives read as the system making excuses. **Lean:** yes for the first week after a home release, as a quiet footnote that never blocks submission. *Frozen — beyond V1.*
 
-2. **When does "still searching" fire, and how loudly?** **Lean:** around a day, in-app only by default, push opt-in — the user can't act on it, and the good news push is coming anyway.
+2. **When does "still searching" fire, and how loudly?** **Lean:** around a day, in-app only by default, push opt-in — the user can't act on it, and the good news push is coming anyway. *Frozen — beyond V1.*
 
-3. **Does a long-failing want ever fail terminally? — resolved.** No. Failure is for active failures, not for patience. This matches the implementation. Captured as REQ-SEARCH-001.
+3. **Does a long-failing want ever fail terminally? — resolved.** No. Failure is for active failures, not for patience. This matches the implementation. Captured as REQ-SEARCH-001. **Answered by the code:** A no-release outcome rechecks back to pending (`backend/internal/jobs/acquisition/worker.go:163`, `:210`).
 
-4. **Should backing off reset when fresh releases appear?** Without a reset the system stays slow after real indexer activity; with one, a flood of fresh-but-bad releases keeps it busy on a futile search. **Lean:** reset only when something clears the hard gates, not on raw new-result count.
+4. **Should backing off reset when fresh releases appear?** Without a reset the system stays slow after real indexer activity; with one, a flood of fresh-but-bad releases keeps it busy on a futile search. **Lean:** reset only when something clears the hard gates, not on raw new-result count. *Frozen — beyond V1.*
 
-5. **How long is search history worth keeping?** A want that fails for thirty hours and then succeeds accumulates a lot of rejection records that are mostly noise once it resolves — but they're exactly what answers *"why did this take so long?"* **Lean:** keep for a period after the want resolves, then prune. Owned by [audit](../patterns/audit/README.md).
+5. **How long is search history worth keeping?** A want that fails for thirty hours and then succeeds accumulates a lot of rejection records that are mostly noise once it resolves — but they're exactly what answers *"why did this take so long?"* **Lean:** keep for a period after the want resolves, then prune. Owned by [audit](../patterns/audit/README.md). *Frozen — beyond V1.*
 
-6. **Do identical releases across indexers collapse into one record?** Three indexers carrying the same rip is one decision, not three. **Lean:** collapse on release identity with the indexers listed — but note nothing durable identifies a release across indexers today, so this needs that first.
+6. **Do identical releases across indexers collapse into one record?** Three indexers carrying the same rip is one decision, not three. **Lean:** collapse on release identity with the indexers listed — but note nothing durable identifies a release across indexers today, so this needs that first. *Frozen — beyond V1.*
 
-7. **"This isn't going to resolve on its own."** After about a week of nothing but junk, the situation is qualitatively different from "wait a bit" — it probably isn't coming at this quality. Worth detecting and saying so, with a suggested action. **Lean:** valuable, but later.
+7. **"This isn't going to resolve on its own."** After about a week of nothing but junk, the situation is qualitatively different from "wait a bit" — it probably isn't coming at this quality. Worth detecting and saying so, with a suggested action. **Lean:** valuable, but later. *Frozen — beyond V1.*

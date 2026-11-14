@@ -1,6 +1,8 @@
-# Story 5 — Two requesters, one series: scope union, widening, and departure
+---
+status: deferred
+---
 
-**Status:** Draft (triaged against the code)
+# Story 5 — Two requesters, one series: scope union, widening, and departure
 
 Alice already follows a series, but only its current season — she came in mid-run and doesn't care about the back catalogue. Bob discovers the show and asks for all of it. Rather than starting a second effort, Bob **joins** Alice's. The effective scope **widens**, nineteen new episodes are queued, and both requesters coexist on one tracking. Days later Bob leaves; the scope **narrows** back, work not yet started is stood down, and everything already acquired stays exactly where it is.
 

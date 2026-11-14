@@ -1,6 +1,10 @@
+---
+status: v1
+---
+
 # Path-mapping — one folder, many vantage points
 
-**Status:** Draft, iteration 1
+> **Beyond what's built:** the whole spec is unbuilt design. The only code is `pathmapping.Mapper.Apply` (`backend/internal/pathmapping`), a no-op stub the import worker calls on the downloader-reported path, and grabs send no `SavePath`, so the downloader uses its own default. V1's slice — volumes and resolver with downloader aliases only, boundaries 1–2, manual authoring with `Test`, and auto-detection tier 1 — is defined in [V1.md](../../V1.md#path-mapping). §The four boundaries rows 3–4, auto-detection tiers 2–3, and every media-server alias are deferred with the V1.1 Plex work.
 
 Arrflix's backend filesystem is the **canonical reference frame** — a want reaches `available` when Arrflix verifies the file _on its own disk_ ([acquisition](../acquisition/README.md#media-server-propagation-decoupled-from-available)). But every other actor in a deployment — each [downloader](../downloaders/README.md), each [media server](../media-server/README.md) — may see the _same bytes_ at a _different path_, because containers and hosts mount the same storage at different locations. This spec defines the translation layer between each actor's frame and Arrflix's: the **volume** model, the resolver that maps any path between frames, and the detection that makes the common case configure itself.
 
@@ -23,7 +27,7 @@ It is the explicit home for what the rest of the system has so far assumed (down
 Three reasons it can't live on the existing connection specs:
 
 1. **It spans actors.** A volume is shared by Arrflix _and_ a downloader _and_ a media server. "Downloads and library are on different mounts" is not a fact about any single connection, so it can't live on the downloader edit screen the way Sonarr's per-downloader "Remote Path Mappings" do. It needs a layer that sits below all of them.
-2. **It's already being solved piecemeal, inconsistently.** Import implicitly assumes the downloader's `content_path` is directly accessible (a shared mount). The [media-server spec](../media-server/README.md#correlation-mapping-a-server-item-back-to-our-file) proposes a per-`(library, media_server)` path-mapping override. Those are the _same problem_ solved two different ways. This spec unifies them: the media-server override becomes a volume lookup and disappears as a bespoke field.
+2. **It's already being solved piecemeal, inconsistently.** Import assumes the downloader's `content_path` is directly accessible (a shared mount): it passes the path through a no-op `pathmapping.Mapper` stub. The [media-server spec](../media-server/README.md#correlation-mapping-a-server-item-back-to-our-file) proposes a per-`(library, media_server)` path-mapping override. Those are the _same problem_ solved two different ways. This spec unifies them: the media-server override becomes a volume lookup and disappears as a bespoke field.
 3. **It's the natural home for the hardlink-correctness guard** — the thing that makes the project's "efficient storage" promise real instead of aspirational. That reasoning is cross-actor (download dir vs library) and belongs nowhere else.
 
 ## The model
@@ -34,7 +38,7 @@ A volume row encodes:
 
 - **Name** — display name, unique (case-insensitive).
 - **Arrflix base** — the canonical absolute path as Arrflix sees it (e.g. `/data`). The anchor. Validated reachable + directory at create/update, like a [library root](../libraries/README.md#validation).
-- **Aliases** — zero or more `{ actor, base, flavor }` entries. `actor` references an existing [downloader](../downloaders/README.md) or [media server](../media-server/README.md) row. `base` is the path _that actor_ sees for this same storage (e.g. qBittorrent's `/downloads`, Plex's `/media`). `flavor` captures path semantics (separator, case-sensitivity, drive-letter) for non-POSIX actors — see [edge cases](#edge-cases). Storage shape (child table vs JSON) deferred to iteration 2.
+- **Aliases** — zero or more `{ actor, base, flavor }` entries. `actor` references an existing [downloader](../downloaders/README.md) or [media server](../media-server/README.md) row. `base` is the path _that actor_ sees for this same storage (e.g. qBittorrent's `/downloads`, Plex's `/media`). `flavor` captures path semantics (separator, case-sensitivity, drive-letter) for non-POSIX actors — see [edge cases](#edge-cases). Storage shape (child table vs JSON) is deferred.
 - **Created / updated timestamps.**
 
 A volume corresponds to **one filesystem**. That is the load-bearing invariant: everything under a volume's Arrflix base is on one device, so anything within it is hardlink-compatible with anything else within it. Arrflix can _verify_ this (`device()` of the base), not just assert it.
@@ -43,7 +47,7 @@ There is no media type, no `enabled`/`default` flag, no quota. A volume is a tra
 
 ### The resolver
 
-Three operations, everything composes from them (conceptual; exact signatures deferred to iteration 2):
+Three operations, everything composes from them (conceptual; exact signatures deferred):
 
 ```
 toCanonical(actor, path)          → (volume, relpath)   // strip the actor's base prefix
@@ -154,7 +158,7 @@ The operator therefore chooses among three postures over the _same_ data: **full
 
 ## Tables
 
-**Owned by this spec** (shapes indicative; column types + alias storage deferred to iteration 2):
+**Owned by this spec** (shapes indicative; column types + alias storage deferred; neither table exists):
 
 - **`volume`** — `{ id, name, arrflix_base, created_at, updated_at }`. The shared-location anchor.
 - **`volume_alias`** — `{ volume, actor_type, actor_id, base, flavor }`. One per actor that sees the volume. (Child table vs JSON-on-`volume` is an [open question](#open-questions).)
@@ -166,23 +170,23 @@ The operator therefore chooses among three postures over the _same_ data: **full
 
 ## Open questions
 
-1. **Entity vs page naming.** Model term "volume"; page leaning "Path Mapping"; prose "shared location." Audience runs Docker, where "volume" is daily vocabulary _but_ means one container's mount (related, not identical). Lean: function-named page, "volume" demoted to model/code. Revisit if user testing says "Volumes" lands better as the title.
-2. **Alias storage.** Child table (`volume_alias`) vs JSON array on `volume`. Lean: child table — aliases FK to connection rows and want cascade semantics; JSON loses the FK. Iteration-2 detail.
-3. **Inference vs explicit FK.** Resolve a path's volume by longest-prefix (proposed) vs adding `volume_id` to libraries/download dirs. Lean: inference — keeps libraries unchanged. Revisit only if a real path legitimately belongs to two volumes (it can't, physically).
-4. **Auto-apply threshold.** Tier 3 gated on inode-proof; suffix-only always confirms. Confirm that's the right line, or allow operators to opt into "trust suffix matches."
-5. **Cold-start UX.** No downloads yet → can't correlate a downloader. Prompt at connection-add, or defer to first grab with a "will verify then" note? Lean: defer + note; don't block setup.
-6. **Path flavor scope.** Model `flavor` now (separator/case/drive-letter) for a future Windows-side actor, or defer until a non-POSIX actor exists? Lean: reserve the field, leave it POSIX-only in v1.
-7. **Cross-device after mapping — warn vs block.** Import still works via copy. Lean: warn (it's a legitimate, if wasteful, setup); never block an import that can succeed.
-8. **Actor set.** v1 actors are downloaders + media servers. Do blackhole/watch-folder paths or future indexer-side paths become actors too? Lean: same model, add when those land.
-9. **Relationship to libraries OQ#4** (`import_task` carries `library_root_path` string, not `library_id`). Does resolving through volumes supersede that rework, or do they land together? Lean: coordinate — both touch how import resolves paths.
-10. **Multi-root libraries** ([libraries OQ#1](../libraries/README.md#open-questions)) spanning more than one volume/device complicates the hardlink verdict (which root, which device?). Flagged; resolve alongside the multi-root decision.
-11. **Where the device/inode probe runs.** Health worker (continuous), on-demand `Test` (operator-triggered), and import-time (authoritative) all read it. Confirm all three are read-paths against the same helper, with no persisted staleness traps.
+1. **Entity vs page naming.** Model term "volume"; page leaning "Path Mapping"; prose "shared location." Audience runs Docker, where "volume" is daily vocabulary _but_ means one container's mount (related, not identical). **Decided:** function-named page, "volume" demoted to model/code. Revisit if user testing says "Volumes" lands better as the title.
+2. **Alias storage.** Child table (`volume_alias`) vs JSON array on `volume`. **Decided:** child table — aliases FK to connection rows and want cascade semantics; JSON loses the FK. Iteration-2 detail.
+3. **Inference vs explicit FK.** Resolve a path's volume by longest-prefix (proposed) vs adding `volume_id` to libraries/download dirs. **Decided:** inference — keeps libraries unchanged. Revisit only if a real path legitimately belongs to two volumes (it can't, physically).
+4. **Auto-apply threshold.** Tier 3 gated on inode-proof; suffix-only always confirms. Confirm that's the right line, or allow operators to opt into "trust suffix matches." *Frozen — beyond V1.*
+5. **Cold-start UX.** No downloads yet → can't correlate a downloader. Prompt at connection-add, or defer to first grab with a "will verify then" note? Lean: defer + note; don't block setup. *Frozen — beyond V1.*
+6. **Path flavor scope.** Model `flavor` now (separator/case/drive-letter) for a future Windows-side actor, or defer until a non-POSIX actor exists? **Decided:** reserve the field, leave it POSIX-only in v1.
+7. **Cross-device after mapping — warn vs block.** Import still works via copy. **Decided:** warn (it's a legitimate, if wasteful, setup); never block an import that can succeed.
+8. **Actor set.** v1 actors are downloaders + media servers. Do blackhole/watch-folder paths or future indexer-side paths become actors too? Lean: same model, add when those land. *Frozen — beyond V1.*
+9. **Relationship to libraries OQ#4** (`import_task` carries `library_root_path` string, not `library_id`). Does resolving through volumes supersede that rework, or do they land together? Lean: coordinate — both touch how import resolves paths. **Answered by the code:** Libraries OQ#4 is moot; there is no `library_root_path` column and the root is joined at read (`internal/db/queries/import_tasks.sql:164`).
+10. **Multi-root libraries** ([libraries OQ#1](../libraries/README.md#open-questions)) spanning more than one volume/device complicates the hardlink verdict (which root, which device?). Flagged; resolve alongside the multi-root decision. *Frozen — beyond V1.*
+11. **Where the device/inode probe runs.** Health worker (continuous), on-demand `Test` (operator-triggered), and import-time (authoritative) all read it. Confirm all three are read-paths against the same helper, with no persisted staleness traps. **Decided:** Yes; `Test` and import time read one shared helper with nothing persisted, and the health-worker path is deferred.
 
 ## What we're explicitly not deciding here
 
-- Exact column types, the `volume_alias` storage shape, and table names (iteration 2).
-- API route shapes / OperationIDs for volume CRUD / test / detect (iteration 2).
-- UI layout — the page, the inline connection badge, the live-preview component (iteration 2).
+- Exact column types, the `volume_alias` storage shape, and table names.
+- API route shapes / OperationIDs for volume CRUD / test / detect.
+- UI layout — the page, the inline connection badge, the live-preview component.
 - The precise suffix-alignment + inode-correlation algorithm (implementation detail).
 - Windows / non-POSIX actor support beyond reserving `flavor`.
 - Connectivity-health internals (worker, hysteresis, audit row shape) — owned by the [pattern](../../patterns/connectivity-health/README.md).

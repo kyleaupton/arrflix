@@ -1,6 +1,8 @@
-# Audit — the system-wide decision-artifact pattern
+---
+status: deferred
+---
 
-**Status:** Draft, iteration 1
+# Audit — the system-wide decision-artifact pattern
 
 This doc defines a **cross-cutting pattern**: every consequential automated decision Arrflix makes leaves a row that explains *what was decided* and *why*. The pattern shows up in [acquisition](../../modules/acquisition/README.md) (which release got picked / rejected), [routing](../../modules/routing/README.md) (where a release was dispatched), [matching](../../modules/matching/README.md) (what identity a file resolved to), and [hygiene](../../modules/hygiene/README.md) (what problems were detected).
 

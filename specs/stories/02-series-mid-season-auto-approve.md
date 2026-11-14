@@ -1,6 +1,8 @@
-# Story 2 — Series mid-season: friend requests an in-flight show with auto-approve
+---
+status: v1
+---
 
-**Status:** Draft (triaged against the code)
+# Story 2 — Series mid-season: friend requests an in-flight show with auto-approve
 
 A trusted family member requests a currently-airing series — two complete seasons behind it, season three four episodes deep — with auto-approve. Over the next few hours the back catalogue lands. The remaining unaired episodes then trickle in over the following weeks as they air. No admin intervention.
 
@@ -109,9 +111,9 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 ### The user can comprehend it
 
 - **REQ-SERIES-007** — Before requesting, a user must be able to see the size of what they are asking for — how many episodes, roughly how much storage. **Unbuilt**, and this is the request where it matters most.
-- **REQ-SERIES-008** — Series-level progress must be presentable without composing it from per-episode state. **Unbuilt** — there is no aggregate, so every surface derives its own summary from individual events, which is the same divergence problem described in [realtime](../modules/realtime/README.md).
+- **REQ-SERIES-008** — Series-level progress must be presentable without composing it from per-episode state. **Partly built:** the [title-status](../modules/title-status/README.md) projection returns one headline state and server-computed episode counts (in scope, available, working) per series. Transfer progress is not aggregated: each download reports under the series as a whole, so concurrent downloads overwrite each other's reading.
 - **REQ-SERIES-009** — Acquiring a back catalogue must not produce one notification per episode. **Not currently true:** it produces exactly that.
-- **REQ-SERIES-010** — A newly-aired episode arriving *is* individually noteworthy and should be notified as such. The distinction from REQ-SERIES-009 is the point — same event, different volume, different treatment.
+- **REQ-SERIES-010** — A newly-aired episode arriving *is* individually noteworthy and should be notified as such. The distinction from REQ-SERIES-009 is the point — same event, different volume, different treatment. **Partly true:** each newly-available episode notifies its requesters, but the notification names only the series, not the episode, and is identical to the back-catalogue ones.
 
 ### Time targets (UX commitments)
 
@@ -134,16 +136,16 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ## Open questions
 
-1. **How is the pre-flight count produced?** A scope-aware episode count needs the episode tree, which is exactly what hasn't been synced yet at the moment the user is deciding. Options: sync on page view (slow), pre-sync popular series (storage), or show a coarser warning and refine after. **Needs picking before REQ-SERIES-007 can be built.**
+1. **How is the pre-flight count produced?** A scope-aware episode count needs the episode tree, which is exactly what hasn't been synced yet at the moment the user is deciding. Options: sync on page view (slow), pre-sync popular series (storage), or show a coarser warning and refine after. **Needs picking before REQ-SERIES-007 can be built.** *Frozen — beyond V1.*
 
-2. **What is the right grouping for back-catalogue notifications?** Per season is the obvious unit. The open part is the window — if one season finishes at 3am and the next at 4am, is that one message or two? **Lean:** group per season, with a short debounce.
+2. **What is the right grouping for back-catalogue notifications?** Per season is the obvious unit. The open part is the window — if one season finishes at 3am and the next at 4am, is that one message or two? **Decided:** group per season, with a short debounce.
 
-3. **Where does aggregate progress come from?** A server-computed summary, or composed client-side from per-episode events? **Lean:** server-computed — it's the same argument as the per-title projection, and composing on the client is what produces surfaces that disagree.
+3. **Where does aggregate progress come from?** A server-computed summary, or composed client-side from per-episode events? **Lean:** server-computed — it's the same argument as the per-title projection, and composing on the client is what produces surfaces that disagree. — *Answered by the code: server-computed; the title-status projection returns the series' counts.*
 
-4. **Eager or lazy wants for unaired episodes — resolved, opposite to the original lean.** Wants are created eagerly with deferred scheduling. Eager won because an episode that exists as pending work can be displayed, counted, and reasoned about; a lazily-created one is invisible until it airs.
+4. **Eager or lazy wants for unaired episodes — resolved, opposite to the original lean.** Wants are created eagerly with deferred scheduling. Eager won because an episode that exists as pending work can be displayed, counted, and reasoned about; a lazily-created one is invisible until it airs. **Answered by the code:** Eager, with `next_run_at` set to the air date (`backend/internal/service/reconcile.go:39-43`).
 
-5. **What happens when a pack covers more or fewer files than expected?** A pack with an extras disc, or a pack arriving mid-season that covers episodes already acquired individually. **Lean:** skip the pack when everything it covers is already satisfied; otherwise treat it as an upgrade decision.
+5. **What happens when a pack covers more or fewer files than expected?** A pack with an extras disc, or a pack arriving mid-season that covers episodes already acquired individually. **Lean:** skip the pack when everything it covers is already satisfied; otherwise treat it as an upgrade decision. **Answered by the code:** Packs search only for ≥2 in-flight siblings; overflow files are skipped (`service/acquisition.go:130-135`, `jobs/download/worker.go:390-403`).
 
-6. **Where does the user see the schedule?** *"We'll look for S03E05 shortly after Friday's air time"* is genuinely useful. On the episode cell, the series card, or a [calendar](./09-not-out-yet.md)? Related to the calendar surface that story raises.
+6. **Where does the user see the schedule?** *"We'll look for S03E05 shortly after Friday's air time"* is genuinely useful. On the episode cell, the series card, or a [calendar](./09-not-out-yet.md)? Related to the calendar surface that story raises. *Frozen — beyond V1.*
 
-7. **Mid-flight scope change.** Narrowing scope while a pack is downloading. **Lean:** let in-flight downloads finish, cancel work not yet started — symmetric with [a requester cancels](./07-requester-cancels.md).
+7. **Mid-flight scope change.** Narrowing scope while a pack is downloading. **Lean:** let in-flight downloads finish, cancel work not yet started — symmetric with [a requester cancels](./07-requester-cancels.md). *Frozen — beyond V1.*

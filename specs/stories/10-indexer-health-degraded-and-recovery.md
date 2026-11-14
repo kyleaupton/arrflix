@@ -1,6 +1,8 @@
-# Story 10 — Indexers degrade mid-acquisition: graceful fallback, admin alert, partial recovery
+---
+status: deferred
+---
 
-**Status:** Draft
+# Story 10 — Indexers degrade mid-acquisition: graceful fallback, admin alert, partial recovery
 
 The admin has three indexers configured under Prowlarr. Over the course of an hour, one degrades into `rate_limited`, then a second goes `unreachable`, then the third also fails — leaving the system with no healthy indexers and Friend's open wants stuck. The admin gets a `connectivity.failed` push. An hour later, two of the three indexers recover; in-flight wants resume and one of them grabs cleanly. The third indexer stays unhealthy — the admin investigates separately, but the system functions on degraded capacity.
 

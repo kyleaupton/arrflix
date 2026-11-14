@@ -1,6 +1,10 @@
+---
+status: as-built
+---
+
 # Sources — metadata providers, their roles, and how we depend on them
 
-**Status:** Draft, iteration 1
+> **Beyond what's built:** TMDB is the only provider, reached through a single `metadata.MetadataProvider` interface (`LookupByID`, `Search`, `ResolveCrossProviderID`) plus the concrete `TmdbService`. Unbuilt: the bundled TMDB key and provider-driven setup (setup requires the admin to enter a key), the role seams in §Roles, not one provider (including `ImageComposer`), AniList, the anime `NumberingMap`, TheTVDB and Fanart.tv, and the refresh engine's work-dispatch and connectivity-health conformance.
 
 This doc defines **provider strategy**: which external systems Arrflix pulls metadata from, what *role* each plays, what each *costs the user to enable*, and how we stay independent of any one of them without paying to run several. It is the home for a concern that was diffused across [metadata](../metadata/README.md), [parsing](../parsing/README.md), and [matching](../matching/README.md) without an owner — the same "consumers, no owner" shape that earned [parsing](../parsing/README.md) and [files](../files/README.md) their modules.
 
@@ -16,9 +20,9 @@ It does **not** pin exact interface signatures, config schemas, or wire formats.
 - **Classify providers by what they *cost the user to enable*, not by what they are.** Three tiers: **invisible** (keyless, strictly improves → never a setting), **baseline** (one bundled credential, on by default), **opt-in** (per-user credential, subscription, or money → surfaced by *outcome*). The rule: **a free improvement is never a setting.**
 - **One canonical writer, always.** [TMDB](#the-provider-catalog) owns the writes to `media_item` columns in v1. A single canonical writer is what *prevents* the per-field reconciliation fork — two canonical writers create it. Other providers are either **replacements** (insurance) or **scoped augmenters** (one operation), never a second canonical writer.
 - **Portability insurance ≠ concurrency.** The ability to *replace* TMDB if it dies is cheap and mostly already built — a clean internal domain type plus **raw-payload retention** ([`media_metadata_source`](../metadata/README.md#the-metadata-source-pattern)). Running a *second* provider concurrently is an expensive feature, deferred. Rug-pull anxiety is answered by the former; don't pay for the latter to buy insurance.
-- **Roles, not one fat provider.** A provider implements a *subset* of role seams — `MetadataSource` (canonical), `StructureSource`, `ImageComposer`, `Searcher`, `DiscoverySource`. Extract a seam **on the second consumer**, not speculatively. v1 has one real seam worth taking: image-URL composition.
-- **IMDb is an ID namespace, not a provider.** There is no free public IMDb API. `imdb_id` (and `tvdb_id`) live in the [`external_id` registry](../metadata/README.md#identity), arriving via TMDB's `external_ids` endpoint. No IMDb adapter, ever.
-- **TMDB needs no setup step.** Ship a **bundled API key** (the Overseerr/Jellyseerr pattern); let power users **bring their own** to escape the shared rate limit. The default onboarding has no required provider field.
+- **Roles, not one fat provider.** A provider implements a *subset* of role seams — `MetadataSource` (canonical), `StructureSource`, `ImageComposer`, `Searcher`, `DiscoverySource`. Extract a seam **on the second consumer**, not speculatively. v1 has one real seam worth taking: image-URL composition (unbuilt — the frontend composes `image.tmdb.org` URLs directly).
+- **IMDb is an ID namespace, not a provider.** There is no free public IMDb API. `imdb_id` (and `tvdb_id`) live in the [`media_item_external_id` registry](../metadata/README.md#identity), arriving via TMDB (movie details' `imdb_id`; series `external_ids`). No IMDb adapter, ever.
+- **TMDB needs no setup step.** Ship a **bundled API key** (the Overseerr/Jellyseerr pattern); let power users **bring their own** to escape the shared rate limit. The default onboarding has no required provider field. **Unbuilt:** the key is the `tmdb.api_key` setting, and setup isn't complete until the admin enters one.
 - **TVDB is deferred past v2.** Its headline advantage — absolute/alternate episode ordering — is overwhelmingly an *anime* concern, which the [anime path](#anime-embedded-data-vs-api) covers for free. The residual (deep-catalog completeness) serves a small, pay-willing enthusiast slice → clean opt-in, never a default-path concern.
 - **Anime needs no provider and no key for the load-bearing part.** Numbering/ID mapping ships as a **bundled data file** (a `NumberingMap`, not a provider). Anime metadata is an *optional* keyless API ([AniList](#the-provider-catalog)). [AniDB](#open-questions) is avoided as a runtime dependency.
 - **The only ToS risk that's concrete is one we control:** TMDB's free tier is non-commercial; the commercial clause activates if *Arrflix* monetizes, not on TMDB's whim.
@@ -58,7 +62,7 @@ Metadata sources sit behind **role-segregated seams**, each a small capability a
 
 This is interface *segregation* on purpose. A fat single `MetadataProvider` forces a `capabilities()` runtime negotiation for what subset-interfaces express at compile time — and bundles a TMDB-shaped capability like `DiscoverySource` (trending) into the contract a structure-only source (TVDB) or a discovery-only source (Trakt) can't or shouldn't honor.
 
-**Discipline: extract a seam on the second consumer, not speculatively.** The repo's house rule ([files OQ#5](../files/README.md#open-questions), the service-layer convention in [CLAUDE.md]) is "do not pre-abstract." For v1 the one seam that *demonstrably* varies — and is therefore worth taking now — is **`ImageComposer`** (a custom-artwork override composes against `/uploads/`, TMDB against its CDN; same call site, different rule). The rest stays concrete `TmdbProvider` code until a *second* implementer (realistically TVDB `StructureSource`) tells us what actually varies. Designing the other seams against exactly one provider would guess wrong.
+**Discipline: extract a seam on the second consumer, not speculatively.** The repo's house rule ([files OQ#5](../files/README.md#open-questions), the service-layer convention in [CLAUDE.md]) is "do not pre-abstract." For v1 the one seam that *demonstrably* varies — and is therefore worth taking now — is **`ImageComposer`** (a custom-artwork override composes against `/uploads/`, TMDB against its CDN; same call site, different rule). The rest stays concrete TMDB code (`metadata.TmdbProvider` for the matcher's lookups, `service.TmdbService` for everything else) until a *second* implementer (realistically TVDB `StructureSource`) tells us what actually varies. Designing the other seams against exactly one provider would guess wrong.
 
 ### One canonical writer = no fork
 
@@ -88,7 +92,7 @@ The shape worth noticing: **only TheTVDB has billing teeth, and it is already op
 
 ### TMDB — the baseline, bundled
 
-TMDB requires an API key, but the user need never see that. Ship a **bundled key** (Overseerr and Jellyseerr both do this at far larger scale than Arrflix will hit early) so the default path has **no required provider step**. Make **bring-your-own-key** the escape hatch for users who want to dodge the shared-key rate limit or insulate against a key revocation. Honest risks of bundling — aggregate rate limits, a revoked key bricking the fleet, attribution terms — are real but survivable, and BYOK is the pressure valve.
+TMDB requires an API key, but the user need never see that. **Unbuilt:** the key is the `tmdb.api_key` setting, entered during setup and hot-reloaded on change. The design: ship a **bundled key** (Overseerr and Jellyseerr both do this at far larger scale than Arrflix will hit early) so the default path has **no required provider step**. Make **bring-your-own-key** the escape hatch for users who want to dodge the shared-key rate limit or insulate against a key revocation. Honest risks of bundling — aggregate rate limits, a revoked key bricking the fleet, attribution terms — are real but survivable, and BYOK is the pressure valve.
 
 ### TheTVDB — opt-in, deferred past v2
 
@@ -100,7 +104,7 @@ It is deferred past v2 deliberately: TVDB's structural advantage is multiple epi
 
 There is **no free public IMDb REST API**: IMDb's official API is enterprise AWS Data Exchange; its bulk datasets are thin and non-commercial; third-party wrappers (OMDb, scrapers) are too fragile to anchor a platform on. So IMDb cannot play a provider role. What it *is* is the ecosystem's universal cross-reference — `imdb_id` is the id every indexer keys on.
 
-That role is already filled: `imdb_id` and `tvdb_id` are **ID namespaces** living in the [`external_id` registry](../metadata/README.md#identity), populated from TMDB's `external_ids` endpoint as part of [series sync](../metadata/README.md#series-structure-sync-the-foundation-gap). **Being an ID namespace is not the same as being a provider.** No IMDb adapter is ever written; the registry is the whole of IMDb's presence in the system. [Acquisition](../acquisition/README.md) reads `(media_item, source: tvdb)` from the registry at indexer-search time — a single SELECT, no provider call.
+That role is already filled: `imdb_id` and `tvdb_id` are **ID namespaces** living in the [`media_item_external_id` registry](../metadata/README.md#identity), written by enrichment (movies: `imdb` from details; series: `imdb` and `tvdb` from the appended `external_ids`). **Being an ID namespace is not the same as being a provider.** No IMDb adapter is ever written; the registry is the whole of IMDb's presence in the system. [Acquisition](../acquisition/README.md) reads `(media_item, source: imdb)` from the registry at indexer-search time — a single SELECT, no provider call — falling back to title + year when it's absent.
 
 ## Portability insurance vs concurrency
 
@@ -126,6 +130,8 @@ The thing that keeps the metadata model fresh is **not** a "series syncer" — i
 
 The engine **conforms to existing patterns rather than re-specifying them**: the due-queue is a [work-dispatch](../../patterns/work-dispatch/README.md) table (claim with `FOR UPDATE SKIP LOCKED`, `LISTEN/NOTIFY` wake-up hint + fallback ticker), and provider reachability (rate-limited, unreachable) is a [connectivity-health](../../patterns/connectivity-health/README.md) resource — `rate_limited` is in that pattern's example status set, and back-off on 429 is the connectivity-health contract, not a bespoke mechanism here.
 
+**Built.** The scheduler is `cadence.MetadataRefreshAt` (state → next due time) and `cadence.MetadataBackoffAt` (exponential back-off after a failure), stamped on `media_item.next_refresh_at` by every successful or failed sync. The worker (`jobs/enrichment`) drains `ListDueMediaItems` in batches of 100 — a tight backfill loop at startup, then a 15-minute ticker — and calls `EnrichmentService.EnrichBatch`. Enqueuers are the sweep, born-at-spawn (the request spawn applies metadata in its transaction), and fire-and-forget enrichment when a match creates a `media_item`. Unbuilt: manual, post-import and tracking-activation triggers; the due-queue is a plain `SELECT` (one worker, no claim, no `NOTIFY`); failures back off per item rather than through connectivity-health.
+
 Normalization happens **at the provider boundary**: TMDB's `status` strings → the canonical [status enum](../metadata/README.md#canonical-status), ISO date strings → typed dates, provider genre arrays → canonical genres. A future provider's different vocabulary is translated inside *its* operation; consumer code never sees a native shape.
 
 ### Reconciling with the response cache
@@ -134,7 +140,7 @@ The refresh engine sits *above* the provider-layer response cache — the TTL-ke
 
 The rule is **one freshness decision-maker per read path**:
 
-- **Canonical-materializing reads** — enrichment, structure sync, born-at-spawn, manual refresh — are reads the engine has *already decided* are worth spending; the cache must not second-guess them. They **consult upstream directly, bypassing the response cache on read.** (Writing the fresh body back through is optional and buys little: under a uniform bypass it could only ever serve a *browse* read, and canonical fetches are keyed separately from the render/search fetches, so the two rarely share an entry.) Mechanically, a `fresh` variant of the service's `getOrFetchFromCache` that skips the read but keeps the write; once the [role seams](#roles-not-one-provider) are extracted, the `MetadataSource` / `StructureSource` operations simply always fetch fresh.
+- **Canonical-materializing reads** — enrichment, structure sync, born-at-spawn, manual refresh — are reads the engine has *already decided* are worth spending; the cache must not second-guess them. They **consult upstream directly, bypassing the response cache on read.** (Writing the fresh body back through is optional and buys little: under a uniform bypass it could only ever serve a *browse* read, and canonical fetches are keyed separately from the render/search fetches, so the two rarely share an entry.) Mechanically, `getOrFetchFromCache`'s `forceRefresh` flag skips the read but keeps the write; `GetMovieDetailsForEnrichment`, `GetSeriesDetailsForEnrichment` and structure sync's `GetTVSeasonDetails(…, true)` set it. Once the [role seams](#roles-not-one-provider) are extracted, the `MetadataSource` / `StructureSource` operations simply always fetch fresh.
 - **Ephemeral render reads** — search proxy, non-adopted focus pages, discover/trending, watch providers — have no canonical copy, are hammered per-render, and tolerate hours-to-a-day of staleness. This is where the response cache earns its keep, unchanged.
 
 **The response cache stays dumb.** Making *its* TTL state-aware (so it "knows" an airing show) is rejected: it is keyed on URL-shaped strings and cannot see entity state without reaching into the entity layer — which would implement the cadence policy twice, in two layers that drift. All state-awareness concentrates in the engine. (`STATIC_TTL` / `DYNAMIC_TTL` were that same instinct born at the only layer that then existed; the engine is it moved to the layer that can see entity state.)
@@ -145,7 +151,7 @@ The cache's role therefore **shrinks rather than disappears**: from a freshness 
 
 The engine decides **what to fetch, not only when** — because a series refresh is not one call. Structure sync fans out to **one provider call per season**, and most seasons are immutable (an episode that aired years ago will not change). Fetching every season on every cadence tick re-pulls that frozen back-catalog repeatedly — the exact waste the response cache existed to prevent — and it lands hardest on the worst case: a long-running show that is *still airing* (a decades-long anime, a daily soap) is simultaneously the most-refreshed and the most-seasoned. It also inflates **born-at-spawn latency**, since that synchronous path runs the same per-season fan-out while the user waits.
 
-So the engine fetches only what can have changed: the **series-level record + the current/most-recent season + any season carrying unaired episodes**; **ended seasons are skipped** (the engine holds the tree and air dates, so it knows which seasons are frozen). This preserves the daily-airing correctness win — new episodes and slipped air dates live in the current/future seasons and the series-level status, all kept fresh — while bounding both call volume and add latency. Fetch granularity is a *scheduler* concern (part of "what's due, and what does servicing it entail"), not a provider one: a provider operation still services whatever slice the engine hands it.
+So the engine fetches only what can have changed: the **series-level record + the current/most-recent season + any season carrying unaired episodes**; **ended seasons are skipped** (the engine holds the tree and air dates, so it knows which seasons are frozen). Built as `seasonsToFetch` / `mutableSeasons` in `service/enrichment.go`; a first sync, with no seasons stored, fetches everything. This preserves the daily-airing correctness win — new episodes and slipped air dates live in the current/future seasons and the series-level status, all kept fresh — while bounding both call volume and add latency. Fetch granularity is a *scheduler* concern (part of "what's due, and what does servicing it entail"), not a provider one: a provider operation still services whatever slice the engine hands it.
 
 ## Anime (embedded data vs API)
 
@@ -167,7 +173,7 @@ A series is classified `anime` automatically when its TMDB/TVDB id is present in
 
 ## Setup is provider-driven
 
-The onboarding flow asks only for configuration declared by the *active* providers — and in the default configuration that list is **empty**, because TMDB ships with a bundled key and every other v1 source is keyless. BYOK and any opt-in provider (a TheTVDB PIN, a Fanart key) are surfaced later, in settings, framed by outcome — never as a required first-run gate. The setup UI is generic; the requirement list comes from the providers. This is a simplification of any flow that currently hardcodes "ask for a TMDB key."
+The onboarding flow asks only for configuration declared by the *active* providers — and in the default configuration that list is **empty**, because TMDB ships with a bundled key and every other v1 source is keyless. BYOK and any opt-in provider (a TheTVDB PIN, a Fanart key) are surfaced later, in settings, framed by outcome — never as a required first-run gate. The setup UI is generic; the requirement list comes from the providers. **Unbuilt:** the setup flow hardcodes a TMDB-key step (`SetupSteps.TmdbApiKey`), and the instance isn't initialized until it's done.
 
 ## Commercial use — the one ToS risk we control
 
@@ -179,8 +185,8 @@ TMDB's API is free for **non-commercial** use with attribution (an "About"/credi
 | -------- | --------------------- |
 | **[Metadata](../metadata/README.md)** | Owns the data model these providers write into; this doc owns the seam they write *through*. The refresh engine keeps metadata's tree fresh; raw payloads are the portability mechanism. |
 | **[Parsing](../parsing/README.md)** | Provides the release-side numbering-namespace tag the `NumberingMap` + `episode-numbering` resolver consume. Never calls a provider. |
-| **[Matching](../matching/README.md)** | Consumes the provider-agnostic domain type and the `external_id` registry; owns the `episode-numbering` resolver the anime `NumberingMap` feeds. The "metadata layer interface" it references is these role seams. |
-| **[Acquisition](../acquisition/README.md)** | Reads `external_id` (`tvdb` for indexer search) — a registry SELECT, not a provider call. |
+| **[Matching](../matching/README.md)** | Consumes the provider-agnostic domain type (`metadata.Item`) through `metadata.MetadataProvider`; owns the `episode-numbering` resolver the anime `NumberingMap` feeds. The "metadata layer interface" it references is these role seams. |
+| **[Acquisition](../acquisition/README.md)** | Reads `media_item_external_id` (`imdb` for ID-precise indexer search) — a registry SELECT, not a provider call. |
 | **[Tracking](../tracking/README.md)** | Consumes the synced episode tree provider-agnostically; unaffected by which provider produced it. |
 | **[Connectivity-health](../../patterns/connectivity-health/README.md)** | Provider reachability/rate-limit state conforms to this pattern (`rate_limited`, `unreachable`); back-off lives there. |
 | **[Work-dispatch](../../patterns/work-dispatch/README.md)** | The refresh engine's due-queue is a work-dispatch table (claim + notify-hint + fallback ticker). |

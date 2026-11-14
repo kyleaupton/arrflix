@@ -1,6 +1,8 @@
-# Story 3 — Pending approval: two requests, one approved, one denied
+---
+status: v1
+---
 
-**Status:** Draft (triaged against the code)
+# Story 3 — Pending approval: two requests, one approved, one denied
 
 Two people submit requests within seconds of each other. Neither auto-approves. Both land in a queue. The admin reviews them with enough context to decide, approves one, denies the other with a reason, and both requesters learn what happened.
 
@@ -10,7 +12,7 @@ This is the **human-in-the-loop story** — the bottleneck [the happy path](./01
 
 ## Cast
 
-- **Friend** — an established user. May request HD or 4K movies; HD auto-approves, **4K does not**.
+- **Friend** — an established user. May request HD or 4K movies, with auto-approve **off**, so every request goes to review. Auto-approve is one per-user toggle covering all of a user's tiers ([V1](../V1.md#roles-and-permissions-decided)).
 - **Cousin** — joined recently. May request HD only, with **no auto-approval**.
 - **Admin** — holds approve and deny authority for movies.
 - **The system** — Arrflix.
@@ -25,7 +27,7 @@ This is the **human-in-the-loop story** — the bottleneck [the happy path](./01
 
 ### Phase 1 — Friend submits a 4K request (T+0)
 
-**User-visible:** the tier picker offers HD and 4K, and is explicit about the consequence — 4K needs approval. Friend picks 4K, and the affordance says so before they commit: *"This will need admin approval."*
+**User-visible:** the tier picker offers HD and 4K, and is explicit about the consequence: the request needs approval. Friend picks 4K, and the affordance says so before they commit: *"This will need admin approval."*
 
 They tap Request. The pill reads **"Awaiting approval"** — deliberately not the same treatment as work in progress, because nothing is progressing.
 
@@ -94,21 +96,21 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 ### A decision reaches a decider
 
 - **REQ-APPROVE-001** — A request needing review must reach someone able to decide it, without them having to check. **Not currently true:** nothing is emitted when a request enters the queue.
-- **REQ-APPROVE-002** — Multiple requests arriving close together must not produce one alert each.
+- **REQ-APPROVE-002** — Multiple requests arriving close together must not produce one alert each. *True only by omission* — no alert is produced at all (REQ-APPROVE-001).
 - **REQ-APPROVE-003** — Deciding a request must clear it from every reviewer's attention, including reviewers who did not act on it. **Unbuilt**, and dependent on the missing resolution lifecycle.
 
 ### The decision is informed
 
 - **REQ-APPROVE-004** — A reviewer must be able to decide from the queue itself: what it costs, who asked, what their history is, and whether the library already has it. **Not currently true** — the queue shows title, tier, status, and requester.
-- **REQ-APPROVE-005** — A reviewer must only see requests they are permitted to act on. *Currently true.*
-- **REQ-APPROVE-006** — Two reviewers acting on the same request must not both succeed. *Currently true* — the second attempt is refused and the interface handles it.
+- **REQ-APPROVE-005** — A reviewer must only see requests they are permitted to act on. *Currently true* under V1's roles, where only operators review. The queue is gated on authority to view any request, and the approve and deny controls on per-type authority, so a reviewer holding the first without the second would see requests they cannot decide.
+- **REQ-APPROVE-006** — Two reviewers acting on the same request must not both succeed. **Partly true:** an attempt made after another decision has committed is refused as a conflict, and the interface surfaces it. The pending check and the decision write are not atomic, though, so two truly concurrent decisions can both succeed.
 
 ### The outcome reaches the requester
 
 - **REQ-APPROVE-007** — A requester must learn the outcome of their request without checking. **Not currently true** for either outcome.
-- **REQ-APPROVE-008** — A denial must carry a reason, and the requester must see it. *Half true:* the reason is required and stored, and nothing delivers it.
+- **REQ-APPROVE-008** — A denial must carry a reason, and the requester must see it. *Half true:* the interface requires a reason (the API accepts a denial without one), and it is stored and shown inline on the requester's requests view. Nothing delivers it.
 - **REQ-APPROVE-009** — An approver's note, where given, must reach the requester. **Unbuilt** — there is nowhere to record one.
-- **REQ-APPROVE-010** — Bad news must not be delivered more loudly than good news. A denial defaults to a quieter channel than an approval.
+- **REQ-APPROVE-010** — Bad news must not be delivered more loudly than good news. A denial defaults to a quieter channel than an approval. *True only by omission* — neither outcome is delivered (REQ-APPROVE-007).
 
 ### Nothing waits forever
 
@@ -116,7 +118,7 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ### The requester knows before they ask
 
-- **REQ-APPROVE-012** — A user must know that a choice will require approval **before** they commit to it. *Currently true* — the tier picker only offers tiers they hold, and the consequence is stated up front.
+- **REQ-APPROVE-012** — A user must know that a choice will require approval **before** they commit to it. *Currently true* — the server labels each offered tier with whether choosing it needs approval. The multi-tier request dialogs say so before submission; a single-tier button signals it only through its verb (*Request* rather than *Add to Library*).
 
 ### Time targets (UX commitments)
 
@@ -138,14 +140,14 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ## Open questions
 
-1. **How long should the grouping window be?** Long enough to collapse a burst, short enough that a lone request isn't delayed. **Lean:** around a minute, with single requests effectively immediate.
+1. **How long should the grouping window be?** Long enough to collapse a burst, short enough that a lone request isn't delayed. **Lean:** around a minute, with single requests effectively immediate. *Frozen — beyond V1.*
 
-2. **Does a reviewer see other users' history for the same title?** *"Two other people also asked for this"* is useful context and a small privacy disclosure. **Lean:** yes for reviewers, never for ordinary requesters.
+2. **Does a reviewer see other users' history for the same title?** *"Two other people also asked for this"* is useful context and a small privacy disclosure. **Lean:** yes for reviewers, never for ordinary requesters. *Frozen — beyond V1.*
 
-3. **Should denial reasons have shortcuts?** Admins denying often want canned reasons — storage, household policy, coverage. **Lean:** a small editable set with free-text override, once denial volume justifies it.
+3. **Should denial reasons have shortcuts?** Admins denying often want canned reasons — storage, household policy, coverage. **Lean:** a small editable set with free-text override, once denial volume justifies it. *Frozen — beyond V1.*
 
-4. **Is the approver's note visible to anyone but the requester?** **Lean:** requester and reviewers, nobody else — symmetric with the denial reason.
+4. **Is the approver's note visible to anyone but the requester?** **Lean:** requester and reviewers, nobody else — symmetric with the denial reason. *Frozen — beyond V1.*
 
-5. **How long until a request expires, and what happens then?** A pending request is a promise nobody made. **Lean:** expire after a few weeks with a notification, and let the user re-ask — but this is the requirement that most needs a real number.
+5. **How long until a request expires, and what happens then?** A pending request is a promise nobody made. **Lean:** expire after a few weeks with a notification, and let the user re-ask — but this is the requirement that most needs a real number. *Frozen — beyond V1.*
 
-6. **What does the requester see between approval and availability?** The request is spawned and frozen while a want carries the work. The interface says "fulfilled" once the file lands. **Lean:** derive it — introducing a second source of truth on the request is how these things drift.
+6. **What does the requester see between approval and availability?** The request is spawned and frozen while a want carries the work. The interface says "fulfilled" once the file lands. **Decided:** derive it — introducing a second source of truth on the request is how these things drift.

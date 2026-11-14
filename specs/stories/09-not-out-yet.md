@@ -1,6 +1,8 @@
-# Story 9 — Asking for something that isn't out yet
+---
+status: v1
+---
 
-**Status:** Draft
+# Story 9 — Asking for something that isn't out yet
 
 Someone sees a trailer, or a film is in cinemas, or next week's episode hasn't aired. They ask for it anyway — which is reasonable, and the system should handle it gracefully.
 
@@ -16,11 +18,11 @@ The distinction this story exists to draw:
 
 So the concept the product needs is not a release date. It is an **obtainable date**: the point at which asking is no longer futile. For a movie that's the home-release date; for an episode it's the air date.
 
-The system currently understands this in exactly one place — a computed property on the movie card, which decides "not yet obtainable" from the digital and physical dates and shows a genuinely good line:
+For episodes the system understands this: the [title-status](../modules/title-status/README.md) projection reports an episode whose air date is still ahead as *not out yet*. For movies it understands it in exactly one place — a line on the movie's status card, built from the theatrical and digital dates, which shows a genuinely good line:
 
 > In theaters 3 Jul · digital release 12 Sep
 
-That understanding is display-only, lives on the untracked branch, and becomes **unreachable the moment the title is requested.**
+That understanding is display-only, renders only while nobody has requested the title, and becomes **unreachable the moment the title is requested.**
 
 ## Cast
 
@@ -39,9 +41,9 @@ This part works today, and it sets the expectation everything after it must hono
 
 **User-visible (Vic):** the honest version — *"Requested · expected 12 Sep."* The film is on his list, waiting for a date, and no action is pending from anyone.
 
-**What actually happens today:** the moment he requests, the status becomes *"Searching for a release."* The good copy is on a branch that only renders for untracked titles, so requesting the film replaces an accurate statement with a false one. Vic now watches a spinner for six weeks.
+**What actually happens today:** the moment he requests, the status becomes *"Searching for a release."* The good copy only renders for titles nobody has requested, so requesting the film replaces an accurate statement with a false one. Vic now watches a spinner for six weeks.
 
-**And behind it, worse:** because the film's persisted date is the *theatrical* one, it is already in the past. The want lands in an ordinary search tier and **the system polls indexers for it, day after day, for months**, for a release that cannot exist. Each pass records an attempt and a "nothing found" error against a film that isn't out.
+**And behind it, worse:** because the film's persisted date is the *theatrical* one, it is already in the past. The want lands in an ordinary search tier and **the system polls indexers for it, day after day, for months**, for a release that cannot exist. Each pass records a "no eligible release" error against a film that isn't out.
 
 ### Phase 3 — The date arrives (T+10 weeks)
 
@@ -87,25 +89,25 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ### Not-yet-obtainable is a distinct condition
 
-- **REQ-UNREL-001** — A title that cannot yet be obtained must be presented as waiting for a date, never as searching or failing. **Not currently true:** the accurate copy is unreachable once a title is tracked, so requesting it replaces "not available yet" with "searching for a release."
-- **REQ-UNREL-002** — For a movie, obtainability must be determined by the home-release date, not the theatrical one. A film in cinemas is released and not obtainable. **Not currently true anywhere but the frontend:** nothing in the backend distinguishes the two.
+- **REQ-UNREL-001** — A title that cannot yet be obtained must be presented as waiting for a date, never as searching or failing. **Not currently true for movies:** the projection has a *not out yet* state that episodes reach through their air date, but no obtainable date reaches the movie path, so requesting a film replaces "not available yet" with "searching for a release."
+- **REQ-UNREL-002** — For a movie, obtainability must be determined by the home-release date, not the theatrical one. A film in cinemas is released and not obtainable. **Not currently true anywhere but the frontend's copy:** the backend extracts per-type dates for the detail response, but everything that schedules searches or derives state reads the theatrical release date.
 - **REQ-UNREL-003** — The obtainable date must be durable, not recomputed per page view. **Not currently true:** per-type release dates are extracted correctly and well tested, then discarded — they exist only on the detail response, with no persisted column, so no scheduler or worker can consult them.
 
 ### The system does not chase what cannot exist
 
 - **REQ-UNREL-004** — No search may be issued for a title before it could plausibly be obtainable. **Not currently true, and this is the expensive one:** a theatrically-released film's persisted date is already past, so its want enters a normal search tier and polls indexers daily for months.
-- **REQ-UNREL-005** — A want that is waiting for a date must record that it is waiting, not accumulate failed attempts. Attempt counts and error text describe a system that tried and failed; neither applies to a title that isn't out.
-- **REQ-UNREL-006** — When the obtainable date passes, the want must become ordinary searching work under the normal cadence and recovery rules.
-- **REQ-UNREL-007** — Failing to find a release once the date has passed must not read as a system failure. Home releases slip; the first days after a date are ordinary searching.
+- **REQ-UNREL-005** — A want that is waiting for a date must record that it is waiting, not accumulate failed attempts. Attempt counts and error text describe a system that tried and failed; neither applies to a title that isn't out. **Not currently true for movies:** each futile pass stamps "no eligible release" on the want. An episode's want waits for its air date untouched.
+- **REQ-UNREL-006** — When the obtainable date passes, the want must become ordinary searching work under the normal cadence and recovery rules. *Currently true for episodes*, whose wants come due at their air date. A movie has no obtainable date to pass (REQ-UNREL-003).
+- **REQ-UNREL-007** — Failing to find a release once the date has passed must not read as a system failure. Home releases slip; the first days after a date are ordinary searching. *Currently true* — an unfound release keeps the want searching, never failed (REQ-SEARCH-001).
 
 ### Dates change, and some don't exist
 
-- **REQ-UNREL-008** — An obtainable date that changes upstream must reschedule the wait and update what the user is told.
-- **REQ-UNREL-009** — A title with no known date must be accepted and presented as an indefinite watch, never as a scheduled wait against an invented date.
+- **REQ-UNREL-008** — An obtainable date that changes upstream must reschedule the wait and update what the user is told. **Partly true for episodes:** what the user is told reads the current air date, but a want's first wake-up stays at the date it was created with. A movie has no obtainable date to reschedule.
+- **REQ-UNREL-009** — A title with no known date must be accepted and presented as an indefinite watch, never as a scheduled wait against an invented date. **Not currently true:** the request is accepted, but an undated movie reads as searching, and a series whose episodes are all undated reads as not requested — undated episodes get no want, so nothing counts them as in scope.
 
 ### The wait is legible
 
-- **REQ-UNREL-010** — The expected date must be shown wherever the wait is shown, on the title and anywhere the request is listed.
+- **REQ-UNREL-010** — The expected date must be shown wherever the wait is shown, on the title and anywhere the request is listed. **Not currently true:** a requested movie shows no expected date, and the requests list shows none for anything.
 - **REQ-UNREL-011** — A requester must be able to see everything they are waiting on, with dates, without visiting each title individually. **Not currently possible:** there is no calendar and no upcoming view of any kind.
 
 ## Out of scope (variant stories)
@@ -118,14 +120,14 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ## Open questions
 
-1. **Is the calendar scoped to me or to the library?** The navigation spec says "everyone," but a requester's useful question is *"what am I waiting for?"* while an operator's is *"what is this system going to do?"* Those are the same data filtered differently. **Lean:** one surface, scoped to the viewer's own requests by default, with an operator toggle for everything — rather than two features.
+1. **Is the calendar scoped to me or to the library?** The navigation spec says "everyone," but a requester's useful question is *"what am I waiting for?"* while an operator's is *"what is this system going to do?"* Those are the same data filtered differently. **Lean:** one surface, scoped to the viewer's own requests by default, with an operator toggle for everything — rather than two features. *Frozen — beyond V1.*
 
-2. **How early should searching start?** Releases frequently appear before their official date, and a hard gate on the date would miss them; the current pre-release behavior wakes exactly at the date, which is midnight UTC of a date-only value. **Lean:** begin searching a modest window early — a day or so — and accept a few futile passes as the cost of not missing an early release.
+2. **How early should searching start?** Releases frequently appear before their official date, and a hard gate on the date would miss them; the current pre-release behavior wakes exactly at the date, which is midnight UTC of a date-only value. **Decided:** begin searching a modest window early — a day or so — and accept a few futile passes as the cost of not missing an early release.
 
-3. **Should there be a limit on how far ahead one may request?** A film two years out occupies a request slot, a quota position, and a row in everyone's calendar for two years. Options: a horizon cap, an expiry, or nothing. **Lean:** no cap — refusing "I want this when it's out" is user-hostile — but this is the strongest argument for the request expiry the [requests spec](../modules/requests/README.md#lifecycle) already describes and the code does not implement.
+3. **Should there be a limit on how far ahead one may request?** A film two years out occupies a request slot, a quota position, and a row in everyone's calendar for two years. Options: a horizon cap, an expiry, or nothing. **Decided:** no cap — refusing "I want this when it's out" is user-hostile — but this is the strongest argument for the request expiry the [requests spec](../modules/requests/README.md#lifecycle) already describes and the code does not implement.
 
-4. **Does a requester get told when the wait ends?** "The film you asked for is out today — looking for it now" is a satisfying moment and closes the loop opened at request time. It is also a notification for something that is not yet actionable. **Lean:** notify on *availability*, not on the date passing; the date is the system's business, having the file is the user's.
+4. **Does a requester get told when the wait ends?** "The film you asked for is out today — looking for it now" is a satisfying moment and closes the loop opened at request time. It is also a notification for something that is not yet actionable. **Lean:** notify on *availability*, not on the date passing; the date is the system's business, having the file is the user's. *Frozen — beyond V1.*
 
-5. **Whose dates?** Home-release dates are resolved by region priority, so a viewer outside the priority regions may see a date that does not match their own market. It's the right default for a self-hosted tool with one operator, but it is a stated assumption rather than a neutral one. **Lean:** leave it; revisit if the region priority becomes configurable.
+5. **Whose dates?** Home-release dates are resolved by region priority, so a viewer outside the priority regions may see a date that does not match their own market. It's the right default for a self-hosted tool with one operator, but it is a stated assumption rather than a neutral one. **Decided:** leave it; revisit if the region priority becomes configurable.
 
-6. **Does an unreleased request behave differently under autonomy?** A title waiting six weeks for a date is a poor fit for a proposal that sits open that whole time. **Lean:** propose-mode trackings should not generate proposals for not-yet-obtainable wants at all — there is nothing to propose until releases exist. Pin against [autonomy and proposals](./08-autonomy-and-proposals.md).
+6. **Does an unreleased request behave differently under autonomy?** A title waiting six weeks for a date is a poor fit for a proposal that sits open that whole time. **Lean:** propose-mode trackings should not generate proposals for not-yet-obtainable wants at all — there is nothing to propose until releases exist. Pin against [autonomy and proposals](./08-autonomy-and-proposals.md). *Frozen — beyond V1.*

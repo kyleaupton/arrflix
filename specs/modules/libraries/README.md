@@ -1,17 +1,21 @@
+---
+status: as-built
+---
+
 # Libraries — the on-disk roots where media lives
 
-**Status:** Draft, iteration 1
+> **Beyond what's built:** §Runtime health (probe, extended statuses, consumer gating) is unbuilt design that depends on the deferred [connectivity-health pattern](../../patterns/connectivity-health/README.md). The `enabled` flag is stored but not yet enforced by any consumer.
 
 A library is a named, typed root path on disk where Arrflix places media. It is one of the three things [routing](../routing/README.md) dispatches to (alongside downloaders and name templates), and the unit the [scanner](../scan/README.md) walks.
 
-The library model is one of the simplest and most stable in the system. This spec is **primarily descriptive** — it captures what already exists in v0 and locks in a small set of additions for v1 (runtime health checks, a few audit-worthy edges). Most of the surface area is left as-is.
+The library model is one of the simplest and most stable in the system. This spec is **primarily descriptive** — it captures what exists and sketches one addition (runtime health checks, unbuilt). Most of the surface area is left as-is.
 
 ## TL;DR
 
 - A library is `(name, type, root_path)` plus a few flags (`enabled`, `default`). One row per library, one root path per row.
 - Two media types today: `movie` and `series`. Each can have one library marked `default`, used when nothing else picks a destination.
 - CRUD via the existing REST surface; scan is a per-library verb.
-- v1 adds runtime health checks via the [connectivity-health pattern](../../patterns/connectivity-health/README.md): the library spec just declares the probe + extended statuses + consumer-behavior mapping.
+- Runtime health checks (unbuilt) come via the [connectivity-health pattern](../../patterns/connectivity-health/README.md): the library spec just declares the probe + extended statuses + consumer-behavior mapping.
 - Multi-root paths and library grouping are deliberately deferred — see [open questions](#open-questions).
 
 ## What a library owns
@@ -21,27 +25,23 @@ A library row encodes:
 - **Name** — display name, unique (case-insensitive).
 - **Type** — `movie` or `series`. Drives default-library lookup and constrains what routing rules can target.
 - **Root path** — absolute filesystem path. Single value, single root.
-- **Enabled flag** — when false, library accepts no new imports and is hidden from routing-action pickers. Existing media files are unaffected.
-- **Default flag** — at most one default per type. Used by callers that need a fallback destination ("import this movie somewhere"). Enforced by a partial unique index.
+- **Enabled flag** — when false, library accepts no new imports and is hidden from routing-action pickers. Existing media files are unaffected. **Unbuilt:** the flag is stored and editable, but routing, import, scan and the routing-action pickers don't read it yet.
+- **Default flag** — at most one default per type. Used by callers that need a fallback destination ("import this movie somewhere"). Enforced by a partial unique index (`uq_library_default_type`).
 - **Created / updated timestamps** — bookkeeping.
 
 That is the full surface. No tags, no quotas, no scheduling, no description — additions land via [open questions](#open-questions) if real demand emerges.
 
 ## Type enum
 
-Media type is a string-typed enum (`'movie' | 'series'`) hardcoded in the schema and validated in the service. The single-source-of-truth lives in the migration; the service mirrors it.
+Media type is a string-typed enum (`'movie' | 'series'`) hardcoded in the schema (`CHECK`) and mirrored in the handler's `enum` tag and the service's validation. The single source of truth lives in the migration.
 
 This is **deliberately not extensible** in v1. Adding a new type (e.g., `music`, `book`) requires a migration + service change. The constraint protects routing, scan, import, and matching from polymorphism they're not ready for.
 
 ## Per-type default
 
-`GetDefault(ctx, type)` returns the library marked `default` for that type. Used by:
+`GetDefaultLibrary(ctx, type)` returns the library marked `default` for that type. Its caller is routing: when no fired rule fills the `library` action, the dispatch falls back to the default library for the release's media type (`service/routing.go`). The interactive grab flow goes through the same routing evaluation, so a grab without an explicit library pick lands in the default too.
 
-- Routing's catch-all rule when no explicit `library` action is set.
-- Import fallback when a download arrives with no associated routing decision (admin-added torrents, manual file drops — rare paths).
-- The interactive grab flow when a user grabs without an explicit library pick.
-
-There is no system-wide default — defaults are per-type. A fresh install with one movie library and one series library has both as defaults; adding a second of either type leaves the original as default until an admin moves the flag.
+There is no system-wide default — defaults are per-type. A fresh install with one movie library and one series library has both as defaults; adding a second of either type leaves the original as default until an admin moves the flag. Moving the flag is two writes: clear it on the old default, then set it on the new one. Setting `default=true` while another library of the same type holds it fails the partial unique index and returns 409.
 
 ## Lifecycle
 
@@ -67,36 +67,38 @@ There is no system-wide default — defaults are per-type. A fresh install with 
 **State semantics:**
 
 - **enabled** — accepts imports, surfaces in routing UI, scannable.
-- **disabled** — invisible to new imports and routing. Existing media files keep their library reference; scan can still be triggered manually for inventory but routing won't dispatch new work here.
-- **deleted** — row removed. The schema uses `RESTRICT` on `download_job.library_id` and `import_task.library_id`, so a library cannot be deleted while in-flight work points to it. `file.library_id` uses `CASCADE` — deleting a library wipes its file index (the files on disk are untouched).
+- **disabled** — invisible to new imports and routing. Existing media files keep their library reference; scan can still be triggered manually for inventory but routing won't dispatch new work here. (**Unbuilt:** nothing reads the flag yet, so a disabled library behaves like an enabled one.)
+- **deleted** — row removed. The schema uses `RESTRICT` on `download_job.library_id` and `import_task.library_id`, so a library cannot be deleted while any job or task row (in-flight or historical) points to it. `file.library_id` uses `CASCADE` — deleting a library wipes its file index (the files on disk are untouched). `routing_rule.library_id` uses `SET NULL`, so a rule targeting a deleted library falls back to the default.
 
 ## Operations
 
-CRUD and one verb. All routes are JWT-gated; permission scoping lives in [users](../users/README.md#permissions).
+CRUD and one verb (`backend/internal/http/handlers/libraries.go`). All routes are authenticated; each operation's permission key is mapped in `internal/http/authzgate/map.go`, and permission scoping lives in [users](../users/README.md#permissions).
 
 | OperationID         | Method | Path                              | Notes                                                                                          |
 | ------------------- | ------ | --------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `libraries-list`    | GET    | `/api/v1/libraries`               | All libraries, regardless of enabled state.                                                    |
 | `libraries-get`     | GET    | `/api/v1/libraries/{id}`          |                                                                                                |
-| `libraries-create`  | POST   | `/api/v1/libraries`               | Validates type enum + filesystem reachability of `root_path`.                                  |
-| `libraries-update`  | PUT    | `/api/v1/libraries/{id}`          | Same validations as create. Changing `root_path` is allowed but flagged in audit (see below).  |
-| `libraries-delete`  | DELETE | `/api/v1/libraries/{id}`          | 409 if jobs reference; success cascades to `file` rows.                                          |
-| `libraries-scan`    | POST   | `/api/v1/libraries/{id}/scan`     | Kicks an async scan, returns `scanId`. Owned by [scan](../scan/README.md).                     |
+| `libraries-create`  | POST   | `/api/v1/libraries`               | 201. Validates type enum + filesystem reachability of `root_path`.                             |
+| `libraries-update`  | PUT    | `/api/v1/libraries/{id}`          | Same validations as create. Changing `root_path` is allowed and not audited.                   |
+| `libraries-delete`  | DELETE | `/api/v1/libraries/{id}`          | 204. 409 if jobs reference; success cascades to `file` rows.                                   |
+| `libraries-scan`    | POST   | `/api/v1/libraries/{id}/scan`     | 202 with `scanId`; 409 if a scan of that library is already running. Owned by [scan](../scan/README.md). |
 
 Permissions to keep in mind (defined in [users](../users/README.md)):
 
-- `libraries.read` — list / get
-- `libraries.write` — create / update / delete
-- `libraries.scan` — trigger scans (separable from write — operators may want to grant scan without giving up CRUD)
+- `library.read` — list / get (also gates media browsing, title status, and tracking reads)
+- `library.write` — create / update / delete, plus the server filesystem browser used to pick a root
+- `library.scan` — trigger scans (separable from write — operators may want to grant scan without giving up CRUD)
 
 ## Validation
 
 At create / update time the service validates:
 
-1. **Name** non-empty, unique case-insensitive.
+1. **Name** non-empty (1–100 chars, handler tag). Case-insensitive uniqueness is enforced by the `uq_library_name_ci` index, surfacing as 409.
 2. **Type** in the allowed enum.
-3. **Root path** non-empty, absolute, and reachable via `os.Stat` at the time of the call. Errors are logged in full server-side; the user sees a path-safe summary ("path not accessible: permission denied").
-4. **Default flag** — setting `default=true` on a library implicitly clears `default` on any other library of the same type (enforced atomically via the partial unique index + an explicit clear in the service).
+3. **Root path** non-empty and reachable via `os.Stat` at the time of the call. Absoluteness and is-a-directory aren't checked. Errors are logged in full server-side; the user sees a path-safe summary on the `body.root_path` field ("not accessible: permission denied").
+4. **Default flag** — at most one per type, enforced only by the partial unique index; a second default of the same type returns 409 rather than implicitly clearing the first.
+
+Field problems are collected and returned together as one 422.
 
 Validation does **not** cover ongoing health — see next section.
 
@@ -104,7 +106,7 @@ Validation does **not** cover ongoing health — see next section.
 
 Libraries are a producer of the [connectivity-health pattern](../../patterns/connectivity-health/README.md). The pattern owns the worker shape, status persistence (three columns on the row), transition emission via [realtime](../realtime/README.md), hysteresis, and cadence. This section covers only the library-specific contract: what the probe checks, the extended statuses, and how each consumer reacts.
 
-**Today**, a library's root path is only checked at create / update. If the underlying drive goes offline, the path becomes unwritable, or permissions flip, the system silently breaks — scans fail with cryptic errors, imports stall, routing dispatches into a black hole. The runtime-health worker closes that gap.
+A library's root path is only checked at create / update. If the underlying drive goes offline, the path becomes unwritable, or permissions flip, the system silently breaks — scans fail with cryptic errors, imports stall, routing dispatches into a black hole. The runtime-health worker closes that gap.
 
 **Probe.** Per enabled library, on the pattern's recommended cadence:
 
@@ -143,7 +145,7 @@ Hard free-space floors are not in v1; routing rules can express their own minimu
 | **[Hygiene](../hygiene/README.md)**             | Cleanup eligibility is evaluated within a library; cross-library moves are out of scope.                                    |
 | **[Matching](../matching/README.md)**           | Scoped per-library when resolving ambiguous matches.                                                                        |
 | **[Acquisition](../acquisition/README.md)**     | Reads health to decide whether to grab — a planned download whose target library is `unreachable` is held, not enqueued.    |
-| **Frontend (`LibrarySettings.vue`)**            | CRUD + scan-trigger UI. v1 surface adds the live health badge per library.                                                  |
+| **Frontend (`views/settings/LibrarySettings.vue`, `components/modals/LibraryDialog.vue`)** | CRUD + scan-trigger UI. The live health badge per library is unbuilt.                                  |
 
 ## What libraries does NOT own
 
@@ -166,11 +168,11 @@ Hard free-space floors are not in v1; routing rules can express their own minimu
 
 2. **Type extensibility.** `'movie' | 'series'` is hardcoded. When (not if) we add `music` or `book` or `audiobook`, the migration + service enum has to change in lockstep, and routing's type-matching conditions need a new value. Worth a single iteration-2 pass to decide whether the enum graduates to a real table (`media_type` registry) or stays inline.
 
-3. **Path mutability after creation.** Changing `root_path` post-create is allowed today, but it silently breaks every running `import_task` that copied the path string at creation time (see #4). Options: forbid path changes once `file` rows exist; allow with an explicit cascade-rewrite of in-flight tasks; or migrate the import-task data model to use `library_id` instead of a raw path. Lean: third option, separately tracked.
+3. **Path mutability after creation.** Changing `root_path` post-create is allowed today, but it silently breaks every running `import_task` that copied the path string at creation time (see #4). Options: forbid path changes once `file` rows exist; allow with an explicit cascade-rewrite of in-flight tasks; or migrate the import-task data model to use `library_id` instead of a raw path. Lean: third option, separately tracked. — *Answered by the code: `import_task` carries `library_id` (FK, `RESTRICT`) and the import worker reads `library.root_path` through a join at execution time, so a repath applies to in-flight tasks.*
 
-4. **Import task carries `library_root_path` (string), not `library_id`.** This is a v0 quirk. An import task captures the path at creation time; if the library is renamed/repath'd, in-flight tasks still target the old location. Fixing this is a small data-model change. Track separately.
+4. **Import task carries `library_root_path` (string), not `library_id`.** This is a v0 quirk. An import task captures the path at creation time; if the library is renamed/repath'd, in-flight tasks still target the old location. Fixing this is a small data-model change. Track separately. — *Answered by the code: see #3; there is no `library_root_path` column.*
 
-5. **`MEDIA_LIBRARIES` env var.** Documented in README + CLAUDE.md, referenced nowhere in code. Either wire it up (auto-create libraries from a colon-separated list on first boot) or remove from docs. Lean: remove — libraries are first-class DB rows, the env var is a relic.
+5. **`MEDIA_LIBRARIES` env var.** Documented in README + CLAUDE.md, referenced nowhere in code. Either wire it up (auto-create libraries from a colon-separated list on first boot) or remove from docs. Lean: remove — libraries are first-class DB rows, the env var is a relic. — *Answered by the code: it's the host path `docker-compose.yml` bind-mounts at `/data`; the backend never reads it.*
 
 6. **Free-space hard floor.** Should every library have a "stop accepting writes below N GB free" setting, or is that a routing-rule concern? Lean: routing-rule, because the right floor depends on what's being placed (don't accept a 4K remux when the floor is 50 GB, but accept a TV episode). Library exposes the current number; routing decides.
 
@@ -179,7 +181,7 @@ Hard free-space floors are not in v1; routing rules can express their own minimu
 8. **Move-between-libraries.** "Move this movie from Movies-HD to Movies-4K" is a real operator action that today requires manual filesystem work + re-scan. Worth a first-class operation? Probably yes eventually, but it spans hygiene + import + scan and doesn't have a clear home. Defer.
 
 9. **Per-library permissions.** `libraries.read:<id>` — can a user have CRUD access to one library but not another? Lean: not in v1; lift via `resource_id` on permission grants if real demand emerges (the [users](../users/README.md) spec already supports per-resource scoping in the grant table).
-10. **Persisted parse + origin — moved to [files](../files/README.md).** Re-rendering templates over a library (mass-rename) needs each file's advertised parse persisted — raw string + parsed `Quality`/`Release` + `parser_version` + `origin: grabbed|scanned|manual`; see [parsing § persisted parse](../parsing/README.md#persisted-parse). This is the `file_parse` 1:1 companion, owned by [files](../files/README.md#the-sidecar-family); libraries owns the root, not the file rows.
+10. **Persisted parse + origin — moved to [files](../files/README.md).** Re-rendering templates over a library (mass-rename) needs each file's advertised parse persisted — raw string + parsed `Quality`/`Release` + `parser_version` + `origin: grabbed|scanned|manual`; see [parsing § persisted parse](../parsing/README.md#persisted-parse). This is the `file_parse` 1:1 companion, owned by [files](../files/README.md#the-sidecar-family); libraries owns the root, not the file rows. — *Answered by the code: the insert-once `file_origin` sidecar holds the origin (`grab`/`scan`/`manual`), the source title, and its materialized parse.*
 
 ## What we're explicitly not deciding here
 

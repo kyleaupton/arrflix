@@ -1,19 +1,36 @@
+---
+status: as-built
+---
+
 # Scan — keeping disk and database in sync
 
-**Status:** Draft, iteration 1
+> **Beyond what's built:** the built scan is discovery-only — see [What's built](#whats-built). §The reconciliation gap, §Scan modes, §Triggers (all but manual), §Inotify, §Streaming pipeline architecture, §ffprobe metadata, §Killer features and most of §Edge cases describe unbuilt design, as do the `mtime`, inode, `file_probe`, `scan_run` and `hygiene_finding` writes in §What scan writes.
 
-This doc defines **scan**: the subsystem that reconciles what's on disk with what's in the database. It captures _what scan owns_, _what it doesn't_, _how it reconciles missing and changed files_, _what cheap metadata it extracts on the way_, and _what scan modes and triggers we need_. It does **not** pin down table names, column types, or wire formats — those come in a later iteration.
+This doc defines **scan**: the subsystem that reconciles what's on disk with what's in the database. It captures _what scan owns_, _what it doesn't_, _how it reconciles missing and changed files_, _what cheap metadata it extracts on the way_, and _what scan modes and triggers we need_. It does **not** pin down table names, column types, or wire formats for the unbuilt parts.
 
-This doc is a back-fill: scan exists today as the 4-phase `ScannerService` in `backend/internal/service/scan.go`. The greenfield design carves off the identification logic (which moves to [matching](../matching/README.md)) and shifts scan's focus to discovery, reconciliation, and state refresh.
+Scan is `ScannerService` in `backend/internal/service/scan.go`. Identification lives in [matching](../matching/README.md); scan's focus is discovery, reconciliation, and state refresh.
+
+## What's built
+
+One mode (a full walk), one trigger (manual), batched phases:
+
+1. **Trigger.** `POST /api/v1/libraries/{id}/scan` (`library.scan`) returns 202 with a `scanId` and runs the scan in a goroutine. An in-memory guard allows one scan per library at a time; a second request gets 409.
+2. **Walk & collect.** `filepath.WalkDir` over `root_path` (symlinks aren't followed). A file is kept when its extension is `.mkv/.mp4/.avi/.mov/.wmv/.flv/.m4v/.webm` and it isn't extra content: any path segment named `featurettes`, `extras`, `samples`, `trailers`, `behind the scenes`, etc., or a basename of `sample` / `sample.*` / `sample-*`. A path already held by a live `file` row in this library is **skipped** — known files are neither re-stat'd nor re-matched. For each new file scan records size and the OSDb hash (best-effort; NULL when too small or unreadable).
+3. **Mint rows.** Each new file is parsed (`parsing.Parse(relpath, domain, AsPath())`), then gets a `file` row (identity NULL), a `file_state` row, and an insert-once `file_origin` row (`origin='scan'`, `source_title` = the relpath as discovered). The row exists before matching because `match_decision.file_id` is a real FK.
+4. **Match.** One `MatcherService.MatchBatch` call over all new files, which writes a `match_decision` per file.
+5. **Persist.** `confident` / `confident_review` outcomes, and `partial_series` with a TMDB series ref, go through `commitMatch` (shared with manual match): upsert `media_item` / season / episode, set identity on the file, rewrite `file_state`, append a `file_import` row with `method='scan'`. Other bands leave identity NULL. A newly created `media_item` gets fire-and-forget enrichment.
+6. **Events.** [Realtime](../realtime/README.md) `scan_started`, `scan_progress` (every 50 files, with files seen and items created), `scan_completed` (per-band counts, items created, episode-lookup failures, duration) and `scan_failed`, targeted at `library.read` holders.
+
+Not built: reconciliation of missing or changed files, state refresh on known files, re-matching files a previous scan left unidentified, scheduled or event triggers, `scan_run` history, ffprobe, and drop-in want fulfillment (a `TODO(tracking)` in `persistConfident`).
 
 ## TL;DR
 
 - Scan's job clarifies once matching becomes its own subsystem: **discovery** (what's on disk?), **reconciliation** (what's gone or changed?), **state refresh** (`last_verified_at`, size/mtime drift), **cheap metadata capture** (OSDb hash, optionally ffprobe), and **event emission** for downstream consumers.
-- The single biggest gap today is **reconciliation** — scan barely notices when files disappear. The greenfield model does two passes: an FS pass (what's on disk) and a DB pass (what we think is on disk), and resolves the diff.
+- The single biggest gap is **reconciliation** — scan doesn't notice when files disappear. The designed model does two passes: an FS pass (what's on disk) and a DB pass (what we think is on disk), and resolves the diff.
 - Four **scan modes**: `full` (walk everything), `diff` (walk only directories with changed mtime), `verify` (no walk; `stat()` known files), `targeted` (a specific path or subtree).
 - Several **triggers**: manual, scheduled (cron), post-import, post-grab (downloader webhook), inotify (real-time on local FS), drift-detection cascades.
-- **Streaming pipeline**, not batched phases: walk emits events; matcher consumes batches; probe worker consumes events; [realtime](../realtime/README.md) emits live progress to clients. Failures in one stage don't stall the others.
-- **OSDb hash computed unconditionally** at scan time — cheap, pays back hugely in [matching](../matching/README.md) v2 and [hygiene](../hygiene/README.md) v1.
+- **Streaming pipeline** (unbuilt; the built scan is batched phases): walk emits events; matcher consumes batches; probe worker consumes events; [realtime](../realtime/README.md) emits live progress to clients. Failures in one stage don't stall the others.
+- **OSDb hash computed unconditionally** at scan time (built) — cheap, pays back hugely in [matching](../matching/README.md) v2 and [hygiene](../hygiene/README.md) v1.
 - **ffprobe metadata captured lazily** by a separate worker — drives quality-related hygiene rules without slowing the walk.
 - Scan is mostly plumbing. The differentiators it enables — instant drop-ins, paranoid integrity verification, no orphan rows, fast scheduled re-scans — are what users notice.
 
@@ -41,9 +58,9 @@ The clean line: **scan is filesystem-aware; matcher is identity-aware; import is
 
 ## The reconciliation gap
 
-The single most important shift from v0 is that scan needs to notice when files **go away**, not just when they show up. Today's scan walks the tree and adds new entries; missing files mostly leak.
+Scan needs to notice when files **go away**, not just when they show up. The built scan walks the tree and adds new entries; missing files leak (`file_state.exists` is never set to false).
 
-Greenfield scan does two passes per run:
+The designed scan does two passes per run:
 
 ```
 1. DB pass: list all file rows scoped to this library (identified or not)
@@ -58,7 +75,7 @@ Greenfield scan does two passes per run:
    └─────────────────────────────────────────────────────────────────────┘
 ```
 
-The "in DB, not on disk" branch is what plugs `integrity/orphan-db-row` in [hygiene](../hygiene/README.md). Broken-hardlink detection no longer rides the "size/mtime drift" guess (which misses the canonical case — a torrent removed, link count 2→1, size/mtime unchanged): scan captures `st_nlink` per file, and a hardlink-imported file whose live `nlink == 1` is a _proven_ broken hardlink. That exact predicate and the inode reference graph it feeds are owned by [hardlinks](../hardlinks/README.md).
+The "in DB, not on disk" branch is what plugs `integrity/orphan-db-row` in [hygiene](../hygiene/README.md). Broken-hardlink detection doesn't ride the "size/mtime drift" guess (which misses the canonical case — a torrent removed, link count 2→1, size/mtime unchanged): scan captures `st_nlink` per file, and a hardlink-imported file whose live `nlink == 1` is a _proven_ broken hardlink. That exact predicate and the inode reference graph it feeds are owned by [hardlinks](../hardlinks/README.md).
 
 Scan does not *fix* missing files; it surfaces them as findings. Remediation is the hygiene system's call.
 
@@ -73,7 +90,7 @@ One scanner, four flavors of run, distinguished by what they cover:
 | **Verify**    | Walks nothing; `stat()`s known files only | No           | Yes                | Cheap continuous integrity check           |
 | **Targeted**  | A specific path / glob                 | Yes            | Yes (within scope) | Post-import, post-grab, inotify event      |
 
-Today's manual button is Full. The big wins are **Diff** (default scheduled run; massive speedup on stable libraries) and **Verify** (cheap continuous integrity check; the engine behind paranoid hygiene).
+The built manual scan is a Full walk, minus reconciliation. The big wins are **Diff** (default scheduled run; massive speedup on stable libraries) and **Verify** (cheap continuous integrity check; the engine behind paranoid hygiene).
 
 ### How Diff actually works
 
@@ -97,7 +114,7 @@ Verify is the cheap continuous check. Run it hourly or daily — sample-based fo
 
 ## Triggers
 
-Today: only manual via API. Greenfield supports several:
+Built: only manual via API. The design supports several:
 
 | Trigger          | When                                                            | Mode default        |
 | ---------------- | --------------------------------------------------------------- | ------------------- |
@@ -137,7 +154,7 @@ Worth shipping in v1 with explicit fallback; not worth blocking the rest of scan
 
 ## Streaming pipeline architecture
 
-Today's scan is batched phases — walk everything, then identify everything, then persist everything. The greenfield shift is to a streaming pipeline:
+The built scan is batched phases — walk everything, then identify everything, then persist everything. The design is a streaming pipeline:
 
 ```
               walk emits FileEvent       matcher consumes batches    probe consumes events   realtime emits to UI
@@ -173,7 +190,7 @@ Two operations to do during the walk that pay back hugely downstream.
 - **Hygiene v1** — `layout/duplicate-files` becomes a fast `GROUP BY osdb_hash` lookup, not a fuzzy comparison
 - **Drop-in re-identification** — files that move within a library get recognized by hash even when the path changes
 
-No reason to gate this behind any toggle. Compute on first scan, never recompute (hash is content-derived; file changes ⇒ size changes ⇒ Verify catches the drift ⇒ we rehash).
+No reason to gate this behind any toggle. Compute on first scan, never recompute (hash is content-derived; file changes ⇒ size changes ⇒ Verify catches the drift ⇒ we rehash). Built: scan computes it on first discovery; the rehash-on-drift half waits on Verify.
 
 ### ffprobe metadata — lazy, out-of-band
 
@@ -203,7 +220,7 @@ Scan is mostly plumbing, but a few well-placed features make it feel like a thin
 5. **Resumable scans.** Persistent scan state per `scan_run`. If the API restarts mid-scan, resume from the last committed batch. Big libraries (10TB+) need this.
 6. **Scan history.** `scan_run` table records every scan: started, completed, mode, trigger source, files walked / new / missing / errors. Surfaces *"your library is healthy because the last 7 scans were clean."*
 7. **Path policy filters.** Per-library exclusion patterns beyond just `extras/` and `sample.*`. *"Don't scan `**/.recycle/**`."* Useful for Synology / unRAID setups with snapshot directories.
-8. **Live progress with ETA.** [Realtime](../realtime/README.md)-driven UI: current file, files-per-second, percent complete, ETA. The "scan in progress" UX today is basically zero.
+8. **Live progress with ETA.** [Realtime](../realtime/README.md)-driven UI: current file, files-per-second, percent complete, ETA. Built events carry only counts (every 50 files).
 9. **Pause / resume scans.** A long scan can be paused (before a backup window, say) and resumed. Maps cleanly to the resumable-scan state machine.
 10. **Scan-trigger audit log.** *"This scan started because the post-grab webhook fired."* Helps explain surprising scan results — the user sees the cause without digging.
 
@@ -211,18 +228,18 @@ Scan is mostly plumbing, but a few well-placed features make it feel like a thin
 
 | Neighbor                                              | How scan interacts                                                                                                |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| **[Matching](../matching/README.md)**                 | Scan emits `FileEvent`s for new files → `MatcherService.MatchBatch` consumes batches. Scan reads matcher's writes for dedup. |
-| **[Files](../files/README.md)**                       | Scan creates and reconciles `file` + `file_state` rows. The file is the unit scan discovers, dedups against, and marks present/missing — identified or not. |
-| **[Hygiene](../hygiene/README.md)**                   | Scan opportunistically populates `hygiene_finding` rows during walks (broken hardlinks, orphan rows, phantom files, drift). |
-| **[Hardlinks](../hardlinks/README.md)**               | Scan is the capture point: stamps `st_dev` / `st_ino` / `st_nlink` on `file_state` during the stats it already does; the exact `nlink` predicate replaces the old drift heuristic for broken-link detection. |
+| **[Matching](../matching/README.md)**                 | Scan hands new files to one `MatcherService.MatchBatch` call as `FileRef`s (event-driven batches are unbuilt) and persists confident outcomes through the shared `commitMatch`. |
+| **[Files](../files/README.md)**                       | Scan creates (and, unbuilt, reconciles) `file` + `file_state` rows. The file is the unit scan discovers, dedups against, and marks present/missing — identified or not. |
+| **[Hygiene](../hygiene/README.md)**                   | **Unbuilt.** Scan opportunistically populates `hygiene_finding` rows during walks (broken hardlinks, orphan rows, phantom files, drift). |
+| **[Hardlinks](../hardlinks/README.md)**               | **Unbuilt (V1: REQ-LINK-002).** Scan is the capture point: stamps `st_dev` / `st_ino` / `st_nlink` on `file_state` during the stats it already does; the exact `nlink` predicate replaces the old drift heuristic for broken-link detection. |
 | **[Metadata](../metadata/README.md)**                 | New matches trigger enrichment downstream — scan itself is metadata-agnostic.                                      |
-| **[Tracking / wants](../tracking/README.md)**         | A file appearing on disk (drop-in or scan-discovered) can satisfy an open want via matcher's drop-in flow. Scan doesn't talk to tracking directly. |
-| **Import**                                            | Import is the *write* side; scan is the *read* side. Together they keep DB and FS in sync. Post-import targeted scan confirms the file landed. |
-| **Downloader (qbittorrent etc.)**                     | Post-grab webhook fires a targeted scan. Future: attach torrent metadata (info-hash) to the resulting `file` rows. |
+| **[Tracking / wants](../tracking/README.md)**         | A file appearing on disk (drop-in or scan-discovered) can satisfy an open want via matcher's drop-in flow (**unbuilt**). Scan doesn't talk to tracking directly. |
+| **Import**                                            | Import is the *write* side; scan is the *read* side. Together they keep DB and FS in sync. **Unbuilt:** a post-import targeted scan confirms the file landed. |
+| **Downloader (qbittorrent etc.)**                     | **Unbuilt:** a post-grab webhook fires a targeted scan. Future: attach torrent metadata (info-hash) to the resulting `file` rows. |
 | **Plex / Jellyfin**                                   | Plex `library.new` webhook from Story 1 confirms a file actually appeared in Plex — orthogonal to scan, but they share the "file is now real" moment. |
-| **MediaProbeWorker** (new)                            | Scan emits "needs probe" events; probe worker consumes async; populates ffprobe metadata into `file_probe`. |
-| **IntegrityVerifyWorker** (new)                       | Walks no files; `stat()`s known files; updates `last_verified_at`; fires hygiene findings on stat errors.        |
-| **[Realtime](../realtime/README.md)**                 | Live progress events (current file, files-per-second, ETA) emitted continuously during scan runs.                |
+| **MediaProbeWorker** (unbuilt)                            | Scan emits "needs probe" events; probe worker consumes async; populates ffprobe metadata into `file_probe`. |
+| **IntegrityVerifyWorker** (unbuilt)                       | Walks no files; `stat()`s known files; updates `last_verified_at`; fires hygiene findings on stat errors.        |
+| **[Realtime](../realtime/README.md)**                 | Built: `scan_started` / `scan_progress` (counts, every 50 files) / `scan_completed` / `scan_failed`. Unbuilt: current file, files-per-second, ETA.                |
 
 ## Edge cases
 
@@ -239,16 +256,16 @@ A handful of FS realities that need explicit handling:
 
 ## What scan writes (data shapes, sketched)
 
-Iteration 1 doesn't pin column types, but sketching the touch points clarifies the model:
+Sketching the touch points clarifies the model (built items first):
 
 - `file` — added (on new discoveries, identity NULL until the matcher resolves it), kept (on present files), unchanged (on missing — see state below). The unit scan tracks; owned by [files](../files/README.md)
-- `file_state` — `exists`, `size_bytes`, `last_verified_at`, possibly `mtime` for future Diff heuristics, and `st_dev` / `st_ino` / `st_nlink` captured on every `stat()` (zero extra I/O — same `Stat_t`) for the [hardlinks](../hardlinks/README.md) reference graph
+- `file_origin` — insert-once provenance (`origin='scan'`, the relpath as first discovered, its parse) on each new file
+- `file_state` — `exists`, `size_bytes`, `last_verified_at` on new files. **Unbuilt:** refreshing them on known files, `mtime` for Diff heuristics, and `st_dev` / `st_ino` / `st_nlink` captured on every `stat()` (zero extra I/O — same `Stat_t`) for the [hardlinks](../hardlinks/README.md) reference graph (V1: [REQ-LINK-002](../../V1.md#hardlink-inode-capture--hardlinks))
 - `file_state.osdb_hash` — populated on first discovery (every file, identified or not); never recomputed unless drift detected
-- `file_probe` (new table) — ffprobe output keyed on `file_id`; populated by `MediaProbeWorker`
-- `scan_run` (new table) — per-scan audit row (mode, trigger, started/completed, counts, errors)
-- `hygiene_finding` — opportunistic writes when scan notices an integrity issue mid-walk
-
-Data shapes resolve in iteration 2.
+- `match_decision`, and via `commitMatch` `media_item` / `media_season` / `media_episode` / `file_import` for confident outcomes
+- `file_probe` (new table, unbuilt) — ffprobe output keyed on `file_id`; populated by `MediaProbeWorker`
+- `scan_run` (new table, unbuilt) — per-scan audit row (mode, trigger, started/completed, counts, errors)
+- `hygiene_finding` (unbuilt) — opportunistic writes when scan notices an integrity issue mid-walk
 
 ## Open questions
 
@@ -266,7 +283,7 @@ Data shapes resolve in iteration 2.
 9. **Drive-offline detection heuristic.** Library root returning ENOENT/EACCES is the clear signal. Ambiguity (a single missing subdirectory) doesn't trigger; that's a normal "file was deleted" event.
 10. **Walker concurrency.** Parallel walks across library roots (or grouped libraries) is obvious. Parallel walks *within* a root are harder (FS contention, ordering). Lean serial within a root for simplicity.
 11. **Inotify "event mode" persistence.** When scan determines that inotify doesn't work on a root (no events, watch failures), where does that flag live? On the library/root config row, with a periodic re-test? Probably yes.
-12. **[Realtime](../realtime/README.md) event vocabulary.** What progress events does scan emit? Probably: `scan_started`, `scan_progress` (with file path + counts), `scan_file_matched`, `scan_file_missing`, `scan_completed`, `scan_failed`. Concrete event shapes resolve in iteration 2.
+12. **[Realtime](../realtime/README.md) event vocabulary.** What progress events does scan emit? Probably: `scan_started`, `scan_progress` (with file path + counts), `scan_file_matched`, `scan_file_missing`, `scan_completed`, `scan_failed`. — *Partly answered by the code: `scan_started`, `scan_progress` (counts only, no path), `scan_completed` and `scan_failed` exist (`internal/realtime/events_scan.go`).*
 
 ## What we're explicitly not deciding here
 

@@ -1,6 +1,10 @@
+---
+status: as-built
+---
+
 # Parsing — release names and filenames into structured attributes
 
-**Status:** Draft, iteration 1
+> **Beyond what's built:** see [What's built vs. to port](#whats-built-vs-to-port). Unbuilt: path-mode folder context, per-domain extension-table dispatch, Sonarr reversed-path recovery, hardcoded-subs, the codec/audio/HDR/dual-audio extend, graded and token-level confidence, the Parse Inspector, the correction loop, `parser_version` on the persisted parse, and the importer's switch to this engine. §The history this corrects is background.
 
 This doc defines **parsing**: the subsystem that turns a string — an indexer release title or an on-disk filename — into a structured set of **advertised** attributes (identity hints, quality, release metadata), each carried with a confidence and a provenance trail. It captures _what parsing is_, _why it's a foundational module below matching_, _the canonical attribute model it produces_, _the single-engine design_, _the disposition of guessit_, and _the corpus + parity-harness testing strategy that keeps us honest against Sonarr/Radarr_. It does **not** pin down struct field names, regex tables, or wire formats — those land in code, with this spec as the contract.
 
@@ -11,22 +15,22 @@ Parsing is **advertised-only**. It never opens the file. The ground-truth counte
 - Parsing is a **pure, deterministic, Go-native function**: `Parse(input, domain) → ParsedRelease`. No DB, no network, no sidecar. One engine per domain (series / movie), two input flavors (release title, on-disk path).
 - It is a **layer below** [matching](../matching/README.md), [quality profiles](../quality-profiles/README.md), [name templates](../name-templates/README.md), [routing](../routing/README.md), and the [importer](../importer/README.md) — all of them consume the parse; none of them own it.
 - **Domain is required at the call site.** Every consumer already knows it: candidate searches are TMDB-id-anchored, the importer reads the job's media type, scan inherits from the library, the policy test endpoint inherits from the UI tab. So parsing takes `Domain` as an argument, not a hint. The auto-detect path is removed.
-- **One parser, finished — not two patched together.** v0 ported the _quality half_ of Sonarr/Radarr's parser (`internal/release/`) for name templates, then bolted on a **guessit** Python sidecar for the identity half. Green-field, we finish the port into a single engine and **retire guessit**.
+- **One parser, finished — not two patched together.** v0 ported the _quality half_ of Sonarr/Radarr's parser (`internal/release/`) for name templates, then bolted on a **guessit** Python sidecar for the identity half. `internal/parsing` is the finished port as a single engine; guessit is gone.
 - The output is the **canonical advertised attribute model** — identity hints (title, year, season/episode, absolute, edition), quality (source, resolution, modifier, the rendered **bin name**, proper/repack), and release attributes (group, codec, audio, HDR-claim, languages). It populates the parsed namespaces of the `Release` half of the shared [Subject](../../patterns/rules/README.md#the-subject).
-- **Every field carries confidence + provenance.** Not "source = BluRay" but "source = BluRay (0.9), token `BluRay` @ idx 6". This feeds the matcher's confidence bands, the advertised-vs-asserted check, and an explainable "why did we parse it this way" UI.
-- **Parity is a CI gate and a published number.** A version-stamped, labeled **corpus** is the source of truth. Tier-1 CI diffs the parser against committed **golden** expected-output every PR (hermetic, fast). Tier-2 regenerates goldens from **pinned live Sonarr/Radarr** containers on a schedule. An **intentional-divergence allowlist** keeps "we differ on purpose" from breaking the build — and per-domain dispatch shrinks that allowlist to one principled class (identity-independent quality, OQ#13).
+- **Every field carries confidence + provenance.** Not "source = BluRay" but "source = BluRay (0.9), token `BluRay` @ idx 6". (Built: binary `0.9`/`0` confidence and coarse sub-parser evidence such as `"quality core"`.) This feeds the matcher's confidence bands, the advertised-vs-asserted check, and an explainable "why did we parse it this way" UI.
+- **Parity is a CI gate and a published number.** A version-stamped, labeled **corpus** is the source of truth. Tier-1 CI diffs the parser against committed **golden** expected-output every PR (hermetic, fast). Tier-2 regenerates goldens from **pinned live Sonarr/Radarr** containers on demand (`just parity-regen`). An **intentional-divergence allowlist** keeps "we differ on purpose" from breaking the build — and per-domain extension-table dispatch (unbuilt) would shrink that allowlist to one principled class (identity-independent quality, OQ#13).
 - **Sonarr and Radarr are separate codebases** with shared quality heritage and diverged domain parsing. We test both, by domain: series releases → Sonarr, movie releases → Radarr.
 
 ## Why parsing is its own module
 
-Today the parser has no home. Four other specs reference it as something that exists "somewhere":
+Four other specs lean on the parser without owning it:
 
 - [name templates](../name-templates/README.md#what-name-templates-does-not-own): _"The name-parser that produces `Quality` and `Release` from a release title (lives with quality / parsing infrastructure)."_
 - [quality profiles](../quality-profiles/README.md#what-quality-profile-does-not-own): _"Quality detection / release name parsing — the parser is a sibling system."_
 - [importer](../importer/README.md#open-questions) OQ#5: _"Promote the filename-marker parser into a package both the importer and matching consume."_
 - [matching](../matching/README.md) frames `guessit` as one resolver, but the _string parse_ underneath every resolver is unowned.
 
-That's four consumers pointing at a "sibling system" that no spec defines. Parsing is genuinely foundational — it sits **below** matching (identity), quality profiles (gate/score), name templates (render), routing (rules), and the importer (closed-world assignment). Giving it its own module makes the dependency explicit and the engine a single, testable thing instead of logic smeared across `internal/release/`, `internal/identity/`, the guessit client, and a private copy in the importer.
+That's four consumers pointing at a "sibling system". Parsing is genuinely foundational — it sits **below** matching (identity), quality profiles (gate/score), name templates (render), routing (rules), and the importer (closed-world assignment). Giving it its own module makes the dependency explicit and the engine a single, testable thing. One private copy remains: the importer's season/episode regex (`internal/importer/series.go`).
 
 ## The history this corrects
 
@@ -35,7 +39,7 @@ v0's two parsers are an accident of build order, not a design:
 1. The first flow was **manual download selection**, which needed [name templates](../name-templates/README.md), which needed quality attributes. So we ported the **quality half** of Sonarr/Radarr's parser into `internal/release/release.go` — and built a 310-title parity harness (`cmd/quality-test/`) against live Sonarr to prove it.
 2. Then **identity detection for existing libraries** needed title/year/season/episode parsing — the _other half_ of the same Sonarr/Radarr parser. Instead of finishing the port, we added **guessit** (a Python sidecar) as a patch.
 
-Sonarr/Radarr's parser is **one engine** that extracts everything. We ported a slice and prosthetised the rest. Green-field, the move is to **finish the port into one Go engine** and remove the prosthetic.
+Sonarr/Radarr's parser is **one engine** that extracts everything. v0 ported a slice and prosthetised the rest; `internal/parsing` finishes the port into one Go engine without the prosthetic.
 
 ## What parsing owns
 
@@ -43,8 +47,8 @@ Sonarr/Radarr's parser is **one engine** that extracts everything. We ported a s
 - The **canonical advertised attribute model** (`ParsedRelease`) and its per-field confidence + provenance.
 - **Quality detection AND bin rendering**, both per domain. The internal representation is the orthogonal **attribute core**: source, resolution, modifier (`REMUX` / `BR-DISK` / `RAWHD` / …), and revision (proper / repack / real). The per-domain **bin** (`Bluray-1080p Remux` for series, `Remux-1080p` for movies) is rendered from `(core, domain)` at parse time and populated on `ParsedRelease.Quality.Name`. See [The quality attribute core](#the-quality-attribute-core).
 - **Per-domain detection latitude.** Each domain's detection logic can follow its upstream's `QualityParser` / `Parser` verbatim — series follows Sonarr, movies follow Radarr. Both still terminate in the same orthogonal core (Sonarr's flattened pair is a lossy projection of Radarr's triple — see [Why the core stays orthogonal](#why-the-core-stays-orthogonal-even-with-per-domain-detection)).
-- **Identity-hint extraction** (parsed title, year, season, episode(s), absolute number, daily/air-date, multi-episode range, edition) — the port that replaces guessit.
-- **Release-attribute extraction** (release group, codec, audio format/channels, HDR _claim_, dual-audio _claim_, language(s), hardcoded-subs claim — movie-only). Dual-audio is reserved as an advertised attribute now because it's a first-class anime quality axis (sub/dub) and, unlike source/edition, `ffprobe` can _assert_ it. Fansub group is the anime case of `release group`; no separate field. Hardcoded-subs is movie-domain only and is fed by Radarr's `ParseHardcodeSubs`.
+- **Identity-hint extraction** (parsed title, year, season, episode(s), absolute number, daily/air-date, multi-episode range, edition, AKA titles).
+- **Release-attribute extraction** (release group, codec, audio format/channels, HDR _claim_, dual-audio _claim_, language(s), hardcoded-subs claim — movie-only). Dual-audio is reserved as an advertised attribute now because it's a first-class anime quality axis (sub/dub) and, unlike source/edition, `ffprobe` can _assert_ it. Fansub group is the anime case of `release group`; no separate field. Hardcoded-subs is movie-domain only and is fed by Radarr's `ParseHardcodeSubs`. **Unbuilt:** codec/audio/channels/HDR/dual-audio and hardcoded-subs have fields on `ParsedRelease.Release` but stay zero-valued.
 - The **labeled corpus** and the **parity-harness contract** (Tier-1 golden diff, Tier-2 live regeneration).
 - The **per-domain bin vocabulary tables** (Sonarr `Quality.cs` for series, Radarr `Quality.cs` for movies). Verbatim ports of the upstream tables; their ordering matches upstream so default quality lists drawn from them stay faithful.
 
@@ -64,7 +68,7 @@ Sonarr/Radarr's parser is **one engine** that extracts everything. We ported a s
 | ------------ | ------------------------------------------------------------------------------------ | -------------------------------- |
 | **Identity** | parsed title, year, type hint (movie/series), season, episode(s), absolute #, daily/air-date, multi-ep range, edition | feeds [matching](../matching/README.md) → `Media`; feeds importer assignment |
 | **Quality**  | source, resolution, modifier (`REMUX`/`BR-DISK`/`RAWHD`/…), revision (`version`/`real`/`isRepack`) — the orthogonal **attribute core** — plus **bin name** (`name`, e.g. `"Bluray-1080p"`) and **full** (`name` + revision render, e.g. `"Bluray-1080p Proper"`) rendered from `(core, domain)` at parse time | `Quality` namespace; `quality.name` mirrors *arr's `Quality.Name` API field, `quality.full` mirrors *arr's `{Quality Full}` naming-token semantics |
-| **Release**  | release group, codec, audio format, audio channels, HDR-claim, dual-audio-claim, languages | `encode.*` namespace (+ extensions) |
+| **Release**  | release group, codec, audio format, audio channels, HDR-claim, dual-audio-claim, languages, release hash, hardcoded subs | `encode.*` namespace (+ extensions); `ParsedRelease.Release` in code |
 
 Three boundary notes:
 
@@ -89,7 +93,7 @@ QualityCore = (Source, Resolution, Modifier, Revision)
 - **Radarr** keeps three orthogonal axes: `Remux-2160p` is `(BluRay, 2160p, REMUX)`, `BR-DISK` is `(BluRay, _, BR-DISK)`, `Raw-HD` is `(HDTV, _, RAWHD)`.
 - **Sonarr** has no modifier axis — it folds "raw/remux-ness" into extra _source_ values (`BlurayRaw` for remux, `TelevisionRaw` for raw-HD), so `Bluray-2160p Remux` is just `(BlurayRaw, 2160p)`.
 
-Sonarr's model is a **degenerate projection** of Radarr's: the orthogonal core can render *both* vocabularies losslessly, but Sonarr's flattened pair cannot reconstruct Radarr's. So the core adopts **Radarr's decomposition** internally, regardless of which domain a parse is running for. The two missing axes this adds over v0 — a first-class `Modifier` (generalizing the old `IsRemux` bool) and **`BR-DISK` / full-disc detection** (absent in v0) — are exactly what Radarr's parser already detects.
+Sonarr's model is a **degenerate projection** of Radarr's: the orthogonal core can render *both* vocabularies losslessly, but Sonarr's flattened pair cannot reconstruct Radarr's. So the core adopts **Radarr's decomposition** internally, regardless of which domain a parse is running for. That gives a first-class `Modifier` axis and **`BR-DISK` / full-disc detection** — exactly what Radarr's parser detects.
 
 **The bin IS parsed, at the end.** A *bin* — `Bluray-1080p Remux` (series vocabulary) vs `Remux-1080p` (movie vocabulary) — is a render of `(core, domain)`. Because the caller passes the domain to `Parse`, parsing knows it authoritatively and renders the bin at parse time. The bin is exposed as a **structured value — its post-projection identity `(Source, Resolution, Modifier)` plus the rendered display `Name`** — not merely a string, because consumers that order or gate on bins ([quality profiles](../quality-profiles/README.md#bins-as-keys-not-strings)) key on that identity, never the display name. The identity is **post-projection** and can differ from the orthogonal axes that also remain on `Quality` as the underlying truth: those are the pre-projection **core**, so a series `(BluRay, 2160p, BR-DISK)` core stays on `Quality` but folds to the `(BluRay, 2160p, NONE)` `Bluray-2160p` *bin* identity. Exposing the projected identity (not only `Name`) is what lets a consumer key on bins without re-projecting. The bin vocabulary tables (`seriesBins`, `movieBins`) are verbatim ports of upstream `Quality.cs` and live in the parsing package.
 
@@ -101,7 +105,7 @@ Detection can follow each upstream verbatim (and probably should, for parity), b
 2. **Modifier axis preservation for series.** A series `BR-DISK` release has nowhere to live in Sonarr's flat model (Sonarr folds it into plain Bluray). The orthogonal core preserves the distinction on the `Modifier` axis even when the bin can't express it.
 3. **Persistence shape.** The persisted parse is the orthogonal triple, never a rendered bin string. A vocabulary tweak or a hypothetical library re-type needs no backfill.
 
-**Methodology.** Quality detection is the one sub-parser still on Go's stdlib `regexp` (lookarounds unrolled into Go branching); the re-port brings it onto `regexp2` with `Field[T]` provenance, matching the rest of the engine. `BR-DISK`'s lookahead-heavy regex is itself a reason the re-port needs `regexp2`. Per-domain dispatch splits the extension-fallback table (`extensionQualityMap`) into Sonarr-faithful and Radarr-faithful variants — the table mismatch was the dominant class in today's intentional-divergence allowlist, and per-domain dispatch eliminates it by construction.
+**Methodology.** Every sub-parser, quality included, runs on `regexp2` (upstream's .NET regexes port with their lookarounds intact) and emits `Field[T]` provenance. **Unbuilt:** splitting the extension-fallback table into Sonarr-faithful and Radarr-faithful variants. The engine carries Sonarr's table for both domains (Radarr's regressed Sonarr bin compat), and that table mismatch is the dominant class in the intentional-divergence allowlist; per-domain dispatch would eliminate it by construction.
 
 ### Per-field confidence + provenance
 
@@ -123,7 +127,7 @@ This single shift pays off in three places at once:
 
 ## Advertised vs asserted — the output boundary
 
-Parsing emits **advertised** attributes only: what the string _claims_. The actual file's properties — read by `ffprobe` — are **asserted**, and they live in a separate extractor that fills the `MediaInfo` namespace ([importer](../importer/README.md#rendering-the-destination) at grab time; [scan](../scan/README.md#ffprobe-metadata--lazy-out-of-band)'s `MediaProbeWorker` for on-disk files). One asserted-attributes model, two entry points; parsing is neither of them.
+Parsing emits **advertised** attributes only: what the string _claims_. The actual file's properties — read by `ffprobe` — are **asserted**, and they live in a separate extractor that fills the `MediaInfo` namespace ([importer](../importer/README.md#rendering-the-destination) at grab time; [scan](../scan/README.md#ffprobe-metadata--lazy-out-of-band)'s `MediaProbeWorker` for on-disk files). One asserted-attributes model, two entry points; parsing is neither of them. (Built: the import worker runs the `mediainfo` CLI via `internal/mediainfo`; the scan-side worker is unbuilt.)
 
 The two are deliberately distinct namespaces (`Quality`/`Release` = advertised, `MediaInfo` = asserted) so a consumer can ask for either. The _comparison_ of the two — the import-time re-gate and the mismatch finding — is parked and owned elsewhere; this spec only fixes the contract that parsing produces the advertised side and never the asserted side.
 
@@ -139,16 +143,17 @@ This taxonomy bounds both the mismatch feature and how much trust each advertise
 
 ## Persisted parse
 
-The parse is computed pre-download, but consumers need it long after — most importantly to **re-render name templates over an existing library** (a template change, a mass-rename) without re-downloading. The advertised side is the only re-render input that isn't already durable: `Media` lives in the DB, `MediaInfo` lives in the [probe table](../scan/README.md#ffprobe-metadata--lazy-out-of-band), but `Quality`/`Release` are derived from a release title the `download_job` eventually purges. So Arrflix persists the parse, per `file`:
+The parse is computed pre-download, but consumers need it long after — most importantly to **re-render name templates over an existing library** (a template change, a mass-rename) without re-downloading. The advertised side is the only re-render input that isn't already durable: `Media` lives in the DB, `MediaInfo` can be re-probed, but `Quality`/`Release` are derived from a release title the `download_job` eventually purges. So Arrflix persists the parse, per `file`, in the insert-once `file_origin` sidecar ([files](../files/README.md#the-sidecar-family), migration `0021_file_origin`):
 
-- **Raw source string** — the release title (grabbed) or the filename (scanned). The source of truth: enables re-parse, and is the audit trail for "what produced this file."
-- **Parsed fields** — the advertised `Quality` (the orthogonal [attribute core](#the-quality-attribute-core) — `Source`, `Resolution`, `Modifier`, `Revision` — **not** a rendered bin string) + `Release`, as a snapshot. Redundant with re-parsing, but cheap, and it's the working value for fast render/list, a stable record across parser versions, and the home for [correction-loop](#open-questions) overrides. The per-domain bin (`name`, `full`) is re-rendered from the stored core + the media item's known domain at read time, so it isn't frozen here — a vocabulary tweak (renaming a bin, adding a bin) needs no backfill.
-- **`parser_version`** — so we know whether a re-parse would differ, and can offer an explicit "re-parse" (to pick up parser improvements) rather than silently changing output on every read.
-- **`origin`** — `grabbed` | `scanned` | `manual`. Tells consumers how much to trust the parse and whether the raw string is a release title or a filename.
+- **Raw source string** (`source_title`) — the release title (grabbed) or the relpath as first discovered (scanned/manual). The source of truth: enables re-parse, and is the audit trail for "what produced this file."
+- **Parsed fields** — the full `ParsedRelease` as a JSONB snapshot (`parsed`), plus queryable columns: the projected bin identity (`bin_source`, `bin_resolution`, `bin_modifier` — the same projection proposals store), `release_group`, `edition`. Redundant with re-parsing, but cheap, and it's the working value for fast render/list, a stable record across parser versions, and the future home for [correction-loop](#open-questions) overrides. Re-rendering treats `source_title` as the source of truth and re-parses.
+- **`parser_version`** — **unbuilt.** So we know whether a re-parse would differ, and can offer an explicit "re-parse" (to pick up parser improvements) rather than silently changing output on every read.
+- **`origin`** — `grab` | `scan` | `manual`. How the bytes entered the library (not how identity was later assigned). Tells consumers how much to trust the parse and whether the raw string is a release title or a filename.
+- **Release identity** — `indexer_id`, `guid`, and a soft `download_job_id`, so the grab's identity survives job pruning.
 
 **Grabbed → lossless re-render; scanned → best-effort.** A grabbed file has a real release title, so its persisted parse is complete and a mass-rename reproduces the original name exactly. A scanned file's parse comes from its existing filename: reliable where the namer encoded the info (most Sonarr/Plex names carry quality + group + edition), `Unknown` only for whatever the old name omitted — the same limitation Sonarr has renaming files it didn't grab. `origin` lets the mass-rename preflight say so honestly ("source/group unknown for these — they'll drop from the new name").
 
-This — plus `MediaInfo` (probe table) and `Media` (DB) — is the complete set of re-render inputs. Persisting `MediaInfo` rather than re-probing is what keeps a 5,000-file mass-rename fast.
+This — plus `MediaInfo` (probe table) and `Media` (DB) — is the complete set of re-render inputs. Persisting `MediaInfo` rather than re-probing is what keeps a 5,000-file mass-rename fast. **Unbuilt:** the probe table and the mass-rename itself.
 
 ## The engine
 
@@ -162,53 +167,55 @@ func Parse(input string, domain Domain, opts ...Option) ParsedRelease
 
 - **No DB, no network, no sidecar.** Pure and deterministic — the cheapest, most valuable unit-test surface in the system (the [importer](../importer/README.md#file-assignment--closed-world) already prizes this property for its filename-marker parser; here it covers the whole engine).
 - **Domain is a required argument.** Every production consumer knows the domain at the call site (TMDB-anchored search, importer's media-type-typed job, library-scoped scan, UI-scoped policy test endpoint). There is no auto-detect path. The series patterns and Sonarr-faithful detection run for `DomainSeries`; the movie patterns and Radarr-faithful detection run for `DomainMovie`.
-- **Two input flavors, one output.** A release title from an indexer and an on-disk path go through the same code. Path mode additionally reads **folder context** (series name from the show folder, season from the season folder) — exactly how Sonarr reuses one parser for releases and filenames.
-- **Embeddable.** A single Go binary's worth of parsing. Removing the Python sidecar is also a deployment win for the [first-run experience](../../docs/guide/) — one fewer process to run, crash, and health-check.
+- **Two input flavors, one output.** A release title from an indexer and an on-disk path (`AsPath()`) go through the same code. Path mode additionally reads **folder context** (series name from the show folder, season from the season folder) — exactly how Sonarr reuses one parser for releases and filenames. **Unbuilt:** `AsPath()` only records the flavor (`ParsedRelease.IsPath`); the whole relpath is parsed as if it were a release title.
+- **Embeddable.** A single Go binary's worth of parsing, with no Python sidecar to run, crash, and health-check — a deployment win for the [first-run experience](../../docs/guide/).
 
-### Package structure (directional)
+### Package structure
 
 ```
 backend/internal/parsing/
-  parsing.go      // Parse(input, domain, ...opt) ParsedRelease — public surface
-  domain.go       // Domain enum (Series | Movie); the only typed dispatcher
+  parsing.go      // Parse(input, domain, ...opt) ParsedRelease — public surface; Domain enum (Series | Movie)
   series.go       // series identity (Sonarr port: title, season, episode, daily, absolute)
-  movie.go        // movie identity (Radarr port: title, year, edition, hardcoded-subs)
-  quality.go      // detection per domain → orthogonal core (Source, Resolution, Modifier, Revision)
-  bin.go          // bin(core, domain) → name + full (formerly internal/quality.BinFor)
+  movie.go        // movie identity (Radarr port: title, year, edition)
+  quality.go      // quality detection → orthogonal core (Source, Resolution, Modifier, Revision)
+  bin.go          // bin(core, domain) → name + full
   vocab.go        // seriesBins / movieBins — verbatim Quality.cs ports
   group.go        // release group (split per domain — Sonarr vs Radarr exception lists)
   language.go     // languages (split per domain — Sonarr vs Radarr LanguageParser)
   clean.go        // simplify pipeline per domain
-  attributes.go   // codec / audio / channels / HDR-claim / proper / repack (EXTEND)
-  types.go        // ParsedRelease + Field[T] (confidence + provenance)
-  testdata/       // labeled corpus + sonarr.golden.json / radarr.golden.json
+  regex.go        // shared regexp2 helpers
+  provenance.go   // Field[T] helpers
+  match.go        // title normalization for matching (NormalizeTitleForMatch, TitlesMatch)
+  types.go        // ParsedRelease + Field[T] (confidence + provenance); Values() flattened view
+  parity_test.go  // Tier-1 golden diff + allowlist
+  testdata/       // inputs.json (corpus) + sonarr.golden.json / radarr.golden.json
 ```
 
-`internal/release/` folds into `parsing/`; `internal/identity/`'s embedded-ID regex relocates to [matching](../matching/README.md)'s `pathembed` resolver (per the matching spec); the importer's private filename-marker copy is replaced by a call into this package. **`internal/quality/` folds into `parsing/` as `bin.go` + `vocab.go`** — the projection now lives where the detection does, and consumers stop having to import two packages.
+The Tier-2 regeneration lives in `backend/internal/test/parity/` (build tag `parity`). The embedded-ID regex lives in [matching](../matching/README.md)'s `pathembed` resolver. **Unbuilt:** an `attributes.go` for the codec/audio/HDR extend, and replacing the importer's private season/episode regex with a call into this package.
 
-### What's already done vs. to port
+### What's built vs. to port
 
 | Area                                   | Status                                                              |
 | -------------------------------------- | ------------------------------------------------------------------- |
 | Quality core (source/resolution/modifier/revision) | **Done** — `regexp2`, Radarr-faithful base, emits the orthogonal core with `Modifier` axis + `BR-DISK` detection |
-| Quality bin rendering (`name`, `full`) | **To port** — `bin(core, domain)` + the two vocabulary tables, folded in from `internal/quality/` |
-| Per-domain dispatch | **To port** — splits detection (extension table, source regex precedence) and the rest of the engine; eliminates ~17 allowlist entries by construction |
-| HardcodedSubs (movie-only) | **To port** — Radarr `ParseHardcodeSubs`; field exists today but never populates |
-| Sonarr reversed-path recovery | **To port** — closes 3 remaining Sonarr allowlist entries |
-| Release group, edition, proper/repack  | **Mostly done** — present, not yet diffed against Sonarr per-field  |
-| Title + year                           | **To port** (Sonarr series / Radarr movie title extraction)        |
-| Season/episode, daily, **absolute (anime)**, multi-ep | **To port** (Sonarr); replaces guessit                  |
-| Languages                              | **To port** (LanguageParser)                                        |
-| Codec / audio / channels / HDR-claim   | **Extend** — needed for [scoring](../quality-profiles/README.md) and naming |
-| Per-field confidence + provenance      | **New** — wrap all of the above                                     |
+| Quality bin rendering (`name`, `full`) | **Done** — `bin.go` + the two vocabulary tables in `vocab.go`       |
+| Per-domain dispatch | **Done for identity, group and languages; to port for the extension table** — the Sonarr-keyed extension table accounts for most one-off allowlist entries |
+| HardcodedSubs (movie-only) | **To port** — Radarr `ParseHardcodeSubs`; the field exists but never populates |
+| Sonarr reversed-path recovery | **To port** — accounts for the remaining Sonarr allowlist entries |
+| Release group, edition, proper/repack  | **Done** — group and edition are parity-enforced; version/isRepack are reported, not enforced |
+| Title + year                           | **Done** — parity-enforced (Sonarr series / Radarr movie)           |
+| Season/episode, daily, **absolute (anime)**, multi-ep | **Done** — season/episodes parity-enforced; absolute reported only (anime is out of the v1 claim) |
+| Languages                              | **Done** — parity-enforced                                          |
+| Codec / audio / channels / HDR-claim   | **Extend** — fields exist, zero-valued; needed for [scoring](../quality-profiles/README.md) and naming |
+| Per-field confidence + provenance      | **Partial** — every field is a `Field[T]`; confidence is binary (`0.9` / `0`) and evidence names the sub-parser, not the token |
 
 The port is **bounded, GPL-clean, and oracle-backed**: Sonarr/Radarr are GPL (so is Arrflix — we comply, we can port directly), the parsers are finite readable codebases, and the live `/api/v3/parse` endpoint is a ready-made oracle. It's high-volume mechanical work with a built-in regression net — the kind of task that parallelizes well.
 
 ## guessit disposition
 
-**Target: removed.** The unified engine subsumes guessit's role (title/year/season/episode/codec/audio), and we keep one parser, one language, no sidecar.
+**Removed.** The unified engine subsumes guessit's role (title/year/season/episode), and there is one parser, one language, no sidecar. No fallback resolver exists.
 
-**Transition: optional fallback resolver, time-boxed.** Until the port clears the corpus parity threshold on identity fields — especially the long tail guessit is good at (anime absolute numbering, unusual international titles) — guessit may remain as a **single optional fallback resolver** behind [matching](../matching/README.md)'s resolver seam, gated by `Available()`. It runs only when the Go parser's identity confidence is low, never on the quality/scoring path, and is **not a hard dependency**. Once Tier-1 identity parity holds without it, the sidecar and its client are deleted.
+**Transition plan (not taken): optional fallback resolver, time-boxed.** Until the port clears the corpus parity threshold on identity fields — especially the long tail guessit is good at (anime absolute numbering, unusual international titles) — guessit may remain as a **single optional fallback resolver** behind [matching](../matching/README.md)'s resolver seam, gated by `Available()`. It runs only when the Go parser's identity confidence is low, never on the quality/scoring path, and is **not a hard dependency**. Once Tier-1 identity parity holds without it, the sidecar and its client are deleted.
 
 This respects the "delete it entirely is fine" position while not betting the migration on a big-bang rewrite: the seam already exists, so demotion-then-deletion costs nothing structurally.
 
@@ -216,21 +223,21 @@ This respects the "delete it entirely is fine" position while not betting the mi
 
 ### The corpus is the asset
 
-A single, version-stamped, ground-truth-**labeled** corpus is the crown jewel — harder to replicate than the parser itself, and it does triple duty: parity measurement, [matcher confidence calibration](../matching/README.md#open-questions) (their open Q8, currently guesses), and the regression net. It graduates the corpus out of today's embedded Go slices (duplicated across `release_test.go` and `cmd/quality-test/main.go`) into `parsing/corpus/` as data.
+A single, version-stamped, ground-truth-**labeled** corpus is the most valuable asset here — harder to replicate than the parser itself, and it does triple duty: parity measurement, [matcher confidence calibration](../matching/README.md#open-questions) (their open Q8, currently guesses), and the regression net. It lives as data in `parsing/testdata/inputs.json`.
 
-Each entry: the input string, the expected parse, the Sonarr/Radarr **version** that produced it, and an optional `divergence: { reason }` mark.
+Each entry: the input string, the expected parse, the Sonarr/Radarr **version** that produced it, and an optional `divergence: { reason }` mark. **Built:** entries are `{input, domain}` (about 2,200); the expected parse is the oracle output captured in the per-tool golden files, and divergences live in the test's allowlist, not on the entry. Identity ground-truth labels are unbuilt.
 
 ### Two tiers
 
 **Tier 1 — every PR, hermetic, fast (a normal `go test`).** Run the parser over the corpus, diff against the committed **golden** expected-output, compute per-field/per-tool compat %, fail on **regression vs baseline** or an **un-allowlisted divergence**. No network, no containers — consistent with the suite's existing "no live external calls" invariant ([tmdbtest](../../backend/internal/test/tmdbtest/) is the pattern: fakes, not real services). A `-update` flag regenerates goldens locally from Tier 2.
 
-**Tier 2 — scheduled / on-demand, live (the refresh job).** Spin up **pinned** Sonarr + Radarr containers using the same `testcontainers-go` the suite already depends on for postgres (generic container + linuxserver image, a pre-seeded `config.xml` with a fixed API key and auth disabled, wait-strategy on the API port). Run the corpus through `GET /api/v3/parse?title=…` (auth via `X-Api-Key`; `golift.io/starr` already wraps this), regenerate goldens, diff against committed. Drift opens a PR ("Sonarr 4.0.x changed; 7 parses moved"). This is where the pinned version is bumped deliberately and the corpus grows.
+**Tier 2 — on-demand, live (the refresh job).** `just parity-regen` spins up **pinned** Sonarr + Radarr containers (`internal/test/starrtest`, on the same `testcontainers-go` the suite uses for postgres). Run the corpus through `GET /api/v3/parse?title=…`, regenerate goldens, diff against committed. This is where the pinned version is bumped deliberately and the corpus grows. **Unbuilt:** a scheduled run, and drift opening a PR ("Sonarr 4.0.x changed; 7 parses moved").
 
 ### Compat % is two numbers, with an allowlist
 
 - **Per tool, by domain:** series-flavored corpus → Sonarr, movie-flavored → Radarr. Editions are Radarr-only; absolute numbering is Sonarr-only. Quality heritage is shared, so the quality corpus largely validates both.
 - **Per field and overall:** report compat for quality bin, resolution, source, group, season/episode, edition, year, languages — not just an aggregate.
-- **Allowlist over 100%.** You will not want byte-identical parity: sometimes Sonarr is wrong, sometimes we differ on purpose (e.g., the asserted-quality-bin case parked in [quality profiles](../quality-profiles/README.md)). compat % = matches / (total − allowlisted); CI fails only on _un-allowlisted_ mismatches. This retires the current harness's brittle exit-1-on-any-mismatch behavior.
+- **Allowlist over 100%.** You will not want byte-identical parity: sometimes Sonarr is wrong, sometimes we differ on purpose (e.g., the asserted-quality-bin case parked in [quality profiles](../quality-profiles/README.md)). compat % = matches / (total − allowlisted); CI fails only on _un-allowlisted_ mismatches of an enforced field. The allowlist is a map of one-off `(tool, input, field)` entries plus class-shaped `allowlistPredicates` (OQ#13).
 
 The published parity number ("99.x% with Sonarr 4.0.x / Radarr 5.x") falls out of Tier 1 for free.
 
@@ -238,28 +245,28 @@ The published parity number ("99.x% with Sonarr 4.0.x / Radarr 5.x") falls out o
 
 | Neighbor                                              | How parsing interacts                                                                                                          |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **[Matching](../matching/README.md)**                 | Primary identity resolver consumes the parse + its per-field confidence. guessit demotes to an optional fallback resolver, then is removed. |
+| **[Matching](../matching/README.md)**                 | The `name-parse` resolver consumes the parse + its per-field confidence (scan attaches it to each `FileRef`). |
 | **[Quality profiles](../quality-profiles/README.md)** | Consumes `Quality` + `Release` for gating/scoring. Owns the advertised-vs-asserted re-gate (parked); parsing supplies the advertised half. |
 | **[Name templates](../name-templates/README.md)**     | Reads `Quality`/`Release` (advertised) for rendering; `MediaInfo` (asserted) tokens come from the ffprobe extractor, not parsing. |
 | **[Routing](../routing/README.md)**                   | Candidate-time rules read advertised fields; `MediaInfo` rules only fire post-download.                                        |
-| **[Importer](../importer/README.md)**                 | Uses the same engine (path flavor) for closed-world season-pack assignment; replaces its private filename-marker copy.         |
-| **[Scan](../scan/README.md)**                         | Path-flavor parse of discovered files; the asserted `MediaProbeWorker` is a sibling extractor, not parsing.                    |
+| **[Importer](../importer/README.md)**                 | The import worker re-parses the grabbed title to render names and stamp `file_origin`. Closed-world season-pack assignment still uses the importer's private season/episode regex (**unbuilt:** switching it to this engine). |
+| **[Scan](../scan/README.md)**                         | Path-flavor parse of discovered files, stamped on `file_origin` and handed to the matcher; the asserted `MediaProbeWorker` (unbuilt) is a sibling extractor, not parsing. |
 | **[Metadata](../metadata/README.md)**                 | Matching turns parsing's identity hints into resolved `Media` via the metadata/external-id layer. The resolved series' `series_type` is the canonical anchor parsing's numbering-namespace tag is reconciled against. |
 | **[Sources](../sources/README.md)**                   | Owns the anime `NumberingMap`; together with metadata's `series_type` it is the canonical side that parsing's `absolute`/scene namespace tag is reconciled against (in matching's `episode-numbering` resolver). Parsing never calls a provider. |
 | **Asserted extractor (ffprobe)**                      | Sibling, not owned here. Fills `MediaInfo`. Parsing emits advertised only.                                                     |
 
 ## Open questions
 
-1. **guessit: delete now or transitional?** Spec position is transitional-then-deleted, gated on Tier-1 identity parity (esp. anime). Confirm the deletion trigger — a specific compat threshold on identity fields, or a date.
+1. **guessit: delete now or transitional?** Spec position is transitional-then-deleted, gated on Tier-1 identity parity (esp. anime). Confirm the deletion trigger — a specific compat threshold on identity fields, or a date. — *Answered by the code: guessit is deleted; no sidecar or fallback resolver remains.*
 2. **Confidence calibration source.** Per-field confidence values are educated guesses until the corpus is labeled — today effectively binary (`0.9` detected / `0` absent) and **shared across a core's three axes** rather than per-axis (an undetected source inside a detected core currently reads `0.9`, not `0`). Same dependency the [matcher](../matching/README.md#open-questions) has — the corpus calibrates both; [quality profiles](../quality-profiles/README.md#open-questions) is a third consumer, whose confidence-aware selection is gated on this. Two needs fall out: **graded** values and **per-axis** accuracy. Sequence corpus labeling early.
 3. **Provenance granularity.** Token-index evidence per field is the ambition; is a coarser "which sub-parser fired" enough for v1, with token-level as a follow-up? Lean: coarse first, token-level for the Parse Inspector.
 4. **Anime absolute numbering.** The hardest port and guessit's strongest area. Is anime in the v1 parity claim or explicitly out (consistent with [tracking](../tracking/README.md#open-questions))? Lean: out of the v1 _claim_, parsed best-effort, guessit-fallback retained longest here.
 5. **Corpus sourcing.** Hand-curated (today's ~310) vs. harvested from real indexer results vs. public release-name datasets. Lean: seed from the existing set, grow via Tier-2 harvesting, label ground-truth identity so it doubles as matcher calibration.
 6. **Pinned-version policy.** Which Sonarr/Radarr versions are the parity targets, and what's the bump cadence? Lean: pin latest stable, bump deliberately via a Tier-2 PR.
-7. **Path-flavor folder context shape.** How much directory context does path mode consume (immediate parent only, or full ancestry)? Sonarr uses limited context. Pin against the [scan](../scan/README.md) / [matching](../matching/README.md) needs.
+7. **Path-flavor folder context shape.** How much directory context does path mode consume (immediate parent only, or full ancestry)? Sonarr uses limited context. Pin against the [scan](../scan/README.md) / [matching](../matching/README.md) needs. (Folder context is unbuilt; scan passes the full library-relative path.)
 8. **`Field[T]` ergonomics.** Generics make per-field confidence clean but ripple through every consumer that reads a value. Do consumers see `ParsedRelease.Quality.Resolution.Value` or a flattened view with confidence on the side? Lean: a flattened "values" view for consumers + a parallel provenance map, so most call sites stay simple. **Exception:** the [quality-profile selection engine](../quality-profiles/README.md#open-questions) consumes the `Field[T]`-wrapped form directly (not the flattened `Values()`), deliberately, so per-field confidence stays reachable for future confidence-aware selection.
 9. **Correction loop.** User overrides ("this PROPER is fake", "this group always ships x265") improving future parses — keyed on group/pattern. In scope for the parsing module or a matching/hygiene concern? Lean: design the override store here (it's parse-shaped), surface it via matching's re-match UI.
-10. **Persisted-parse storage shape.** Raw string + orthogonal parsed snapshot + `parser_version` + `origin`, per `file` — a 1:1 companion table (`file_parse`) or columns on `file`? Lean: companion table, so the advertised namespaces stay grouped and nullable for pre-existing rows. The bin (`name`, `full`) is **not** persisted; it is re-rendered from the core + the media item's known domain on read. Shape lands with [libraries](../libraries/README.md) / [matching](../matching/README.md) data-shape work.
+10. **Persisted-parse storage shape.** Raw string + orthogonal parsed snapshot + `parser_version` + `origin`, per `file` — a 1:1 companion table (`file_parse`) or columns on `file`? Lean: companion table, so the advertised namespaces stay grouped and nullable for pre-existing rows. The bin (`name`, `full`) is **not** persisted; it is re-rendered from the core + the media item's known domain on read. Shape lands with [libraries](../libraries/README.md) / [matching](../matching/README.md) data-shape work. — *Answered by the code: companion table `file_origin`, holding the source title, the full parse as JSONB, and projected bin columns; no `parser_version`.*
 11. **Modifier set scope.** **Resolved.** The [core](#the-quality-attribute-core) detects the full Radarr modifier set: `REMUX`, `BR-DISK`, `RAWHD`, `SCREENER`, `REGIONAL`. The Sonarr-flavored NTSC/PAL → DVD source signal is also wired into the shared source regex.
 12. **Pre-release sources.** **Resolved.** Ported and wired: `CAM` / `Telesync` / `Telecine` / `Workprint` are first-class sources matching Radarr; Sonarr's `NTSC` / `PAL` DVD-source signal is applied as a fallback when no stronger source matched (kept out of the shared SourceRegex so a trailing NTSC token doesn't override an earlier explicit `DVD-R` / `DVD5` / `DVD9` match).
 13. **Identity-independent quality. Resolved.** Arrflix extracts quality even when no title/episode parses; Sonarr/Radarr return `Unknown` on identity-parse failure. We keep ours (strictly more information; matching is a separate layer downstream) as the single principled parity divergence, retained as a class-shaped `allowlistPredicate`. With per-domain dispatch, this becomes the *only* remaining bin allowlist class.
@@ -273,7 +280,6 @@ The published parity number ("99.x% with Sonarr 4.0.x / Radarr 5.x") falls out o
 - The Parse Inspector UI.
 - The corpus file format and the golden-diff harness's exact CLI flags.
 - The testcontainers wiring details (image tags, config.xml seeding, wait strategies) — directional only.
-- Migration ordering for folding `internal/release/` + `internal/identity/` into `internal/parsing/`.
 
 ## Doc neighbors
 

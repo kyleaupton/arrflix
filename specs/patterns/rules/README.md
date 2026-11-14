@@ -1,10 +1,12 @@
-# Rules — the shared predicate substrate
+---
+status: as-built
+---
 
-**Status:** Draft, iteration 2
+# Rules — the shared predicate substrate
 
 This doc defines the **rule substrate**: the shared machinery for evaluating user-authored predicates over a **subject** — one prospective acquisition. A predicate is "is this release 2160p?", "is the group blocklisted?", "was this requested by a kid account?" — a boolean question about one candidate release being considered for one media item. Many parts of Arrflix ask boolean questions about a prospective grab; this is the one place that answers them.
 
-> **What changed in iteration 2.** Iteration 1 made the *Release* the unit of evaluation. That quietly narrowed the model: facts that aren't properties of the artifact — why we're acquiring it (the requester set, the trigger), and eventually what quality concluded — had nowhere to live, and [routing](../../modules/routing/README.md)'s wider evaluation context contradicted this spec. Iteration 2: (1) the unit of evaluation is the **[Subject](#the-subject)**, and **Release narrows to the artifact half**; (2) the binary `pre_download`/`post_download` phase generalizes to an ordered **[timeline](#the-timeline)** of evaluation moments, `search < grab < import`; (3) the **`want.*`** namespace (durable intent facts from [tracking](../../modules/tracking/README.md)) is added and **`decision.*`** is reserved; (4) the [two kinds of non-value](#two-kinds-of-non-value) are named; (5) conditions and name templates commit to **[one resolver](#one-resolver)** over the registry's flat paths. Implementation phases 1–2 built `model.Release` as the subject with the binary phase — re-shaping code to this model is the first job of phase 3, before routing wires on.
+> **Beyond what's built:** `decision.*` is reserved only; `want.*` is registered but no producer assembles it; §One resolver is unbuilt (name templates render from a separate, hand-built `Subject.ToTemplateData` map); and the decision-log rows the trace feeds (§The evaluator, §The reductions) don't exist yet.
 
 Two modules consume the substrate directly, each reading the boolean answer differently:
 
@@ -13,20 +15,18 @@ Two modules consume the substrate directly, each reading the boolean answer diff
 
 A third module, [name templates](../../modules/name-templates/README.md), shares the *data half* of this substrate (the Subject + field registry) without using the evaluator — it renders fields, it doesn't gate on them.
 
-Like [errors](../errors/README.md), this is a **foundational package other modules build on, not a feature with its own surface**. Nobody "uses the rule engine"; routing, quality, and name templates stand on it. It is prescriptive shared code (`internal/rules` + the Subject + the field registry), the same genre as `internal/errors`.
+Like [errors](../errors/README.md), this is a **foundational package other modules build on, not a feature with its own surface**. Nobody "uses the rule engine"; routing, quality, and name templates stand on it. It is prescriptive shared code (`internal/rules` + the Subject and field catalog in `internal/model/subject.go`), the same genre as `internal/errors`.
 
 It does **not** decide what a match *means* — each consumer owns its **reduction** (the thing it does with the boolean). It does not parse release titles (that's [parsing](../../modules/parsing/README.md)) and it knows nothing about persistence shapes or HTTP.
-
-> **v0 context.** This logic began welded into a `policy` engine that holds a `*repo.Repository` and walks rules against the database mid-evaluation. Arrflix is v0 and we are taking the breaking change: that engine is **deleted and rebuilt** on the pure substrate described here. There is no behavior-preservation or data-migration constraint — we are building the foundation correctly, once.
 
 ## TL;DR
 
 - **One evaluator, one Subject, one registry — many reductions.** Gate, score, and route are the same machine (a predicate over a subject); only what each does with the answer differs. Building a second evaluator, a second subject model, or a second condition vocabulary for quality would be the mistake.
-- **The Subject is the unit of evaluation — the situation, not just the torrent.** `Subject{ Release, Media, Want, Decision }`: the artifact under consideration, what it was matched to, why we're acquiring it, and (from grab time) what quality concluded. Every consumer evaluates this one shape; field paths stay flat (`quality.resolution`, `want.trigger`).
+- **The Subject is the unit of evaluation — the situation, not just the torrent.** `Subject{ Release, Media, Want }` (plus a reserved `Decision`): the artifact under consideration, what it was matched to, why we're acquiring it, and (from grab time, unbuilt) what quality concluded. Every consumer evaluates this one shape; field paths stay flat (`quality.resolution`, `want.trigger`).
 - **Phase is a timeline, not a binary.** Evaluation happens at three moments — `search < grab < import` — and knowledge only accumulates. Every field is tagged with the earliest moment it's knowable; evaluating at moment M, a later-phase field is *indeterminate*, never a spurious match or reject. The [import-time re-gate](../../modules/quality-profiles/README.md#import-time-re-gate) is just the same questions asked again at `import`.
 - **Conditions are typed, not stringly-typed.** An operand is an explicit discriminated union — `Field{path}` or `Literal{type, value}` — never a bare string the evaluator sniffs at runtime. The kind and type are *stored facts*, decided at authoring time, not reconstructed from string shape.
-- **The field registry is the single source of truth.** It drives evaluation lookup, authoring-time type-checking, and the authoring UX (autocomplete, type-aware operators, value dropdowns, phase badges) from one definition — and both conditions and name-template tokens resolve through the registry's **one resolver**, so a path that works in a rule works in a template by construction.
-- **The evaluator is pure.** `Eval(tree, subject, at) → (verdict, trace)`. No repo, no DB, no logger, no consumer types. A rule tree is loaded once into memory and walked purely.
+- **The field registry is the single source of truth.** It drives evaluation lookup, authoring-time type-checking, and the authoring UX (autocomplete, type-aware operators, value dropdowns, phase badges) from one definition — and (unbuilt) both conditions and name-template tokens resolve through the registry's **one resolver**, so a path that works in a rule works in a template by construction.
+- **The evaluator is pure.** `Registry.Eval(tree, subject, at) → Outcome{Result, Trace}`. No repo, no DB, no logger, no consumer types. A rule tree is loaded once into memory and walked purely.
 - **Context scope is registry curation, not a design crisis.** Nothing is expressible in a condition unless a field is registered. Adding situational context (`want.*` today, `decision.*` tomorrow) means adding a few typed, phase-tagged rows to the catalog — a knob turned one field at a time, forever.
 - **Confidence rides along, unused in v1.** The Release carries the parse's `Field[T]` (value + confidence + provenance), not flattened values. v1 reads `.Value` and ignores confidence; the shape is preserved so confidence-aware selection is additive later, never a rewrite.
 
@@ -97,21 +97,21 @@ The v1 starter catalog is intentionally tiny:
 
 This is the whole answer to "how much context do we expose?" — **scope control is registry curation**. Nothing is expressible unless a field is registered; every entry is typed (so the editor offers only valid operators) and phase-tagged (so it behaves correctly at every moment). If a field feels too spicy for v1, don't register it yet.
 
-> **Population status.** [Acquisition](../../modules/acquisition/README.md) — the Subject's assembler — is not built yet, so `want.*` ships *registered but unassembled*: `Want` is nil until acquisition populates it. The evaluator's population backstop (see [The evaluator](#the-evaluator)) reads an unassembled half as **indeterminate** ("we don't know who wants this"), which is distinct from a populated-but-empty requester set ("definitively no one") — the [two-kinds-of-non-value](#two-kinds-of-non-value) distinction carrying the transition safely. The editor should keep unwired fields un-foregrounded until they're live.
+> **Population status.** `want.*` is *registered but unassembled*: [acquisition](../../modules/acquisition/README.md) builds the Subject's Release and Media halves but never sets `Subject.Want`, so `Want` is nil on every grab path. The evaluator's population backstop (see [The evaluator](#the-evaluator)) reads an unassembled half as **indeterminate** ("we don't know who wants this"), which is distinct from a populated-but-empty requester set ("definitively no one") — the [two-kinds-of-non-value](#two-kinds-of-non-value) distinction carrying the transition safely. The routing editor's field catalog omits `want.*` until it's live.
 
 One division of labor worth stating explicitly: **per-user *quality* never enters conditions** — it's handled upstream by tier → profile *selection* ([requests](../../modules/requests/README.md#tier)). **Per-user *placement* enters routing** as conditions over `want.requesters`. One mechanism each, no overlap.
 
 ### `decision.*` — reserved
 
-From `grab` onward, the quality outcome is itself a fact: which profile ran, which bin was selected, the score, which custom formats hit. Routing wants to route on *why* a release was picked, not just *what* was picked ([routing OQ](../../modules/routing/README.md#open-questions)). The binary phase model couldn't even express this — the decision is neither pre- nor post-download in a useful sense; on the timeline it's simply a `grab`-phase namespace. Causality is encoded in the tag: quality evaluates at `search`, so its own rules structurally *cannot* reference `decision.*`; routing evaluates at `grab`, so it can. The exact field set is pinned with routing's iteration 2 — the substrate just reserves the namespace and its phase.
+From `grab` onward, the quality outcome is itself a fact: which profile ran, which bin was selected, the score, which custom formats hit. Routing wants to route on *why* a release was picked, not just *what* was picked ([routing OQ](../../modules/routing/README.md#open-questions)). The binary phase model couldn't even express this — the decision is neither pre- nor post-download in a useful sense; on the timeline it's simply a `grab`-phase namespace. Causality is encoded in the tag: quality evaluates at `search`, so its own rules structurally *cannot* reference `decision.*`; routing evaluates at `grab`, so it can. The exact field set is pinned when routing first needs it — the substrate just reserves the namespace and its phase (no struct or registry rows exist yet).
 
 ### What stays out: `system.*`
 
-Routing's iteration 1 sketched a `System` context (free space per library, downloader health, current time). It is **deliberately excluded** from the Subject:
+A `System` context (free space per library, downloader health, current time) is **deliberately excluded** from the Subject:
 
 - **Volatility.** Every registered field is reproducible from the audit trace; system facts make dry-run and re-evaluation non-deterministic in a way nothing else does.
 - **Shape.** "Free space per library" is keyed by the very thing routing is choosing — a condition on the decision's *output* is a smell, closer to action-set validation than predicate input.
-- The actual needs are served elsewhere: an unhealthy/deleted downloader is a config-time validation error and an evaluation-time fallback ([routing](../../modules/routing/README.md#open-questions)), not a predicate.
+- The actual needs are served elsewhere: a nonexistent downloader is a save-time validation error and a deleted one an evaluation-time fallback to the default ([routing](../../modules/routing/README.md#open-questions)), not a predicate.
 
 ### `Field[T]` — value, confidence, provenance
 
@@ -145,9 +145,9 @@ Every field carries one tag — its **phase**, the earliest moment it's knowable
 
 > Evaluating at moment M, a field with phase ≤ M resolves normally; a field with phase > M is **indeterminate** — it never contributes a spurious match *or* a spurious reject.
 
-Phase is structural, not decorative. Two things that were special cases under the old binary fall out as ordinary consequences:
+Phase is structural, not decorative. Two things that would otherwise be special cases fall out as ordinary consequences:
 
-- **The [import-time re-gate](../../modules/quality-profiles/README.md#import-time-re-gate) stops being a feature.** It is the same stored trees asked again at `import`, when `mediainfo.*` has become knowable. Nothing is special-cased.
+- **The [import-time re-gate](../../modules/quality-profiles/README.md#import-time-re-gate) isn't a separate feature.** It is the same stored trees asked again at `import`, when `mediainfo.*` has become knowable (the engine's `ReGate` does this; the importer doesn't call it yet). Nothing is special-cased.
 - **Routing seeing the quality decision becomes expressible.** `decision.*` is a `grab`-phase namespace; quality (evaluating at `search`) structurally can't see it, routing (evaluating at `grab`) can.
 
 Note that phase and structure are **orthogonal axes** — the tempting shortcut "Release = early, situation = late" is false: `mediainfo.*` is about the *artifact* but arrives *last*; `want.*` is situational but knowable *first*. A field's namespace says what the fact is about; its phase says when it's knowable.
@@ -176,21 +176,23 @@ An operand is **explicitly** one of:
 ```
 Operand =
   | Field   { Path: "quality.resolution" }
-  | Literal { Type: "enum",   Value: "1080p" }
-  | Literal { Type: "number", Value: 5 }
-  | Literal { Type: "string", Value: "DTS-HD MA 5.1" }
-  | Literal { Type: "bool",   Value: true }
+  | Literal { Type: "enum",   Str: "1080p" }
+  | Literal { Type: "int",    Int: 5 }
+  | Literal { Type: "float",  Float: 1.5 }
+  | Literal { Type: "string", Str: "DTS-HD MA 5.1" }
+  | Literal { Type: "bool",   Bool: true }
+  | Literal { Type: "list",   List: ["x264", "x265"] }
 ```
 
-So `quality.resolution == "1080p"` is stored as:
+A `Literal` holds one concretely-typed slot per type rather than a single `any`, so stored bytes round-trip losslessly. `quality.resolution == "1080p"` is stored (`rules.Condition` JSON) as:
 
 ```
-{ Left: Field{Path: "quality.resolution"}, Op: "==", Right: Literal{Type: "enum", Value: "1080p"} }
+{ "op": "==", "left": {"kind": "field", "path": "quality.resolution"}, "right": {"kind": "literal", "literal": {"type": "enum", "str": "1080p"}} }
 ```
 
 The evaluator never guesses what an operand *is* — it reads the tag. This is the whole of "no inference."
 
-**Why this matters — the v0 model and its bugs.** v0 stores both operands as plain strings and reconstructs their meaning at evaluation time by sniffing the string's shape: *"has a dot → it's a field path; parses as a number → numeric literal; otherwise → string literal."* That inference is ambiguous and wrong in ways that can't be patched without redesign:
+**Why this matters — string sniffing breaks.** Storing both operands as plain strings and reconstructing their meaning at evaluation time by sniffing the string's shape (*"has a dot → it's a field path; parses as a number → numeric literal; otherwise → string literal"*) is ambiguous and wrong in ways that can't be patched without redesign:
 
 - A release group literally named `5` → `encode.release_group == 5` infers a number, but the field is a string. Mismatch.
 - An audio-codec literal `"DTS-HD MA 5.1"` **contains a dot**, so the sniffer treats it as a field path (`DTS-HD MA 5` . `1`) and the lookup fails. A perfectly valid literal breaks on its punctuation.
@@ -216,11 +218,11 @@ Type-checking is the registry's job and happens when a rule is **saved**, not wh
 
 A rule is a tree of conditions joined by `and` / `or` / `not`. The whole tree belongs to one owner (a routing rule, a quality gate, a custom format) and is **always loaded and written as a unit** — nothing ever queries an individual interior node. So the tree is stored and read whole (a serialized/JSONB value), not as a flat table of rows that reference each other by id.
 
-This kills v0's worst wart directly: v0 stores conditions as flat rows where logical operators hold child UUIDs as strings, with no parent/root marker, and the evaluator re-reads the *entire* condition table from the database for every logical node it walks. Load-as-a-unit means one read produces the whole tree; the evaluator then walks it purely in memory.
+Trees are stored as JSONB on their owner — `routing_rule.conditions`, `quality_profile.gates[].tree`, `custom_format.conditions` — canonically re-encoded on save. The alternative (flat condition rows whose logical nodes reference children by id, re-read from the database for every node walked) is exactly what load-as-a-unit avoids: one read produces the whole tree; the evaluator then walks it purely in memory.
 
 ## The field registry
 
-The registry is the authoritative catalog of every addressable field on the Subject: its `path`, label, type, enum values (if any), `phase`, value type, and dynamic source (if the options come from an API, e.g. configured indexers or users). It is **promoted from struct tags** — the field metadata lives as `path:`/`type:`/`enumValues:`/`phase:` tags and is reflected into the first-class registry, the single source of truth rather than an incidental projection.
+The registry is the authoritative catalog of every addressable field on the Subject: its `path`, label, type, enum values (if any), `phase`, value type, and dynamic source (if the options come from an API, e.g. configured indexers or users). It is **promoted from struct tags** — the field metadata lives as `path:`/`type:`/`enumValues:`/`phase:` tags on the Subject structs in `internal/model`, reflected by `model.ListSubjectFields()` into the immutable `rules.Registry` index (`rules.NewRegistry()`), the single source of truth rather than an incidental projection.
 
 One registry drives **three** things from one definition:
 
@@ -230,7 +232,7 @@ One registry drives **three** things from one definition:
 
 ### One resolver
 
-The registry's path lookup is **one function with two consumers**: condition evaluation resolves `Field{path}` through it, and name-template rendering builds its template data from it (walk every registered path, resolve against the Subject, unwrap `Field[T]` → `.Value`, nest by namespace).
+**Unbuilt.** Today conditions resolve paths through `Subject.GetField`, while name templates render from `Subject.ToTemplateData`, a separately hand-built map keyed by Go field names (`.Quality`, `.Media.Title`, …). The design: the registry's path lookup is **one function with two consumers**: condition evaluation resolves `Field{path}` through it, and name-template rendering builds its template data from it (walk every registered path, resolve against the Subject, unwrap `Field[T]` → `.Value`, nest by namespace).
 
 ```
 registry path ──► resolve(subject, path) ──┬─► Eval        (conditions)
@@ -241,7 +243,7 @@ This upgrades "one catalog" to "one lookup": it is *impossible by construction* 
 
 ### Author-time experience
 
-Because the editor knows the field catalog and its types, the rule/condition builder (and the [name-template editor](../../modules/name-templates/README.md), which uses the same registry) can offer:
+Because the editor knows the field catalog and its types, the rule/condition builder (and, by design, the [name-template editor](../../modules/name-templates/README.md)) can offer (the routing editor reads the catalog from `/api/v1/routing/fields`):
 
 - **Autocomplete** — type `qual` → `quality.resolution`, `quality.source`, `quality.name`, …
 - **Type-aware operator menus** — pick an enum field and only `==`/`!=`/`in` are offered; `>` simply isn't there. The invalid rule is *unbuildable*, not merely rejected.
@@ -256,28 +258,30 @@ The discriminated-union operand model maps directly onto a rich-text editor's no
 
 The evaluator is a pure function in `internal/rules`:
 
+```go
+func (r *Registry) Eval(cond *Condition, s model.Subject, at model.Phase) Outcome // Outcome{Result Tri, Trace Trace}
 ```
-Eval(tree RuleTree, subject Subject, at Moment) (verdict {true|false|indeterminate}, trace Trace)
-```
+
+`Tri` is `true` / `false` / `unknown` (indeterminate), string-valued so it serializes naturally.
 
 No repo, no logger, no DB, no routing/quality types. This makes it trivially unit-testable (a table of `tree × subject × moment → verdict`) and reusable by every consumer.
 
 Properties:
 
-- **Load-once, walk-pure.** The repo (or service) loads the whole tree into a `RuleTree` once; `Eval` walks it in memory. No per-node database access.
-- **Three-valued, by the timeline.** A condition over a field whose phase is later than the evaluation moment is *indeterminate* — it never contributes a spurious match or reject. Each consumer maps indeterminate onto its own safe default. This replaces v0's accidental behavior (a missing `mediainfo` value silently compared against `"<nil>"` for `==`, and hard-errored for ordering ops) with a defined, structural one.
+- **Load-once, walk-pure.** The repo (or service) loads the whole tree into a `*rules.Condition` once; `Eval` walks it in memory. No per-node database access.
+- **Three-valued, by the timeline.** A condition over a field whose phase is later than the evaluation moment is *indeterminate* — it never contributes a spurious match or reject. Each consumer maps indeterminate onto its own safe default (routing: not matched; quality gates: don't reject; custom formats: no weight). Logical branches use Kleene three-valued logic. It is total — it never errors or panics; a malformed node resolves defensively.
 - **The moment is an explicit parameter, not derived.** Callers know their moment intrinsically (quality = `search`, routing = `grab`, importer = `import`), dry-run can preview any moment over the *same* subject without fabricating partially-populated ones, and `(tree, subject, at)` fully determines the verdict — a replayed evaluation can't drift because some half of the Subject happened to be populated since. Population stays as a *defensive backstop*, not the signal: a field resolves iff its phase ≤ the moment **and** its half of the Subject is actually populated; an asserted moment with missing data yields indeterminate, never a panic. (An unassembled half — nil — is "not knowable," distinct from a populated half holding empty values, which evaluates definitively; see [two kinds of non-value](#two-kinds-of-non-value).)
-- **Neutral trace.** `Eval` returns a per-node trace (each condition's resolved operands and its tri-state result, distinguishing indeterminate from false). The trace is consumer-agnostic; routing adapts it into its dispatch evaluation record, quality adapts it into [decision-log](../../modules/quality-profiles/README.md#decision-log) rows. The evaluator does not know what an "action" or a "score" is.
+- **Neutral trace.** `Eval` returns a per-node trace (each condition's resolved operands and its tri-state result, distinguishing indeterminate from false). The trace is consumer-agnostic; routing adapts it into its dispatch evaluation record (`routing.Evaluation`), quality keeps it on each release's `Evaluation`, and (unbuilt) both feed [decision-log](../../modules/quality-profiles/README.md#decision-log) rows. The evaluator does not know what an "action" or a "score" is.
 
 ### Layering
 
 The pure/orchestration split follows the backend's standard layering:
 
-- **`internal/rules`** (pure domain) — `RuleTree`, the typed operand/condition types, `Trace`, `Eval`, and the pure tree assembly. Compiles without `internal/repo`, `dbgen`, or `pgtype`.
+- **`internal/rules`** (pure domain) — the typed `Condition` / `Operand` / `Literal` types, `Tri`, `Trace`, the `Registry` (field index, `Eval`, save-time `Validate`, `HasPhase`). Imports only `internal/model` and the stdlib.
 - **repo** — loads the stored tree (one read) and returns it as a domain value.
-- **service** (routing's, quality's) — loads tree(s) + the Subject, calls `Eval`, applies its own reduction. [Acquisition](../../modules/acquisition/README.md) is the natural assembler of the Subject — at each moment it holds exactly the halves that exist (candidate + parse + media + want at `search`; + decision at `grab`; + mediainfo at `import`).
+- **service** (routing's, quality's) — loads tree(s) + the Subject, calls `Eval`, applies its own reduction. [Acquisition](../../modules/acquisition/README.md) is the natural assembler of the Subject — at each moment it holds exactly the halves that exist (candidate + parse + media + want at `search`; + decision at `grab`; + mediainfo at `import`). Today acquisition and the interactive grab assemble candidate + parse + media, and the importer adds mediainfo for rendering.
 
-The Subject and the field registry live alongside the rules package (rather than in the generic `model` grab-bag) so the substrate is one neighborhood — relevant when specs eventually co-locate with code.
+The Subject and its field catalog live in `internal/model` (`model/subject.go`, built with `model.NewSubject` + `WithMedia` / `WithSeriesInfo` / `WithMediaInfo`); `internal/rules` holds the registry index built from that catalog.
 
 ## Confidence
 
@@ -298,7 +302,7 @@ For clarity, the three reductions consumers apply to `Eval`'s verdict — none o
 | **Hard gate** | [quality profiles](../../modules/quality-profiles/README.md#hard-gates-vs-soft-scoring) | `search`, re-run at `import` | reject the release, log the gate reason | release survives this gate |
 | **Custom format** | [quality profiles](../../modules/quality-profiles/README.md#hard-gates-vs-soft-scoring) | `search`, re-run at `import` | add the format's weight to the release's score | weight not added |
 
-Quality's structured v1 scorers (preferred group, codec preference, HDR/audio variant, proper/repack) are predicates too — `encode.release_group in [...]`, `mediainfo.video_codec == "H.265"`, `quality.is_repack == true`. The closed structured form is a *constrained authoring surface that emits the same trees*; it is not a second engine. This is what reconciles "v1 ships no custom-format DSL" (a UI scope decision) with "quality reuses the evaluator" (an architecture decision).
+Quality's scorers (preferred group, codec preference, HDR/audio variant, proper/repack) are predicates too — `encode.release_group in [...]`, `mediainfo.video_codec == "H.265"`, `quality.is_repack == true`, each stored as a `custom_format` tree. There is no second engine: "no custom-format DSL" is a UI scope decision, "quality reuses the evaluator" is an architecture decision. (The presets seed only proper/repack.)
 
 **Ranking is not a reduction here.** Bin ordering, cutoff, and per-bin size bands are structured profile data, *not* conditions — you can't `>` a string enum, and ordering an open list of releases isn't a boolean question. The rule substrate answers "does this match?"; the profile answers "which is best?" using those answers as inputs. Keeping that boundary crisp is the point of this whole separation.
 
@@ -311,19 +315,19 @@ Quality's structured v1 scorers (preferred group, codec preference, HDR/audio va
 | **[Acquisition](../../modules/acquisition/README.md)** | Assembles the Subject at each moment and hands it to the evaluating consumer. |
 | **[Routing](../../modules/routing/README.md)** | Primary consumer, at `grab`. Evaluates dispatch rules; reduction = action set. Owns its own evaluation/audit record built from the neutral trace. |
 | **[Quality profiles](../../modules/quality-profiles/README.md)** | Primary consumer, at `search` and again at `import`. Hard gates and custom formats are trees over the Subject; reductions = reject / add-weight. The re-gate is the same trees re-run at `import` with `mediainfo.*` knowable. Ranking stays profile-owned structured data. |
-| **[Name templates](../../modules/name-templates/README.md)** | Consumes the **data half** — the Subject + registry, through the [one resolver](#one-resolver) — to render tokens at `import`. Does not evaluate conditions. Shares the registry-driven authoring editor. |
+| **[Name templates](../../modules/name-templates/README.md)** | Consumes the **data half** — the Subject (today via `ToTemplateData`; by design through the registry's [one resolver](#one-resolver)) — to render tokens at `import`. Does not evaluate conditions. |
 | **[Audit pattern](../audit/README.md)** | Each consumer writes its decision rows from the neutral trace; retention and the Activity view are owned there. |
 | **[Errors](../errors/README.md)** | Sibling foundational pattern: a real `internal/` package filed as a pattern because it's shared substrate. The genre precedent for this doc. |
 
 ## Open questions
 
-1. **Tree serialization shape.** JSONB blob per owner vs a typed serialized column. Lean: a single serialized tree value per owner (routing rule / gate / custom format), since the tree is always read and written whole and never queried by interior node. Pin the exact encoding in the implementation iteration.
+1. **Tree serialization shape.** JSONB blob per owner vs a typed serialized column. Lean: a single serialized tree value per owner (routing rule / gate / custom format), since the tree is always read and written whole and never queried by interior node. Pin the exact encoding in the implementation iteration. — *Answered by the code: canonical `rules.Condition` JSON in a JSONB column per owner.*
 2. **Operator set boundaries.** The table above is the v1 lean. Do we want `matches` (glob/regex) on string fields for power users, or an `exists`/`is present` operator for optional scalars — or keep v1 to `==`/`contains`/`in` and add the rest with the advanced custom-format tier? Lean: structured-first; defer regex to the advanced tier, where it compiles down to the same condition shape.
 3. **List literals.** `in`/`not in` take a typed list literal. Is the element type constrained to match the field's type (enum-in-enum-list), and how does the editor render adding/removing elements? Lean: yes, typed-homogeneous lists, chip-list widget.
 4. **Field[T] in persistence.** When the parse is persisted (the [persisted parse](../../modules/parsing/README.md#persisted-parse)), do we store confidence/provenance in the blob too? Lean: yes — nearly free to store, expensive to backfill, same asymmetry as carrying it in the model.
 5. **Registry generation vs hand-authored.** Continue generating the registry from struct tags, or define it as standalone data the structs conform to? Lean: keep generating from tags (one source, compiler-checked) but expose it as the first-class registry type rather than an incidental `ListContextFields` projection.
 6. **Cross-field comparisons.** The operand model permits `Field == Field` (`quality.resolution == media.expected_resolution`). Is there a real v1 use, and does the editor surface it? Lean: support it in the model (it's free), don't foreground it in the v1 editor until a use appears.
-7. **Where `Subject` and the registry live.** `internal/rules` vs a dedicated package vs staying in `internal/model` (where phases 1–2 built `model.Release`). Lean: co-locate the substrate (Subject + registry + evaluator) so it's one neighborhood; decide the exact package split when phase 3 does the re-shape.
+7. **Where `Subject` and the registry live.** `internal/rules` vs a dedicated package vs staying in `internal/model` (where phases 1–2 built `model.Release`). Lean: co-locate the substrate (Subject + registry + evaluator) so it's one neighborhood; decide the exact package split when phase 3 does the re-shape. — *Answered by the code: the Subject and field catalog stay in `internal/model`; the registry index and evaluator are `internal/rules`.*
 8. **Indeterminate semantics surfaced to authors.** A `grab`- or `import`-phase condition is indeterminate at earlier moments. Should the dry-run/preview UI show "not yet evaluable (import)" distinctly from "evaluated false"? Lean: yes — the trace already distinguishes them; the preview should too, per moment.
 9. **`want.requesters` quantifier and identity.** `contains` gives "any requester matches" — is an "all requesters" quantifier ever needed (e.g. route to kids library only if *every* requester is a kid)? And is the element a user id or a name (lean: id, rendered via the dynamic source)? Lean: ship `contains` only; add a quantifier if a real rule needs it.
 10. **Placement drift.** Routing decisions driven by `want.*` are made from the facts *as of grab time*; the requester set can change afterward. v1 accepts the drift. Should [hygiene](../../modules/hygiene/README.md) eventually surface "this file's placement no longer matches its routing rules"? Defer.

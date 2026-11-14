@@ -1,6 +1,8 @@
-# Connectivity health — the runtime-liveness pattern
+---
+status: deferred
+---
 
-**Status:** Draft, iteration 1
+# Connectivity health — the runtime-liveness pattern
 
 This doc defines a **cross-cutting pattern**: every peripheral system Arrflix talks to — a [library](../../modules/libraries/README.md) on disk, a [downloader](../../modules/downloaders/README.md) HTTP endpoint, a future Prowlarr or Plex connection — needs the same shape of runtime liveness probing. Each module probes differently (filesystem `stat` vs authenticated HTTP vs search ping), but the contract around persisting the result, signalling transitions, and reacting downstream is identical.
 

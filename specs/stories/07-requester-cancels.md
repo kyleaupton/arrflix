@@ -1,6 +1,8 @@
-# Story 7 — A requester cancels
+---
+status: v1
+---
 
-**Status:** Draft
+# Story 7 — A requester cancels
 
 Someone asks for a movie and then changes their mind. This story covers what "cancel" means at each point in the lifecycle, and — the part that carries the real weight — what it must mean when **more than one person wanted the same thing**.
 
@@ -49,7 +51,7 @@ The mechanics of the cascade — which rows move, in what order — belong to [r
 
 - Nothing. No notification, no status change, no interruption. Erin never learns Dana was there.
 
-This is the whole point of Part A, and it is the case the system currently gets wrong in three separate ways — see [What must be true](#what-must-be-true-foundation-requirements).
+This is the whole point of Part A. Withdrawing a request gets it right; cancelling the tracking itself, and cancelling a want whose download job serves others, do not — see [What must be true](#what-must-be-true-foundation-requirements).
 
 ## Flow — Part B: the last requester cancels
 
@@ -68,7 +70,7 @@ Erin now cancels too, while a download is in flight.
 - **The in-flight download is allowed to finish.** Bandwidth and time are already committed, and stopping mid-transfer can carry obligations to the source that abandoning it would break. This follows the lean already committed in [multi-requester scope union § open questions](./05-multi-requester-scope-union.md#open-questions).
 - The completed file lands in the library, unrequested by anyone. It is governed from then on by library-wide [hygiene](../modules/hygiene/README.md) policy — the same as any other untracked content.
 
-**Not built today:** there is currently no mechanism to stop an in-flight transfer at all, so this behavior holds by accident rather than by decision. The requirements below make it deliberate and bound it.
+**Not true today:** the last requester's withdrawal cancels every want not yet available, downloading ones included, along with their download jobs. That cancel is database-only — nothing stops the transfer in the downloader — so the bandwidth is spent anyway and the file is never imported. The requirements below make completion deliberate and bound it.
 
 ### Phase 4 — What Erin sees afterward
 
@@ -110,27 +112,27 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ### Withdrawal is scoped to the withdrawing user
 
-- **REQ-CANCEL-001** — Withdrawing a request must remove only that user's requester association. A tracking with any remaining requester, and its wants, must continue unchanged. **Not currently true:** cancelling a shared tracking is authorized on own-intent permission alone, letting one requester end a shared effort for everyone.
+- **REQ-CANCEL-001** — Withdrawing a request must remove only that user's requester association. A tracking with any remaining requester, and its wants, must continue unchanged. *Currently true* — withdrawing a request removes only that requester's association, and touches wants only when no requester remains. Cancelling the tracking itself is a separate path; see REQ-CANCEL-012.
 - **REQ-CANCEL-002** — Cancelling a want must not cancel a download job that also serves other wants still justified. **Not currently true:** cancelling a want cancels every download job linked to it without checking the job's other wants. Latent for movies; breaks the moment a season pack serves several episode wants.
 - **REQ-CANCEL-003** — Removing a requester from a tracking must trigger reconciliation of that tracking's wants, so wants only the departing requester justified are cancelled. **Not currently true:** departure removes the association but never reconciles, leaving orphaned wants live.
 
 ### Work already committed is not thrown away
 
-- **REQ-CANCEL-004** — A download job already transferring must be allowed to complete. Only wants that have not yet reached a downloading state may be cancelled on withdrawal.
-- **REQ-CANCEL-005** — Withdrawal must never delete files already acquired. They persist and fall under library retention policy.
-- **REQ-CANCEL-006** — Cancelling a want must not exclude its release from future searches. Withdrawal means the requester stopped wanting the title, not that the release was unsuitable — recording an exclusion would poison later acquisition of the same title.
+- **REQ-CANCEL-004** — A download job already transferring must be allowed to complete. Only wants that have not yet reached a downloading state may be cancelled on withdrawal. **Not currently true:** the last requester's withdrawal cancels downloading wants and their download jobs, so the transfer's result is never imported.
+- **REQ-CANCEL-005** — Withdrawal must never delete files already acquired. They persist and fall under library retention policy. *Currently true* — no cancel path deletes files.
+- **REQ-CANCEL-006** — Cancelling a want must not exclude its release from future searches. Withdrawal means the requester stopped wanting the title, not that the release was unsuitable — recording an exclusion would poison later acquisition of the same title. *Currently true* — exclusions are recorded only for failed downloads and declined proposals.
 - **REQ-CANCEL-007** — A download job completing after its want was cancelled must not return that want to a live status. *Currently true* — worth an explicit test so it stays that way.
 
 ### The affordance is honest
 
-- **REQ-CANCEL-008** — Cancellation must not be offered once the title is available to that user. Availability ends the request's life; removal from the library is a separate, operator-authorized action.
-- **REQ-CANCEL-009** — Confirmation copy must not promise that acquisition stops, since for a shared title it does not.
-- **REQ-CANCEL-010** — Cancellation must not disclose the identity or existence of specific other requesters beyond the generic possibility that some exist.
-- **REQ-CANCEL-011** — Withdrawing while a proposal awaits review must retire that proposal, so no reviewer is asked to decide on behalf of a requester who left.
+- **REQ-CANCEL-008** — Cancellation must not be offered once the title is available to that user. Availability ends the request's life; removal from the library is a separate, operator-authorized action. **Not currently true:** withdrawal is offered for any live request, on the focus page and in the requests list, including one whose title is already available.
+- **REQ-CANCEL-009** — Confirmation copy must not promise that acquisition stops, since for a shared title it does not. *Currently true by omission* — the focus page's *Withdraw request* asks for no confirmation, and the requests list asks only *"Withdraw this request?"*
+- **REQ-CANCEL-010** — Cancellation must not disclose the identity or existence of specific other requesters beyond the generic possibility that some exist. *Currently true by omission* — cancellation says nothing about other requesters.
+- **REQ-CANCEL-011** — Withdrawing while a proposal awaits review must retire that proposal, so no reviewer is asked to decide on behalf of a requester who left. **Not currently true:** cancelling a want leaves any open proposal covering it in place.
 
 ### Authorization
 
-- **REQ-CANCEL-012** — Cancelling a tracking that other requesters still justify must require authority over others' requests, not merely over one's own. Removing one's own requester association requires only own-intent authority, because it cancels nothing.
+- **REQ-CANCEL-012** — Cancelling a tracking that other requesters still justify must require authority over others' requests, not merely over one's own. Removing one's own requester association requires only own-intent authority, because it cancels nothing. **Not currently true:** cancelling a tracking is authorized on own-tracking authority for any member of its requester set, and cancels every live want. Latent under V1's roles, where only operators hold a tracking-cancel grant.
 
 ## Out of scope (variant stories)
 
@@ -143,14 +145,14 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ## Open questions
 
-1. **Should the *last* requester's withdrawal ever stop a transfer?** [Multi-requester scope union](./05-multi-requester-scope-union.md) leaned "let it complete" for a shared series pack, where siblings still justified continuing. The movie case is weaker — nobody wants the result. Options: always complete (simplest, honors source obligations); abort only if barely started; abort always and accept the waste. **Lean:** always complete, and revisit if abandoned files become a real storage complaint. REQ-CANCEL-004 currently encodes that lean.
+1. **Should the *last* requester's withdrawal ever stop a transfer?** [Multi-requester scope union](./05-multi-requester-scope-union.md) leaned "let it complete" for a shared series pack, where siblings still justified continuing. The movie case is weaker — nobody wants the result. Options: always complete (simplest, honors source obligations); abort only if barely started; abort always and accept the waste. **Lean:** always complete, and revisit if abandoned files become a real storage complaint. REQ-CANCEL-004 currently encodes that lean. **Superseded by [V1](../V1.md):** REQ-CANCEL-004 (always complete) is In; Arrflix never removes torrents.
 
-2. **If we ever do stop a transfer, is the partial data deleted or left in place?** Deleting reclaims disk; leaving it may be required to honor obligations to the source. This is the decision that must be made *before* wiring any stop capability, because the wrong default is costly and silent.
+2. **If we ever do stop a transfer, is the partial data deleted or left in place?** Deleting reclaims disk; leaving it may be required to honor obligations to the source. This is the decision that must be made *before* wiring any stop capability, because the wrong default is costly and silent. **Decided:** Neither; Arrflix never removes torrents or deletes their data, and canceled torrents are tagged `arrflix-canceled` (REQ-HARD-004/005).
 
-3. **Should abandoned acquisitions be surfaced to the operator?** A file that landed with no requester behind it is invisible today. A "nobody asked for this" surface would make the Part B outcome legible — but it's new UI for a rare case. **Lean:** fold into whatever surfaces untracked content generally, rather than building a bespoke view.
+3. **Should abandoned acquisitions be surfaced to the operator?** A file that landed with no requester behind it is invisible today. A "nobody asked for this" surface would make the Part B outcome legible — but it's new UI for a rare case. **Lean:** fold into whatever surfaces untracked content generally, rather than building a bespoke view. *Frozen — beyond V1.*
 
-4. **Is anyone notified on cancellation?** Today, nobody. Candidates: the operator, when a pending review is retired out from under them (REQ-CANCEL-011); a co-requester, never. **Lean:** notify the reviewer only, and only when they had a decision queued.
+4. **Is anyone notified on cancellation?** Today, nobody. Candidates: the operator, when a pending review is retired out from under them (REQ-CANCEL-011); a co-requester, never. **Decided:** notify the reviewer only, and only when they had a decision queued.
 
-5. **Does withdrawing while a suggestion is pending decline it, or leave it for others?** If Erin still wants the title, the suggestion arguably remains valid and should stand. REQ-CANCEL-011 as written retires the *user's* pending decision; whether the underlying suggestion survives depends on whether it belongs to the user or to the shared effort. **Needs pinning** against the propose-and-confirm subsystem, which has no story yet.
+5. **Does withdrawing while a suggestion is pending decline it, or leave it for others?** If Erin still wants the title, the suggestion arguably remains valid and should stand. REQ-CANCEL-011 as written retires the *user's* pending decision; whether the underlying suggestion survives depends on whether it belongs to the user or to the shared effort. **Needs pinning** against the propose-and-confirm subsystem, which has no story yet. *Frozen — beyond V1.*
 
-6. **What is the affordance actually called?** "Cancel request" reads as stopping work, which is wrong for the shared case. "Remove request" or "Withdraw" are more accurate but less familiar. **Lean:** keep "Cancel request" for recognizability and let the confirmation carry the honesty, per REQ-CANCEL-009.
+6. **What is the affordance actually called?** "Cancel request" reads as stopping work, which is wrong for the shared case. "Remove request" or "Withdraw" are more accurate but less familiar. **Lean:** keep "Cancel request" for recognizability and let the confirmation carry the honesty, per REQ-CANCEL-009. **Decided:** "Withdraw request" everywhere for the requester; the operator's download-job action is "Cancel"; the "Cancel request" lean is retired.

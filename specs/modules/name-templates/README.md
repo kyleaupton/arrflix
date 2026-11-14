@@ -1,22 +1,26 @@
+---
+status: as-built
+---
+
 # Name templates — turning metadata into paths
 
-**Status:** Draft, iteration 1
+> **Beyond what's built:** §Validation's additions (parse, lint, dry-render), §Preview / dry-run, the save-time lint and strict mode in §Missing-variable behavior, the catalog enforcement in §Naming from truth, and the format-string import in §Sonarr / Radarr parity are unbuilt. `Quality` renders from a re-parse of the grabbed release title, not from a persisted parse, and the import-time re-gate the spec leans on isn't wired.
 
 A name template is a string that renders against a media file's metadata to produce its on-disk path (folder names + filename). It is one of the three things [routing](../routing/README.md) dispatches to (alongside libraries and downloaders) and the substrate the [import worker](../acquisition/README.md) uses to lay hardlinked files into a library at the right place with the right name.
 
-The model is implemented and stable: Go `text/template` over a typed evaluation context, with per-type entities (movie + series), three template components per series template (show folder / season folder / file), and a small set of custom render funcs. This spec captures what exists and locks in the v1 additions: **create-time syntax validation**, a **preview/dry-run endpoint**, and a clearer story on **missing-variable handling**.
+The model is implemented and stable: Go `text/template` (`internal/template/render.go`) over a typed evaluation context, with per-type entities (movie + series), three template components per series template (show folder / season folder / file), and a small set of custom render funcs. This spec captures what exists and designs three additions (unbuilt): **create-time syntax validation**, a **preview/dry-run endpoint**, and a clearer story on **missing-variable handling**.
 
 ## TL;DR
 
 - A name template is a `(type, template, optional folder templates, default flag)` row. Each renders to a single path component; the import worker joins them via `filepath.Join`.
 - **Two types**: `movie` and `series`. Movies have a folder template + file template. Series have a show-folder + season-folder + file template.
-- **DSL is Go `text/template`** with two custom funcs: `sanitize` (strip filesystem-illegal chars) and `clean` (drop `"unknown"` values, then sanitize).
-- **Variables come from the shared `Subject`** (the [rules substrate](../../patterns/rules/README.md#the-subject)'s evaluation object) — five namespaces render here: `Candidate` (the release), `Quality` (the advertised parse — persisted per file, **immutable**), `Encode` (group, edition — named `Release` in the iteration-1 code), `Media` (TMDB), `MediaInfo` (post-download `ffprobe` analysis). Templates render at `import`, the last moment on the [timeline](../../patterns/rules/README.md#the-timeline), so every field is knowable at render time.
-- **Name from truth, not claims.** `ffprobe`-verifiable tags (codec/audio/HDR/resolution) render from `MediaInfo`; non-verifiable ones (source/group/edition) from the parse. The shipped default uses identity + quality bin only — it can't be wrong.
+- **DSL is Go `text/template`** with two custom funcs: `sanitize` (strip filesystem-illegal chars) and `clean` (drop empty/`"unknown"` values, then lowercase and sanitize).
+- **Variables come from the shared `Subject`** (the [rules substrate](../../patterns/rules/README.md#the-subject)'s evaluation object) — six namespaces render here: `Candidate` (the release), `Identity` (parsed title/year/edition/numbering), `Quality` (the advertised quality bin), `Encode` (release group, hardcoded subs), `Media` (TMDB), `MediaInfo` (post-download file analysis). Templates render at `import`, the last moment on the [timeline](../../patterns/rules/README.md#the-timeline).
+- **Name from truth, not claims.** Verifiable tags (codec/audio/HDR/resolution) render from `MediaInfo`; non-verifiable ones (source/group/edition) from the parse. A default that uses identity + quality bin only can't be wrong. No default template ships; the dev seed carries one per type.
 - **Sonarr/Radarr parity** is read-parity (matcher, for trials) + write-parity (token-vocabulary + format-string import; byte-identical output is a harness-tested aspiration). `{{.Quality.Full}}` is the advertised parse in both tools, so honest releases render identically; the re-gate rejects resolution-mislabeled releases upstream, so there's nothing to disagree about.
 - Per-type default; routing falls back to the default for the media type when no template is explicitly chosen.
-- v1 adds: **syntax validation at create / update**, **preview/dry-run endpoint** against sample data, and a clearer **missing-variable contract** (today: silent empty string; lean for v1: still silent, but lint-warn at save time).
-- v1 does **not** add: template versioning, range-based multi-episode syntax, includes/snippets — all deferred to [open questions](#open-questions).
+- Designed, unbuilt: **syntax validation at create / update**, **preview/dry-run endpoint** against sample data, and a clearer **missing-variable contract** (built: silent empty string; lean: still silent, but lint-warn at save time).
+- Not designed here: template versioning, range-based multi-episode syntax, includes/snippets — all deferred to [open questions](#open-questions).
 
 ## What a name template owns
 
@@ -25,13 +29,13 @@ A row encodes:
 - **Name** — display name, unique case-insensitive.
 - **Type** — `movie` or `series`. Drives which template components are required and which variables are guaranteed present.
 - **`template`** (required) — the **file** template. For movies, the movie filename. For series, the episode filename. Extension is **not** included; the import worker appends the source extension automatically.
-- **`movie_dir_template`** (required when `type='movie'`) — the movie folder name.
+- **`movie_dir_template`** (required when `type='movie'`) — the movie folder name. The import worker tolerates it empty and places the file at the library root.
 - **`series_show_template`** (required by convention when `type='series'`) — the show folder name.
 - **`series_season_template`** (required by convention when `type='series'`) — the season folder name.
-- **Default flag** — at most one default per type, enforced by a partial unique index.
+- **Default flag** — at most one default per type, enforced by a partial unique index. Saving a template as default clears the flag on the others of its type first (in the service, not in one transaction).
 - **Created / updated timestamps**.
 
-That is the full surface today. No tags, no description, no per-quality variants, no library scoping.
+That is the full surface. No tags, no description, no per-quality variants, no library scoping.
 
 ## The DSL
 
@@ -41,17 +45,17 @@ Templates are **Go `text/template`** strings. Variables use dotted-path access w
 
 | Func       | Behavior                                                                                                                                |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `sanitize` | Replaces filesystem-illegal chars (`/\:*?"<>|`) with `-`, trims whitespace. Use anywhere a value might contain user-supplied text.       |
-| `clean`    | If the value is `"unknown"` (case-insensitive), returns empty string; otherwise sanitizes. Use for optional MediaInfo / Release fields. |
+| `sanitize` | Replaces `/`, `\` and `:` with `-`, drops `*?"<>|`, trims whitespace. Use anywhere a value might contain user-supplied text.            |
+| `clean`    | If the value is empty or `"unknown"` (case-insensitive), returns empty string; otherwise returns it **lowercased** and sanitized. Use for optional MediaInfo / Encode fields. |
 
 ### Example templates
 
-From the dev seed data (real templates that work today):
+From the dev seed data (`backend/internal/db/seed/seed_dev.sql`):
 
 **Movie file:**
 
 ```
-{{.Media.CleanTitle}} ({{.Media.Year}}){{if .Release.Edition}} {edition-{{.Release.Edition}}}{{end}} [{{.Quality.Full}}]{{if .MediaInfo.AudioCodec}}[{{.MediaInfo.AudioCodec}} {{.MediaInfo.AudioChannels}}]{{end}}{{if .MediaInfo.HDR}}[{{.MediaInfo.HDR}}]{{end}}{{if .MediaInfo.VideoCodec}}[{{.MediaInfo.VideoCodec}}]{{end}}{{if .Release.ReleaseGroup}}-{{.Release.ReleaseGroup}}{{end}}
+{{.Media.CleanTitle}} ({{.Media.Year}}){{if .Identity.Edition}} {edition-{{.Identity.Edition}}}{{end}} [{{.Quality.Full}}]{{if .MediaInfo.AudioCodec}}[{{.MediaInfo.AudioCodec}} {{.MediaInfo.AudioChannels}}]{{end}}{{if .MediaInfo.HDR}}[{{.MediaInfo.HDR}}]{{end}}{{if .MediaInfo.VideoCodec}}[{{.MediaInfo.VideoCodec}}]{{end}}{{if .Encode.ReleaseGroup}}-{{.Encode.ReleaseGroup}}{{end}}
 ```
 
 **Movie folder:**
@@ -63,36 +67,38 @@ From the dev seed data (real templates that work today):
 **Series file:**
 
 ```
-{{.Media.Title}} - S{{.Media.Season}}E{{.Media.Episode}} - {{clean .Media.EpisodeTitle}} [{{.Quality.Full}}]{{if .MediaInfo.AudioCodec}}[{{.MediaInfo.AudioCodec}} {{.MediaInfo.AudioChannels}}]{{end}}{{if .MediaInfo.HDR}}[{{.MediaInfo.HDR}}]{{end}}{{if .MediaInfo.VideoCodec}}[{{.MediaInfo.VideoCodec}}]{{end}}{{if .Release.ReleaseGroup}}-{{.Release.ReleaseGroup}}{{end}}
+{{.Media.Title}} - S{{.Media.Season}}E{{.Media.Episode}} - {{clean .Media.EpisodeTitle}} [{{.Quality.Full}}]{{if .MediaInfo.AudioCodec}}[{{.MediaInfo.AudioCodec}} {{.MediaInfo.AudioChannels}}]{{end}}{{if .MediaInfo.HDR}}[{{.MediaInfo.HDR}}]{{end}}{{if .MediaInfo.VideoCodec}}[{{.MediaInfo.VideoCodec}}]{{end}}{{if .Encode.ReleaseGroup}}-{{.Encode.ReleaseGroup}}{{end}}
 ```
+
+Series show folder `{{.Media.Title}} ({{.Media.Year}})`, season folder `Season {{.Media.Season}}`. (Because `clean` lowercases, the seed's series file renders the episode title in lowercase.)
 
 These are intentionally Sonarr/Radarr-shaped — the goal is that someone migrating in can paste their existing naming scheme with minimal translation.
 
 ## Variable catalog
 
-Five namespaces, each a typed struct on the shared `Subject` ([rules substrate](../../patterns/rules/README.md#the-subject)). The catalog is **the contract** between the rest of the system and template authors. Adding a variable is additive (templates that don't use it are unaffected); removing or renaming one is a breaking change.
+Six namespaces, each a typed struct on the shared `Subject` ([rules substrate](../../patterns/rules/README.md#the-subject)). The catalog is **the contract** between the rest of the system and template authors. Adding a variable is additive (templates that don't use it are unaffected); removing or renaming one is a breaking change.
 
-The complete field-by-field list lives with the struct definitions in code. This spec captures the **shape** and **guarantees** of each namespace; the per-field reference is the substrate's [field registry](../../patterns/rules/README.md#the-field-registry), not spec material.
+The complete field-by-field list lives with the struct definitions in code (`internal/model/release.go`, rendered by `Subject.ToTemplateData` in `internal/model/subject.go`). This spec captures the **shape** and **guarantees** of each namespace; the per-field reference is the substrate's [field registry](../../patterns/rules/README.md#the-field-registry), not spec material.
 
-> **Drift note (rules-substrate alignment).** The examples in this spec document the live iteration-1 DSL: capitalized struct paths (`{{.Quality.Full}}`, `{{.Release.Edition}}`). The substrate's direction is the registry's **flat field paths** (`quality.full`, `encode.edition`) resolved through its [one resolver](../../patterns/rules/README.md#one-resolver), so a path that works in a condition works in a template by construction — Go `text/template` traverses lowercase map keys fine, so this is a vocabulary change, not an engine change. The token-grammar decision (raw `text/template` vs a chip-based editor grammar over the same paths) is this spec's iteration 2; the editor masks raw syntax either way.
+> **Drift note (rules-substrate alignment).** The examples in this spec document the live DSL: capitalized struct paths (`{{.Quality.Full}}`, `{{.Identity.Edition}}`). The substrate's direction is the registry's **flat field paths** (`quality.full`, `identity.edition`) resolved through its [one resolver](../../patterns/rules/README.md#one-resolver), so a path that works in a condition works in a template by construction — Go `text/template` traverses lowercase map keys fine, so this is a vocabulary change, not an engine change. The token-grammar decision (raw `text/template` vs a chip-based editor grammar over the same paths) is open; the editor masks raw syntax either way.
 
 ### `Candidate` — the release we picked
 
-Available **pre-download**. Source: the indexer search result. Includes title, size, indexer, indexer ID, categories, protocol (`torrent` / `usenet`), seeders, peers, age (seconds + hours), grabs, publish date, link, GUID.
+Available **pre-download**. Source: the indexer search result. The struct includes title, size, indexer, indexer ID, categories, protocol (`torrent` / `usenet`), seeders, peers, age (seconds + hours), grabs, publish date, link, GUID. At import only `Title` is populated (from `download_job.candidate_title`); the rest render as zero values.
 
-Use case: occasionally useful for the file template (e.g., embedding the release group in the filename), but most templates draw from `Quality` / `Release` instead, which are parsed *from* the candidate title and are more structured.
+Use case: occasionally useful for the file template, but most templates draw from `Quality` / `Encode` / `Identity` instead, which are parsed *from* the candidate title and are more structured.
 
 ### `Quality` — quality bin
 
-Source: the [name-parser](../parsing/README.md) over the candidate title (the **advertised** bin). Fields: `Full` (human-readable string like `"Bluray-2160p Remux"`), `Resolution` (enumerated), `Source` (enumerated), `IsRemux`, `IsRepack`, `Version`.
+Source: the [name-parser](../parsing/README.md) over the candidate title (the **advertised** bin). Fields: `Name` (the per-domain bin label, e.g. `"Bluray-1080p Remux"` for series, `"Remux-1080p"` for movies), `Full` (`Name` plus the Proper/Repack/REAL revision suffix), `Resolution`, `Source`, `Modifier` (`NONE` / `REMUX` / `BR-DISK` / `RAWHD`), `IsRepack`, `Version`, `Real`.
 
-**`Quality` is the advertised parse — persisted and immutable.** At grab it's parsed from the release title; for [scanned](../matching/README.md) files, from the existing filename. It's stored on the `file` as part of the [persisted parse](../parsing/README.md#persisted-parse) and read from there at render — never mutated, never phase-dependent. The [re-gate](../quality-profiles/README.md#import-time-re-gate) is what keeps a grabbed file's bin honest: a resolution mismatch hard-fails *before* placement, and `Source` is advertised-only in Arrflix and Sonarr alike (`ffprobe` can't see it). So `{{.Quality.Full}}` is as truthful as the medium allows, with no reconciliation.
+**`Quality` is the advertised parse, never mutated.** The import worker re-parses `download_job.candidate_title` at render (`parsing.Parse` is pure, so the result matches the pick). The same parse is stored insert-once on the file's `file_origin` row ([persisted parse](../parsing/README.md#persisted-parse)); a re-render would read the source title from there. The [re-gate](../quality-profiles/README.md#import-time-re-gate) is what keeps a grabbed file's bin honest: a resolution mismatch hard-fails *before* placement, and `Source` is advertised-only in Arrflix and Sonarr alike (`ffprobe` can't see it). **Unbuilt:** the re-gate isn't wired into the import worker, so the advertised bin renders unchecked.
 
-The enumerations are stable; new values are additive. `Resolution` covers `Unknown / SD / 480p / 576p / 720p / 1080p / 1440p / 2160p / 4320p`. `Source` covers the standard set (`SDTV`, `CAM`, `Telesync`, `Telecine`, `Screener`, `DVD`, `DVD-Rip`, `HDTV`, `WEBRip`, `WEB-DL`, `BluRay`, `REMUX`, `Raw-HD`, `Unknown`).
+The enumerations are stable; new values are additive. The field registry declares `Resolution` as `Unknown / SD / 480p / 576p / 720p / 1080p / 2160p` and `Source` as `Unknown / CAM / Telesync / Telecine / Workprint / DVD / TV / WEBRip / WEB-DL / BluRay`.
 
-### `Release` — non-quality release metadata
+### `Identity` and `Encode` — non-quality release metadata
 
-Available **pre-download**. Source: name-parser. Fields: `ReleaseGroup`, `Edition`. Both optional; both renderable with `clean` to drop empty/`unknown`.
+Available **pre-download**. Source: name-parser. `Identity` carries the parsed title, year, type hint, `Edition`, AKA titles and series numbering; `Encode` carries `ReleaseGroup` and `HardcodedSubs`. All optional; guard with `{{if}}` to drop empty values.
 
 ### `Media` — TMDB / catalog data
 
@@ -102,7 +108,7 @@ Available **pre-download**. Source: TMDB + media-item record. Fields: `Type` (`m
 
 ### `MediaInfo` — file analysis
 
-Available **post-download only**. Source: media-info probe of the actual file. Populated by the import worker before template rendering, so it's always available in the rendering context.
+Available **post-download only**. Source: the `mediainfo` CLI (`internal/mediainfo`) run over the source file by the import worker before rendering. Best-effort: when extraction fails the import continues and the namespace renders as an empty struct.
 
 Three sub-groups:
 
@@ -114,7 +120,7 @@ When the probe didn't produce a value, fields default to their zero values (empt
 
 ### When variables aren't available
 
-Templates run only at import time, when **all** five namespaces are populated. There is no pre-import rendering path; the routing-time policy engine reads the same context for its own purposes but does not invoke the template renderer.
+Templates run only at import time, when every namespace is present (Candidate beyond its title, and MediaInfo on a failed probe, hold zero values). There is no pre-import rendering path; the routing-time policy engine reads the same context for its own purposes but does not invoke the template renderer.
 
 That means: every template can assume the full context exists. The only "missing" case is **optional fields** within a namespace (e.g., `EpisodeTitle` on a season pack, `HDR` on an SDR file). See [Missing-variable behavior](#missing-variable-behavior).
 
@@ -128,9 +134,9 @@ A filename should reflect what the file **is**, not what its release **claimed**
 
 **The catalog enforces this.** For any attribute that exists in *both* an advertised and an asserted form (codec, audio, HDR — once the parser extracts them for routing/scoring), the variable catalog exposes **only** the `MediaInfo` (asserted) version; the advertised version is a lint error in a template. Unverifiable attributes (`Source`, group, edition) have no asserted form, so they render from `Quality`/`Release` and stay allowed. This makes the footgun structurally impossible rather than a matter of author discipline — while the advertised versions remain available to [routing](../routing/README.md), which needs them pre-download.
 
-The seed templates already follow this — `{{.MediaInfo.AudioCodec}}`, `{{.MediaInfo.HDR}}`, `{{.MediaInfo.VideoCodec}}` for granular tags, `{{.Quality.Full}}` for the bin, `{{.Release.ReleaseGroup}}` / `{{.Release.Edition}}` for provenance. The principle just makes it a contract.
+The seed templates already follow this — `{{.MediaInfo.AudioCodec}}`, `{{.MediaInfo.HDR}}`, `{{.MediaInfo.VideoCodec}}` for granular tags, `{{.Quality.Full}}` for the bin, `{{.Encode.ReleaseGroup}}` / `{{.Identity.Edition}}` for provenance. The principle just makes it a contract. **Unbuilt:** the enforcement — nothing lints a template today.
 
-**Default-safe, advanced-expressive.** The shipped default template uses **identity + quality bin only** — it can never be wrong because it makes no granular claims. Granular `MediaInfo` tags are opt-in for power users who want `[x265][Atmos]` in filenames. Same three-tier philosophy as [quality profiles](../quality-profiles/README.md): great defaults, advanced surfaces hidden.
+**Default-safe, advanced-expressive.** A shipped default template would use **identity + quality bin only** (none ships yet; the dev seed's templates opt into granular tags) — it can never be wrong because it makes no granular claims. Granular `MediaInfo` tags are opt-in for power users who want `[x265][Atmos]` in filenames. Same three-tier philosophy as [quality profiles](../quality-profiles/README.md): great defaults, advanced surfaces hidden.
 
 ## Sonarr / Radarr parity
 
@@ -158,15 +164,15 @@ The library's `root_path` is prepended at apply time. Templates never reference 
 
 ## Default selection
 
-When routing's action set doesn't carry an explicit `name_template_id`, the import worker looks up the per-type default via `GetDefault(type)`. The partial unique index `(type) WHERE default = true` enforces at-most-one per type.
+When routing's action set doesn't carry an explicit `name_template_id`, routing looks up the per-type default via `GetDefaultNameTemplate(type)` and stamps it on the `download_job`, which the import task inherits. The partial unique index `(type) WHERE default = true` enforces at-most-one per type.
 
-If no default exists for a type and the routing action didn't specify, **import will fail**. There is no system-baked fallback template today. The first-install seed sets defaults for both types so this is rarely a real-world issue; v1 might harden this with a minimal hardcoded fallback (see [open questions #6](#open-questions)).
+If no default exists for a type and no rule specified one, **routing fails, so the grab fails**. There is no system-baked fallback template, and nothing seeds one outside the dev seed (`just db-reseed`), so a fresh install has no templates until an admin creates them. A minimal hardcoded fallback is [open question #6](#open-questions).
 
 ## Path safety
 
 Three layers:
 
-1. **The `sanitize` and `clean` funcs** strip illegal chars (`/\:*?"<>|`) and trim whitespace. Template authors call these explicitly; nothing is auto-sanitized.
+1. **The `sanitize` and `clean` funcs** replace or drop illegal chars (`/\:*?"<>|`) and trim whitespace. Template authors call these explicitly; the only auto-sanitized value is `Media.CleanTitle`.
 2. **`filepath.Join`** handles OS-specific separators on join.
 3. **Extension appending** is done by the import worker (`importer.EnsureExt`), not the template. Templates render basenames without extensions; the source file's extension is appended after render.
 
@@ -180,13 +186,13 @@ For self-hosted Linux installs (the primary target), these gaps are mostly theor
 
 ## Missing-variable behavior
 
-Today: **silent empty string**. Go's `text/template` renders missing or zero-value fields as `<no value>` by default, but the renderer initializes the context to safe zero values (empty struct pointers, empty strings) so missing fields render as empty strings instead.
+Built: **mostly silent**. The context is a map, and Go's `text/template` renders a missing map key as `<no value>`. `MediaInfo` is always an empty struct when absent, so its fields render as empty strings, but a missing `Media` key (e.g. `EpisodeTitle` when TMDB has none, or `Season` on a movie) renders `<no value>` unless guarded with `{{if}}` or `clean`. A typo'd field on a struct namespace (`{{.MediaInfo.HDRR}}`) is an execution error, which fails the import task.
 
 This is the right behavior for **optional MediaInfo / Release fields** — `{{if .MediaInfo.HDR}}[{{.MediaInfo.HDR}}]{{end}}` correctly emits nothing when HDR is empty.
 
-It is the wrong behavior for **typos**. `{{.Media.Titel}}` silently renders nothing; the operator sees the resulting filename and may not notice the dropped title until much later.
+It is the wrong behavior for **typos**. `{{.Media.Titel}}` silently renders `<no value>`; the operator sees the resulting filename and may not notice the dropped title until much later.
 
-**V1 contract:**
+**Designed contract (unbuilt):**
 
 - Runtime behavior unchanged — silent empty string, because changing this breaks every existing template that uses `{{if}}` guards.
 - **Save-time lint** — the validator parses the template, walks the AST, and warns on any dotted-path access that doesn't resolve against the known variable catalog. Save still succeeds (admins may have reasons to use experimental paths), but the response carries a `warnings: [...]` field.
@@ -196,28 +202,28 @@ Strict mode is the safety net for serious operators; lint is the safety net for 
 
 ## Lifecycle and operations
 
-CRUD only. No verbs.
+CRUD only. No verbs. `name_template_id` is `RESTRICT` on `download_job` and `import_task` (a referenced template can't be deleted, 409) and `SET NULL` on `routing_rule`.
 
 | OperationID                       | Method | Path                                            | Notes                                                                                  |
 | --------------------------------- | ------ | ----------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `name-templates-list`             | GET    | `/api/v1/name-templates`                        |                                                                                        |
 | `name-templates-get`              | GET    | `/api/v1/name-templates/{id}`                   |                                                                                        |
 | `name-templates-get-default`      | GET    | `/api/v1/name-templates/default/{type}`         | Per-type default lookup.                                                               |
-| `name-templates-create`           | POST   | `/api/v1/name-templates`                        | v1: validates syntax + lints variables.                                                |
+| `name-templates-create`           | POST   | `/api/v1/name-templates`                        | Field validation only; syntax + lint are unbuilt.                                      |
 | `name-templates-update`           | PUT    | `/api/v1/name-templates/{id}`                   | Same validation as create.                                                             |
 | `name-templates-delete`           | DELETE | `/api/v1/name-templates/{id}`                   |                                                                                        |
-| `name-templates-preview` *(v1)*   | POST   | `/api/v1/name-templates/preview`                | Renders one or more templates against sample data; returns the resulting paths. See [Preview / dry-run](#preview--dry-run). |
+| `name-templates-preview` *(unbuilt)* | POST | `/api/v1/name-templates/preview`               | Renders one or more templates against sample data; returns the resulting paths. See [Preview / dry-run](#preview--dry-run). |
 
 Permissions (defined in [users](../users/README.md)):
 
-- `name_templates.read` — list / get / get-default / preview
-- `name_templates.write` — create / update / delete
+- `admin.settings.read` — list / get / get-default (and preview, when built)
+- `admin.settings.write` — create / update / delete
 
 ## Validation
 
-Today the service validates: name non-empty, type in enum, `template` non-empty, `movie_dir_template` non-empty when `type='movie'`. **It does not parse the template strings.** Syntax errors only surface at import time, failing the job.
+The service validates: name non-empty, type in enum, `template` non-empty, `movie_dir_template` non-empty when `type='movie'`. Series folder templates aren't required. **It does not parse the template strings.** Syntax errors only surface at import time, failing the import task as non-retryable.
 
-**V1 additions, at create and update:**
+**Designed additions (unbuilt), at create and update:**
 
 1. **Parse each template component** with `text/template`. Syntax errors return `apperrors.Validation` with a structured pointer to the offending component (e.g., `"series_season_template: unexpected }} at byte 24"`).
 2. **Walk the parsed AST** for variable references. Emit lint warnings for paths that don't resolve against the known catalog (e.g., `Media.Titel`).
@@ -227,19 +233,19 @@ Validation does **not** verify the rendered output is filesystem-legal — `sani
 
 ## Preview / dry-run
 
-**New in v1.** A `POST /name-templates/preview` endpoint that accepts:
+**Unbuilt.** A `POST /name-templates/preview` endpoint that accepts:
 
 - A template body (full or partial — any subset of `template`, `movie_dir_template`, `series_show_template`, `series_season_template`)
 - A type
 - An optional sample data override (otherwise built-in fixtures per type are used)
 
-Returns: each component's rendered string, the joined path, and any lint warnings. The frontend uses this to drive a live preview in the template-editor dialog — the killer UX feature missing today.
+Returns: each component's rendered string, the joined path, and any lint warnings. The frontend uses this to drive a live preview in the template-editor dialog — the killer UX feature the editor lacks.
 
 The preview endpoint shares the validator's lint + parse code; it's the read-only counterpart.
 
 ## Multi-episode handling
 
-Today: **one template render per episode file.**
+Built: **one template render per episode file.**
 
 A season-pack download is matched per-file to its episodes by the import matcher; each match spawns its own `ImportTask`, each task renders the template independently with that episode's metadata. The result for a 5-episode pack is five separate files, each named `S01E01.ext`, `S01E02.ext`, …, `S01E05.ext`.
 
@@ -250,12 +256,12 @@ A season-pack download is matched per-file to its episodes by the import matcher
 | Consumer                                          | How it uses name templates                                                                                                              |
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | **[Routing](../routing/README.md)**               | Rules pick a template by ID. The action set on a fired rule fills `download_job.name_template_id`, which propagates to import tasks.    |
-| **Import (existing)**                             | Loads the template row, renders each component against the import-task's `Subject`, joins with `filepath.Join`, appends extension. |
-| **[Parsing](../parsing/README.md)** | Produces the advertised `Quality`/`Release` the templates read, persisted per file for re-render.                                     |
+| **Import**                                        | `jobs/import/worker.go` `computeDestPath`: loads the template row, renders each component against the import task's `Subject`, joins with `filepath.Join`, appends extension (`importer.EnsureExt`). |
+| **[Parsing](../parsing/README.md)** | Produces the advertised `Identity`/`Quality`/`Encode` the templates read; the parse is persisted per file on `file_origin`.          |
 | **[Quality profiles](../quality-profiles/README.md)** | The re-gate validates a grabbed file's quality before placement; it does not mutate `Quality`, which renders from the persisted advertised parse. |
 | **[Acquisition](../acquisition/README.md)**       | The pipeline assembles the `Subject` for both routing and import — the template just reads it.                                |
-| **[Users](../users/README.md)**                   | `name_templates.*` permissions gate the API.                                                                                            |
-| **Frontend (`NameTemplateSettings.vue`)**         | CRUD + (v1) live preview using the new endpoint.                                                                                        |
+| **[Users](../users/README.md)**                   | `admin.settings.read` / `admin.settings.write` gate the API.                                                                            |
+| **Frontend (`views/settings/NameTemplateSettings.vue`)** | CRUD. The live preview is unbuilt.                                                                                               |
 
 ## What name templates does NOT own
 
@@ -263,7 +269,7 @@ A season-pack download is matched per-file to its episodes by the import matcher
 - The variable catalog itself — that's the [field registry](../../patterns/rules/README.md#the-field-registry) on the shared `Subject`; each namespace's fields live with whoever produces them ([parsing](../parsing/README.md), [metadata](../metadata/README.md), [matching](../matching/README.md))
 - The name-parser that produces `Quality` and `Release`, and the [persisted parse](../parsing/README.md#persisted-parse) the renderer reads them from (both [parsing](../parsing/README.md))
 - The **re-gate** that validates a grabbed file's quality before placement ([quality profiles](../quality-profiles/README.md#import-time-re-gate) / [importer](../importer/README.md)) — it doesn't mutate `Quality`
-- The mediainfo probe (lives with import / scan)
+- The mediainfo probe (lives with import)
 - The library root path that gets prepended ([libraries](../libraries/README.md))
 - The file extension (appended by the import worker, source-derived)
 - Hardlink and atomic-move mechanics (import)
@@ -304,4 +310,4 @@ A season-pack download is matched per-file to its episodes by the import matcher
 - [Quality profiles](../quality-profiles/README.md) — produces `Quality.*` via the same parser the templates read
 - [Metadata](../metadata/README.md) — produces `Media.*`
 - [Matching](../matching/README.md) — determines which template runs per file (movie vs episode, season pack split)
-- [Users](../users/README.md) — `name_templates.*` permissions
+- [Users](../users/README.md) — `admin.settings.*` permissions

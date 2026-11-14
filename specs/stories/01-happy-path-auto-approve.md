@@ -1,6 +1,8 @@
-# Story 1 — Happy path: friend requests a movie with auto-approve
+---
+status: v1
+---
 
-**Status:** Draft (triaged against the code)
+# Story 1 — Happy path: friend requests a movie with auto-approve
 
 A trusted family member opens the PWA, requests a movie, and watches it ten minutes later. No admin intervention. This is the bread-and-butter flow Arrflix has to nail; if this story isn't delightful, nothing else matters.
 
@@ -75,11 +77,11 @@ The page knows three things before it renders: whether the library already has i
 
 Most of what this story needs is owned by other stories now; those are linked rather than restated. What remains is what the happy path uniquely asserts.
 
-- **REQ-FULFIL-001** — A request from a user holding the matching create and auto-approve grants must complete without any human action.
+- **REQ-FULFIL-001** — A request from a user holding the matching create and auto-approve grants must complete without any human action. *Currently true* — an auto-approved request spawns its tracking and want in one step, and the acquisition worker takes it from there.
 - **REQ-FULFIL-002** — A want must reach *available* on Arrflix's own verification that the file is present and readable, never on confirmation from a media server. *Currently true* — the decoupling is implemented, and it is the requirement that keeps a missed webhook from stranding a request forever.
-- **REQ-FULFIL-003** — The requester must be told when the film is ready, through a channel that works when the app is closed.
-- **REQ-FULFIL-004** — The status a requester sees must reflect where the work actually is, without a reload.
-- **REQ-FULFIL-005** — A viewer must only be offered tiers they hold a grant for. *Currently true.*
+- **REQ-FULFIL-003** — The requester must be told when the film is ready, through a channel that works when the app is closed. *Currently true* — availability notifies every requester of the tracking, and requester notifications push by default.
+- **REQ-FULFIL-004** — The status a requester sees must reflect where the work actually is, without a reload. *Currently true* — surfaces render the [title-status](../modules/title-status/README.md) projection, refetched on a realtime kick whenever the title's state changes, with download progress streamed alongside.
+- **REQ-FULFIL-005** — A viewer must only be offered tiers they hold a grant for. *Currently true* — the server resolves the offered tiers from the viewer's grants.
 - **REQ-FULFIL-006** — Once available, the requester must be able to get from the notification to watching it. **Unbuilt** — there is no media-server integration and nothing populates a deep link, though the notification payload reserves a field for one.
 
 ### Time targets (UX commitments)
@@ -113,14 +115,14 @@ Most of what this story needs is owned by other stories now; those are linked ra
 
 ## Open questions
 
-1. **Media-server correlation — resolved in spec, unbuilt in code.** Correlating a server's item back to our file is a *propagation* concern, not an availability gate, and [media-server § correlation](../modules/media-server/README.md#correlation-mapping-a-server-item-back-to-our-media_file) resolves the approach. Nothing implements it.
+1. **Media-server correlation — resolved in spec, unbuilt in code.** Correlating a server's item back to our file is a *propagation* concern, not an availability gate, and [media-server § correlation](../modules/media-server/README.md#correlation-mapping-a-server-item-back-to-our-media_file) resolves the approach. Nothing implements it. *Frozen — beyond V1.*
 
-2. **Push permission timing.** Ask on first visit, on first request submit, or after the first notification would have fired? **Lean:** first request submit — *"we'll notify you when it's ready — enable notifications?"* — because that's the moment the value is obvious.
+2. **Push permission timing.** Ask on first visit, on first request submit, or after the first notification would have fired? **Decided:** first request submit — *"we'll notify you when it's ready — enable notifications?"* — because that's the moment the value is obvious.
 
-3. **Does the user know it was auto-approved?** Transparency versus cognitive load on the happy path. **Lean:** don't surface it inline; show it in request history.
+3. **Does the user know it was auto-approved?** Transparency versus cognitive load on the happy path. **Lean:** don't surface it inline; show it in request history. **Answered by the code:** No explicit label; dialog copy and toast differ (`AddMovieDialog.vue:40-53`), history shows "Approved" (`RequestStatusPill.vue:25-33`).
 
-4. **Tier picker versus auto-default — resolved by implementation.** The picker is explicit, offering only tiers the viewer holds grants for.
+4. **Tier picker versus auto-default — resolved by implementation.** The picker is explicit, offering only tiers the viewer holds grants for. **Answered by the code:** Explicit picker built from grants (`backend/internal/service/title_status.go:356`).
 
-5. **Webhook reliability — resolved by decoupling.** Availability no longer depends on a webhook; a missed one delays only media-server propagation.
+5. **Webhook reliability — resolved by decoupling.** Availability no longer depends on a webhook; a missed one delays only media-server propagation. **Answered by the code:** Availability comes from Arrflix's own verification (REQ-FULFIL-002), not a webhook.
 
-6. **ETA fidelity by phase.** There is no useful signal while searching. **Lean:** show the phase only, and give an ETA solely while downloading.
+6. **ETA fidelity by phase.** There is no useful signal while searching. **Lean:** show the phase only, and give an ETA solely while downloading. **Answered by the code:** The ETA renders only from download progress (`web/src/components/acquisition/MovieStatusCard.vue:64-71`).

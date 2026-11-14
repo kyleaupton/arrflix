@@ -1,25 +1,29 @@
+---
+status: as-built
+---
+
 # Indexers — release discovery via Prowlarr
 
-**Status:** Draft, iteration 1
+> **Beyond what's built:** Only the Prowlarr pass-through is built — the CRUD/test proxy, the `IndexerSource` text-search adapter, and result validation. §The mirror entity, §The search-execution path (cache, capability-aware dispatch, outcome recording), §Search cache, the ID-based and category-scoped parts of §Search quality, §Runtime health, §Per-indexer stats, and the `indexer-override` endpoint are unbuilt design. Indexer health is deferred with [Story 10](../../stories/10-indexer-health-degraded-and-recovery.md) ([V1.md](../../V1.md#out--later)).
 
 An indexer is a source of release metadata — a torrent tracker or usenet provider — that Arrflix queries to find candidate releases for a [want](../acquisition/README.md). Arrflix does not talk to trackers directly: it delegates to a **bundled Prowlarr** instance, which owns the tracker definitions, credentials, and the actual scraping. Arrflix is Prowlarr's client and aggregator.
 
-Today that relationship is a thin pass-through: Arrflix holds no indexer state of its own, runs free-text searches only, has no health awareness, and caches results in-memory for 5 minutes. This spec keeps Prowlarr as the config source-of-truth but gives Arrflix a **mirror entity** to hang three things on that the pass-through can't support: runtime **health**, per-indexer **stats**, and a durable, shared **search cache**. All three converge on a single search-execution path — that convergence is the spine of this spec.
+Today that relationship is a thin pass-through: Arrflix holds no indexer state of its own, runs free-text searches only, and has no health awareness. The only caching is the interactive candidate search's 5-minute in-memory map (in `DownloadCandidatesService`); the autonomous path searches uncached. This spec keeps Prowlarr as the config source-of-truth but gives Arrflix a **mirror entity** to hang three things on that the pass-through can't support: runtime **health**, per-indexer **stats**, and a durable, shared **search cache**. All three converge on a single search-execution path — that convergence is the spine of this spec.
 
 ## TL;DR
 
 - **Prowlarr stays the config source-of-truth.** Trackers are added, credentialed, and tested in Prowlarr (bundled, `localhost:<PROWLARR_PORT>`). Arrflix CRUD proxies to Prowlarr; it does not reimplement tracker management.
-- **New: a mirror `indexer` table.** A lightweight row per Prowlarr indexer (`prowlarr_id`, name, protocol, implementation, enabled, priority, `capabilities`, tags) plus Arrflix-owned columns (health triple, stats projection, manual-override flag). It gives us a stable FK target, a home for health/stats, and resilience if Prowlarr is reset.
+- **Design: a mirror `indexer` table.** A lightweight row per Prowlarr indexer (`prowlarr_id`, name, protocol, implementation, enabled, priority, `capabilities`, tags) plus Arrflix-owned columns (health triple, stats projection, manual-override flag). It gives us a stable FK target, a home for health/stats, and resilience if Prowlarr is reset.
 - **Hybrid sync.** CRUD writes through to Prowlarr and refreshes the mirror immediately; the health worker's periodic Prowlarr round-trip doubles as a drift reconcile. Rows referenced by `download_job` history are **tombstoned**, not deleted.
 - **Health via the [connectivity-health pattern](../../patterns/connectivity-health/README.md), passively driven.** Status is derived primarily from real search outcomes, backstopped by a light Prowlarr-reachability probe. Extended statuses: `degraded`, `rate_limited`.
 - **Soft gate.** Unlike libraries/downloaders, an unhealthy indexer does not block a want. Search proceeds on the healthy set and only escalates to "no sources" when *all* relevant indexers are down — fan-out semantics demand it.
-- **Search quality is request-side.** Pass TMDB/TVDB/IMDB IDs through to Prowlarr with **capability-aware dispatch** (ID lookup where the indexer supports it, text fallback otherwise) and **category scoping**. The result model is essentially unchanged.
+- **Search quality is request-side.** Pass TMDB/TVDB/IMDB IDs through to Prowlarr with **capability-aware dispatch** (ID lookup where the indexer supports it, text fallback otherwise) and **category scoping**. The result model carries the TMDB/IMDb ids Prowlarr echoes per result, which the acquisition relevance gate matches on.
 - **Per-indexer stats are a second reading of the health signal.** Passive health and stats both consume one `indexer_search_outcome` stream; the `indexer` row carries a denormalized projection for fast display.
-- **The search cache moves here from [acquisition](../acquisition/README.md).** DB-backed, shared by both the autonomous worker and manual search. Acquisition becomes a consumer that calls invalidation hooks.
+- **The search cache lives here, not in [acquisition](../acquisition/README.md).** DB-backed, shared by both the autonomous worker and manual search. Acquisition is a consumer that calls invalidation hooks.
 
 ## The Prowlarr relationship
 
-Arrflix wraps Prowlarr through the `golift.io/starr` client (`internal/service/indexer.go`) and a search adapter (`internal/indexer/prowlarr/adapter.go` behind the `IndexerSource` interface in `internal/indexer/source.go`). Prowlarr runs as a bundled s6 service; URL and API key come from config (`PROWLARR_PORT`, `PROWLARR_API_KEY`).
+Arrflix wraps Prowlarr through the `golift.io/starr` client (`internal/service/indexer.go`, `IndexerService`) and a search adapter (`internal/indexer/prowlarr/adapter.go` behind the `IndexerSource` interface in `internal/indexer/source.go`). Prowlarr runs as a bundled s6 service; URL and API key come from config (`PROWLARR_PORT`, `PROWLARR_API_KEY`).
 
 What stays in Prowlarr:
 
@@ -27,7 +31,7 @@ What stays in Prowlarr:
 - **The actual scrape** — Prowlarr fans a single search out to every enabled tracker and returns the aggregate. Arrflix does not query trackers individually.
 - **Test mechanics** — `TestIndexerContext` / `/testall`.
 
-What moves to (or newly lives in) Arrflix:
+What lives in Arrflix by design (none of it built yet):
 
 - **The mirror entity** (below) — so health, stats, scoping, and FK integrity have a home.
 - **The search cache** — durable, shared (below).
@@ -37,11 +41,11 @@ This division means a Prowlarr reset wipes tracker config (recoverable by re-add
 
 ## The mirror entity
 
-A new `indexer` table. Each row corresponds to one Prowlarr indexer and carries two classes of field.
+**Unbuilt.** A new `indexer` table. Each row corresponds to one Prowlarr indexer and carries two classes of field.
 
 **Mirrored from Prowlarr** (read-mostly; refreshed on sync, never authoritative here):
 
-- **`prowlarr_id`** — Prowlarr's stable int64 ID. The join key for everything; `download_job.indexer_id` already stores it (today as a bare int64 with no FK).
+- **`prowlarr_id`** — Prowlarr's stable int64 ID. The join key for everything; `download_job.indexer_id`, `proposal.indexer_id`, `want_release_exclusion.indexer_id`, and `file_origin.indexer_id` already store it (as a bare int64 with no FK).
 - **`name`** — display name.
 - **`protocol`** — `torrent` or `usenet`.
 - **`implementation`** — Prowlarr's indexer type (e.g. `Nyaa`, `PirateBay`).
@@ -77,19 +81,19 @@ So a single Prowlarr round-trip produces three outputs: liveness (health), confi
 
 ## The search-execution path
 
-The spine of this spec. Every search — autonomous (the [AcquisitionWorker](../acquisition/README.md)) or manual (the candidate-search UI) — flows through one execution path in the indexer service. That path does three things in sequence:
+**Unbuilt.** Today both paths call `IndexerSource.Search` directly — one Prowlarr search, no cache, no per-indexer outcome recording. The spine of this spec. Every search — autonomous (the [AcquisitionWorker](../acquisition/README.md)) or manual (the candidate-search UI) — flows through one execution path in the indexer service. That path does three things in sequence:
 
 1. **Cache check / write** — consult `indexer_search_cache` for the query; on miss, query Prowlarr and store the result blob.
 2. **Capability-aware dispatch** — when querying Prowlarr, choose ID-based vs text search per indexer from the `capabilities` snapshot, and scope by category.
 3. **Outcome recording** — write one `indexer_search_outcome` row per indexer that participated, capturing result count, error, and latency. This stream feeds *both* health and stats.
 
-Co-locating these is the whole architectural point of the mirror: **health, stats, and cache are not three features bolted on — they are three byproducts of running a search.** Pulling search ownership out of acquisition (where the cache was provisionally parked) and into the indexer module is what makes that convergence possible, and gives manual search the same caching and instrumentation the autonomous worker gets for free.
+Co-locating these is the whole architectural point of the mirror: **health, stats, and cache are not three features bolted on — they are three byproducts of running a search.** Owning search in the indexer module rather than in acquisition is what makes that convergence possible, and gives manual search the same caching and instrumentation the autonomous worker gets for free.
 
 ### Search cache (moved from acquisition)
 
-The [acquisition spec](../acquisition/README.md#search-cache-restructured) provisionally owned `indexer_search_cache` because no indexers spec existed yet. It now lives **here**, because the cache has two consumers — the autonomous worker and manual search — and the indexer module is the natural shared home. Acquisition keeps owning the *decision-log* (which records search-run metadata); indexers owns the *cache* and the *search execution*.
+`indexer_search_cache` lives **here** (the [acquisition spec](../acquisition/README.md#search-cache-owned-by-indexers-invalidated-here) is a consumer), because the cache has two consumers — the autonomous worker and manual search — and the indexer module is the natural shared home. Acquisition keeps owning the *decision-log* (which records search-run metadata); indexers owns the *cache* and the *search execution*.
 
-- **DB-backed**, so autonomous workers share cache state across restarts and across worker processes (the current in-memory, per-instance, 5-minute cache loses everything on restart and 404s candidates the user didn't enqueue in time).
+- **DB-backed**, so autonomous workers share cache state across restarts and across worker processes (the interactive path's in-memory, per-instance, 5-minute cache loses everything on restart and 404s candidates the user didn't enqueue in time).
 - **Keyed by** `(media_item_id or episode_id, query_hash)`, storing the raw indexer result blob with an expiry.
 - **TTL** ~1 hour for autonomous searches — internal tuning, **not** a user-facing setting.
 - **Invalidation hooks**, called by consumers (acquisition owns when these fire):
@@ -98,21 +102,23 @@ The [acquisition spec](../acquisition/README.md#search-cache-restructured) provi
   - a manual "search now" request.
 - **In-flight dedup** — two wants for the same query must not trigger two simultaneous Prowlarr searches. A short-lived advisory lock keyed on `query_hash` (or the cache row's pending state) collapses them.
 
-Schema detail (column types, blob shape) is deferred to the data-shape iteration, consistent with how acquisition parked it.
+Schema detail (column types, blob shape) is deferred to the data-shape iteration.
 
 ## Search quality
 
-All request-side. Better inputs to Prowlarr produce better results; the parsed-result model (`indexer.SearchResult` → `model.DownloadCandidate`) is essentially unchanged, which keeps this low-risk.
+All request-side. Better inputs to Prowlarr produce better results; the parsed-result model (`indexer.SearchResult` → `model.DownloadCandidate`) stays essentially as is, which keeps this low-risk.
 
-**ID-based search.** Today Arrflix sends free-text only — `"Title Year"` for movies, `"Title S##E##"` for episodes — even though it already holds the TMDB/TVDB/IMDB IDs at search time and Prowlarr's search API accepts `tmdbid` / `tvdbid` / `imdbid`. Wiring the IDs through eliminates a class of misses (wrong movie same title, year-off-by-one). Dispatch is **capability-aware**: per indexer, use ID lookup when the `capabilities` snapshot advertises support, otherwise fall back to text. Because dispatch is per-indexer, a single search can use IDs against capable trackers and text against the rest in the same fan-out.
+**Built: text search + id-echo gating.** Arrflix sends free text only — `"Title Year"` for movies, `"Title S##E##"` for episodes (or `"Title S##"` when the autonomous path hunts season packs) — with Prowlarr search type `search` or `tvsearch`. The adapter deliberately does **not** embed Prowlarr's `{ImdbId:…}` / `{TmdbId:…}` query tokens: Prowlarr restricts an id-token search to indexers that support that id type and returns nothing from the rest, silently dropping text-only indexers. Instead `SearchResult` carries the `TmdbID` / `ImdbID` Prowlarr echoes onto each result, and the acquisition relevance gate matches on them (falling back to title + year).
 
-**Category scoping.** Map media type to Newznab/Torznab category IDs so searches are scoped to movie vs. TV categories, cutting junk results. Categories are already returned on results but unsurfaced; scoping uses them on the request side.
+**ID-based search (unbuilt).** Arrflix already holds the TMDB/TVDB/IMDB IDs at search time and Prowlarr's search API accepts `tmdbid` / `tvdbid` / `imdbid`. Wiring the IDs through eliminates a class of misses (wrong movie same title, year-off-by-one). Dispatch is **capability-aware**: per indexer, use ID lookup when the `capabilities` snapshot advertises support, otherwise fall back to text. Because dispatch is per-indexer, a single search can use IDs against capable trackers and text against the rest in the same fan-out.
 
-**What stays the same.** The download-URL fallback chain (Prowlarr URL → magnet from GUID → magnet from infohash), the empty-title/no-URL filtering at the adapter boundary, and the torrent/usenet protocol split all carry over unchanged.
+**Category scoping (unbuilt).** Map media type to Newznab/Torznab category IDs so searches are scoped to movie vs. TV categories, cutting junk results. Categories are already returned on results but unsurfaced; scoping uses them on the request side.
+
+**Adapter boundary (built).** The download-URL fallback chain (Prowlarr URL → magnet from GUID → magnet from infohash), the empty-title/no-URL filtering, and the torrent/usenet protocol split.
 
 ## Runtime health
 
-Indexers are a producer of the [connectivity-health pattern](../../patterns/connectivity-health/README.md). The pattern owns the status triple, transition emission, hysteresis, and the admin-action audit hook. This section covers only the indexer-specific contract.
+**Unbuilt** (deferred with the [connectivity-health pattern](../../patterns/connectivity-health/README.md)). Indexers are a producer of the [connectivity-health pattern](../../patterns/connectivity-health/README.md). The pattern owns the status triple, transition emission, hysteresis, and the admin-action audit hook. This section covers only the indexer-specific contract.
 
 ### Probe — passive primary, light backstop
 
@@ -160,7 +166,7 @@ Health transitions emit on the `indexer.health` [realtime](../realtime/README.md
 
 ## Per-indexer stats
 
-Stats and passive health are **two readings of one stream**, not two features. Every search writes per-indexer outcome rows; health reads the recent window, stats reads the time-windowed aggregate.
+**Unbuilt.** Stats and passive health are **two readings of one stream**, not two features. Every search writes per-indexer outcome rows; health reads the recent window, stats reads the time-windowed aggregate.
 
 - **`indexer_search_outcome`** — one row per `(search_run, indexer)`: result count, error (if any), latency. This *is* the rolling window passive health consumes, and the durable substrate for time-windowed stats. Single source of truth.
 - **Denormalized projection on the `indexer` row** — current status plus cheap counters (searches answered, average results contributed, last-success timestamp, grab counts) for fast settings-table reads, recomputed from the outcome stream.
@@ -171,29 +177,25 @@ This unlocks the "are my indexers earning their keep?" settings view — surfaci
 
 ## Operations
 
-CRUD proxies to Prowlarr; search and stats are Arrflix-native. All routes JWT-gated; permission scoping lives in [users](../users/README.md). Existing endpoints (from the current implementation) are retained; new rows are marked.
+CRUD proxies to Prowlarr; search (and, by design, stats) are Arrflix-native. All routes are JWT-gated; permission scoping lives in [users](../users/README.md). Unbuilt rows are marked.
 
 | OperationID                | Method | Path                                       | Notes                                                                    |
 | -------------------------- | ------ | ------------------------------------------ | ------------------------------------------------------------------------ |
-| `indexers-list-configured` | GET    | `/api/v1/indexers/configured`              | List indexers from the mirror, with health + stats projection (new fields). |
+| `indexers-list-configured` | GET    | `/api/v1/indexers/configured`              | List indexers (proxied from Prowlarr; by design, from the mirror with health + stats). |
 | `indexers-get-schema`      | GET    | `/api/v1/indexers/schema`                  | Prowlarr indexer definitions for the add wizard.                          |
-| `indexer-get`              | GET    | `/api/v1/indexer/{id}`                      | Single indexer config (proxied from Prowlarr).                            |
-| `indexer-save`             | POST   | `/api/v1/indexer`                           | Create (id=0) or update; write-through to Prowlarr + mirror upsert.       |
-| `indexer-delete`           | DELETE | `/api/v1/indexer/{id}`                      | Delete in Prowlarr; mirror row deleted or tombstoned per references.      |
-| `indexer-toggle`           | PUT    | `/api/v1/indexer/{id}/toggle`               | Enable/disable; write-through.                                            |
-| `indexer-action`           | POST   | `/api/v1/indexer/action/{name}`             | Opaque Prowlarr action proxy (schema option fetches, etc.).               |
-| `indexer-test`             | POST   | `/api/v1/indexer/{id}/test`                 | On-demand test of a saved indexer (active probe; operator-triggered).     |
-| `indexer-test-config`      | POST   | `/api/v1/indexer/test`                      | Test an unsaved config pre-save.                                          |
+| `indexers-get`             | GET    | `/api/v1/indexer/{id}`                      | Single indexer config (proxied from Prowlarr).                            |
+| `indexers-save`            | POST   | `/api/v1/indexer`                           | Create (id=0) or update in Prowlarr. (Mirror upsert: unbuilt.)            |
+| `indexers-delete`          | DELETE | `/api/v1/indexer/{id}`                      | Delete in Prowlarr. (Mirror delete/tombstone: unbuilt.)                   |
+| `indexers-toggle`          | PUT    | `/api/v1/indexer/{id}/toggle`               | Enable/disable in Prowlarr.                                               |
+| `indexers-action`          | POST   | `/api/v1/indexer/action/{name}`             | Opaque Prowlarr action proxy (schema option fetches, etc.).               |
+| `indexers-test-saved`      | POST   | `/api/v1/indexer/{id}/test`                 | On-demand test of a saved indexer (active probe; operator-triggered).     |
+| `indexers-test-unsaved`    | POST   | `/api/v1/indexer/test`                      | Test an unsaved config pre-save.                                          |
 | `indexers-test-all`        | POST   | `/api/v1/indexers/testall`                  | Test all indexers (heavy; operator-triggered only, never on cadence).     |
-| `indexer-override` *(new)* | PUT    | `/api/v1/indexer/{id}/health-override`      | Set/clear `manual_override`. Admin-action audited.                        |
+| `indexer-override` *(unbuilt)* | PUT | `/api/v1/indexer/{id}/health-override`     | Set/clear `manual_override`. Admin-action audited.                        |
 
-Permissions (defined in [users](../users/README.md)):
+Permissions (defined in [users](../users/README.md)): every indexer endpoint is gated on the single `admin.indexers.manage` key. (A read / write / test split is not in the frozen catalog.)
 
-- `indexers.read` — list / get / schema / stats
-- `indexers.write` — save / delete / toggle / health-override
-- `indexers.test` — the test endpoints (separable, mirroring `downloaders.test`)
-
-Search itself is not a public indexer endpoint — it is reached through the [download-candidates](../acquisition/README.md) surface (`/movie/{id}/candidates`, `/series/{id}/candidates`), which calls this module's search-execution path.
+Search itself is not a public indexer endpoint — it is reached through the download-candidates surface (`/api/v1/movie/{id}/candidates`, `/api/v1/series/{id}/candidates`, gated on `jobs.manage`) and the AcquisitionWorker, both of which call `IndexerSource.Search`.
 
 ## Validation
 
@@ -201,7 +203,7 @@ Because tracker config is validated by Prowlarr, Arrflix-side validation is ligh
 
 1. **Save** proxies to Prowlarr; Prowlarr's validation errors are surfaced as typed [errors](../../patterns/errors/README.md) (`BadGateway` when Prowlarr is unreachable, `Validation` for rejected config).
 2. **Mirror upsert** happens only after Prowlarr confirms the write.
-3. **Health-override** validates that the target indexer exists and is not tombstoned.
+3. **Health-override** (unbuilt) validates that the target indexer exists and is not tombstoned.
 
 There is no live tracker check at save time beyond what Prowlarr's own test does on demand.
 
@@ -209,14 +211,14 @@ There is no live tracker check at save time beyond what Prowlarr's own test does
 
 | Consumer / neighbor                                   | How it relates to indexers                                                                                              |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **[Acquisition](../acquisition/README.md)**           | Primary consumer. The AcquisitionWorker and manual search both run through the search-execution path; acquisition fires the cache invalidation hooks and writes the decision-log from search-run metadata. |
+| **[Acquisition](../acquisition/README.md)**           | Primary consumer. The AcquisitionWorker and manual search both call `IndexerSource.Search`; by design they run through the search-execution path, with acquisition firing the cache invalidation hooks and writing the decision-log from search-run metadata. |
 | **[Quality profiles](../quality-profiles/README.md)** | References an indexer allow/deny set (the spec's "indexer scoping" open question). v1 mirror gives it a stable entity to reference; the scoping behavior itself is owned there. |
 | **[Connectivity-health pattern](../../patterns/connectivity-health/README.md)** | Indexers are a producer; this spec declares the passive probe, extended statuses, and soft-gate mapping. |
 | **[Realtime](../realtime/README.md)**                 | `indexer.health` transition events; settings UI live-updates health badges.                                             |
 | **[Users](../users/README.md)**                       | `indexers.*` permissions; owns the admin-action audit stream health transitions and overrides write to.                |
 | **[Audit pattern](../../patterns/audit/README.md)**   | Search-run metadata (which indexers responded) feeds acquisition's decision-log; health transitions are admin-action audit events. |
 | **[Notifications](../notifications/README.md)**       | Subscribes to `failed`-tier transitions — here, the all-indexers-down case — for operator alerts.                       |
-| **Frontend (`IndexersSettings.vue`)**                 | Existing CRUD + test UI; v1 adds health badges, the stats ("earning their keep") view, and capability surfacing.        |
+| **Frontend (`views/settings/IndexersSettings.vue`)**  | CRUD + test UI. Unbuilt: health badges, the stats ("earning their keep") view, and capability surfacing.                |
 
 ## What indexers does NOT own
 
@@ -241,7 +243,7 @@ There is no live tracker check at save time beyond what Prowlarr's own test does
 9. **Indexer scoping ownership handshake.** Quality profiles want a per-profile allow/deny indexer set. This spec provides the entity; does the *dispatch filtering* (restrict a search's fan-out to a profile's allowed set) live here or in the profile engine? Lean: the search-execution path accepts an optional allowed-indexer set as a parameter; the profile engine supplies it. Confirm when quality-profiles iterates.
 
    > **Pending — quality-profiles UI deferral (noted 2026-06).** The quality-profiles admin UI (phase 5) ships **without** an indexer-scoping control, because the entity this open question promises doesn't exist yet. `QualityProfile.Indexers` is typed `[]uuid.UUID`, but there is no UUID-keyed indexer source today: `/api/v1/indexers/configured` returns Prowlarr `int64` ids, and the routing `candidate.indexer` field matches on the **name** string. So nothing can populate a faithful picker. The profile editor round-trips the stored `indexers` value untouched (empty = all) and leaves a placeholder where the control will go. **Come back to this when the mirror entity lands**, and settle the FK target as part of it: either the mirror exposes a stable **UUID PK** (and a list endpoint the picker reads, with `QualityProfile.Indexers` referencing that PK), or scoping references `prowlarr_id` and `QualityProfile.Indexers` migrates `[]uuid.UUID` → `[]int64`. This open question and #10 (`download_job.indexer_id` FK) should be decided together — both hinge on what the mirror's stable id is.
-10. **`download_job.indexer_id` FK.** Today it's a bare int64 with no foreign key. With a mirror table, should it become a real FK (with tombstones satisfying historical references)? Lean: yes — add the FK to the mirror, which is exactly why tombstoning exists. Migration detail deferred.
+10. **`download_job.indexer_id` FK.** It's a bare int64 with no foreign key. With a mirror table, should it become a real FK (with tombstones satisfying historical references)? Lean: yes — add the FK to the mirror, which is exactly why tombstoning exists. Migration detail deferred.
 
 ## What we're explicitly not deciding here
 

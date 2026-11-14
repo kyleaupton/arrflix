@@ -1,6 +1,8 @@
-# Media-server — surfacing the library in Plex / Jellyfin
+---
+status: deferred
+---
 
-**Status:** Draft, iteration 1
+# Media-server — surfacing the library in Plex / Jellyfin
 
 A media server (Plex today; Jellyfin modeled, not yet built) is a **downstream consumer** of Arrflix's library: the player where users actually watch. This spec defines the machinery that gets a verified-on-disk file *seen* by that server, tracks whether it landed, ingests watch-state back, and treats each server as a [connectivity-health](../../patterns/connectivity-health/README.md) resource.
 

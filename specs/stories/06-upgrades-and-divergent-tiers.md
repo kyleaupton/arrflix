@@ -1,6 +1,8 @@
-# Story 6 — A better release appears: upgrades and divergent tiers
+---
+status: deferred
+---
 
-**Status:** Draft
+# Story 6 — A better release appears: upgrades and divergent tiers
 
 Sometimes what you can get today isn't what you want to keep. A film hits the library as a 720p web rip because that's all that existed the week it came out; a proper Bluray shows up three weeks later. Somebody who already has a movie in HD now wants it in 4K.
 
