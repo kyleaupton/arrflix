@@ -98,6 +98,12 @@ func main() {
 		logg.Error().Err(err).Msg("failed to seed default quality profiles")
 	}
 
+	// Seed a default name template per media type when none exists, so a
+	// fresh install can route a grab without the dev seed.
+	if err := services.NameTemplates.SeedDefaults(ctx); err != nil {
+		logg.Error().Err(err).Msg("failed to seed default name templates")
+	}
+
 	// Downloader Manager
 	downloaderRegistry := downloader.NewRegistry()
 	qbittorrent.Register(downloaderRegistry)
