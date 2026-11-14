@@ -17,6 +17,7 @@ import (
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/pathmapping"
 	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/test/dbtest"
 )
 
@@ -462,5 +463,57 @@ func TestProcessTask_NoWant(t *testing.T) {
 	}
 	if gotTask.WantID != uuid.Nil {
 		t.Errorf("import task wantId = %s, want uuid.Nil", gotTask.WantID)
+	}
+}
+
+// REQ-CANCEL-007 — A download that completes after its want was cancelled
+// doesn't bring the want back to life.
+//
+// The import of a finished download is already claimed when the want is
+// cancelled through WantService. The import then runs to completion and lands
+// the file, but the want must stay 'canceled' rather than advance to
+// 'imported' or 'available'.
+func TestReqCancel007_LateCompletionDoesNotReviveCanceledWant(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	r := repo.New(pool)
+	ctx := context.Background()
+
+	fix := seedImportTask(t, ctx, r, true)
+	claimed, err := r.ClaimRunnableImportTasks(ctx, 10)
+	if err != nil {
+		t.Fatalf("claim import tasks: %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].ID != fix.task.ID {
+		t.Fatalf("claimed import tasks = %d, want the seeded task", len(claimed))
+	}
+
+	wants := service.NewWantService(r, service.NewDownloadJobsService(r))
+	if _, err := wants.CancelWant(ctx, fix.want.ID); err != nil {
+		t.Fatalf("CancelWant: %v", err)
+	}
+
+	w := newTestWorker(r)
+	if err := w.processTask(ctx, claimed[0]); err != nil {
+		t.Fatalf("processTask: %v", err)
+	}
+
+	gotTask, err := r.GetImportTask(ctx, fix.task.ID)
+	if err != nil {
+		t.Fatalf("get import task: %v", err)
+	}
+	if gotTask.Status != "completed" || gotTask.DestPath == nil {
+		t.Fatalf("import task status = %q, want completed with a destination", gotTask.Status)
+	}
+	if _, err := os.Stat(filepath.Join(fix.libraryRoot, *gotTask.DestPath)); err != nil {
+		t.Fatalf("late import did not land its file: %v", err)
+	}
+
+	gotWant, err := r.GetWant(ctx, fix.want.ID)
+	if err != nil {
+		t.Fatalf("get want: %v", err)
+	}
+	if gotWant.Status != string(model.WantCanceled) {
+		t.Errorf("want status after late completion = %q, want %q", gotWant.Status, model.WantCanceled)
 	}
 }
