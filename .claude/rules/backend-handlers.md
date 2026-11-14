@@ -54,7 +54,7 @@ When an operation has a unique body, declare it inline as the `Body` field's typ
 
 ## Operation registration
 
-`RegisterHumachi` lives at the bottom of the file and is called from both `internal/http/http.go` (live server) and `cmd/genspec/main.go` (spec generator).
+`RegisterHumachi` lives at the bottom of the file and is called from `RegisterHumachiHandlers` in `registry.go`, which both `internal/http/http.go` (live server) and `cmd/genspec/main.go` (spec generator) invoke.
 
 ```go
 func (h *Libraries) RegisterHumachi(api huma.API) {
@@ -223,5 +223,6 @@ Errors: []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusUnproce
 
 1. Create `<entity>.go` in this directory following the layout above.
 2. Add `RegisterHumachi(api)` at the bottom.
-3. Wire it into `internal/http/http.go::NewServer` and `cmd/genspec/main.go::main`.
-4. Run `go run ./cmd/genspec` to regenerate the OpenAPI spec, then regenerate the TS client (`npm run openapi-ts` from `web/`) — or use the `arrflix_gen_api` MCP tool which does both.
+3. Wire it into `RegisterHumachiHandlers` in `registry.go`.
+4. Classify every new `OperationID` in `internal/http/authzgate/map.go`. The authz gate is fail-closed: an operation missing from `operationPerms` is denied with 403, and `map_test.go` fails CI naming it.
+5. Run `just gen` to regenerate the OpenAPI spec and the TS client.

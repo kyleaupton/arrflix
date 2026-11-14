@@ -1,55 +1,35 @@
 # Roadmap
 
-Arrflix's core workflow (searching, downloading, importing, and library management) is in place and working. This page outlines the major features planned next, roughly in the order they'll be built. Each layer builds on the one before it.
+Arrflix's goal for its first stable release is simple: a friend asks for a movie or a show, it lands in your library, and they're told. This page covers what already works, what's being finished for that release, and what comes after.
 
-## Unmatched Media Resolution
+## Available Today
 
-**Status:** Planned
+- **Search, download, and import.** Search your indexers, grab a release yourself, and have it [imported](./importing-and-hardlinks) into your library with your [naming](./name-templates).
+- **Quality profiles and automatic selection.** Arrflix scores releases against a quality profile and grabs the best one that passes your filters, with separate HD and 4K tiers.
+- **Monitoring.** Track a movie or a series and Arrflix keeps searching until it has what you asked for. Series can be tracked in full or for upcoming episodes only.
+- **Requests.** Users request titles. Requests are either approved automatically or held for an admin to approve or deny, and requesters can cancel their own.
+- **Routing rules.** Send grabs to different downloaders, libraries, and name templates. See [Routing Rules](./policy-engine).
+- **Unmatched media resolution.** Files a [library scan](./libraries#scanning-existing-media) couldn't identify land in a matching inbox where you pick the right title.
+- **Notifications.** In-app, email, and browser push notifications when requested media is ready to watch.
+- **Users.** Invite links, password or Plex sign-in, and a list of signed-in devices you can revoke.
 
-When Arrflix [scans a library](./libraries#scanning-existing-media), it tries to automatically match each file to a movie or series on TMDB. Files with clear naming or embedded metadata get matched instantly, but some files are ambiguous. Maybe the title is generic, the year is missing, or multiple TMDB results are equally plausible.
+## Next: First Stable Release
 
-These files are saved as **unmatched items**, each with up to 5 suggestions of what it might be. Currently this data exists in the backend but there's no UI to act on it.
+- **Two simple roles.** Every user is either an admin or a requester. Admins set, per user, whether requests are auto-approved and whether 4K may be requested.
+- **Path mapping.** Support setups where your download client and Arrflix see the same storage at different paths, with a test that confirms whether imports will hardlink or copy.
+- **Not out yet.** A movie that's still in cinemas waits for its digital or physical release instead of searching indexers daily.
+- **Shared requests.** When several people want the same title, one person cancelling doesn't cancel it for the others.
+- **Clearer search status.** Titles that haven't been found yet show one consistent "searching" state everywhere.
+- **Hardlink tracking groundwork.** Arrflix records link details for every file it imports or scans, so later versions can verify your storage.
 
-The plan is a dedicated interface where you can review unmatched files and manually link them to the correct TMDB entry, similar to Plex's "Fix Match" flow. Pick from the suggestions, or search TMDB directly if none of them are right.
+## After That
 
-## Auto-Selection
+- **Plex integration.** A library scan after import, and notifications that open the title directly in Plex.
+- **Search history.** See what each search considered and why each release was rejected, to answer "why isn't this downloading?"
 
-**Status:** Planned
+## Later
 
-Right now, when you download something, you manually browse indexer results and pick a release. Auto-selection will let the system make that choice for you.
-
-This means introducing:
-
-- **Quality profiles.** A ranked list of acceptable qualities (e.g., 1080p BluRay > 1080p WEB-DL > 720p).
-- **Scoring.** Bonus or penalty points for attributes like release group, codec, or whether it's a repack.
-- **Rejection rules.** Hard filters like minimum seeders, blocked words, or size limits.
-
-When a download is needed, the system searches your indexers, scores every result against your profile, and grabs the highest-scoring candidate that passes all filters.
-
-Auto-selection is the foundation for everything below. Without it, the system can't act on your behalf.
-
-## Monitoring
-
-**Status:** Planned (depends on auto-selection)
-
-Once the system can pick releases on its own, you'll be able to **monitor** titles. This means telling Arrflix to track a movie or series and download it automatically.
-
-**For movies**, this is straightforward: "I want this movie. Check periodically. Grab it when a good release appears."
-
-**For series**, monitoring works as a subscription. You add a series and tell Arrflix what you want: all seasons, new episodes only, or a specific season. The system creates a want for each relevant episode and fulfills them as releases appear on your indexers.
-
-A background job handles the periodic searching and downloading. You don't need to check in.
-
-## Requests
-
-**Status:** Planned (depends on monitoring)
-
-Requests add a social layer on top of monitoring. A non-admin user can request a movie or series, and either a human or a policy decides what happens next.
-
-The flow:
-
-1. A user requests a title
-2. If **auto-approve** is enabled for that user, the request immediately becomes a monitored title and downloads begin automatically
-3. If **manual approval** is required, the admin reviews the request and approves or denies it
-
-With all three layers in place, the full pipeline works end-to-end: a family member requests a movie → it's auto-approved → the system finds the best release → it downloads and imports into your library → it's ready on Plex. No manual steps required.
+- **Storage quotas.** A per-user allowance over a rolling 30 days in place of the auto-approve switch. Grabs that don't fit are held for the owner.
+- **Approvers.** Let a trusted user approve requests without being an admin.
+- **Upgrades.** Replace a file when a better release appears.
+- **More.** Library hygiene, Jellyfin and other media servers, indexer health tracking, a calendar, watchlists, and more download clients.

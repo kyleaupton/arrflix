@@ -11,7 +11,7 @@ real Postgres (per-test cloned database via `internal/test/dbtest`), with
 external dependencies (TMDB, eventually Prowlarr/qBittorrent) faked at the
 HTTP layer so requests stay in-process.
 
-Run with `go test -tags=integration -count=1 ./internal/test/integration/...`.
+Run with `just backend-test-integration` (wraps `go test -tags=integration -count=1 ./internal/test/integration/...` in the dev container).
 
 ## Wire-shape rule: type for responses, untyped for requests
 
@@ -195,6 +195,8 @@ covers the wire shape via `TestMedia_Search` (which exercises
 - **Authenticated by default.** `app.GET` / `POST` / `PUT` / `DELETE` always
   set the admin Bearer token. For unauthenticated-path tests, build the
   request manually (see `testapp_smoke_test.go:TestApp_Unauthenticated`).
+  For a non-admin caller, mint one with `app.UserToken(t, ctx, username, role)`
+  and use the `GETAs` / `POSTAs` / `DoAs` variants.
 - **Status mismatches fail the test.** `app.Do` (and the `GET`/`POST`/`PUT`/
   `DELETE` wrappers) asserts on the expected status code and prints the
   response body in the failure message. To decode a non-2xx response, pass

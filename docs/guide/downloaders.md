@@ -20,7 +20,7 @@ Each downloader needs:
 
 ### Default Downloaders
 
-Each protocol (torrent, usenet) can have one downloader marked as the **default**. When no [policy](./policy-engine) specifies a downloader, the default for that protocol is used automatically.
+Each protocol (torrent, usenet) can have one downloader marked as the **default**. When no [routing rule](./policy-engine) specifies a downloader, the default for that protocol is used automatically.
 
 ## How Downloads Are Managed
 

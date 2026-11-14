@@ -14,15 +14,13 @@ Arrflix handles the core media management workflow:
 - **Download** releases through your existing download client (qBittorrent)
 - **Import** completed downloads into your library with customizable naming
 - **Scan** existing media on disk and match it against TMDB metadata
-- **Organize** content across multiple libraries with a flexible policy engine
+- **Organize** content across multiple libraries with flexible routing rules
+- **Monitor** movies and series and grab the best release automatically, based on your quality profiles
+- **Take requests** from other users, auto-approved or held for your approval, and notify them when it's ready
 
 ## What’s Coming
 
-Arrflix is under active development. The core workflows are solid, but some larger features are still on the [roadmap](./roadmap):
-
-- **Automated monitoring.** Track titles and download new releases automatically.
-- **Request system.** Let other users request content.
-- **Quality profiles.** Auto-select the best release based on your preferences.
+Arrflix is under active development. The core workflows are solid, and the next features are on the [roadmap](./roadmap).
 
 ## Who This Is For
 

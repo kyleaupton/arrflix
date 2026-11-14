@@ -18,14 +18,18 @@ This file is **always loaded**. It is the orientation for design-time work — a
 | `backend/cmd/api/main.go` | API entry point |
 | `backend/internal/http/handlers/` | HTTP handlers (humachi) — request/response shapes, validation tags |
 | `backend/internal/service/` | Services — business logic, orchestration; hold `*repo.Repository` |
-| `backend/internal/jobs/` | Background workers (download polling, etc.) — same error rules as services |
+| `backend/internal/jobs/` | Background workers (acquisition, download polling, import, notifications, …) — same error rules as services |
 | `backend/internal/repo/` | Data access — wraps SQLC, owns persistence↔domain translation |
-| `backend/internal/<domain>/` | Pure domain modules: `parsing`, `policy`, `metadata`, `indexer`, `importer`, `matcher`, … |
+| `backend/internal/<domain>/` | Pure domain modules: `parsing`, `matcher`, `metadata`, `indexer`, `importer`, `rules`, `qualityprofile`, `routing`, `titlestatus`, `authz`, `scope`, … |
+| `backend/internal/http/authzgate/` | Fail-closed permission gate: every huma operation ID maps to a permission requirement |
 | `backend/internal/errors/` | `apperrors` — typed error kinds, the wire-error model |
 | `backend/internal/db/` | Migrations, SQLC queries, generated code (`sqlc/` — do not edit) |
 | `web/src/views/`, `components/`, `stores/` | Frontend routes, UI, Pinia stores |
 | `web/src/client/` | Auto-generated API client — do not edit |
+| `specs/V1.md` | Scope of the current release: what's in, what's deferred |
+| `specs/README.md` | Spec index and what each spec `status` (`as-built`, `v1`, `deferred`) means |
 | `specs/patterns/errors/README.md` | Full rationale for the error model |
+| `factory/WORKFLOW.md` | How issues move through the agent factory: label states, gates, runs |
 
 ## Architecture & conventions map
 

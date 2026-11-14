@@ -132,6 +132,6 @@ Breaking Bad (2008)/Season 01/
 
 ## Default Templates
 
-Each media type (movie and series) can have one template marked as the **default**. When no [policy](./policy-engine) specifies a template, the default is used.
+Each media type (movie and series) can have one template marked as the **default**. When no [routing rule](./policy-engine) specifies a template, the default is used.
 
 </div>

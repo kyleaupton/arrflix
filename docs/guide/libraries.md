@@ -14,7 +14,7 @@ You can create multiple libraries of the same type. For example, you might have 
 
 ### Default Libraries
 
-Each media type (movie and series) can have one library marked as the **default**. When no [policy](./policy-engine) specifies a library, the default is used.
+Each media type (movie and series) can have one library marked as the **default**. When no [routing rule](./policy-engine) specifies a library, the default is used.
 
 ## How Files Are Organized
 

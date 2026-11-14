@@ -1,55 +1,43 @@
-# Policy Engine
+# Routing Rules
 
-The Policy Engine automates decisions about how downloads are handled. It determines which downloader to use, which library to import into, and which name template to apply, based on rules you define.
+Routing rules decide where each grab goes: which downloader runs it, which library receives it, and which name template names it. You manage them under **Settings ▸ Routing**.
 
-## Do I Need Policies?
+## Do I Need Routing Rules?
 
-No. If you set default values for your downloader, library, and name template, Arrflix will use those for everything. Policies are useful when you want different behavior based on the content, like routing 4K releases to a dedicated library.
+No. If you set a default downloader, library, and name template, Arrflix uses those for everything. Rules are useful when you want different behavior based on the content, like routing 4K releases to a dedicated library.
 
-## How Policies Work
+## How Rules Work
 
-Each policy has two parts:
+Each rule has two parts:
 
-1. **A rule** (optional) - A condition that determines whether this policy applies.
-2. **Actions** - What to do when the rule matches.
+1. **Conditions** - What the release or title must look like for the rule to match.
+2. **Actions** - Which downloader, library, and name template to use when it does. Any of the three can be left unset.
 
-Policies are evaluated in **priority order** (highest first). The first policy whose rule matches has its actions applied. If a policy has no rule, it always matches.
-
-The combined result of all matching actions is called a **plan**, the final set of instructions for how to handle the download.
+Rules form a single ordered list that you rearrange with the up and down arrows. They evaluate **top to bottom, and the first match wins**. A disabled rule is skipped.
 
 ### Example
 
-> **Policy: "4K to dedicated library"**
-> - Rule: `Resolution` equals `2160p`
-> - Actions: Set Library → "4K Movies", Set Name Template → "TRaSH Recommended"
+> **Rule: "4K to dedicated library"**
+> - Condition: `Resolution` equals `2160p`
+> - Actions: Library → "4K Movies", Name Template → "TRaSH Recommended"
 
-When you download a 2160p release, this policy matches and routes the file to your 4K library with detailed naming. A 1080p release would skip this policy and fall through to your defaults.
+When a 2160p release is grabbed, this rule matches and routes the file to your 4K library with detailed naming. The downloader isn't set by the rule, so the default downloader is used. A 1080p release skips this rule and falls through to the next one, or to your defaults.
 
-## Building Rules
+## Building Conditions
 
-Rules are built using three parts: a **field**, an **operator**, and a **value**.
-
-The field and operator are selected from dropdowns. The value input adapts based on the field type. Some fields offer a dropdown of predefined options (like resolution), while others accept free-form input (like a minimum seeder count).
+A condition compares a **field** with a **value** using an **operator**. The value input adapts to the field: some fields offer a dropdown of options (like resolution), others take free-form input (like a minimum seeder count).
 
 ### Available Fields
 
-Fields are organized by namespace:
+Fields are grouped by namespace. The main ones:
 
-**Candidate.** Information about the release itself:
-`size`, `title`, `indexer`, `protocol`, `seeders`, `peers`, `age`, `grabs`
-
-**Quality.** Parsed quality attributes:
-`resolution`, `source`, `is_remux`, `is_repack`
-
-**Release.** Release metadata:
-`release_group`, `edition`
-
-**Media.** Information about the movie or series:
-`type`, `title`, `year`, `tmdb_id`, `season`, `episode`
+- **Candidate.** The release as the indexer reports it: title, size, indexer, protocol, seeders, peers, age, grabs.
+- **Quality.** Parsed quality: resolution, source, repack and version.
+- **Identity** and **Encode.** What the release name says it is: title, year, season and episode, edition, release group.
+- **Media.** The movie or series: type, title, year, TMDB ID, season, episode.
+- **Want.** Why the grab is happening: trigger, requesters, and quality tier.
 
 ### Operators
-
-Available operators depend on the field type:
 
 | Field Type | Operators |
 |------------|-----------|
@@ -58,29 +46,16 @@ Available operators depend on the field type:
 | Enum | `==`, `!=`, `in`, `not in` |
 | Boolean | `==`, `!=` |
 
-## Actions
+## Continue Evaluating
 
-Each policy can have one or more actions:
-
-| Action | Effect |
-|--------|--------|
-| **Set Downloader** | Use a specific download client |
-| **Set Library** | Import into a specific library |
-| **Set Name Template** | Apply a specific naming template |
-| **Stop Processing** | Skip all remaining policies |
-
-Actions are applied in order. Multiple policies can contribute actions. For example, one policy might set the library while another sets the name template.
-
-### Stop Processing
-
-The **Stop Processing** action prevents any lower-priority policies from being evaluated. This is useful when you want to ensure that a catch-all policy doesn't override a more specific one.
+By default a matching rule stops evaluation. Turn on **Continue evaluating after this rule matches** to let later rules contribute too. Later matches only fill slots that are still unset, so an earlier rule always wins a conflict. This lets one rule pick the library while another picks the name template.
 
 ## Evaluation Order
 
-1. Policies are sorted by priority (highest first)
-2. For each policy, the rule is evaluated against the current candidate
-3. If the rule matches (or there is no rule), the policy's actions are applied
-4. If a "Stop Processing" action is encountered, evaluation stops
-5. After all policies are evaluated, any values not set by a policy fall back to defaults
+1. Rules are checked in list order, skipping disabled ones.
+2. The first matching rule applies its actions. Evaluation stops there unless the rule has **Continue** turned on.
+3. Any downloader, library, or name template still unset falls back to your defaults.
 
-If no policy sets a downloader, library, or name template, and no default is configured, the download will fail with an error.
+If no rule and no default supplies a downloader, library, or name template, the grab fails with an error.
+
+The **Test rules** panel on the Routing page dry-runs your rules against a release title and shows which rules fired.

@@ -32,13 +32,13 @@ These rules apply to both service code (`internal/service/`) and worker code (`i
    The user should see all errors at once, not one-at-a-time. Use `apperrors.Validation` with multiple `apperrors.Field` entries.
 
 5. **Don't introduce sentinel errors (`var ErrFoo = errors.New(...)`).**
-   Sentinels were how we used to signal "this specific failure" before kinds existed. Now the kind plus the detail message carry that signal. Existing sentinels (e.g., `ErrScanAlreadyRunning`) will be migrated as we touch them; don't add new ones. (Same rule applies to `internal/jobs/*` workers.)
+   The kind plus the detail message carry "this specific failure". (Same rule applies to `internal/jobs/*` workers.)
 
 6. **Never import `dbgen.*` or `pgtype.*`.**
    Services and workers speak `model.*` (idiomatic Go domain types). The repo handles the persistence ↔ domain translation. Service signatures take and return `model.*` and `uuid.UUID`; pgtype-shaped values are a repo-internal concern. If a service file imports `github.com/kyleaupton/arrflix/internal/db/sqlc` or `github.com/jackc/pgx/v5/pgtype`, the layering is wrong — fix the repo, not the service. (Same rule applies to `internal/jobs/*` workers.)
 
 7. **`*Service` types live in this package. Domain modules don't define services and don't touch the repo.**
-   `internal/<domain>/` packages (parsing, policy, metadata, indexer, importer, matcher, …) provide the *pure* half of a feature: engines, registries, parsers, aggregators, and the domain types they return. They are stateless or hold only in-memory state, and they MUST compile without importing `internal/repo`, `internal/db/sqlc`, or `pgtype`. The orchestration half — the thing that holds `*repo.Repository`, wires the domain engine to persistence, and is hung off `Services` in `service.go` — is a `*Service` and lives here, even when it's a thin wrapper over one domain engine (see `DownloadCandidatesService` over `policy.Engine`). A `FooService` defined inside `internal/foo/` is the layering inverted: it forces a repo-shaped interface + adapter into the domain package to dodge the import cycle, when the service could just hold `*repo.Repository` directly from here.
+   `internal/<domain>/` packages (parsing, matcher, metadata, indexer, importer, rules, qualityprofile, titlestatus, …) provide the *pure* half of a feature: engines, registries, parsers, aggregators, and the domain types they return. They are stateless or hold only in-memory state, and they MUST compile without importing `internal/repo`, `internal/db/sqlc`, or `pgtype`. The orchestration half — the thing that holds `*repo.Repository`, wires the domain engine to persistence, and is hung off `Services` in `service.go` — is a `*Service` and lives here, even when it's a thin wrapper over one domain engine (see `MatcherService` over `matcher.Registry`). A `FooService` defined inside `internal/foo/` is the layering inverted: it forces a repo-shaped interface + adapter into the domain package to dodge the import cycle, when the service could just hold `*repo.Repository` directly from here.
 
 8. **Default to holding `*repo.Repository` directly; add an interface seam only for a real test need, and declare it here.**
    A service's repo field is the concrete `*repo.Repository`, not a hand-rolled interface — that's the norm across this package. Introduce a repo-shaped interface seam only when a service has enough untested internal logic to justify faking the repo in a co-located unit test (the per-service design decision called out under [Tests](#fakes-for-service-method-tests-for-when-seams-land)). When you do, the interface is declared in the service file next to its consumer — never in a domain package, and never as a way to let a domain package reach persistence. Domain types the engine returns (e.g. `matcher.MatchOutcomeRecord`) stay in the domain package; the `domain-record → repo.<Method>Params` translation lives in the service, the only layer allowed to know both shapes.
@@ -132,9 +132,8 @@ func (s *LibrariesService) Create(ctx context.Context, name, typ, rootPath strin
     // ...
 }
 
-// Handler: same rule applies at the handler boundary.
-return RenderError(c, apperrors.Conflictf("scan already running for library %s", id).
-    Op("LibrariesHandler.Scan"))
+// Handler: same rule applies at the handler boundary (rare; see backend-handlers.md).
+return nil, apperrors.Unauthenticatedf("missing credentials").Op("LibrariesHandler.Scan")
 ```
 
 When the rule does NOT apply:
@@ -150,24 +149,6 @@ return lib, apperrors.WithOp(err, "LibrariesService.Get")
 ```
 
 `Op` and `WithOp` record the operation in structured logs (via `slog.LogValue`) but don't change the wire format.
-
-### `Bind()` failures: shape rule
-
-Echo's `c.Bind(&req)` returns an error when the JSON is unparseable, the Content-Type is wrong, or a struct tag rejects the input. The `err.Error()` text is **leaky** — it can include field paths the API doesn't otherwise document, JSON parser internals, or struct field names that drift away from the wire schema. Don't put it on the wire.
-
-The canonical shape:
-
-```go
-if err := c.Bind(&req); err != nil {
-    c.Logger().Error(err)  // keep the parse detail in logs
-    return RenderError(c, apperrors.Validation("invalid request body").
-        Op("LibrariesHandler.Create"))
-}
-```
-
-- No `apperrors.Field("body", err.Error())` — that's the leak.
-- No field details at all on the wire. The user sees "invalid request body" with status 422; ops sees the underlying parse error in the log line.
-- Op uses the handler+method name so logs can be filtered by route.
 
 ### Override retry semantics for invariant violations
 

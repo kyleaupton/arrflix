@@ -13,7 +13,7 @@ just fix             # autofix everything: fmt, lint --fix, regen
 just preflight       # fix then check — single command before declaring work done
 ```
 
-Per-tool recipes are namespaced: `backend-fmt`, `backend-lint`, `backend-test`, `backend-test-integration`, `backend-genspec`, `backend-sqlc`, `web-fmt`, `web-lint`, `web-type-check`, `web-build`, `web-genclient`.
+Per-tool recipes are namespaced: `backend-fmt`, `backend-lint`, `backend-vet`, `backend-test`, `backend-test-integration`, `backend-genspec`, `backend-sqlc`, `web-fmt`, `web-lint`, `web-type-check`, `web-build`, `web-genclient`, `gen-email`, `email-preview`. Container lifecycle: `up`, `down`, `rebuild`, `shell`, `logs`.
 
 ## Agent workflow
 
@@ -24,14 +24,14 @@ When work is done, run `just preflight`. If it's green, changes are ready for hu
 When you modify backend API handlers, regenerate both the OpenAPI spec and the TypeScript client. **Order matters** — the TS client reads the spec produced by genspec:
 
 ```bash
-just gen   # sqlc generate → go run ./cmd/genspec → npm run openapi-ts, in order
+just gen   # sqlc generate → go run ./cmd/genspec → gen-email → npm run openapi-ts
 ```
 
-Per-step recipes (`just backend-sqlc`, `just backend-genspec`, `just web-genclient`) are available for one-off regeneration. Generated code (`backend/internal/db/sqlc/`, `web/src/client/`) is never hand-edited.
+`gen-email` (MJML → embedded `.html.tmpl`) is independent of the API chain and runs alongside it. Per-step recipes (`just backend-sqlc`, `just backend-genspec`, `just gen-email`, `just web-genclient`) are available for one-off regeneration. Generated code (`backend/internal/db/sqlc/`, `web/src/client/`, compiled email templates) is never hand-edited; edit the `.mjml` source instead.
 
 ## Database migrations
 
-Migrations run automatically on API startup via `db.ApplyMigrations()`. Add new migrations as sequentially numbered files in `backend/internal/db/migrations/`.
+Migrations run automatically on API startup via `db.ApplyMigrations()`. Add new migrations as sequentially numbered `NNNN_<name>.up.sql` files in `backend/internal/db/migrations/`.
 
 ## Database reset & seeding
 
@@ -39,7 +39,7 @@ Migrations run automatically on API startup via `db.ApplyMigrations()`. Add new 
 just db-reseed   # drop+recreate the arrflix schema, re-migrate, load the dev seed
 ```
 
-`db-reseed` wipes the `arrflix` DB (Prowlarr's DBs are untouched), re-applies migrations via `cmd/migrate`, then loads `backend/internal/db/seed/seed_dev.sql` (dev user, libraries, name templates, downloader). The seeded downloader password comes from `DOWNLOADER_PASSWORD` in `.env` (kept out of git), defaulting to `admin`. If pgx hits a transient "cached plan" error afterward, restart the backend so its pool reconnects.
+`db-reseed` wipes the `arrflix` DB (Prowlarr's DBs are untouched), re-applies migrations via `cmd/migrate`, then loads `backend/internal/db/seed/seed_dev.sql` (dev user, libraries, name templates, downloader). The seeded downloader password comes from `DOWNLOADER_PASSWORD` in `.env` (kept out of git), defaulting to `admin`; the TMDB key is seeded from `TMDB_API_KEY` when set. It finishes by restarting the backend, which re-seeds the default quality profiles (`QualityProfileService.SeedDefaults` runs on startup, not from SQL).
 
 ## Testing
 
@@ -58,7 +58,20 @@ Unit tests live alongside the code they cover and run without external dependenc
 Create a `.env` with at minimum `MEDIA_LIBRARIES=/path/to/your/media`. After `just up`:
 
 - Main app: http://localhost:8484
-- Prowlarr (bundled indexer): http://localhost:9697
+- Prowlarr (bundled indexer): listens on 9696 inside the container and is not published to the host by default (uncomment its line in `docker-compose.yml` to debug it)
+
+### Running a second dev stack (e.g. per git worktree)
+
+Stacks are scoped by compose project name, which defaults to the checkout's directory name — distinct worktree directories already get their own Postgres volume and network. What still collides host-wide is overridable in that checkout's `.env`:
+
+```env
+COMPOSE_PROJECT_NAME=arrflix-feat-x   # only needed if the directory name clashes with another stack
+ARRFLIX_DEV_CONTAINER=arrflix-dev-feat-x  # default arrflix-dev
+ARRFLIX_DEV_PORT=8494                     # default 8484
+ARRFLIX_DEV_IMAGE=arrflix:dev-feat-x      # default arrflix:dev; set when the worktree changes Dockerfile.dev
+```
+
+`just` recipes and the MCP server use `docker compose exec` by service name (`arrflix-dev`, fixed), so they target whichever stack belongs to the checkout they run from. `MEDIA_LIBRARIES` is a host bind mount and is shared unless each `.env` points elsewhere.
 
 ## MCP tooling
 

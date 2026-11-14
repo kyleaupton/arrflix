@@ -56,7 +56,7 @@ Conventions:
 
 - **Translator names**: `toModel<Entity>` for `dbgen → model`. For composite shapes (a row joined with derived data), use `toModel<Entity>WithSummary` etc., matching the model type name.
 - **Error path returns the zero value** of the model type, not a `dbgen` zero. Don't return `dbgen.Library{}` from a function whose signature is `(model.Library, error)` — that's a different type, and a refactoring footgun.
-- **Composite types compose at repo time.** `model.Policy` (rich type with `Condition` and `Actions`) is built by `GetPolicy` from the flat policy row plus the parsed Condition JSON plus the actions array. The composition lives in the repo.
+- **Composite types compose at repo time.** `model.QualityProfile` (rich type with bins, cutoff, gates and size overrides) is built by `toModelQualityProfile` from the flat row plus its decoded JSON columns. The composition lives in the repo.
 - **Reverse direction (writes)** doesn't need a translator — services pass scalar arguments to repo methods, and the repo builds the `dbgen.*Params` struct internally. Don't define `fromModelLibrary` unless something genuinely needs it.
 
 UUID conversion helpers (`uuidFromPgtype`, `pgtypeFromUUID`) live in this package — define once, reuse everywhere. Same for any other `pgtype ↔ Go` adapters.
@@ -150,8 +150,8 @@ Note on IdP subjects: although `subject` is an external token, it's still arbitr
 
 Create methods always include a natural identifier in the format string. A bare `"create X"` makes "X already exists" conflicts impossible to localize without reading logs. Pick the most distinguishing field the method received:
 
-- **Named entities** (libraries, downloaders, name templates, policies) → use the name: `"create library %q"`, `"create downloader %q"`.
-- **Relational rows** (download job events, import task events, rules tied to a policy) → use the parent ID with a label: `"create download job %s event"`, `"create rule for policy %s"`.
+- **Named entities** (libraries, downloaders, name templates, quality profiles, routing rules) → use the name: `"create library %q"`, `"create downloader %q"`.
+- **Relational rows** (download job events, import task events) → use the parent ID with a label: `"create download job %s event"`.
 - **Tasks/jobs** without an obvious name → use the most distinguishing attribute the row carries (media item ID, indexer+guid, etc.): `"create download job for media %s"`, not `"create download job"`.
 
 Good:
@@ -159,7 +159,6 @@ Good:
 ```go
 return lib, apperrors.FromPg(err, "create library %q", name)
 return ev, apperrors.FromPg(err, "create download job %s event", arg.DownloadJobID)
-return rule, apperrors.FromPg(err, "create rule for policy %s", policyID)
 ```
 
 Bad:

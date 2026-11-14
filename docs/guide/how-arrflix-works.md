@@ -10,9 +10,9 @@ Everything in Arrflix follows a straightforward path:
 Search → Evaluate → Download → Import
 ```
 
-1. **Search** - You search for a movie or series. Arrflix queries your configured indexers (via Prowlarr) and returns a list of available releases.
+1. **Search** - A movie or series is requested or tracked, or you search for one yourself. Arrflix queries your configured indexers (via Prowlarr) for available releases, and keeps searching on a schedule until it finds one.
 
-2. **Evaluate** - You pick a release. Before the download starts, the [Policy Engine](./policy-engine) evaluates the candidate and produces a plan: which downloader to use, which library to import into, and which name template to apply.
+2. **Evaluate** - Arrflix scores the releases against a quality profile and picks the best one, or you pick one by hand. Before the download starts, [routing rules](./policy-engine) decide which downloader to use, which library to import into, and which name template to apply.
 
 3. **Download** - The release is sent to your download client (e.g., qBittorrent). Arrflix monitors progress in the background.
 
@@ -28,10 +28,10 @@ Each step in the flow relies on a few configurable pieces:
 | [Indexers](./indexers) | Provide sources to search for content |
 | [Downloaders](./downloaders) | Fetch files from indexer results |
 | [Name Templates](./name-templates) | Control how imported files are named and organized |
-| [Policy Engine](./policy-engine) | Automatically decides which downloader, library, and template to use |
+| [Routing Rules](./policy-engine) | Automatically decide which downloader, library, and template to use |
 
-## Defaults and Policies
+## Defaults and Routing Rules
 
-You don't need to configure policies to get started. If you set up a default downloader, library, and name template, Arrflix will use those for every download.
+You don't need to configure routing rules to get started. If you set up a default downloader, library, and name template, Arrflix will use those for every download.
 
-Policies are for when you want more control. For example, routing 4K content to a separate library, or using a different downloader for certain indexers.
+Routing rules are for when you want more control. For example, routing 4K content to a separate library, or using a different downloader for certain indexers.

@@ -31,7 +31,7 @@ export default defineConfig({
           { text: "Indexers", link: "/guide/indexers" },
           { text: "Downloaders", link: "/guide/downloaders" },
           { text: "Name Templates", link: "/guide/name-templates" },
-          { text: "Policy Engine", link: "/guide/policy-engine" },
+          { text: "Routing Rules", link: "/guide/policy-engine" },
           { text: "Importing & Hardlinks", link: "/guide/importing-and-hardlinks" },
         ],
       },
