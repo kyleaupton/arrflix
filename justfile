@@ -11,6 +11,10 @@
 # same way the app does. Missing .env is not an error.
 set dotenv-load := true
 
+# Compose *service* name, not the container name. Every recipe goes through
+# `docker compose`, which resolves the service within this checkout's compose
+# project, so recipes target the right stack when several run side by side
+# (see docker-compose.yml for the per-stack .env overrides).
 container := "arrflix-dev"
 backend-exec := "docker compose exec -T -w /app/backend " + container
 web-exec := "docker compose exec -T -w /app/web " + container

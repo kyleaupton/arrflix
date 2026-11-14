@@ -1,15 +1,24 @@
+# Several dev stacks can run side by side on one host (e.g. one per git
+# worktree). Compose derives the project name from the directory, which scopes
+# the pg volume, network and anonymous volumes per checkout; the settings
+# below are the host-global names that still collide, so each is overridable
+# from that checkout's .env. Defaults match a single stack in the main checkout.
+# The service name stays fixed so `just` and the MCP server address every stack
+# the same way (`docker compose exec arrflix-dev ...`).
 services:
   arrflix-dev:
     build:
       context: .
       dockerfile: docker/Dockerfile.dev
-    image: arrflix:dev
-    container_name: arrflix-dev
+    # Image tags are host-global: a worktree that changes Dockerfile.dev should
+    # use its own tag so its rebuild doesn't replace the image other stacks use.
+    image: ${ARRFLIX_DEV_IMAGE:-arrflix:dev}
+    container_name: ${ARRFLIX_DEV_CONTAINER:-arrflix-dev}
     environment:
       APP_ENV: dev
       TMDB_API_KEY: ${TMDB_API_KEY}
     ports:
-      - "8484:8484" # Application (required)
+      - "${ARRFLIX_DEV_PORT:-8484}:8484" # Application (required)
       # - "9696:9696" # Prowlarr (for debugging)
       # - "5432:5432" # Postgres (for debugging)
     volumes:
