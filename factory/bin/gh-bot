@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Runs gh as the factory's GitHub App instead of as you. See factory/WORKFLOW.md.
+#
+#   factory/bin/gh-bot <gh args...>   any gh command, authenticated as the bot
+#   factory/bin/gh-bot token          print an installation token (valid 1h)
+#   factory/bin/gh-bot login          print the bot's login, e.g. arrflix-factory-bot[bot]
+#
+# Plain `gh` acts as you; `gh-bot` acts as the bot. The App's private key stays
+# on the host and never enters a sandbox. Each call mints a fresh token from it.
+#
+# Config: ARRFLIX_BOT_APP_ID (default the arrflix-factory-bot App) and ARRFLIX_BOT_KEY
+# (default ~/.config/arrflix-factory/bot.pem, mode 600).
+set -euo pipefail
+
+app_id="${ARRFLIX_BOT_APP_ID:-5754309}"
+key="${ARRFLIX_BOT_KEY:-$HOME/.config/arrflix-factory/bot.pem}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+die() { echo "gh-bot: $*" >&2; exit 1; }
+[ -r "$key" ] || die "can't read the App's private key at $key"
+
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+# A JWT signed with the App's key proves the caller is the App. It lives ten
+# minutes and is only good for asking GitHub for an installation token.
+app_jwt() {
+  local now header payload
+  now="$(date +%s)"
+  header="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)"
+  payload="$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((now - 60)) $((now + 540)) "$app_id" | b64url)"
+  printf '%s.%s.%s' "$header" "$payload" \
+    "$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -sign "$key" -binary | b64url)"
+}
+
+app_api() {
+  curl -fsSL -X "$1" -H "Authorization: Bearer $(app_jwt)" \
+    -H "Accept: application/vnd.github+json" "https://api.github.com$2"
+}
+
+json_field() { python3 -c 'import json, sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
+
+repo_slug() {
+  git -C "$repo_root" remote get-url origin |
+    sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##'
+}
+
+installation_token() {
+  local installation
+  installation="$(app_api GET "/repos/$(repo_slug)/installation" | json_field id)" ||
+    die "the App isn't installed on $(repo_slug)"
+  app_api POST "/app/installations/$installation/access_tokens" | json_field token
+}
+
+case "${1:-}" in
+  token) installation_token ;;
+  login) echo "$(app_api GET /app | json_field slug)[bot]" ;;
+  "") sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) GH_TOKEN="$(installation_token)" exec gh "$@" ;;
+esac

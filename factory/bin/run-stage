@@ -1,0 +1,380 @@
+#!/usr/bin/env bash
+# Runs one step of a factory run for an issue. See factory/WORKFLOW.md.
+#
+#   factory/bin/run-stage implement <issue> [--feedback <file>]
+#   factory/bin/run-stage judge <issue>
+#   factory/bin/run-stage submit <issue>
+#   factory/bin/run-stage watch <issue>
+#
+# implement and judge are agent steps that run in the issue's sandbox and print
+# a structured result. implement makes the run's clone on first use (branch
+# factory/<issue>-<slug>) and starts its sandbox. On a rework it reads the
+# latest "request changes" review on the issue's PR; --feedback passes a file
+# instead. judge runs in a fresh session that can't see the implementer's.
+#
+# submit commits the judged work as the bot, pushes the branch, opens the PR
+# (or comments on it, for a rework) and moves the issue to human review.
+#
+# watch follows the step running in the issue's sandbox as it happens.
+#
+# A run lives outside the repo, under $ARRFLIX_FACTORY_HOME (default
+# ~/.local/share/arrflix-factory):
+#   runs/<issue>/repo   the clone the sandbox mounts
+#   runs/<issue>/logs   each step's prompt, result and transcript
+#
+# Needs: gh authenticated on the host (it reads issues and reviews as you),
+# factory/bin/gh-bot for submit, and CLAUDE_CODE_OAUTH_TOKEN or
+# ANTHROPIC_API_KEY for the agent steps, either exported or set in
+# $ARRFLIX_FACTORY_ENV (default ~/.config/arrflix-factory/env, one VAR=value
+# per line, mode 600).
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+factory="$repo_root/factory"
+factory_home="${ARRFLIX_FACTORY_HOME:-$HOME/.local/share/arrflix-factory}"
+env_file="${ARRFLIX_FACTORY_ENV:-$HOME/.config/arrflix-factory/env}"
+
+die() { echo "run-stage: $*" >&2; exit 1; }
+usage() { sed -n '2,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
+
+stage="${1:-}"; issue="${2:-}"
+case "$stage" in implement|judge|submit|watch) ;; *) usage ;; esac
+[[ "$issue" =~ ^[0-9]+$ ]] || usage
+shift 2
+feedback=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --feedback) feedback="${2:?--feedback needs a file}"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[ -z "$feedback" ] || [ -f "$feedback" ] || die "no such feedback file: $feedback"
+[ "$stage" == implement ] || [ -z "$feedback" ] || die "--feedback applies to implement only"
+
+run_dir="$factory_home/runs/$issue"
+clone="$run_dir/repo"
+logs="$run_dir/logs"
+sandbox_name="issue-$issue"
+ctr="arrflix-factory-$sandbox_name"
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+
+gh_user() { (cd "$repo_root" && gh "$@"); }
+maintainers="${ARRFLIX_FACTORY_MAINTAINERS:-$(gh_user repo view --json owner -q .owner.login)}"
+bot="${ARRFLIX_FACTORY_BOT:-arrflix-factory-bot[bot]}"
+
+# --- watch -----------------------------------------------------------------------
+cmd_watch() {
+  local transcript
+  transcript="$(docker exec "$ctr" sh -c 'ls -t /tmp/agent-home-*/.claude/projects/*/*.jsonl 2>/dev/null | head -1')" ||
+    die "no sandbox for #$issue"
+  [ -n "$transcript" ] || die "no step is running for #$issue"
+  echo "run-stage: following $transcript (ctrl-c to stop)" >&2
+  docker exec "$ctr" tail -n +1 -F "$transcript" 2>/dev/null | python3 -u -c '
+import json, sys
+for line in sys.stdin:
+    try:
+        entry = json.loads(line)
+    except ValueError:
+        continue
+    if entry.get("type") != "assistant":
+        continue
+    for block in entry.get("message", {}).get("content", []):
+        if block.get("type") == "text" and block["text"].strip():
+            print("\n" + block["text"].strip() + "\n")
+        elif block.get("type") == "tool_use":
+            args = block.get("input", {})
+            what = args.get("command") or args.get("file_path") or args.get("pattern") or args.get("description") or ""
+            print("> " + block.get("name", "?") + ": " + " ".join(str(what).split())[:160])
+'
+}
+
+# --- the issue, and the trust check --------------------------------------------
+# Only issues written by a maintainer or the bot enter the factory, and only
+# while a maintainer has them in the right state for the step. Prints the
+# branch slug; for an agent step it also writes the step's prompt.
+check_issue() {
+  local issue_json="$logs/$stamp-$stage-issue.json"
+  gh_user issue view "$issue" --json number,title,body,author,labels,comments >"$issue_json"
+  STAGE="$stage" ALLOW="$maintainers,$bot" FEEDBACK="$feedback" \
+    python3 - "$issue_json" "$factory/prompts/$stage.md" "$logs/$stamp-$stage-prompt.md" <<'PY'
+import json, os, re, sys
+
+issue_path, template_path, out_path = sys.argv[1:4]
+issue = json.load(open(issue_path))
+allowed = {a.strip() for a in os.environ["ALLOW"].split(",") if a.strip()}
+stage = os.environ["STAGE"]
+
+author = issue["author"]["login"]
+if author not in allowed:
+    sys.exit(f"run-stage: #{issue['number']} was written by {author}, who isn't a maintainer or the bot")
+labels = {l["name"] for l in issue["labels"]}
+wanted = {"factory:ready", "factory:in-progress"} if stage == "implement" else {"factory:in-progress"}
+if not labels & wanted:
+    sys.exit(f"run-stage: #{issue['number']} needs one of {sorted(wanted)} to run {stage}; it has {sorted(labels) or 'no labels'}")
+
+if stage in ("implement", "judge"):
+    # The approved spec is the latest maintainer- or bot-written comment that
+    # opens with a "## Spec" heading.
+    spec = "None. The issue is its own spec."
+    for c in reversed(issue["comments"]):
+        if c["author"]["login"] in allowed and c["body"].lstrip().startswith("## Spec"):
+            spec = c["body"].strip()
+            break
+
+    feedback = "None. This is the first attempt."
+    if os.environ.get("FEEDBACK"):
+        feedback = open(os.environ["FEEDBACK"]).read().strip()
+
+    template = open(template_path).read()
+    if "<!-- prompt -->" not in template:
+        sys.exit(f"run-stage: {template_path} has no <!-- prompt --> marker")
+    prompt = template.split("<!-- prompt -->", 1)[1].lstrip()
+    prompt = (prompt
+        .replace("{{ISSUE}}", f"#{issue['number']}: {issue['title']}\n\n{issue['body'].strip()}")
+        .replace("{{SPEC}}", spec)
+        .replace("{{REVIEW_COMMENTS}}", feedback))
+    if "{{" in prompt:
+        sys.exit(f"run-stage: unfilled placeholder in {template_path}")
+    open(out_path, "w").write(prompt)
+
+print(re.sub(r"[^a-z0-9]+", "-", issue["title"].lower()).strip("-")[:40].rstrip("-"))
+PY
+}
+
+# open_pr prints the number of the open PR for the run's branch, if any.
+open_pr() {
+  gh_user pr list --head "$(git -C "$clone" branch --show-current)" --state open --json number -q '.[0].number'
+}
+
+# --- review feedback -------------------------------------------------------------
+# A rework's input is the latest "request changes" review a maintainer left on
+# the commit the branch is at: its body and its inline comments. A review on an
+# older commit was answered by a later push. Writes the feedback file and
+# prints its path, or prints nothing when there's no such review.
+review_feedback() {
+  local pr; pr="$(open_pr)"
+  [ -n "$pr" ] || return 0
+  (cd "$repo_root" && MAINTAINERS="$maintainers" \
+    python3 - "$pr" "$(git -C "$clone" rev-parse HEAD)" "$logs/$stamp-review.md" <<'PY'
+import json, os, subprocess, sys
+
+pr, head, out_path = sys.argv[1:4]
+maintainers = {m.strip() for m in os.environ["MAINTAINERS"].split(",") if m.strip()}
+api = lambda path: json.loads(subprocess.check_output(["gh", "api", path]))
+
+reviews = [r for r in api(f"repos/{{owner}}/{{repo}}/pulls/{pr}/reviews?per_page=100")
+           if r["user"]["login"] in maintainers and r["state"] == "CHANGES_REQUESTED"]
+if not reviews or reviews[-1]["commit_id"] != head:
+    sys.exit(0)
+review = reviews[-1]
+lines = [f"From {review['user']['login']}'s review of PR #{pr}:", ""]
+if review["body"].strip():
+    lines += [review["body"].strip(), ""]
+for c in api(f"repos/{{owner}}/{{repo}}/pulls/{pr}/reviews/{review['id']}/comments?per_page=100"):
+    line = c.get("line") or c.get("original_line")
+    lines += [f"- `{c['path']}" + (f":{line}" if line else "") + f"`: {c['body'].strip()}"]
+open(out_path, "w").write("\n".join(lines).strip() + "\n")
+print(out_path)
+PY
+  )
+}
+
+# --- an agent step ---------------------------------------------------------------
+cmd_agent() {
+  if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}${ANTHROPIC_API_KEY:-}" ] && [ -f "$env_file" ]; then
+    # The env file keeps the Claude credential out of shell history and out of
+    # any agent session that drives this script. Exported values win over it.
+    set -a; . "$env_file"; set +a
+  fi
+  [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}${ANTHROPIC_API_KEY:-}" ] ||
+    die "set CLAUDE_CODE_OAUTH_TOKEN (from \`claude setup-token\`) or ANTHROPIC_API_KEY, or put it in $env_file"
+
+  if [ "$stage" == implement ] && [ -z "$feedback" ] && [ -d "$clone/.git" ]; then
+    feedback="$(review_feedback)"
+    [ -z "$feedback" ] || echo "run-stage: reworking from $feedback"
+  fi
+
+  local slug; slug="$(check_issue)"
+  if [ ! -d "$clone/.git" ]; then
+    [ "$stage" == implement ] || die "no run for #$issue yet; run implement first"
+    # The run branches from your local main, and its PR targets GitHub's, so
+    # the two must match or the PR would carry commits that aren't on main.
+    [ "$(git -C "$repo_root" rev-parse main)" == "$(git -C "$repo_root" ls-remote origin refs/heads/main | cut -f1)" ] ||
+      die "your local main differs from GitHub's; push or update it before starting a run"
+    git clone --quiet --no-hardlinks --branch main "$repo_root" "$clone"
+    git -C "$clone" checkout --quiet -b "factory/$issue-$slug"
+    echo "run-stage: cloned main into $clone on branch factory/$issue-$slug"
+  fi
+  if ! docker ps --format '{{.Names}}' | grep -qx "$ctr"; then
+    "$factory/bin/sandbox" up "$clone" "$sandbox_name"
+  fi
+  # Starting a run is the orchestrator's transition, so the bot makes it.
+  if [ "$stage" == implement ] && jq -e 'any(.labels[]; .name == "factory:ready")' "$logs/$stamp-$stage-issue.json" >/dev/null; then
+    (cd "$repo_root" && "$factory/bin/gh-bot" issue edit "$issue" \
+      --remove-label factory:ready --add-label factory:in-progress >/dev/null)
+    echo "run-stage: moved #$issue to factory:in-progress"
+  fi
+
+  # A fresh HOME per step: no session, transcript or memory carries from one
+  # step to the next. The transcript is copied out for the improvement loop,
+  # then the home is deleted so a later step can't read it. Build caches live
+  # outside it, in /tmp/factory-cache, so later steps in the same sandbox start
+  # warm.
+  local step_home="/tmp/agent-home-$stage-$stamp"
+  local result="$logs/$stamp-$stage.json"
+  local schema status=0 started=$SECONDS
+  # The CLI's validator doesn't know the draft 2020-12 meta-schema, so the
+  # schema file's "$schema" key is dropped on the way in.
+  schema="$(python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); d.pop("$schema", None); print(json.dumps(d))' \
+    "$factory/schemas/$stage-result.json")"
+
+  echo "run-stage: running $stage for #$issue (log: $result)"
+  # Every stage runs on Opus unless ARRFLIX_FACTORY_MODEL says otherwise;
+  # without a model the CLI picks its own default.
+  SANDBOX_HOME="$step_home" "$factory/bin/sandbox" exec "$sandbox_name" \
+    env CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 \
+      GOPATH=/tmp/factory-cache/go GOCACHE=/tmp/factory-cache/go-build \
+      npm_config_cache=/tmp/factory-cache/npm \
+    claude -p \
+      --output-format json \
+      --json-schema "$schema" \
+      --permission-mode bypassPermissions \
+      --setting-sources project \
+      --strict-mcp-config \
+      --model "${ARRFLIX_FACTORY_MODEL:-opus}" \
+    <"$logs/$stamp-$stage-prompt.md" >"$result" || status=$?
+
+  docker cp "$ctr:$step_home/.claude/projects" "$logs/$stamp-$stage-transcript" >/dev/null 2>&1 || true
+  SANDBOX_HOME=/tmp "$factory/bin/sandbox" exec "$sandbox_name" \
+    sh -c 'chmod -R u+w "$1" 2>/dev/null; rm -rf "$1"' -- "$step_home" || true
+
+  # The CLI's own duration_ms covers only the final turn when the agent waited
+  # on a background task, so the step's time is measured here.
+  python3 - "$result" "$status" "$((SECONDS - started))" <<'PY'
+import json, sys
+path, status, secs = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+try:
+    out = json.load(open(path))
+except Exception:
+    sys.exit(f"run-stage: claude exited {status} without a JSON result; see {path}")
+if out.get("is_error") or "structured_output" not in out:
+    sys.exit(f"run-stage: the step failed ({out.get('subtype', 'error')}); see {path}")
+print(json.dumps(out["structured_output"], indent=2))
+cost = out.get("total_cost_usd")
+models = ", ".join(out.get("modelUsage", {})) or "model unknown"
+print(f"\nrun-stage: {models}, {secs / 60:.1f} min, "
+      + (f"${cost:.2f}" if cost is not None else "cost unknown"), file=sys.stderr)
+PY
+}
+
+# --- submit ----------------------------------------------------------------------
+# Deterministic, and on the host: the sandbox never holds GitHub credentials.
+cmd_submit() {
+  [ -d "$clone/.git" ] || die "no run for #$issue yet"
+  check_issue >/dev/null
+
+  local impl judge
+  impl="$(ls "$logs"/*-implement.json 2>/dev/null | sort | tail -1)"
+  judge="$(ls "$logs"/*-judge.json 2>/dev/null | sort | tail -1)"
+  [ -n "$impl" ] || die "#$issue has no implement result"
+  [[ -n "$judge" && "$(basename "$judge")" > "$(basename "$impl")" ]] ||
+    die "the latest implement for #$issue hasn't been judged; run judge first"
+  [ -n "$(git -C "$clone" status --porcelain)" ] || die "the clone for #$issue has nothing to commit"
+
+  local slug branch pr bot_login bot_id token
+  slug="$(gh_user repo view --json nameWithOwner -q .nameWithOwner)"
+  branch="$(git -C "$clone" branch --show-current)"
+  pr="$(open_pr)"
+  bot_login="$("$factory/bin/gh-bot" login)"
+  bot_id="$(gh api "users/$(printf %s "$bot_login" | sed 's/\[/%5B/; s/\]/%5D/')" --jq .id)"
+
+  local body="$logs/$stamp-submit-body.md" message="$logs/$stamp-submit-commit.txt"
+  python3 - "$impl" "$judge" "$issue" "$body" "$message" "${pr:+rework}" <<'PY'
+import json, sys
+
+impl_path, judge_path, issue, body_path, message_path, rework = sys.argv[1:7]
+impl_run, judge_run = json.load(open(impl_path)), json.load(open(judge_path))
+impl, judge = impl_run["structured_output"], judge_run["structured_output"]
+
+if impl["outcome"] != "implemented":
+    sys.exit(f"run-stage: the implementer returned {impl['outcome']}, so there's nothing to submit")
+if judge["verdict"] != "pass":
+    sys.exit("run-stage: the judge vetoed; rerun implement with its findings as --feedback")
+
+def model_name(model_id):
+    # claude-opus-5-5 -> Claude Opus 5.5
+    parts = [p for p in model_id.split("-") if not (p.isdigit() and len(p) == 8)]  # drop a date suffix
+    words = [p.capitalize() for p in parts if not p.isdigit()]
+    return " ".join(words) + " " + ".".join(p for p in parts if p.isdigit())
+
+def cell(text):
+    return str(text).replace("\n", " ").replace("|", "\\|")
+
+out = [impl["summary"].strip(), ""]
+if not rework:
+    out += [f"Closes #{issue}", ""]
+out += [f"## Judge: {judge['verdict']}", "", judge["summary"].strip(), ""]
+if judge["acceptance"]:
+    out += ["| Acceptance criterion | Met | Evidence |", "| --- | --- | --- |"]
+    out += [f"| {cell(a['criterion'])} | {'yes' if a['met'] else '**no**'} | {cell(a['evidence'])} |"
+            for a in judge["acceptance"]]
+    out += [""]
+notes = [f for f in judge["findings"] if f["severity"] == "note"]
+if notes:
+    out += ["### Judge's notes", ""]
+    out += [f"- **{f['kind']}**" + (f" `{f['file']}`" if f.get("file") else "") + f": {f['detail']}" for f in notes]
+    out += [""]
+if impl["unrelated_failures"]:
+    out += ["### Unrelated failures", ""]
+    out += [f"- `{u['test']}`: {u['detail']}" for u in impl["unrelated_failures"]]
+    out += [""]
+if impl["followups"]:
+    out += ["### Followups the implementer noticed", ""]
+    out += [f"- {f}" for f in impl["followups"]]
+    out += [""]
+
+steps = []
+for name, run in (("implement", impl_run), ("judge", judge_run)):
+    models = ", ".join(run.get("modelUsage", {})) or "unknown model"
+    cost = run.get("total_cost_usd")
+    steps.append(f"{name} on {models}" + (f" (${cost:.2f})" if cost is not None else ""))
+out += ["---", "", "Factory run: " + "; ".join(steps) + ".", "",
+        "🤖 Generated with [Claude Code](https://claude.com/claude-code)"]
+open(body_path, "w").write("\n".join(out) + "\n")
+
+co_authors = sorted({model_name(m) for m in impl_run.get("modelUsage", {})})
+message = impl["commit_message"].strip() + f"\n\nRefs #{issue}\n"
+if co_authors:
+    message += "\n" + "\n".join(f"Co-Authored-By: {m} <noreply@anthropic.com>" for m in co_authors) + "\n"
+open(message_path, "w").write(message)
+PY
+
+  token="$("$factory/bin/gh-bot" token)"
+  git -C "$clone" add -A
+  GIT_AUTHOR_NAME="$bot_login" GIT_AUTHOR_EMAIL="$bot_id+$bot_login@users.noreply.github.com" \
+  GIT_COMMITTER_NAME="$bot_login" GIT_COMMITTER_EMAIL="$bot_id+$bot_login@users.noreply.github.com" \
+    git -C "$clone" commit --quiet --file "$message"
+  # The token reaches git through the environment, never the command line, and
+  # the empty helper first drops any credential helper of yours.
+  GH_BOT_TOKEN="$token" git -C "$clone" \
+    -c credential.helper= \
+    -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GH_BOT_TOKEN"; }; f' \
+    push --quiet "https://github.com/$slug.git" "HEAD:refs/heads/$branch"
+  echo "run-stage: pushed $branch as $bot_login"
+
+  if [ -z "$pr" ]; then
+    (cd "$clone" && GH_TOKEN="$token" gh pr create -R "$slug" --base main --head "$branch" \
+      --title "$(head -1 "$message")" --body-file "$body")
+  else
+    (cd "$clone" && GH_TOKEN="$token" gh pr comment "$pr" -R "$slug" --body-file "$body")
+  fi
+  GH_TOKEN="$token" gh issue edit "$issue" -R "$slug" \
+    --remove-label factory:in-progress --add-label factory:human-review >/dev/null
+  echo "run-stage: #$issue is in factory:human-review"
+}
+
+case "$stage" in
+  watch) cmd_watch ;;
+  submit) mkdir -p "$logs"; cmd_submit ;;
+  *) mkdir -p "$logs"; cmd_agent ;;
+esac

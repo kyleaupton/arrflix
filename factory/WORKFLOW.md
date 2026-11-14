@@ -98,6 +98,8 @@ A factory issue is the input to triage, not a plan. It states the problem, who i
 - **Headless:** the orchestrator runs a spec agent and posts its draft as the bot. This suits medium tickets, or any ticket where a strawman to react to helps.
 - **Interactive:** a maintainer works the spec out in a private agent session, with the issue loaded via `gh issue view <n> --comments`, and posts the result themselves. This is the default for large or ambiguous tickets.
 
+A spec comment opens with a `## Spec` heading; that's how a run finds it. The latest such comment by a maintainer or the bot is the approved spec.
+
 Either way, **the spec comment records decisions and their reasons, not the conversation that reached them.** The working-out stays private. Session transcripts are kept on the factory host, never posted, because what a maintainer had to ask shows what context the spec agent lacked, and that feeds the improvement loop.
 
 Who posted a spec shows how it was made: the bot posts what the factory produced unattended, and a maintainer posts what they decided.
@@ -115,9 +117,11 @@ A run is one issue moving through `factory:in-progress`. It alternates determini
 | Preflight | deterministic | Runs `just preflight-all` (preflight plus the integration suite, where most REQ tests live). A failure goes back to Implement, at most 3 times. |
 | Judge | agent, fresh context | Rules on the diff against the ticket: is everything inside scope, and does each REQ test assert its requirement? A veto goes back to Implement once. |
 | Evidence | deterministic | Captures screenshots of touched screens at desktop and mobile widths, and lists the REQ tests that pass. |
-| Submit | deterministic | Pushes the branch and opens the PR with the judge's summary and the evidence. |
+| Submit | deterministic | Commits the tree as the bot, using the implementer's `commit_message`, pushes the branch, and opens the PR with the implementer's summary, the judge's summary and the evidence. Agents never commit. |
 
 Exceeding a retry bound ends the run in `factory:blocked`, with the last failure as the question.
+
+The prompts are `factory/prompts/implement.md` and `factory/prompts/judge.md`.
 
 **Each agent step gets its own context, assembled by the orchestrator:**
 
@@ -133,22 +137,30 @@ Every agent step runs inside a sandbox: a container from the `factory` target of
 
 **The container is the trust boundary.** It gets the clone and the Claude credentials, and nothing else from the host: no docker socket, no home directory, no GitHub credentials. Inside it, `just` runs commands directly (`ARRFLIX_IN_CONTAINER=1`), and the integration tests use the container's own ephemeral Postgres (`ARRFLIX_TEST_PG_DSN`) instead of testcontainers.
 
-Commands run as the caller's uid with a throwaway `HOME`, so no Claude config, memory or settings exist except what the repo holds. A manual run and an orchestrated run differ only in who calls `factory/bin/sandbox`.
+Commands run as the caller's uid with a throwaway `HOME`, so no Claude config, memory or settings exist except what the repo holds. Each agent step gets its own `HOME`, deleted when the step ends, so the judge can't read the implementer's session. Agents run with full permissions inside the sandbox: the container is the boundary, and an allowlist behind it would add friction without adding safety.
+
+`factory/bin/run-stage <step> <issue>` runs one step of a run:
+
+- `implement` and `judge` are the agent steps. Each reads the issue on the host, refuses issues not written by a maintainer or the bot or not in the right state, makes the run's clone and sandbox on first use, and prints the step's structured result. On a rework, `implement` reads the latest "request changes" review on the PR.
+- `submit` is the Submit step, on the host. It commits the tree as the bot, pushes the branch, opens the PR (or comments the rework's results on it) and moves the issue to `factory:human-review`. It refuses work the judge hasn't passed.
+- `watch` follows a running agent step's tool calls and messages.
+
+Runs live outside the repo, under `~/.local/share/arrflix-factory/runs/<issue>/`, with each step's prompt, result and transcript in `logs/`.
+
+`factory/bin/gh-bot` is `gh` acting as the factory's GitHub App, `arrflix-factory-bot`. It mints an installation token, valid for an hour, from the App's private key, which stays on the factory host (`~/.config/arrflix-factory/bot.pem`) and is never mounted into a sandbox. The App can write contents, pull requests and issues, but not workflows, so nothing the factory pushes can change CI.
+
+A manual run and an orchestrated run differ only in who calls `run-stage`.
 
 ## Writes
 
-Agents in a run never hold GitHub write access. An interactive session doesn't count as a run: it's the maintainer acting, with their own credentials. A run returns a result, and only the orchestrator applies it, using the GitHub App's token:
+Agents in a run never hold GitHub write access, and never commit. An interactive session doesn't count as a run: it's the maintainer acting, with their own credentials. Each agent step returns a structured result, and only the orchestrator applies it, using the GitHub App's token:
 
-```json
-{
-  "outcome": "pr_opened | blocked",
-  "question": "only when blocked",
-  "summary": "what was built, in a paragraph",
-  "retries": { "preflight": 0, "judge": 0 },
-  "evidence": ["paths to screenshots and test reports"],
-  "tokens": 0
-}
-```
+| Step | Schema | Outcomes |
+| --- | --- | --- |
+| Implement | `factory/schemas/implement-result.json` | `implemented`, `blocked` (with a question), `no_change` (the behavior already holds) |
+| Judge | `factory/schemas/judge-result.json` | `pass`, `veto` (with findings) |
+
+Besides the outcome, the implementer reports out-of-scope problems it left alone (`followups`, which may become `factory:triage` issues), gate failures in code it didn't touch (`unrelated_failures`), and anything the sandbox lacked (`needed`, which decides what the factory image gains). Retry counts, cost and tokens come from the orchestrator and the CLI, not from the agent.
 
 The orchestrator validates the result before applying any transition, so the gate rules live in code, not in prompts. It records every transition two ways:
 
@@ -192,7 +204,7 @@ This file is Arrflix's per-project configuration. The generic machinery (polling
 
 ## Manual phase
 
-Until the orchestrator exists, a maintainer plays it. They apply the same labels by hand, run each agent step headless in a fresh session with the context listed above, and keep a log per ticket:
+Until the orchestrator exists, a maintainer plays it. They apply the same labels by hand, run each step with `factory/bin/run-stage`, review the bot's PR on GitHub, and keep a log per ticket:
 
 - the states the ticket went through
 - each intervention, tagged `missing-context`, `wrong-decision`, `verification-gap` or `taste`

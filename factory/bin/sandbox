@@ -71,7 +71,8 @@ cmd_exec() {
   # Run as the caller's uid so files written into the checkout stay theirs.
   # That uid has no home in the image, so HOME is a throwaway dir — which also
   # means no Claude config, memory or settings exist except what the repo holds.
-  local env_args=(-e HOME=/tmp/agent-home)
+  # SANDBOX_HOME picks the dir, so separate agent steps don't share sessions.
+  local env_args=(-e "HOME=${SANDBOX_HOME:-/tmp/agent-home}")
   local var
   for var in CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY; do
     if [ -n "${!var:-}" ]; then env_args+=(-e "$var"); fi

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Judge step result",
+  "description": "What the judge returns after reviewing an implementation (factory/prompts/judge.md). A veto sends the findings back to the implementer; a pass sends the work to human review.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "summary", "findings", "acceptance"],
+  "properties": {
+    "verdict": {
+      "description": "veto when any finding is blocking, pass otherwise.",
+      "enum": ["pass", "veto"]
+    },
+    "summary": {
+      "description": "For the human reviewer, posted on the PR: what the change does and how confident the judge is that it does what the issue asks.",
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "kind", "detail"],
+        "properties": {
+          "severity": { "enum": ["blocking", "note"] },
+          "kind": { "enum": ["scope", "req_test", "acceptance", "other"] },
+          "file": { "type": "string" },
+          "detail": {
+            "description": "What is wrong, where, and what would fix it.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "acceptance": {
+      "description": "One entry per acceptance criterion in the issue.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["criterion", "met", "evidence"],
+        "properties": {
+          "criterion": { "type": "string" },
+          "met": { "type": "boolean" },
+          "evidence": { "type": "string" }
+        }
+      }
+    }
+  }
+}

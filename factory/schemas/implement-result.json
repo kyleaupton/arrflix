@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Implement step result",
+  "description": "What the implementer returns at the end of a factory run (factory/prompts/implement.md). The orchestrator validates it before applying any transition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "summary", "reqs", "unrelated_failures", "followups", "needed"],
+  "properties": {
+    "outcome": {
+      "description": "implemented: the work is in the tree and the gate passed. blocked: a decision is needed (see question). no_change: the behavior already holds, proven by the REQ tests.",
+      "enum": ["implemented", "blocked", "no_change"]
+    },
+    "summary": {
+      "description": "The PR description: what changed and why, for a reviewer who has read the issue.",
+      "type": "string"
+    },
+    "commit_message": {
+      "description": "One-line commit subject in the repo's `area: description` style. Required when outcome is implemented.",
+      "type": "string"
+    },
+    "question": {
+      "description": "For a maintainer, answerable in one reply, with the options seen. Required when outcome is blocked.",
+      "type": "string"
+    },
+    "reqs": {
+      "description": "Each REQ ID the issue names, and the test that proves it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "test"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^REQ-[A-Z]+-[0-9]{3}$" },
+          "test": { "type": "string" }
+        }
+      }
+    },
+    "unrelated_failures": {
+      "description": "Gate failures in code this run didn't touch.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["test", "detail"],
+        "properties": {
+          "test": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "followups": {
+      "description": "Problems noticed outside the issue's scope and deliberately left alone. Each may become a factory:triage issue.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "needed": {
+      "description": "Anything the sandbox lacked that the run wanted: a tool, a service, access.",
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
