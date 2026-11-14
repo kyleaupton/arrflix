@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# Runs a factory sandbox: one container from the `factory` image target, with a
+# run's checkout bind-mounted at /app. See factory/WORKFLOW.md.
+#
+#   factory/bin/sandbox build                  build the factory image
+#   factory/bin/sandbox up <dir> [name]        start a sandbox on checkout <dir>
+#   factory/bin/sandbox exec <name> <cmd...>   run a command in it, as the caller's uid
+#   factory/bin/sandbox down <name>            stop and remove it
+#
+# The container is the trust boundary. It gets the checkout and nothing else
+# from the host: no docker socket, no home directory, no GitHub credentials.
+# The only secrets passed in are the Claude credentials, and only to `exec`.
+# Its Postgres is ephemeral, so every sandbox starts from an empty database.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+image="${ARRFLIX_FACTORY_IMAGE:-arrflix:factory}"
+
+die() { echo "sandbox: $*" >&2; exit 1; }
+container_name() { echo "arrflix-factory-$1"; }
+
+cmd_build() {
+  docker build -f "$repo_root/docker/Dockerfile.dev" --target factory -t "$image" "$repo_root"
+}
+
+cmd_up() {
+  local dir="${1:?usage: sandbox up <dir> [name]}"
+  dir="$(cd "$dir" && pwd)"
+  local name="${2:-$(basename "$dir")}"
+  local ctr; ctr="$(container_name "$name")"
+
+  [ -d "$dir/.git" ] || die "$dir is not a self-contained clone (a git worktree's .git points outside the mount)"
+  docker image inspect "$image" >/dev/null 2>&1 || cmd_build
+
+  # The anonymous volume keeps the container's node_modules out of the checkout,
+  # as docker-compose.yml does for the dev stack.
+  docker run -d --name "$ctr" \
+    -e APP_ENV=dev \
+    -v "$dir:/app" \
+    -v /app/web/node_modules \
+    "$image" >/dev/null
+
+  echo "sandbox: waiting for postgres in $ctr"
+  wait_for "$ctr" 120 pg_isready -h 127.0.0.1 -q || die "postgres in $ctr never became ready (docker logs $ctr)"
+
+  # The web service installs node_modules as root, and tools such as vue-tsc
+  # write caches inside it, so hand it to the uid that `exec` runs as.
+  echo "sandbox: waiting for npm install in $ctr"
+  wait_for "$ctr" 600 test -x /app/web/node_modules/.bin/vite || die "npm install in $ctr never finished (docker logs $ctr)"
+  docker exec "$ctr" chown -R "$(id -u):$(id -g)" /app/web/node_modules
+
+  echo "sandbox: $ctr is up"
+}
+
+# wait_for <container> <seconds> <cmd...> polls cmd inside the container until
+# it succeeds or the time runs out.
+wait_for() {
+  local ctr="$1" secs="$2"; shift 2
+  local deadline=$((SECONDS + secs))
+  until docker exec "$ctr" "$@" >/dev/null 2>&1; do
+    [ "$SECONDS" -lt "$deadline" ] || return 1
+    sleep 2
+  done
+}
+
+cmd_exec() {
+  local name="${1:?usage: sandbox exec <name> <cmd...>}"; shift
+  [ $# -gt 0 ] || die "usage: sandbox exec <name> <cmd...>"
+  local ctr; ctr="$(container_name "$name")"
+
+  # Run as the caller's uid so files written into the checkout stay theirs.
+  # That uid has no home in the image, so HOME is a throwaway dir — which also
+  # means no Claude config, memory or settings exist except what the repo holds.
+  local env_args=(-e HOME=/tmp/agent-home)
+  local var
+  for var in CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY; do
+    if [ -n "${!var:-}" ]; then env_args+=(-e "$var"); fi
+  done
+
+  local tty=()
+  if [ -t 0 ] && [ -t 1 ]; then tty=(-t); fi
+
+  docker exec -i "${tty[@]}" -u "$(id -u):$(id -g)" -w /app "${env_args[@]}" "$ctr" \
+    bash -c 'mkdir -p "$HOME" && exec "$@"' -- "$@"
+}
+
+cmd_down() {
+  local name="${1:?usage: sandbox down <name>}"
+  docker rm -f -v "$(container_name "$name")" >/dev/null
+  echo "sandbox: removed $(container_name "$name")"
+}
+
+case "${1:-}" in
+  build) shift; cmd_build "$@" ;;
+  up) shift; cmd_up "$@" ;;
+  exec) shift; cmd_exec "$@" ;;
+  down) shift; cmd_down "$@" ;;
+  *) sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

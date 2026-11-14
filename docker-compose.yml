@@ -10,6 +10,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.dev
+      target: dev
     # Image tags are host-global: a worktree that changes Dockerfile.dev should
     # use its own tag so its rebuild doesn't replace the image other stacks use.
     image: ${ARRFLIX_DEV_IMAGE:-arrflix:dev}

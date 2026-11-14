@@ -110,9 +110,9 @@ A run is one issue moving through `factory:in-progress`. It alternates determini
 
 | Step | Kind | Does |
 | --- | --- | --- |
-| Workspace | deterministic | Creates a git worktree on branch `factory/<issue>-<slug>` and a dev stack with its own container name and port (see "Running a second dev stack" in `.claude/rules/workflow.md`). |
+| Workspace | deterministic | Makes a self-contained local clone on branch `factory/<issue>-<slug>` and starts a sandbox on it (see [Sandbox](#sandbox)). A git worktree won't do: its `.git` points outside the mount. |
 | Implement | agent | Builds the ticket and writes a test named for each REQ it closes. |
-| Preflight | deterministic | Runs `just preflight`. A failure goes back to Implement, at most 3 times. |
+| Preflight | deterministic | Runs `just preflight-all` (preflight plus the integration suite, where most REQ tests live). A failure goes back to Implement, at most 3 times. |
 | Judge | agent, fresh context | Rules on the diff against the ticket: is everything inside scope, and does each REQ test assert its requirement? A veto goes back to Implement once. |
 | Evidence | deterministic | Captures screenshots of touched screens at desktop and mobile widths, and lists the REQ tests that pass. |
 | Submit | deterministic | Pushes the branch and opens the PR with the judge's summary and the evidence. |
@@ -126,6 +126,14 @@ Exceeding a retry bound ends the run in `factory:blocked`, with the last failure
 - **Spec:** the issue, `specs/V1.md`, and the owning module spec.
 
 No session carries over between steps. Stages share only the artifacts they leave: the spec comment, the PR, and the run log.
+
+## Sandbox
+
+Every agent step runs inside a sandbox: a container from the `factory` target of `docker/Dockerfile.dev`, started by `factory/bin/sandbox`. It is the dev image (Go, Node, Postgres and the app under s6) plus `just`, git and the Claude CLI. A run's clone is bind-mounted at `/app`, and the dev services run it, so the app is available for screenshots.
+
+**The container is the trust boundary.** It gets the clone and the Claude credentials, and nothing else from the host: no docker socket, no home directory, no GitHub credentials. Inside it, `just` runs commands directly (`ARRFLIX_IN_CONTAINER=1`), and the integration tests use the container's own ephemeral Postgres (`ARRFLIX_TEST_PG_DSN`) instead of testcontainers.
+
+Commands run as the caller's uid with a throwaway `HOME`, so no Claude config, memory or settings exist except what the repo holds. A manual run and an orchestrated run differ only in who calls `factory/bin/sandbox`.
 
 ## Writes
 

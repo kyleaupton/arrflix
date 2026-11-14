@@ -11,7 +11,10 @@ just check           # mirror CI: lint + type-check + unit tests (read-only, fas
 just check-all       # check + integration tests (slow — spins up postgres testcontainer)
 just fix             # autofix everything: fmt, lint --fix, regen
 just preflight       # fix then check — single command before declaring work done
+just preflight-all   # preflight plus the integration suite (the factory's done gate)
 ```
+
+Inside the factory sandbox (`ARRFLIX_IN_CONTAINER=1`, see `factory/WORKFLOW.md`), the same recipes run their commands directly instead of through `docker compose exec`, and the integration tests use the sandbox's own Postgres via `ARRFLIX_TEST_PG_DSN`.
 
 Per-tool recipes are namespaced: `backend-fmt`, `backend-lint`, `backend-vet`, `backend-test`, `backend-test-integration`, `backend-genspec`, `backend-sqlc`, `web-fmt`, `web-lint`, `web-type-check`, `web-build`, `web-genclient`, `gen-email`, `email-preview`. Container lifecycle: `up`, `down`, `rebuild`, `shell`, `logs`.
 

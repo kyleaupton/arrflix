@@ -16,20 +16,30 @@ set dotenv-load := true
 # project, so recipes target the right stack when several run side by side
 # (see docker-compose.yml for the per-stack .env overrides).
 container := "arrflix-dev"
-backend-exec := "docker compose exec -T -w /app/backend " + container
-web-exec := "docker compose exec -T -w /app/web " + container
+
+# ARRFLIX_IN_CONTAINER=1 means `just` itself is running inside an environment
+# built from the dev image (the factory image), so recipes run their commands
+# directly in this checkout instead of exec-ing into a compose service. The
+# container-lifecycle recipes (up, down, logs, shell, rebuild, prod-*) still
+# need docker and don't apply there.
+in-container := env("ARRFLIX_IN_CONTAINER", "")
+backend-dir := justfile_directory() / "backend"
+web-dir := justfile_directory() / "web"
+
+backend-exec := if in-container == "1" { "cd '" + backend-dir + "' &&" } else { "docker compose exec -T -w /app/backend " + container }
+web-exec := if in-container == "1" { "cd '" + web-dir + "' &&" } else { "docker compose exec -T -w /app/web " + container }
 
 # The container runs as root, so files it writes into the bind mount land
 # root-owned on the host and break git ops. Recipes that WRITE (formatters,
 # generators) exec as the host uid/gid instead, so output is owned by whoever
 # ran `just`. HOME points at a per-uid temp dir so go/npm caches resolve for an
 # uid with no /etc/passwd entry (e.g. CI). Read-only recipes stay root to reuse
-# root's warm caches.
+# root's warm caches. In-container, there's no bind-mount ownership to fix.
 host-uid := `id -u`
 host-gid := `id -g`
 exec-rw := "docker compose exec -T -u " + host-uid + ":" + host-gid + " -e HOME=/tmp/arrflix-dev-home-" + host-uid
-backend-exec-rw := exec-rw + " -w /app/backend " + container
-web-exec-rw := exec-rw + " -w /app/web " + container
+backend-exec-rw := if in-container == "1" { backend-exec } else { exec-rw + " -w /app/backend " + container }
+web-exec-rw := if in-container == "1" { web-exec } else { exec-rw + " -w /app/web " + container }
 
 # In-container connection string (matches config.go's default). Postgres listens
 # on localhost inside the dev container with trust auth.
@@ -270,8 +280,15 @@ check-all: check
 [group('aggregate')]
 preflight: fix check
 
+# Most REQ-named tests are integration tests, so the factory gates on this.
+# Preflight plus the integration suite: the factory's done gate.
+[group('aggregate')]
+preflight-all: fix check-all
+
 # --- internal helpers --------------------------------------------------------
 
 [private]
 _ensure-up:
-    @docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "^{{container}}$" || { echo "Error: {{container}} container is not running. Run 'just up' first."; exit 1; }
+    #!/usr/bin/env bash
+    [ "{{in-container}}" = "1" ] && exit 0
+    docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "^{{container}}$" || { echo "Error: {{container}} container is not running. Run 'just up' first."; exit 1; }

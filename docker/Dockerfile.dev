@@ -1,4 +1,6 @@
-FROM ubuntu:24.04
+# Two targets: `dev` is the day-to-day dev container (docker-compose.yml builds
+# it), and `factory` extends it into the environment a factory run works in.
+FROM ubuntu:24.04 AS dev
 
 ARG GO_VERSION=1.25.5
 ARG S6_VERSION=3.2.1.0
@@ -73,3 +75,28 @@ ENV ARRFLIX_COMMIT=${ARRFLIX_COMMIT}
 ENV ARRFLIX_BUILD_DATE=${ARRFLIX_BUILD_DATE}
 ENV PROWLARR_VERSION=${PROWLARR_VERSION}
 ENTRYPOINT ["/init"]
+
+# --- factory -----------------------------------------------------------------
+# The environment an agent works in during a factory run (factory/WORKFLOW.md):
+# the dev image plus the tools a run drives. A run's checkout is bind-mounted at
+# /app and the dev services run it as usual. `just` runs commands directly
+# (ARRFLIX_IN_CONTAINER) and the integration tests use this container's own
+# Postgres (ARRFLIX_TEST_PG_DSN), so the container needs no docker socket.
+FROM dev AS factory
+
+ARG TARGETARCH
+ARG JUST_VERSION=1.51.0
+ARG CLAUDE_CODE_VERSION=latest
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN JUST_ARCH=$([ "${TARGETARCH}" = "arm64" ] && echo "aarch64" || echo "x86_64") && \
+    curl -fsSL https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-${JUST_ARCH}-unknown-linux-musl.tar.gz \
+      | tar -xz -C /usr/local/bin just
+
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
+ENV ARRFLIX_IN_CONTAINER=1
+ENV ARRFLIX_TEST_PG_DSN="postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable"
