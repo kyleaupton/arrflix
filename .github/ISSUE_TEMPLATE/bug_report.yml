@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in Arrflix isn't working
+labels: [bug, needs-triage]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, including any error message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Request a movie
+        2. ...
+  - type: input
+    id: version
+    attributes:
+      label: Arrflix version
+      description: Shown in Settings ▸ General.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: How you run Arrflix and your downloader, and how their storage is mounted (shared `/data`, different paths, ...).
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines. Remove anything private, such as tracker URLs or API keys.
+      render: text
