@@ -100,7 +100,7 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 - **REQ-SERIES-001** — A series request must create durable intent that keeps producing work as new episodes air, not a one-off delivery. *Currently true* — this is tracking's whole reason to exist.
 - **REQ-SERIES-002** — Episodes that have not aired must exist as visible future work, not as absences. *Currently true*, and it's what makes a grid, a schedule, and an expectation possible.
-- **REQ-SERIES-003** — Work for an unaired episode must not be attempted before it airs. *Currently true for series* — and notably **not** true for movies, per [asking for something that isn't out yet](./09-not-out-yet.md).
+- **REQ-SERIES-003** — Work for an unaired episode must not be attempted before it airs. *Not currently true* — a season pack grabbed for aired episodes also takes an unaired episode's want in the same season, and if the pack doesn't contain it the want is released to be searched before it airs. It is also **not** true for movies, per [asking for something that isn't out yet](./09-not-out-yet.md).
 - **REQ-SERIES-004** — A tracking that has acquired everything in scope must stand down unless it is still watching for upgrades. **Neither side is built.**
 
 ### One acquisition, many wants
