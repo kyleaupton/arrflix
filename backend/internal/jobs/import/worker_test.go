@@ -517,3 +517,80 @@ func TestReqCancel007_LateCompletionDoesNotReviveCanceledWant(t *testing.T) {
 		t.Errorf("want status after late completion = %q, want %q", gotWant.Status, model.WantCanceled)
 	}
 }
+
+// REQ-FULFIL-002 — A want reaches available when Arrflix itself verifies the
+// file is present and readable, never on a media server's say-so.
+//
+// The import runs with no media server of any kind wired in. When the placed
+// file is present with its bytes, Arrflix's own check alone must carry the want
+// to 'available'. When the placed file is empty (a zero-byte download payload,
+// hardlinked as-is), the verification must fail: the want stays short of
+// 'available' and no file row is recorded for it.
+func TestReqFulfil002_AvailableOnlyOnOwnDiskVerification(t *testing.T) {
+	t.Parallel()
+
+	t.Run("verified file makes the want available", func(t *testing.T) {
+		t.Parallel()
+		pool := dbtest.New(t)
+		r := repo.New(pool)
+		ctx := context.Background()
+
+		fix := seedImportTask(t, ctx, r, true)
+		want, err := os.ReadFile(fix.sourcePath)
+		if err != nil {
+			t.Fatalf("read source: %v", err)
+		}
+		if err := newTestWorker(r).processTask(ctx, fix.task); err != nil {
+			t.Fatalf("processTask: %v", err)
+		}
+
+		gotWant, err := r.GetWant(ctx, fix.want.ID)
+		if err != nil {
+			t.Fatalf("get want: %v", err)
+		}
+		if gotWant.Status != string(model.WantAvailable) {
+			t.Fatalf("want status = %q, want %q", gotWant.Status, model.WantAvailable)
+		}
+		gotTask, err := r.GetImportTask(ctx, fix.task.ID)
+		if err != nil || gotTask.DestPath == nil {
+			t.Fatalf("import task has no destination (err %v)", err)
+		}
+		got, err := os.ReadFile(filepath.Join(fix.libraryRoot, *gotTask.DestPath))
+		if err != nil {
+			t.Fatalf("available want's file is not readable: %v", err)
+		}
+		if string(got) != string(want) {
+			t.Errorf("available want's file content = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("unverifiable file never makes the want available", func(t *testing.T) {
+		t.Parallel()
+		pool := dbtest.New(t)
+		r := repo.New(pool)
+		ctx := context.Background()
+
+		fix := seedImportTask(t, ctx, r, true)
+		if err := os.Truncate(fix.sourcePath, 0); err != nil {
+			t.Fatalf("truncate source: %v", err)
+		}
+		if err := newTestWorker(r).processTask(ctx, fix.task); err == nil {
+			t.Errorf("processTask succeeded importing an empty file, want a verification failure")
+		}
+
+		gotWant, err := r.GetWant(ctx, fix.want.ID)
+		if err != nil {
+			t.Fatalf("get want: %v", err)
+		}
+		if gotWant.Status == string(model.WantAvailable) || gotWant.Status == string(model.WantImported) {
+			t.Errorf("want status = %q after a failed verification, want it short of imported/available", gotWant.Status)
+		}
+		files, err := r.ListFilesForItem(ctx, fix.task.MediaItemID)
+		if err != nil {
+			t.Fatalf("list files: %v", err)
+		}
+		if len(files) != 0 {
+			t.Errorf("file rows after a failed verification = %d, want 0", len(files))
+		}
+	})
+}
