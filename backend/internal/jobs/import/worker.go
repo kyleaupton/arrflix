@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -223,9 +224,10 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 		Str("dest", fullDest).
 		Msg("file imported successfully")
 
-	// Verify the placed file is present and non-empty BEFORE recording it.
-	// HardlinkOrCopy can report success while the file is missing or zero-length
-	// (overlay/network FS hiccup, a disk that errored). Committing a file row +
+	// Verify the placed file is present, non-empty and readable BEFORE recording
+	// it. HardlinkOrCopy can report success while the file is missing,
+	// zero-length or unreadable (overlay/network FS hiccup, a disk that errored,
+	// a hardlink sharing a source's restrictive mode). Committing a file row +
 	// 'available' want for a file that isn't really there is the divergence this
 	// guards against: failing here means no file row is written, so the DB and
 	// disk stay consistent — the import retries, and the want only advances once
@@ -233,6 +235,10 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 	// of the commit rather than after it.
 	if info, serr := os.Stat(fullDest); serr != nil || info.Size() == 0 {
 		return apperrors.Internalf("verify failed: imported file missing or empty: %s", fullDest).
+			Op("ImportWorker.processTask")
+	}
+	if rerr := verifyReadable(fullDest); rerr != nil {
+		return apperrors.Internalf("verify failed: imported file unreadable: %s: %v", fullDest, rerr).
 			Op("ImportWorker.processTask")
 	}
 
@@ -678,4 +684,17 @@ func (w *Worker) deriveSourcePath(ctx context.Context, task model.ImportTask) (s
 
 	// Apply path mapping (stub - returns unchanged for now)
 	return w.pathMapper.Apply(ctx, job.DownloaderID, rawPath), nil
+}
+
+// verifyReadable opens path and reads its first byte. It proves the bytes can
+// be read, not that they form a playable video; reading only the head keeps
+// the check cheap for multi-gigabyte files.
+func verifyReadable(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	_, err = io.ReadFull(f, make([]byte, 1))
+	return err
 }
