@@ -5,28 +5,37 @@
 #   factory/bin/run-stage judge <issue>
 #   factory/bin/run-stage submit <issue>
 #   factory/bin/run-stage watch <issue>
+#   factory/bin/run-stage done <issue>
+#
+# <issue> is a Linear issue, e.g. ARFX-12, or just 12 for the default team
+# ($ARRFLIX_FACTORY_TEAM, default ARFX).
 #
 # implement and judge are agent steps that run in the issue's sandbox and print
-# a structured result. implement makes the run's clone on first use (branch
-# factory/<issue>-<slug>) and starts its sandbox. On a rework it reads the
-# latest "request changes" review on the issue's PR; --feedback passes a file
-# instead. judge runs in a fresh session that can't see the implementer's.
+# a structured result. implement makes the run's clone on first use, branching
+# factory/<Linear's branch name> from GitHub's main, starts its sandbox, and
+# moves the issue from Ready to In Progress. On a rework it reads the latest
+# "request changes" review on the issue's PR; --feedback passes a file
+# instead. judge runs in a fresh session that can't
+# see the implementer's.
 #
 # submit commits the judged work as the bot, pushes the branch, opens the PR
-# (or comments on it, for a rework) and moves the issue to human review.
+# (or comments on it, for a rework) and moves the issue to In Review.
 #
 # watch follows the step running in the issue's sandbox as it happens.
+#
+# done cleans up after the issue is Done or Canceled: it removes the sandbox
+# and deletes the clone. The logs stay.
 #
 # A run lives outside the repo, under $ARRFLIX_FACTORY_HOME (default
 # ~/.local/share/arrflix-factory):
 #   runs/<issue>/repo   the clone the sandbox mounts
 #   runs/<issue>/logs   each step's prompt, result and transcript
 #
-# Needs: gh authenticated on the host (it reads issues and reviews as you),
-# factory/bin/gh-bot for submit, and CLAUDE_CODE_OAUTH_TOKEN or
-# ANTHROPIC_API_KEY for the agent steps, either exported or set in
-# $ARRFLIX_FACTORY_ENV (default ~/.config/arrflix-factory/env, one VAR=value
-# per line, mode 600).
+# Needs: LINEAR_API_KEY for factory/bin/linear; gh authenticated on the host
+# (it reads PR reviews as you); factory/bin/gh-bot for submit; and
+# CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY for the agent steps. Each
+# credential is either exported or set in $ARRFLIX_FACTORY_ENV (default
+# ~/.config/arrflix-factory/env, one VAR=value per line, mode 600).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -35,11 +44,13 @@ factory_home="${ARRFLIX_FACTORY_HOME:-$HOME/.local/share/arrflix-factory}"
 env_file="${ARRFLIX_FACTORY_ENV:-$HOME/.config/arrflix-factory/env}"
 
 die() { echo "run-stage: $*" >&2; exit 1; }
-usage() { sed -n '2,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,34p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
 
 stage="${1:-}"; issue="${2:-}"
-case "$stage" in implement|judge|submit|watch) ;; *) usage ;; esac
-[[ "$issue" =~ ^[0-9]+$ ]] || usage
+case "$stage" in implement|judge|submit|watch|done) ;; *) usage ;; esac
+[[ "$issue" =~ ^[0-9]+$ ]] && issue="${ARRFLIX_FACTORY_TEAM:-ARFX}-$issue"
+issue="${issue^^}"
+[[ "$issue" =~ ^[A-Z]+-[0-9]+$ ]] || usage
 shift 2
 feedback=""
 while [ $# -gt 0 ]; do
@@ -54,20 +65,21 @@ done
 run_dir="$factory_home/runs/$issue"
 clone="$run_dir/repo"
 logs="$run_dir/logs"
-sandbox_name="issue-$issue"
+sandbox_name="${issue,,}"
 ctr="arrflix-factory-$sandbox_name"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 
+linear() { "$factory/bin/linear" "$@"; }
 gh_user() { (cd "$repo_root" && gh "$@"); }
+# Whose "request changes" reviews count as rework feedback.
 maintainers="${ARRFLIX_FACTORY_MAINTAINERS:-$(gh_user repo view --json owner -q .owner.login)}"
-bot="${ARRFLIX_FACTORY_BOT:-arrflix-factory-bot[bot]}"
 
 # --- watch -----------------------------------------------------------------------
 cmd_watch() {
   local transcript
   transcript="$(docker exec "$ctr" sh -c 'ls -t /tmp/agent-home-*/.claude/projects/*/*.jsonl 2>/dev/null | head -1')" ||
-    die "no sandbox for #$issue"
-  [ -n "$transcript" ] || die "no step is running for #$issue"
+    die "no sandbox for $issue"
+  [ -n "$transcript" ] || die "no step is running for $issue"
   echo "run-stage: following $transcript (ctrl-c to stop)" >&2
   docker exec "$ctr" tail -n +1 -F "$transcript" 2>/dev/null | python3 -u -c '
 import json, sys
@@ -88,36 +100,35 @@ for line in sys.stdin:
 '
 }
 
-# --- the issue, and the trust check --------------------------------------------
-# Only issues written by a maintainer or the bot enter the factory, and only
-# while a maintainer has them in the right state for the step. Prints the
-# branch slug; for an agent step it also writes the step's prompt.
+# --- the issue -------------------------------------------------------------------
+# A step runs only while the issue is in the right status for it: implement
+# needs a Ready issue labelled `factory` (or one already In Progress, for a
+# rework), and judge and submit need In Progress. The tracker is a private
+# Linear workspace, so everything in it was written by a maintainer. Prints
+# the run's branch name; for an agent step it also writes the step's prompt.
 check_issue() {
   local issue_json="$logs/$stamp-$stage-issue.json"
-  gh_user issue view "$issue" --json number,title,body,author,labels,comments >"$issue_json"
-  STAGE="$stage" ALLOW="$maintainers,$bot" FEEDBACK="$feedback" \
+  linear issue "$issue" >"$issue_json"
+  STAGE="$stage" FEEDBACK="$feedback" \
     python3 - "$issue_json" "$factory/prompts/$stage.md" "$logs/$stamp-$stage-prompt.md" <<'PY'
-import json, os, re, sys
+import json, os, sys
 
 issue_path, template_path, out_path = sys.argv[1:4]
 issue = json.load(open(issue_path))
-allowed = {a.strip() for a in os.environ["ALLOW"].split(",") if a.strip()}
 stage = os.environ["STAGE"]
+ident, status = issue["identifier"], issue["state"]["name"]
 
-author = issue["author"]["login"]
-if author not in allowed:
-    sys.exit(f"run-stage: #{issue['number']} was written by {author}, who isn't a maintainer or the bot")
-labels = {l["name"] for l in issue["labels"]}
-wanted = {"factory:ready", "factory:in-progress"} if stage == "implement" else {"factory:in-progress"}
-if not labels & wanted:
-    sys.exit(f"run-stage: #{issue['number']} needs one of {sorted(wanted)} to run {stage}; it has {sorted(labels) or 'no labels'}")
+wanted = {"Ready", "In Progress"} if stage == "implement" else {"In Progress"}
+if status not in wanted:
+    sys.exit(f"run-stage: {ident} is {status}; {stage} needs it to be {' or '.join(sorted(wanted))}")
+if "factory" not in issue["labels"]:
+    sys.exit(f"run-stage: {ident} isn't labelled factory, so it's built interactively, not by a run")
 
 if stage in ("implement", "judge"):
-    # The approved spec is the latest maintainer- or bot-written comment that
-    # opens with a "## Spec" heading.
+    # The agreed spec is the latest comment that opens with a "## Spec" heading.
     spec = "None. The issue is its own spec."
     for c in reversed(issue["comments"]):
-        if c["author"]["login"] in allowed and c["body"].lstrip().startswith("## Spec"):
+        if c["body"].lstrip().startswith("## Spec"):
             spec = c["body"].strip()
             break
 
@@ -130,14 +141,16 @@ if stage in ("implement", "judge"):
         sys.exit(f"run-stage: {template_path} has no <!-- prompt --> marker")
     prompt = template.split("<!-- prompt -->", 1)[1].lstrip()
     prompt = (prompt
-        .replace("{{ISSUE}}", f"#{issue['number']}: {issue['title']}\n\n{issue['body'].strip()}")
+        .replace("{{ISSUE}}", f"{ident}: {issue['title']}\n\n{(issue['description'] or '').strip()}")
         .replace("{{SPEC}}", spec)
         .replace("{{REVIEW_COMMENTS}}", feedback))
     if "{{" in prompt:
         sys.exit(f"run-stage: unfilled placeholder in {template_path}")
     open(out_path, "w").write(prompt)
 
-print(re.sub(r"[^a-z0-9]+", "-", issue["title"].lower()).strip("-")[:40].rstrip("-"))
+# Linear suggests "<user>/arfx-12-<title>"; the run's branch is
+# "factory/arfx-12-<title>", so the key in it links the PR to the issue.
+print("factory/" + issue["branchName"].rsplit("/", 1)[-1])
 PY
 }
 
@@ -194,25 +207,27 @@ cmd_agent() {
     [ -z "$feedback" ] || echo "run-stage: reworking from $feedback"
   fi
 
-  local slug; slug="$(check_issue)"
+  local branch; branch="$(check_issue)"
   if [ ! -d "$clone/.git" ]; then
-    [ "$stage" == implement ] || die "no run for #$issue yet; run implement first"
-    # The run branches from your local main, and its PR targets GitHub's, so
-    # the two must match or the PR would carry commits that aren't on main.
-    [ "$(git -C "$repo_root" rev-parse main)" == "$(git -C "$repo_root" ls-remote origin refs/heads/main | cut -f1)" ] ||
-      die "your local main differs from GitHub's; push or update it before starting a run"
-    git clone --quiet --no-hardlinks --branch main "$repo_root" "$clone"
-    git -C "$clone" checkout --quiet -b "factory/$issue-$slug"
-    echo "run-stage: cloned main into $clone on branch factory/$issue-$slug"
+    [ "$stage" == implement ] || die "no run for $issue yet; run implement first"
+    # The PR targets GitHub's main, so the run branches from it too, whatever
+    # state your local checkout is in. Cloning locally first saves downloading
+    # objects you already have; the clone's main then becomes GitHub's, which
+    # the prompts' `git diff main` relies on.
+    local gh_slug; gh_slug="$(gh_user repo view --json nameWithOwner -q .nameWithOwner)"
+    git clone --quiet --no-hardlinks "$repo_root" "$clone"
+    git -C "$clone" fetch --quiet "https://github.com/$gh_slug.git" main
+    git -C "$clone" checkout --quiet -B main FETCH_HEAD
+    git -C "$clone" checkout --quiet -b "$branch"
+    echo "run-stage: cloned GitHub's main ($(git -C "$clone" rev-parse --short HEAD)) into $clone on branch $branch"
   fi
   if ! docker ps --format '{{.Names}}' | grep -qx "$ctr"; then
     "$factory/bin/sandbox" up "$clone" "$sandbox_name"
   fi
-  # Starting a run is the orchestrator's transition, so the bot makes it.
-  if [ "$stage" == implement ] && jq -e 'any(.labels[]; .name == "factory:ready")' "$logs/$stamp-$stage-issue.json" >/dev/null; then
-    (cd "$repo_root" && "$factory/bin/gh-bot" issue edit "$issue" \
-      --remove-label factory:ready --add-label factory:in-progress >/dev/null)
-    echo "run-stage: moved #$issue to factory:in-progress"
+  # Starting a run is the orchestrator's transition, not the maintainer's.
+  if [ "$stage" == implement ] && [ "$(jq -r .state.name "$logs/$stamp-$stage-issue.json")" == Ready ]; then
+    linear move "$issue" "In Progress"
+    echo "run-stage: moved $issue to In Progress"
   fi
 
   # A fresh HOME per step: no session, transcript or memory carries from one
@@ -228,7 +243,7 @@ cmd_agent() {
   schema="$(python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); d.pop("$schema", None); print(json.dumps(d))' \
     "$factory/schemas/$stage-result.json")"
 
-  echo "run-stage: running $stage for #$issue (log: $result)"
+  echo "run-stage: running $stage for $issue (log: $result)"
   # Every stage runs on Opus unless ARRFLIX_FACTORY_MODEL says otherwise;
   # without a model the CLI picks its own default.
   SANDBOX_HOME="$step_home" "$factory/bin/sandbox" exec "$sandbox_name" \
@@ -270,16 +285,16 @@ PY
 # --- submit ----------------------------------------------------------------------
 # Deterministic, and on the host: the sandbox never holds GitHub credentials.
 cmd_submit() {
-  [ -d "$clone/.git" ] || die "no run for #$issue yet"
+  [ -d "$clone/.git" ] || die "no run for $issue yet"
   check_issue >/dev/null
 
   local impl judge
   impl="$(ls "$logs"/*-implement.json 2>/dev/null | sort | tail -1)"
   judge="$(ls "$logs"/*-judge.json 2>/dev/null | sort | tail -1)"
-  [ -n "$impl" ] || die "#$issue has no implement result"
+  [ -n "$impl" ] || die "$issue has no implement result"
   [[ -n "$judge" && "$(basename "$judge")" > "$(basename "$impl")" ]] ||
-    die "the latest implement for #$issue hasn't been judged; run judge first"
-  [ -n "$(git -C "$clone" status --porcelain)" ] || die "the clone for #$issue has nothing to commit"
+    die "the latest implement for $issue hasn't been judged; run judge first"
+  [ -n "$(git -C "$clone" status --porcelain)" ] || die "the clone for $issue has nothing to commit"
 
   local slug branch pr bot_login bot_id token
   slug="$(gh_user repo view --json nameWithOwner -q .nameWithOwner)"
@@ -312,7 +327,8 @@ def cell(text):
 
 out = [impl["summary"].strip(), ""]
 if not rework:
-    out += [f"Closes #{issue}", ""]
+    # Linear's magic word: the merge moves the issue to Done.
+    out += [f"Fixes {issue}", ""]
 out += [f"## Judge: {judge['verdict']}", "", judge["summary"].strip(), ""]
 if judge["acceptance"]:
     out += ["| Acceptance criterion | Met | Evidence |", "| --- | --- | --- |"]
@@ -343,7 +359,7 @@ out += ["---", "", "Factory run: " + "; ".join(steps) + ".", "",
 open(body_path, "w").write("\n".join(out) + "\n")
 
 co_authors = sorted({model_name(m) for m in impl_run.get("modelUsage", {})})
-message = impl["commit_message"].strip() + f"\n\nRefs #{issue}\n"
+message = impl["commit_message"].strip() + f"\n\nRefs {issue}\n"
 if co_authors:
     message += "\n" + "\n".join(f"Co-Authored-By: {m} <noreply@anthropic.com>" for m in co_authors) + "\n"
 open(message_path, "w").write(message)
@@ -368,13 +384,34 @@ PY
   else
     (cd "$clone" && GH_TOKEN="$token" gh pr comment "$pr" -R "$slug" --body-file "$body")
   fi
-  GH_TOKEN="$token" gh issue edit "$issue" -R "$slug" \
-    --remove-label factory:in-progress --add-label factory:human-review >/dev/null
-  echo "run-stage: #$issue is in factory:human-review"
+  linear move "$issue" "In Review"
+  echo "run-stage: $issue is In Review"
+}
+
+# --- done ------------------------------------------------------------------------
+# After the merge. Refuses until the issue is Done or Canceled, so it can't
+# throw away a run that's still in review.
+cmd_done() {
+  local state
+  state="$(linear issue "$issue" | jq -r '.state.type + " " + .state.name')"
+  case "${state%% *}" in
+    completed|canceled) ;;
+    *) die "$issue is ${state#* }; done is for after it's Done or Canceled" ;;
+  esac
+  if docker ps -a --format '{{.Names}}' | grep -qx "$ctr"; then
+    "$factory/bin/sandbox" down "$sandbox_name"
+  fi
+  if [ -d "$clone" ]; then
+    chmod -R u+w "$clone"
+    rm -rf "$clone"
+    echo "run-stage: deleted $clone"
+  fi
+  echo "run-stage: $issue is done; its logs are in $logs"
 }
 
 case "$stage" in
   watch) cmd_watch ;;
+  done) cmd_done ;;
   submit) mkdir -p "$logs"; cmd_submit ;;
   *) mkdir -p "$logs"; cmd_agent ;;
 esac

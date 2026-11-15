@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Reads and moves the factory's Linear issues. See factory/WORKFLOW.md.
+
+  factory/bin/linear issue <ARFX-12>           the issue as JSON: title, description,
+                                               state, labels, branch name, comments
+  factory/bin/linear move <ARFX-12> <status>   move the issue to a status by name, e.g. "In Review"
+  factory/bin/linear whoami                    the user the API key belongs to
+
+Authenticates with LINEAR_API_KEY, either exported or set in $ARRFLIX_FACTORY_ENV
+(default ~/.config/arrflix-factory/env, mode 600). The key never leaves the
+host: run-stage calls this outside the sandbox, and nothing here prints it.
+"""
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+API = "https://api.linear.app/graphql"
+
+
+def die(message):
+    sys.exit(f"linear: {message}")
+
+
+def api_key():
+    if key := os.environ.get("LINEAR_API_KEY"):
+        return key
+    env_file = Path(os.environ.get("ARRFLIX_FACTORY_ENV", Path.home() / ".config/arrflix-factory/env"))
+    if env_file.exists():
+        # The last assignment wins, as it would if the file were sourced.
+        for line in env_file.read_text().splitlines():
+            name, _, value = line.partition("=")
+            if name.strip() == "LINEAR_API_KEY" and value.strip():
+                key = value.strip().strip("'\"")
+    if not key:
+        die(f"set LINEAR_API_KEY, or put it in {env_file}")
+    return key
+
+
+def graphql(query, **variables):
+    request = urllib.request.Request(
+        API,
+        data=json.dumps({"query": query, "variables": variables}).encode(),
+        # A personal API key goes in the header bare, without "Bearer".
+        headers={"Content-Type": "application/json", "Authorization": api_key()},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            body = json.load(response)
+    except urllib.error.HTTPError as e:
+        die(f"the API answered {e.code}: {e.read().decode(errors='replace')[:300]}")
+    if body.get("errors"):
+        die("; ".join(e.get("message", "?") for e in body["errors"]))
+    return body["data"]
+
+
+ISSUE = """
+query($id: String!) {
+  issue(id: $id) {
+    identifier title description url branchName
+    state { name type }
+    labels { nodes { name } }
+    creator { name }
+    team { id key }
+    comments(first: 100) { nodes { body createdAt user { name } } }
+  }
+}"""
+
+
+def issue(identifier):
+    data = graphql(ISSUE, id=identifier)["issue"]
+    if data is None:
+        die(f"no issue {identifier}")
+    data["labels"] = [l["name"] for l in data["labels"]["nodes"]]
+    data["comments"] = sorted(data["comments"]["nodes"], key=lambda c: c["createdAt"])
+    return data
+
+
+def move(identifier, status):
+    found = issue(identifier)
+    states = graphql(
+        "query($team: String!) { team(id: $team) { states { nodes { id name } } } }",
+        team=found["team"]["id"],
+    )["team"]["states"]["nodes"]
+    state = next((s for s in states if s["name"].lower() == status.lower()), None)
+    if state is None:
+        die(f"team {found['team']['key']} has no status {status!r}; it has {', '.join(s['name'] for s in states)}")
+    graphql(
+        "mutation($id: String!, $state: String!) { issueUpdate(id: $id, input: { stateId: $state }) { success } }",
+        id=identifier, state=state["id"],
+    )
+
+
+def main(args):
+    match args:
+        case ["issue", identifier]:
+            print(json.dumps(issue(identifier), indent=2))
+        case ["move", identifier, status]:
+            move(identifier, status)
+        case ["whoami"]:
+            print(graphql("{ viewer { name } }")["viewer"]["name"])
+        case _:
+            print(__doc__.split("\n\n")[1], file=sys.stderr)
+            sys.exit(2)
+
+
+main(sys.argv[1:])

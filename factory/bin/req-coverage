@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Reports which V1 requirements have a test named for them. See specs/V1.md.
+
+  factory/bin/req-coverage            every REQ ID under V1's "In", covered or not
+  factory/bin/req-coverage --missing  only the ones without a test
+
+V1 is done when every REQ ID listed under "In" has a passing test named for
+it, so this is V1's progress report. A REQ ID counts as covered when some
+backend test function is named TestReq<Area><NNN>_..., e.g. REQ-CANCEL-007 ->
+TestReqCancel007_LateCompletionDoesNotReviveCanceledWant. It checks names
+only; CI is what says the tests pass.
+
+Each uncovered requirement shows its text and, when the owning story says so,
+whether it's currently true. A requirement that's already true needs only a
+pinning test; one that isn't needs a fix too.
+"""
+import re
+import sys
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[2]
+REQ = re.compile(r"REQ-([A-Z]+)-(\d{3})")
+
+
+def in_scope():
+    """REQ IDs under V1's "## In", in page order.
+
+    They appear either as a bare list line ("REQ-FULFIL-001, 002, 003") or as a
+    bullet definition ("- **REQ-PATH-001:** ..."). Mentions inside prose, such
+    as "REQ-FULFIL-006 ... is V1.1", aren't scope.
+    """
+    text = (root / "specs/V1.md").read_text()
+    section = text.split("\n## In\n", 1)[1].split("\n## ", 1)[0]
+    ids = []
+    for line in section.splitlines():
+        line = line.strip()
+        if re.fullmatch(r"REQ-[A-Z]+-\d{3}(, \d{3})*", line):
+            area = REQ.match(line).group(1)
+            ids += [f"REQ-{area}-{n}" for n in re.findall(r"\d{3}", line)]
+        elif m := re.match(r"- \*\*(REQ-[A-Z]+-\d{3}):\*\*", line):
+            ids.append(m.group(1))
+    return list(dict.fromkeys(ids))
+
+
+def definitions():
+    """REQ ID -> its definition line, from the stories and V1.md."""
+    defs = {}
+    for path in [*sorted((root / "specs/stories").glob("*.md")), root / "specs/V1.md"]:
+        for line in path.read_text().splitlines():
+            if m := re.match(r"- \*\*(REQ-[A-Z]+-\d{3})(?::\*\*|\*\* —)\s*(.*)", line.strip()):
+                defs.setdefault(m.group(1), (m.group(2), path.relative_to(root)))
+    return defs
+
+
+def tests():
+    """REQ ID -> [(test name, file)] for every TestReq<Area><NNN> function."""
+    found = {}
+    pattern = re.compile(r"^func (TestReq([A-Za-z]+?)(\d{3})\w*)\(", re.M)
+    for path in sorted((root / "backend").rglob("*_test.go")):
+        for m in pattern.finditer(path.read_text()):
+            req = f"REQ-{m.group(2).upper()}-{m.group(3)}"
+            found.setdefault(req, []).append((m.group(1), path.relative_to(root)))
+    return found
+
+
+# The stories mark each requirement's state in bold or italic prose.
+STATUS = [
+    (r"Not currently true|Unbuilt", "not true yet"),
+    (r"Partly true|Half true", "partly true"),
+    (r"Currently true", "true, unpinned"),
+]
+MARK = r"\s*\*{1,2}(?:" + "|".join(p for p, _ in STATUS) + r").*"
+
+
+def status(text):
+    for pattern, label in STATUS:
+        if re.search(r"\*{1,2}(?:" + pattern + ")", text):
+            return label
+    return "unknown"
+
+
+def first_sentence(text):
+    text = re.sub(MARK, "", text)
+    return text if len(text) <= 140 else text[:137] + "..."
+
+
+def main():
+    missing_only = sys.argv[1:] == ["--missing"]
+    if sys.argv[1:] and not missing_only:
+        print(__doc__.split("\n\n")[1], file=sys.stderr)
+        sys.exit(2)
+
+    scope, defs, found = in_scope(), definitions(), tests()
+    covered = [r for r in scope if r in found]
+
+    by_area = {}
+    for req in scope:
+        by_area.setdefault(REQ.match(req).group(1), []).append(req)
+
+    for area, reqs in by_area.items():
+        done = sum(r in found for r in reqs)
+        rows = [r for r in reqs if not (missing_only and r in found)]
+        if not rows:
+            continue
+        print(f"{area}  {done}/{len(reqs)}")
+        for req in rows:
+            text, _ = defs.get(req, ("(no definition found)", None))
+            if req in found:
+                names = ", ".join(name for name, _ in found[req])
+                print(f"  ✓ {req}  {names}")
+            else:
+                print(f"  · {req}  [{status(text)}] {first_sentence(text)}")
+        print()
+
+    extra = sorted(r for r in found if r not in scope)
+    if extra and not missing_only:
+        print("Tests for REQ IDs outside V1's In:", ", ".join(extra))
+        print()
+    print(f"V1: {len(covered)}/{len(scope)} REQ IDs have a test")
+
+
+main()

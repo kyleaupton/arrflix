@@ -121,7 +121,7 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 - **REQ-CANCEL-004** — A download job already transferring must be allowed to complete. Only wants that have not yet reached a downloading state may be cancelled on withdrawal. **Not currently true:** the last requester's withdrawal cancels downloading wants and their download jobs, so the transfer's result is never imported.
 - **REQ-CANCEL-005** — Withdrawal must never delete files already acquired. They persist and fall under library retention policy. *Currently true* — no cancel path deletes files.
 - **REQ-CANCEL-006** — Cancelling a want must not exclude its release from future searches. Withdrawal means the requester stopped wanting the title, not that the release was unsuitable — recording an exclusion would poison later acquisition of the same title. *Currently true* — exclusions are recorded only for failed downloads and declined proposals.
-- **REQ-CANCEL-007** — A download job completing after its want was cancelled must not return that want to a live status. *Currently true* — worth an explicit test so it stays that way.
+- **REQ-CANCEL-007** — A download job completing after its want was cancelled must not return that want to a live status. *Currently true.*
 
 ### The affordance is honest
 

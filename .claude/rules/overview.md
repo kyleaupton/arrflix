@@ -29,7 +29,7 @@ This file is **always loaded**. It is the orientation for design-time work — a
 | `specs/V1.md` | Scope of the current release: what's in, what's deferred |
 | `specs/README.md` | Spec index and what each spec `status` (`as-built`, `v1`, `deferred`) means |
 | `specs/patterns/errors/README.md` | Full rationale for the error model |
-| `factory/WORKFLOW.md` | How issues move through the agent factory: label states, gates, runs |
+| `factory/WORKFLOW.md` | How issues move from Linear to a merged PR: statuses, gates, runs |
 
 ## Architecture & conventions map
 
