@@ -43,6 +43,17 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - && \
   apt-get install -y --no-install-recommends nodejs && \
   rm -rf /var/lib/apt/lists/*
 
+# Playwright MCP server and its browsers, so agents can look at the UI they
+# build (web/scripts/browser-mcp.mjs). Chromium backs the desktop entry and
+# WebKit the iPhone one. Browsers live outside any HOME so the factory's
+# non-root, throwaway-HOME agents find them too.
+ARG PLAYWRIGHT_MCP_VERSION=0.0.85
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npm install -g @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} && \
+    playwright-mcp install-browser --with-deps --no-shell chromium webkit && \
+    chmod -R a+rX /ms-playwright && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install s6-overlay
 ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}/s6-overlay-noarch.tar.xz /tmp
 RUN tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz

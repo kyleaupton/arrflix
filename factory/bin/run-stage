@@ -33,9 +33,12 @@
 #
 # Needs: LINEAR_API_KEY for factory/bin/linear; gh authenticated on the host
 # (it reads PR reviews as you); factory/bin/gh-bot for submit; and
-# CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY for the agent steps. Each
-# credential is either exported or set in $ARRFLIX_FACTORY_ENV (default
+# CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY for the agent steps. Optional:
+# TMDB_API_KEY, which the sandbox's app needs to show titles. Each credential
+# is either exported or set in $ARRFLIX_FACTORY_ENV (default
 # ~/.config/arrflix-factory/env, one VAR=value per line, mode 600).
+#
+# Agent steps get the browser MCP servers in factory/mcp.json and no others.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -44,7 +47,7 @@ factory_home="${ARRFLIX_FACTORY_HOME:-$HOME/.local/share/arrflix-factory}"
 env_file="${ARRFLIX_FACTORY_ENV:-$HOME/.config/arrflix-factory/env}"
 
 die() { echo "run-stage: $*" >&2; exit 1; }
-usage() { sed -n '2,34p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,41p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
 
 stage="${1:-}"; issue="${2:-}"
 case "$stage" in implement|judge|submit|watch|done) ;; *) usage ;; esac
@@ -201,6 +204,13 @@ cmd_agent() {
   fi
   [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}${ANTHROPIC_API_KEY:-}" ] ||
     die "set CLAUDE_CODE_OAUTH_TOKEN (from \`claude setup-token\`) or ANTHROPIC_API_KEY, or put it in $env_file"
+  # The sandbox seeds the TMDB key, when there is one, so the app it runs can
+  # show titles. Read it from the env file even when the Claude credential was
+  # exported and the file wasn't sourced above.
+  if [ -z "${TMDB_API_KEY:-}" ] && [ -f "$env_file" ]; then
+    TMDB_API_KEY="$(set -a; . "$env_file"; printf %s "${TMDB_API_KEY:-}")"
+  fi
+  export TMDB_API_KEY="${TMDB_API_KEY:-}"
 
   if [ "$stage" == implement ] && [ -z "$feedback" ] && [ -d "$clone/.git" ]; then
     feedback="$(review_feedback)"
@@ -256,6 +266,7 @@ cmd_agent() {
       --permission-mode bypassPermissions \
       --setting-sources project \
       --strict-mcp-config \
+      --mcp-config /app/factory/mcp.json \
       --model "${ARRFLIX_FACTORY_MODEL:-opus}" \
     <"$logs/$stamp-$stage-prompt.md" >"$result" || status=$?
 

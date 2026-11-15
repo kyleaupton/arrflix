@@ -9,8 +9,11 @@
 #
 # The container is the trust boundary. It gets the checkout and nothing else
 # from the host: no docker socket, no home directory, no GitHub credentials.
-# The only secrets passed in are the Claude credentials, and only to `exec`.
-# Its Postgres is ephemeral, so every sandbox starts from an empty database.
+# The only secrets passed in are the Claude credentials, only to `exec`, and
+# TMDB_API_KEY when it's set, a read-only key for public title metadata. Its
+# Postgres is ephemeral; `up` loads the dev seed into it (users, libraries,
+# the TMDB key), so the app it serves has users to sign in as and can show
+# titles.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -34,8 +37,10 @@ cmd_up() {
 
   # The anonymous volume keeps the container's node_modules out of the checkout,
   # as docker-compose.yml does for the dev stack.
+  local env_args=(-e APP_ENV=dev)
+  if [ -n "${TMDB_API_KEY:-}" ]; then env_args+=(-e TMDB_API_KEY); fi
   docker run -d --name "$ctr" \
-    -e APP_ENV=dev \
+    "${env_args[@]}" \
     -v "$dir:/app" \
     -v /app/web/node_modules \
     "$image" >/dev/null
@@ -51,6 +56,10 @@ cmd_up() {
   echo "sandbox: waiting for npm install in $ctr"
   wait_for "$ctr" 600 bash -c 'exec 3<>/dev/tcp/127.0.0.1/5173' || die "npm install in $ctr never finished (docker logs $ctr)"
   docker exec "$ctr" chown -R "$(id -u):$(id -g)" /app/web/node_modules
+
+  # As root: the reseed ends by restarting the backend under s6.
+  echo "sandbox: seeding the database in $ctr"
+  docker exec -w /app "$ctr" just db-reseed >/dev/null || die "seeding failed in $ctr (docker exec -w /app $ctr just db-reseed)"
 
   echo "sandbox: $ctr is up"
 }
@@ -99,5 +108,5 @@ case "${1:-}" in
   up) shift; cmd_up "$@" ;;
   exec) shift; cmd_exec "$@" ;;
   down) shift; cmd_down "$@" ;;
-  *) sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

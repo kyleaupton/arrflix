@@ -88,6 +88,8 @@ A custom MCP server in `mcp/` complements the justfile for runtime introspection
 | `arrflix_db_query` | Read-only SQL against the running dev DB | shelling in + `psql` |
 | `arrflix_docker_logs` | Recent logs from a docker compose service | `docker compose logs …` |
 
+The `browser-desktop` and `browser-mobile` servers drive a real browser (Chromium, and WebKit as an iPhone) on the running app, signed in as the seeded admin. They run inside the dev container (`web/scripts/browser-mcp.mjs`), and factory agents get the same two. `frontend-ui.md` says when to use them.
+
 ## Password hash utility
 
 ```bash

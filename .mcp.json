@@ -7,6 +7,14 @@
     "shadcn": {
       "command": "npx",
       "args": ["shadcn-vue@latest", "mcp"]
+    },
+    "browser-desktop": {
+      "command": "docker",
+      "args": ["compose", "exec", "-T", "arrflix-dev", "node", "/app/web/scripts/browser-mcp.mjs", "desktop"]
+    },
+    "browser-mobile": {
+      "command": "docker",
+      "args": ["compose", "exec", "-T", "arrflix-dev", "node", "/app/web/scripts/browser-mcp.mjs", "mobile"]
     }
   }
 }

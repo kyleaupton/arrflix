@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "browser-desktop": {
+      "command": "node",
+      "args": ["/app/web/scripts/browser-mcp.mjs", "desktop"]
+    },
+    "browser-mobile": {
+      "command": "node",
+      "args": ["/app/web/scripts/browser-mcp.mjs", "mobile"]
+    }
+  }
+}

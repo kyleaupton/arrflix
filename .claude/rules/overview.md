@@ -79,6 +79,7 @@ Detailed, enforceable rules for each layer live alongside this file and auto-loa
 | `backend-handlers.md` | `backend/internal/http/handlers/**` |
 | `backend-integration-tests.md` | `backend/internal/test/integration/**` |
 | `frontend-api.md` | `web/src/**` |
+| `frontend-ui.md` | `web/src/**` |
 | `version-system.md` | version/update code |
 
 If you are designing without those files loaded, the invariants above are the contract to design against.
