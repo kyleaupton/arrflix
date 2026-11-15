@@ -108,7 +108,7 @@ import { useInfiniteQuery } from '@tanstack/vue-query'
 import { useDebounceFn, useInfiniteScroll } from '@vueuse/core'
 import { Search, Film } from 'lucide-vue-next'
 import { libraryListInfiniteOptions } from '@/client/@tanstack/vue-query.gen'
-import type { LibraryItem } from '@/client/types.gen'
+import type { LibraryItem, LibraryListResponse } from '@/client/types.gen'
 import { problemMessage } from '@/lib/api'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -149,7 +149,7 @@ const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError
           pageSize: pageSize.value,
         },
       }),
-      getNextPageParam: (lastPage: { pagination: { page: number; totalPages: number } }) => {
+      getNextPageParam: (lastPage: LibraryListResponse) => {
         const { page, totalPages } = lastPage.pagination
         return page < totalPages ? page + 1 : undefined
       },

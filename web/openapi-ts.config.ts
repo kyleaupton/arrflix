@@ -8,5 +8,5 @@ const input = path.join(dirname, '..', 'backend/internal/http/docs/openapi.json'
 export default defineConfig({
   input,
   output: 'src/client',
-  plugins: ['@tanstack/vue-query'],
+  plugins: ['@tanstack/vue-query', 'msw'],
 })

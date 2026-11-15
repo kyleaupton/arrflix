@@ -7,8 +7,9 @@
 V1 is done when every REQ ID listed under "In" has a passing test named for
 it, so this is V1's progress report. A REQ ID counts as covered when some
 backend test function is named TestReq<Area><NNN>_..., e.g. REQ-CANCEL-007 ->
-TestReqCancel007_LateCompletionDoesNotReviveCanceledWant. It checks names
-only; CI is what says the tests pass.
+TestReqCancel007_LateCompletionDoesNotReviveCanceledWant, or some frontend
+test's title starts with the ID, e.g. test('REQ-CANCEL-009: ...'). It checks
+names only; CI is what says the tests pass.
 
 Each uncovered requirement shows its text and, when the owning story says so,
 whether it's currently true. A requirement that's already true needs only a
@@ -53,13 +54,19 @@ def definitions():
 
 
 def tests():
-    """REQ ID -> [(test name, file)] for every TestReq<Area><NNN> function."""
+    """REQ ID -> [(test name, file)] for every Go TestReq<Area><NNN> function
+    and every web test whose title starts with a REQ ID."""
     found = {}
-    pattern = re.compile(r"^func (TestReq([A-Za-z]+?)(\d{3})\w*)\(", re.M)
+    go = re.compile(r"^func (TestReq([A-Za-z]+?)(\d{3})\w*)\(", re.M)
     for path in sorted((root / "backend").rglob("*_test.go")):
-        for m in pattern.finditer(path.read_text()):
+        for m in go.finditer(path.read_text()):
             req = f"REQ-{m.group(2).upper()}-{m.group(3)}"
             found.setdefault(req, []).append((m.group(1), path.relative_to(root)))
+    web = re.compile(r"""\b(?:test|it|describe)\(\s*['"`]((REQ-[A-Z]+-\d{3})\b[^'"`]*)""")
+    for path in sorted((root / "web/src").rglob("*.test.ts")):
+        for m in web.finditer(path.read_text()):
+            title = re.sub(r"^REQ-[A-Z]+-\d{3}:?\s*", "", m.group(1))
+            found.setdefault(m.group(2), []).append((f"web: {title}", path.relative_to(root)))
     return found
 
 

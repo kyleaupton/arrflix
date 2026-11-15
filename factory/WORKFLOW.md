@@ -144,7 +144,7 @@ Commands run as the caller's uid with a throwaway `HOME`, so no Claude config, m
 
 A run's branch starts from GitHub's `main`, not the local checkout's, because that's what its PR targets.
 
-`factory/bin/req-coverage` is V1's progress report. It lists each REQ ID under _In_ in `specs/V1.md`, marks the ones with a `TestReq…` test, and shows the rest with their story's *currently true* status. `--missing` lists only the uncovered ones.
+`factory/bin/req-coverage` is V1's progress report. It lists each REQ ID under _In_ in `specs/V1.md`, marks the ones with a test named for them (a Go `TestReq…` function or a web test titled `REQ-…: …`), and shows the rest with their story's *currently true* status. `--missing` lists only the uncovered ones.
 
 Runs live outside the repo, under `~/.local/share/arrflix-factory/runs/<issue>/` (e.g. `runs/ARFX-12/`), with each step's prompt, result and transcript in `logs/`.
 

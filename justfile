@@ -195,6 +195,11 @@ web-lint: _ensure-up
 web-type-check: _ensure-up
     {{web-exec}} npm run type-check
 
+# Run the frontend component tests (Vitest, jsdom, MSW).
+[group('frontend')]
+web-test: _ensure-up
+    {{web-exec}} npm run test
+
 # Build the production bundle.
 [group('frontend')]
 web-build: _ensure-up
@@ -263,6 +268,8 @@ check: _ensure-up
     {{web-exec}} npx prettier --check src/
     @echo "→ frontend type-check"
     {{web-exec}} npm run type-check
+    @echo "→ frontend tests"
+    {{web-exec}} npm run test
     @echo "→ backend unit tests"
     {{backend-exec}} go test -race ./...
     @echo "All checks passed."

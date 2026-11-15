@@ -188,7 +188,9 @@ const indexerActions = createIndexerActions(handleEdit, handleTest, handleToggle
           :columns="indexerColumns"
           :actions="indexerActions"
           :loading="isLoading"
-          :empty-message="error ? `Error: ${error.message}` : 'No indexers configured'"
+          :empty-message="
+            error ? problemMessage(error, 'Failed to load indexers') : 'No indexers configured'
+          "
           searchable
           search-placeholder="Search indexers..."
           paginator

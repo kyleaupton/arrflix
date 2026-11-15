@@ -31,12 +31,12 @@ Judge these three things, in this order:
    - edits under `factory/`, `.claude/`, `.github/` or `docker/`
    - tests that were skipped, disabled, loosened or deleted
    - behavior changes in areas the issue's *Out of scope* names
-2. **Honest REQ tests.** Each REQ ID the issue names needs a test named for it (`TestReq<Area><NNN>_…`) whose assertions would fail if the requirement were broken. A test that only runs the code path, asserts something incidental, or asserts what the code happens to do rather than what the requirement says, doesn't count.
+2. **Honest REQ tests.** Each REQ ID the issue names needs a test named for it (`TestReq<Area><NNN>_…` in Go, or a web test titled `REQ-<AREA>-<NNN>: …`) whose assertions would fail if the requirement were broken. A test that only runs the code path, asserts something incidental, or asserts what the code happens to do rather than what the requirement says, doesn't count.
 
    Read each requirement clause by clause. "Present **and readable**" is two clauses, and so is "only X, never Y". For every clause, find the assertion that would fail if that clause were broken. If a clause has none, say so in a finding that names the clause. It's blocking when the issue asks for that clause to be proven. It's a `note` when the clause isn't true in the code and the issue says to report rather than fix, so the reviewer knows the REQ is only partly pinned.
 3. **Acceptance.** Go through each acceptance criterion in the issue and decide whether the changes meet it. Cite the evidence: a test, a file, or a behavior you checked.
 
-You may run tests (for example `cd backend && go test -tags=integration -run TestReq… ./internal/test/integration/`). **Don't modify any file.** You're judging the tree, not changing it.
+You may run tests (for example `cd backend && go test -tags=integration -run TestReq… ./internal/test/integration/`, or `cd web && npx vitest run -t REQ-…`). **Don't modify any file.** You're judging the tree, not changing it.
 
 Code style, formatting and lint are out of scope: `just preflight-all` gates those already.
 

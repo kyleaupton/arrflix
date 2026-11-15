@@ -5426,6 +5426,7 @@ export type EventsStreamError = EventsStreamErrors[keyof EventsStreamErrors];
 export type EventsStreamResponses = {
     /**
      * Server Sent Events
+     *
      * Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.
      */
     200: Array<{

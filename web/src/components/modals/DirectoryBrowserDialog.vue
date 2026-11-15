@@ -2,6 +2,7 @@
 import { ref, inject, computed, watch } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { filesystemBrowseOptions } from '@/client/@tanstack/vue-query.gen'
+import { problemMessage } from '@/lib/api'
 import BaseDialog from './BaseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -117,7 +118,7 @@ const handleCancel = () => {
 
         <div v-else-if="isError" class="flex items-center gap-2 py-8 px-4 text-destructive text-sm">
           <AlertCircle class="h-5 w-5 shrink-0" />
-          {{ (error as Error)?.message || 'Failed to browse directory' }}
+          {{ problemMessage(error, 'Failed to browse directory') }}
         </div>
 
         <div v-else class="flex flex-col">

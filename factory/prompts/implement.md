@@ -31,7 +31,7 @@ Your job is to build what the issue below asks for, prove it with tests, and sto
 
 **Tests prove the work.**
 
-- For each REQ ID the issue names, write a test named for it: `TestReq<Area><NNN>_<BehaviorInPascalCase>` in Go, with a doc comment that opens `// REQ-<AREA>-<NNN> — ` and restates the requirement. `web/` has no test runner yet, so a REQ that can only be proven in the frontend is a reason to return `blocked`.
+- For each REQ ID the issue names, write a test named for it. In Go: `TestReq<Area><NNN>_<BehaviorInPascalCase>`, with a doc comment that opens `// REQ-<AREA>-<NNN> — ` and restates the requirement. In `web/`: a component test whose title starts with the ID, `test('REQ-<AREA>-<NNN>: <behavior>', …)`, written per the frontend testing conventions in `.claude/rules/workflow.md`. A requirement that spans both sides gets both: a Go test for what the API says, and a web test for what the UI does with it.
 - A test must fail if its requirement is broken, not merely exercise the code path. For a bug fix, write the test first and watch it fail against the unfixed code.
 - The stories in `specs/stories/` note whether each requirement is *Currently true* or *Not currently true*. If your change makes such a note wrong, correct it in the same change. `specs/V1.md` holds scope only, so never record status there.
 - Logic that crosses the database goes in an integration test (`backend/internal/test/integration/`, build tag `integration`). Read `.claude/rules/backend-integration-tests.md` before writing one.

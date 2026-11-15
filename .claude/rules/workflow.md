@@ -16,7 +16,7 @@ just preflight-all   # preflight plus the integration suite (the factory's done 
 
 Inside the factory sandbox (`ARRFLIX_IN_CONTAINER=1`, see `factory/WORKFLOW.md`), the same recipes run their commands directly instead of through `docker compose exec`, and the integration tests use the sandbox's own Postgres via `ARRFLIX_TEST_PG_DSN`.
 
-Per-tool recipes are namespaced: `backend-fmt`, `backend-lint`, `backend-vet`, `backend-test`, `backend-test-integration`, `backend-genspec`, `backend-sqlc`, `web-fmt`, `web-lint`, `web-type-check`, `web-build`, `web-genclient`, `gen-email`, `email-preview`. Container lifecycle: `up`, `down`, `rebuild`, `shell`, `logs`.
+Per-tool recipes are namespaced: `backend-fmt`, `backend-lint`, `backend-vet`, `backend-test`, `backend-test-integration`, `backend-genspec`, `backend-sqlc`, `web-fmt`, `web-lint`, `web-type-check`, `web-test`, `web-build`, `web-genclient`, `gen-email`, `email-preview`. Container lifecycle: `up`, `down`, `rebuild`, `shell`, `logs`.
 
 ## Agent workflow
 
@@ -51,10 +51,13 @@ just check                      # fast: lint + type-check + unit tests (mirrors 
 just check-all                  # slow: above + integration tests (postgres testcontainer)
 just backend-test               # unit only
 just backend-test-integration   # integration only
+just web-test                   # frontend component tests only
 just parity-regen               # parser parity — regen goldens from pinned Sonarr/Radarr containers
 ```
 
 Unit tests live alongside the code they cover and run without external dependencies. Integration tests live in `backend/internal/test/integration/` behind a `//go:build integration` tag and spin up a postgres testcontainer per `TestMain`. The parsing module is regression-gated against Sonarr/Radarr via a hermetic Tier-1 `go test` (runs in `just check`); `just parity-regen` is the Tier-2 golden regeneration.
+
+Frontend tests are component tests: Vitest in jsdom with `@testing-library/vue`, as `*.test.ts` next to the component. API calls are mocked at the network with MSW, using the handlers generated into `web/src/client/msw.gen.ts` (`handleTitleStatusGet({ body })`, …), so components, TanStack Query and the SDK run as in the app. Render through `renderWithApp` and build payloads with the builders in `web/src/test/`. A request with no declared handler fails the test. A requirement that spans both sides gets a Go test for what the API says and a web test for what the UI does with it; a web REQ test's title starts with the ID, e.g. `test('REQ-CANCEL-009: …')`.
 
 ## Environment & access
 

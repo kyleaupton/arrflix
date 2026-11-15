@@ -4,10 +4,11 @@ import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutation
 
 import { client } from '../client.gen';
 import { authAcceptInvite, authLogin, authLogout, authMe, authPlexExchange, authRefresh, authSignup, bootstrapGet, downloadCandidatesDownloadMovie, downloadCandidatesDownloadSeries, downloadCandidatesListMovie, downloadCandidatesListSeries, downloadCandidatesPreviewMovie, downloadCandidatesPreviewSeries, downloadersCreate, downloadersDelete, downloadersGet, downloadersGetDefault, downloadersList, downloadersTest, downloadersTestConfig, downloadersUpdate, downloadJobsCancel, downloadJobsGet, downloadJobsHistory, downloadJobsList, downloadJobsListForMovie, downloadJobsListForSeries, downloadJobsListImportTasks, downloadJobsReimport, downloadJobsRetry, downloadJobsTimeline, emailProviderGet, emailProviderSave, emailProviderTest, emailProviderTestConfig, eventsSubscriptionsAdd, eventsSubscriptionsList, eventsSubscriptionsRemove, feedGet, filesDetach, filesMatch, filesMatchDecision, filesUnmatch, filesystemBrowse, healthCheck, importTasksCancel, importTasksCounts, importTasksGet, importTasksHistory, importTasksList, importTasksReimport, importTasksTimeline, indexersAction, indexersDelete, indexersGet, indexersGetSchema, indexersListConfigured, indexersSave, indexersTestAll, indexersTestSaved, indexersTestUnsaved, indexersToggle, invitesCreate, invitesDelete, invitesList, librariesCreate, librariesDelete, librariesGet, librariesList, librariesScan, librariesUpdate, libraryList, mediaGetMovie, mediaGetPerson, mediaGetSeries, mediaSearch, nameTemplatesCreate, nameTemplatesDelete, nameTemplatesGet, nameTemplatesGetDefault, nameTemplatesList, nameTemplatesUpdate, notificationPreferencesGet, notificationPreferencesSet, notificationsList, notificationsMarkAllRead, notificationsMarkRead, notificationsUnreadCount, type Options, proposalsApprove, proposalsDecline, pushPublicKey, pushRemove, pushSubscribe, pushTest, qualityBindTier, qualityCreateCustomFormat, qualityCreateProfile, qualityDeleteCustomFormat, qualityDeleteProfile, qualityGetCustomFormat, qualityGetProfile, qualityListBins, qualityListCustomFormats, qualityListProfiles, qualityListSizeDefaults, qualityListTiers, qualityTestProfile, qualityUpdateCustomFormat, qualityUpdateProfile, requestsApprove, requestsCancel, requestsCreate, requestsDeny, requestsGet, requestsList, rolesList, routingCreateRule, routingDeleteRule, routingEvaluate, routingGetFields, routingGetRule, routingListRules, routingReorderRules, routingUpdateRule, sessionsList, sessionsRevoke, sessionsRevokeAll, settingsList, settingsPatch, setupInitialize, setupStatus, setupTmdb, titleStatusGet, trackingByTmdb, trackingCancel, trackingGet, trackingList, trackingProposals, trackingRequesters, trackingRetry, trackingSetAutonomy, trackingWants, unmatchedFilesGet, unmatchedFilesList, usersAssignRole, usersDelete, usersGet, usersGetProfile, usersList, usersUpdate, usersUpdatePassword, usersUpdateProfile, usersUpdateProfilePassword, versionGet, wantsCancel } from '../sdk.gen';
-import type { AuthAcceptInviteData, AuthAcceptInviteError, AuthAcceptInviteResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthMeData, AuthPlexExchangeData, AuthPlexExchangeError, AuthPlexExchangeResponse, AuthRefreshData, AuthRefreshError, AuthRefreshResponse, AuthSignupData, AuthSignupError, AuthSignupResponse, BootstrapGetData, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieError, DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesError, DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesListMovieData, DownloadCandidatesListSeriesData, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieError, DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesError, DownloadCandidatesPreviewSeriesResponse, DownloadersCreateData, DownloadersCreateError, DownloadersCreateResponse, DownloadersDeleteData, DownloadersDeleteError, DownloadersDeleteResponse, DownloadersGetData, DownloadersGetDefaultData, DownloadersListData, DownloadersTestConfigData, DownloadersTestConfigError, DownloadersTestConfigResponse, DownloadersTestData, DownloadersTestError, DownloadersTestResponse, DownloadersUpdateData, DownloadersUpdateError, DownloadersUpdateResponse, DownloadJobsCancelData, DownloadJobsCancelError, DownloadJobsCancelResponse, DownloadJobsGetData, DownloadJobsHistoryData, DownloadJobsListData, DownloadJobsListForMovieData, DownloadJobsListForSeriesData, DownloadJobsListImportTasksData, DownloadJobsReimportData, DownloadJobsReimportError, DownloadJobsReimportResponse, DownloadJobsRetryData, DownloadJobsRetryError, DownloadJobsRetryResponse, DownloadJobsTimelineData, EmailProviderGetData, EmailProviderSaveData, EmailProviderSaveError, EmailProviderSaveResponse, EmailProviderTestConfigData, EmailProviderTestConfigError, EmailProviderTestConfigResponse, EmailProviderTestData, EmailProviderTestError, EmailProviderTestResponse, EventsSubscriptionsAddData, EventsSubscriptionsAddError, EventsSubscriptionsAddResponse, EventsSubscriptionsListData, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveError, EventsSubscriptionsRemoveResponse, FeedGetData, FilesDetachData, FilesDetachError, FilesDetachResponse, FilesMatchData, FilesMatchDecisionData, FilesMatchError, FilesMatchResponse, FilesUnmatchData, FilesUnmatchError, FilesUnmatchResponse, FilesystemBrowseData, HealthCheckData, ImportTasksCancelData, ImportTasksCancelError, ImportTasksCancelResponse, ImportTasksCountsData, ImportTasksGetData, ImportTasksHistoryData, ImportTasksListData, ImportTasksListError, ImportTasksListResponse, ImportTasksReimportData, ImportTasksReimportError, ImportTasksReimportResponse, ImportTasksTimelineData, IndexersActionData, IndexersActionError, IndexersDeleteData, IndexersDeleteError, IndexersDeleteResponse, IndexersGetData, IndexersGetSchemaData, IndexersListConfiguredData, IndexersSaveData, IndexersSaveError, IndexersSaveResponse, IndexersTestAllData, IndexersTestAllError, IndexersTestAllResponse, IndexersTestSavedData, IndexersTestSavedError, IndexersTestSavedResponse, IndexersTestUnsavedData, IndexersTestUnsavedError, IndexersTestUnsavedResponse, IndexersToggleData, IndexersToggleError, IndexersToggleResponse, InvitesCreateData, InvitesCreateError, InvitesCreateResponse2, InvitesDeleteData, InvitesDeleteError, InvitesDeleteResponse, InvitesListData, LibrariesCreateData, LibrariesCreateError, LibrariesCreateResponse, LibrariesDeleteData, LibrariesDeleteError, LibrariesDeleteResponse, LibrariesGetData, LibrariesListData, LibrariesScanData, LibrariesScanError, LibrariesScanResponse, LibrariesUpdateData, LibrariesUpdateError, LibrariesUpdateResponse, LibraryListData, LibraryListError, LibraryListResponse, MediaGetMovieData, MediaGetPersonData, MediaGetSeriesData, MediaSearchData, MediaSearchError, MediaSearchResponse, NameTemplatesCreateData, NameTemplatesCreateError, NameTemplatesCreateResponse, NameTemplatesDeleteData, NameTemplatesDeleteError, NameTemplatesDeleteResponse, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesListData, NameTemplatesUpdateData, NameTemplatesUpdateError, NameTemplatesUpdateResponse, NotificationPreferencesGetData, NotificationPreferencesSetData, NotificationPreferencesSetError, NotificationPreferencesSetResponse, NotificationsListData, NotificationsMarkAllReadData, NotificationsMarkAllReadError, NotificationsMarkAllReadResponse, NotificationsMarkReadData, NotificationsMarkReadError, NotificationsMarkReadResponse, NotificationsUnreadCountData, ProposalsApproveData, ProposalsApproveError, ProposalsApproveResponse, ProposalsDeclineData, ProposalsDeclineError, ProposalsDeclineResponse, PushPublicKeyData, PushRemoveData, PushRemoveError, PushRemoveResponse, PushSubscribeData, PushSubscribeError, PushSubscribeResponse, PushTestData, PushTestError, PushTestResponse, QualityBindTierData, QualityBindTierError, QualityBindTierResponse, QualityCreateCustomFormatData, QualityCreateCustomFormatError, QualityCreateCustomFormatResponse, QualityCreateProfileData, QualityCreateProfileError, QualityCreateProfileResponse, QualityDeleteCustomFormatData, QualityDeleteCustomFormatError, QualityDeleteCustomFormatResponse, QualityDeleteProfileData, QualityDeleteProfileError, QualityDeleteProfileResponse, QualityGetCustomFormatData, QualityGetProfileData, QualityListBinsData, QualityListCustomFormatsData, QualityListProfilesData, QualityListSizeDefaultsData, QualityListTiersData, QualityTestProfileData, QualityTestProfileError, QualityTestProfileResponse, QualityUpdateCustomFormatData, QualityUpdateCustomFormatError, QualityUpdateCustomFormatResponse, QualityUpdateProfileData, QualityUpdateProfileError, QualityUpdateProfileResponse, RequestsApproveData, RequestsApproveError, RequestsApproveResponse, RequestsCancelData, RequestsCancelError, RequestsCancelResponse, RequestsCreateData, RequestsCreateError, RequestsCreateResponse, RequestsDenyData, RequestsDenyError, RequestsDenyResponse, RequestsGetData, RequestsListData, RolesListData, RoutingCreateRuleData, RoutingCreateRuleError, RoutingCreateRuleResponse, RoutingDeleteRuleData, RoutingDeleteRuleError, RoutingDeleteRuleResponse, RoutingEvaluateData, RoutingEvaluateError, RoutingEvaluateResponse, RoutingGetFieldsData, RoutingGetRuleData, RoutingListRulesData, RoutingReorderRulesData, RoutingReorderRulesError, RoutingReorderRulesResponse, RoutingUpdateRuleData, RoutingUpdateRuleError, RoutingUpdateRuleResponse, SessionsListData, SessionsRevokeAllData, SessionsRevokeAllError, SessionsRevokeAllResponse, SessionsRevokeData, SessionsRevokeError, SessionsRevokeResponse, SettingsListData, SettingsPatchData, SettingsPatchError, SettingsPatchResponse, SetupInitializeData, SetupInitializeError, SetupInitializeResponse2, SetupStatusData, SetupTmdbData, SetupTmdbError, SetupTmdbResponse2, TitleStatusGetData, TrackingByTmdbData, TrackingCancelData, TrackingCancelError, TrackingCancelResponse, TrackingGetData, TrackingListData, TrackingProposalsData, TrackingRequestersData, TrackingRetryData, TrackingRetryError, TrackingRetryResponse, TrackingSetAutonomyData, TrackingSetAutonomyError, TrackingSetAutonomyResponse, TrackingWantsData, UnmatchedFilesGetData, UnmatchedFilesListData, UnmatchedFilesListError, UnmatchedFilesListResponse, UsersAssignRoleData, UsersAssignRoleError, UsersAssignRoleResponse, UsersDeleteData, UsersDeleteError, UsersDeleteResponse, UsersGetData, UsersGetProfileData, UsersListData, UsersUpdateData, UsersUpdateError, UsersUpdatePasswordData, UsersUpdatePasswordError, UsersUpdatePasswordResponse, UsersUpdateProfileData, UsersUpdateProfileError, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordError, UsersUpdateProfilePasswordResponse, UsersUpdateProfileResponse, UsersUpdateResponse, VersionGetData, WantsCancelData, WantsCancelError, WantsCancelResponse } from '../types.gen';
+import type { AuthAcceptInviteData, AuthAcceptInviteError, AuthAcceptInviteResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthMeData, AuthMeError, AuthMeResponse, AuthPlexExchangeData, AuthPlexExchangeError, AuthPlexExchangeResponse, AuthRefreshData, AuthRefreshError, AuthRefreshResponse, AuthSignupData, AuthSignupError, AuthSignupResponse, BootstrapGetData, BootstrapGetError, BootstrapGetResponse, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieError, DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesError, DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesListMovieData, DownloadCandidatesListMovieError, DownloadCandidatesListMovieResponse, DownloadCandidatesListSeriesData, DownloadCandidatesListSeriesError, DownloadCandidatesListSeriesResponse, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieError, DownloadCandidatesPreviewMovieResponse, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesError, DownloadCandidatesPreviewSeriesResponse, DownloadersCreateData, DownloadersCreateError, DownloadersCreateResponse, DownloadersDeleteData, DownloadersDeleteError, DownloadersDeleteResponse, DownloadersGetData, DownloadersGetDefaultData, DownloadersGetDefaultError, DownloadersGetDefaultResponse, DownloadersGetError, DownloadersGetResponse, DownloadersListData, DownloadersListError, DownloadersListResponse, DownloadersTestConfigData, DownloadersTestConfigError, DownloadersTestConfigResponse, DownloadersTestData, DownloadersTestError, DownloadersTestResponse, DownloadersUpdateData, DownloadersUpdateError, DownloadersUpdateResponse, DownloadJobsCancelData, DownloadJobsCancelError, DownloadJobsCancelResponse, DownloadJobsGetData, DownloadJobsGetError, DownloadJobsGetResponse, DownloadJobsHistoryData, DownloadJobsHistoryError, DownloadJobsHistoryResponse, DownloadJobsListData, DownloadJobsListError, DownloadJobsListForMovieData, DownloadJobsListForMovieError, DownloadJobsListForMovieResponse, DownloadJobsListForSeriesData, DownloadJobsListForSeriesError, DownloadJobsListForSeriesResponse, DownloadJobsListImportTasksData, DownloadJobsListImportTasksError, DownloadJobsListImportTasksResponse, DownloadJobsListResponse, DownloadJobsReimportData, DownloadJobsReimportError, DownloadJobsReimportResponse, DownloadJobsRetryData, DownloadJobsRetryError, DownloadJobsRetryResponse, DownloadJobsTimelineData, DownloadJobsTimelineError, DownloadJobsTimelineResponse, EmailProviderGetData, EmailProviderGetError, EmailProviderGetResponse, EmailProviderSaveData, EmailProviderSaveError, EmailProviderSaveResponse, EmailProviderTestConfigData, EmailProviderTestConfigError, EmailProviderTestConfigResponse, EmailProviderTestData, EmailProviderTestError, EmailProviderTestResponse, EventsSubscriptionsAddData, EventsSubscriptionsAddError, EventsSubscriptionsAddResponse, EventsSubscriptionsListData, EventsSubscriptionsListError, EventsSubscriptionsListResponse, EventsSubscriptionsRemoveData, EventsSubscriptionsRemoveError, EventsSubscriptionsRemoveResponse, FeedGetData, FeedGetError, FeedGetResponse, FilesDetachData, FilesDetachError, FilesDetachResponse, FilesMatchData, FilesMatchDecisionData, FilesMatchDecisionError, FilesMatchDecisionResponse, FilesMatchError, FilesMatchResponse, FilesUnmatchData, FilesUnmatchError, FilesUnmatchResponse, FilesystemBrowseData, FilesystemBrowseError, FilesystemBrowseResponse2, HealthCheckData, HealthCheckError, HealthCheckResponse, ImportTasksCancelData, ImportTasksCancelError, ImportTasksCancelResponse, ImportTasksCountsData, ImportTasksCountsError, ImportTasksCountsResponse, ImportTasksGetData, ImportTasksGetError, ImportTasksGetResponse, ImportTasksHistoryData, ImportTasksHistoryError, ImportTasksHistoryResponse, ImportTasksListData, ImportTasksListError, ImportTasksListResponse, ImportTasksReimportData, ImportTasksReimportError, ImportTasksReimportResponse, ImportTasksTimelineData, ImportTasksTimelineError, ImportTasksTimelineResponse, IndexersActionData, IndexersActionError, IndexersDeleteData, IndexersDeleteError, IndexersDeleteResponse, IndexersGetData, IndexersGetError, IndexersGetResponse, IndexersGetSchemaData, IndexersGetSchemaError, IndexersGetSchemaResponse, IndexersListConfiguredData, IndexersListConfiguredError, IndexersListConfiguredResponse, IndexersSaveData, IndexersSaveError, IndexersSaveResponse, IndexersTestAllData, IndexersTestAllError, IndexersTestAllResponse, IndexersTestSavedData, IndexersTestSavedError, IndexersTestSavedResponse, IndexersTestUnsavedData, IndexersTestUnsavedError, IndexersTestUnsavedResponse, IndexersToggleData, IndexersToggleError, IndexersToggleResponse, InvitesCreateData, InvitesCreateError, InvitesCreateResponse2, InvitesDeleteData, InvitesDeleteError, InvitesDeleteResponse, InvitesListData, InvitesListError, InvitesListResponse, LibrariesCreateData, LibrariesCreateError, LibrariesCreateResponse, LibrariesDeleteData, LibrariesDeleteError, LibrariesDeleteResponse, LibrariesGetData, LibrariesGetError, LibrariesGetResponse, LibrariesListData, LibrariesListError, LibrariesListResponse, LibrariesScanData, LibrariesScanError, LibrariesScanResponse, LibrariesUpdateData, LibrariesUpdateError, LibrariesUpdateResponse, LibraryListData, LibraryListError, LibraryListResponse, MediaGetMovieData, MediaGetMovieError, MediaGetMovieResponse, MediaGetPersonData, MediaGetPersonError, MediaGetPersonResponse, MediaGetSeriesData, MediaGetSeriesError, MediaGetSeriesResponse, MediaSearchData, MediaSearchError, MediaSearchResponse, NameTemplatesCreateData, NameTemplatesCreateError, NameTemplatesCreateResponse, NameTemplatesDeleteData, NameTemplatesDeleteError, NameTemplatesDeleteResponse, NameTemplatesGetData, NameTemplatesGetDefaultData, NameTemplatesGetDefaultError, NameTemplatesGetDefaultResponse, NameTemplatesGetError, NameTemplatesGetResponse, NameTemplatesListData, NameTemplatesListError, NameTemplatesListResponse, NameTemplatesUpdateData, NameTemplatesUpdateError, NameTemplatesUpdateResponse, NotificationPreferencesGetData, NotificationPreferencesGetError, NotificationPreferencesGetResponse, NotificationPreferencesSetData, NotificationPreferencesSetError, NotificationPreferencesSetResponse, NotificationsListData, NotificationsListError, NotificationsListResponse, NotificationsMarkAllReadData, NotificationsMarkAllReadError, NotificationsMarkAllReadResponse, NotificationsMarkReadData, NotificationsMarkReadError, NotificationsMarkReadResponse, NotificationsUnreadCountData, NotificationsUnreadCountError, NotificationsUnreadCountResponse, ProposalsApproveData, ProposalsApproveError, ProposalsApproveResponse, ProposalsDeclineData, ProposalsDeclineError, ProposalsDeclineResponse, PushPublicKeyData, PushPublicKeyError, PushPublicKeyResponse, PushRemoveData, PushRemoveError, PushRemoveResponse, PushSubscribeData, PushSubscribeError, PushSubscribeResponse, PushTestData, PushTestError, PushTestResponse, QualityBindTierData, QualityBindTierError, QualityBindTierResponse, QualityCreateCustomFormatData, QualityCreateCustomFormatError, QualityCreateCustomFormatResponse, QualityCreateProfileData, QualityCreateProfileError, QualityCreateProfileResponse, QualityDeleteCustomFormatData, QualityDeleteCustomFormatError, QualityDeleteCustomFormatResponse, QualityDeleteProfileData, QualityDeleteProfileError, QualityDeleteProfileResponse, QualityGetCustomFormatData, QualityGetCustomFormatError, QualityGetCustomFormatResponse, QualityGetProfileData, QualityGetProfileError, QualityGetProfileResponse, QualityListBinsData, QualityListBinsError, QualityListBinsResponse, QualityListCustomFormatsData, QualityListCustomFormatsError, QualityListCustomFormatsResponse, QualityListProfilesData, QualityListProfilesError, QualityListProfilesResponse, QualityListSizeDefaultsData, QualityListSizeDefaultsError, QualityListSizeDefaultsResponse, QualityListTiersData, QualityListTiersError, QualityListTiersResponse, QualityTestProfileData, QualityTestProfileError, QualityTestProfileResponse, QualityUpdateCustomFormatData, QualityUpdateCustomFormatError, QualityUpdateCustomFormatResponse, QualityUpdateProfileData, QualityUpdateProfileError, QualityUpdateProfileResponse, RequestsApproveData, RequestsApproveError, RequestsApproveResponse, RequestsCancelData, RequestsCancelError, RequestsCancelResponse, RequestsCreateData, RequestsCreateError, RequestsCreateResponse, RequestsDenyData, RequestsDenyError, RequestsDenyResponse, RequestsGetData, RequestsGetError, RequestsGetResponse, RequestsListData, RequestsListError, RequestsListResponse, RolesListData, RolesListError, RolesListResponse, RoutingCreateRuleData, RoutingCreateRuleError, RoutingCreateRuleResponse, RoutingDeleteRuleData, RoutingDeleteRuleError, RoutingDeleteRuleResponse, RoutingEvaluateData, RoutingEvaluateError, RoutingEvaluateResponse, RoutingGetFieldsData, RoutingGetFieldsError, RoutingGetFieldsResponse, RoutingGetRuleData, RoutingGetRuleError, RoutingGetRuleResponse, RoutingListRulesData, RoutingListRulesError, RoutingListRulesResponse, RoutingReorderRulesData, RoutingReorderRulesError, RoutingReorderRulesResponse, RoutingUpdateRuleData, RoutingUpdateRuleError, RoutingUpdateRuleResponse, SessionsListData, SessionsListError, SessionsListResponse, SessionsRevokeAllData, SessionsRevokeAllError, SessionsRevokeAllResponse, SessionsRevokeData, SessionsRevokeError, SessionsRevokeResponse, SettingsListData, SettingsListError, SettingsListResponse, SettingsPatchData, SettingsPatchError, SettingsPatchResponse, SetupInitializeData, SetupInitializeError, SetupInitializeResponse2, SetupStatusData, SetupStatusError, SetupStatusResponse2, SetupTmdbData, SetupTmdbError, SetupTmdbResponse2, TitleStatusGetData, TitleStatusGetError, TitleStatusGetResponse, TrackingByTmdbData, TrackingByTmdbError, TrackingByTmdbResponse, TrackingCancelData, TrackingCancelError, TrackingCancelResponse, TrackingGetData, TrackingGetError, TrackingGetResponse, TrackingListData, TrackingListError, TrackingListResponse, TrackingProposalsData, TrackingProposalsError, TrackingProposalsResponse, TrackingRequestersData, TrackingRequestersError, TrackingRequestersResponse, TrackingRetryData, TrackingRetryError, TrackingRetryResponse, TrackingSetAutonomyData, TrackingSetAutonomyError, TrackingSetAutonomyResponse, TrackingWantsData, TrackingWantsError, TrackingWantsResponse, UnmatchedFilesGetData, UnmatchedFilesGetError, UnmatchedFilesGetResponse, UnmatchedFilesListData, UnmatchedFilesListError, UnmatchedFilesListResponse, UsersAssignRoleData, UsersAssignRoleError, UsersAssignRoleResponse, UsersDeleteData, UsersDeleteError, UsersDeleteResponse, UsersGetData, UsersGetError, UsersGetProfileData, UsersGetProfileError, UsersGetProfileResponse, UsersGetResponse, UsersListData, UsersListError, UsersListResponse, UsersUpdateData, UsersUpdateError, UsersUpdatePasswordData, UsersUpdatePasswordError, UsersUpdatePasswordResponse, UsersUpdateProfileData, UsersUpdateProfileError, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordError, UsersUpdateProfilePasswordResponse, UsersUpdateProfileResponse, UsersUpdateResponse, VersionGetData, VersionGetError, VersionGetResponse, WantsCancelData, WantsCancelError, WantsCancelResponse } from '../types.gen';
 
 /**
  * Accept an invite
+ *
  * Validates an invite token, provisions the account with the invited role, and opens a session.
  */
 export const authAcceptInviteMutation = (options?: Partial<Options<AuthAcceptInviteData>>): UseMutationOptions<AuthAcceptInviteResponse, AuthAcceptInviteError, Options<AuthAcceptInviteData>> => {
@@ -26,6 +27,7 @@ export const authAcceptInviteMutation = (options?: Partial<Options<AuthAcceptInv
 
 /**
  * Login
+ *
  * Validate username/email + password and issue a JWT.
  */
 export const authLoginMutation = (options?: Partial<Options<AuthLoginData>>): UseMutationOptions<AuthLoginResponse, AuthLoginError, Options<AuthLoginData>> => {
@@ -44,6 +46,7 @@ export const authLoginMutation = (options?: Partial<Options<AuthLoginData>>): Us
 
 /**
  * Logout
+ *
  * Revokes the current session and clears the refresh cookie.
  */
 export const authLogoutMutation = (options?: Partial<Options<AuthLogoutData>>): UseMutationOptions<AuthLogoutResponse, AuthLogoutError, Options<AuthLogoutData>> => {
@@ -90,34 +93,32 @@ const createQueryKey = <TOptions extends Options>(id: string, options?: TOptions
     if (options?.query) {
         params.query = options.query;
     }
-    return [
-        params
-    ];
+    return [params];
 };
 
 export const authMeQueryKey = (options?: Options<AuthMeData>) => createQueryKey('authMe', options);
 
 /**
  * Current user
+ *
  * Returns the authenticated principal (from JWT claims).
  */
-export const authMeOptions = (options?: Options<AuthMeData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await authMe({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: authMeQueryKey(options)
-    });
-};
+export const authMeOptions = (options?: Options<AuthMeData>) => queryOptions<AuthMeResponse, AuthMeError, AuthMeResponse, ReturnType<typeof authMeQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await authMe({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: authMeQueryKey(options)
+});
 
 /**
  * Exchange Plex PIN for JWT
+ *
  * Polls the Plex API for the PIN's auth token and, if claimed, returns a JWT. Returns 401 when the PIN has not been claimed yet.
  */
 export const authPlexExchangeMutation = (options?: Partial<Options<AuthPlexExchangeData>>): UseMutationOptions<AuthPlexExchangeResponse, AuthPlexExchangeError, Options<AuthPlexExchangeData>> => {
@@ -139,20 +140,18 @@ export const usersGetProfileQueryKey = (options?: Options<UsersGetProfileData>) 
 /**
  * Get current user profile
  */
-export const usersGetProfileOptions = (options?: Options<UsersGetProfileData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await usersGetProfile({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: usersGetProfileQueryKey(options)
-    });
-};
+export const usersGetProfileOptions = (options?: Options<UsersGetProfileData>) => queryOptions<UsersGetProfileResponse, UsersGetProfileError, UsersGetProfileResponse, ReturnType<typeof usersGetProfileQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await usersGetProfile({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: usersGetProfileQueryKey(options)
+});
 
 /**
  * Update current user profile
@@ -190,6 +189,7 @@ export const usersUpdateProfilePasswordMutation = (options?: Partial<Options<Use
 
 /**
  * Refresh session
+ *
  * Rotates the refresh-token cookie and returns a fresh access token. Authenticated by the refresh cookie, not a bearer token.
  */
 export const authRefreshMutation = (options?: Partial<Options<AuthRefreshData>>): UseMutationOptions<AuthRefreshResponse, AuthRefreshError, Options<AuthRefreshData>> => {
@@ -208,6 +208,7 @@ export const authRefreshMutation = (options?: Partial<Options<AuthRefreshData>>)
 
 /**
  * Log out other devices
+ *
  * Revokes every active session except the caller's current one.
  */
 export const sessionsRevokeAllMutation = (options?: Partial<Options<SessionsRevokeAllData>>): UseMutationOptions<SessionsRevokeAllResponse, SessionsRevokeAllError, Options<SessionsRevokeAllData>> => {
@@ -228,25 +229,25 @@ export const sessionsListQueryKey = (options?: Options<SessionsListData>) => cre
 
 /**
  * List my sessions
+ *
  * Returns the caller's active sessions (devices), each with its push state. The current session is flagged isCurrent.
  */
-export const sessionsListOptions = (options?: Options<SessionsListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await sessionsList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: sessionsListQueryKey(options)
-    });
-};
+export const sessionsListOptions = (options?: Options<SessionsListData>) => queryOptions<SessionsListResponse, SessionsListError, SessionsListResponse, ReturnType<typeof sessionsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await sessionsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: sessionsListQueryKey(options)
+});
 
 /**
  * Revoke a session
+ *
  * Logs out one of the caller's own devices by session id. 404 if the session isn't the caller's.
  */
 export const sessionsRevokeMutation = (options?: Partial<Options<SessionsRevokeData>>): UseMutationOptions<SessionsRevokeResponse, SessionsRevokeError, Options<SessionsRevokeData>> => {
@@ -265,6 +266,7 @@ export const sessionsRevokeMutation = (options?: Partial<Options<SessionsRevokeD
 
 /**
  * Signup
+ *
  * Create a new user. Honors the configured signup strategy (invite_only or open).
  */
 export const authSignupMutation = (options?: Partial<Options<AuthSignupData>>): UseMutationOptions<AuthSignupResponse, AuthSignupError, Options<AuthSignupData>> => {
@@ -285,42 +287,39 @@ export const bootstrapGetQueryKey = (options?: Options<BootstrapGetData>) => cre
 
 /**
  * Bootstrap application
+ *
  * Returns init status, current user (if a valid Bearer token is supplied), public config, and per-step setup progress when not yet initialized.
  */
-export const bootstrapGetOptions = (options?: Options<BootstrapGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await bootstrapGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: bootstrapGetQueryKey(options)
-    });
-};
+export const bootstrapGetOptions = (options?: Options<BootstrapGetData>) => queryOptions<BootstrapGetResponse, BootstrapGetError, BootstrapGetResponse, ReturnType<typeof bootstrapGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await bootstrapGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: bootstrapGetQueryKey(options)
+});
 
 export const qualityListCustomFormatsQueryKey = (options?: Options<QualityListCustomFormatsData>) => createQueryKey('qualityListCustomFormats', options);
 
 /**
  * List custom formats
  */
-export const qualityListCustomFormatsOptions = (options?: Options<QualityListCustomFormatsData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await qualityListCustomFormats({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: qualityListCustomFormatsQueryKey(options)
-    });
-};
+export const qualityListCustomFormatsOptions = (options?: Options<QualityListCustomFormatsData>) => queryOptions<QualityListCustomFormatsResponse, QualityListCustomFormatsError, QualityListCustomFormatsResponse, ReturnType<typeof qualityListCustomFormatsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await qualityListCustomFormats({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: qualityListCustomFormatsQueryKey(options)
+});
 
 /**
  * Create custom format
@@ -361,20 +360,18 @@ export const qualityGetCustomFormatQueryKey = (options: Options<QualityGetCustom
 /**
  * Get custom format
  */
-export const qualityGetCustomFormatOptions = (options: Options<QualityGetCustomFormatData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await qualityGetCustomFormat({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: qualityGetCustomFormatQueryKey(options)
-    });
-};
+export const qualityGetCustomFormatOptions = (options: Options<QualityGetCustomFormatData>) => queryOptions<QualityGetCustomFormatResponse, QualityGetCustomFormatError, QualityGetCustomFormatResponse, ReturnType<typeof qualityGetCustomFormatQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await qualityGetCustomFormat({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: qualityGetCustomFormatQueryKey(options)
+});
 
 /**
  * Update custom format
@@ -397,25 +394,25 @@ export const downloadJobsListQueryKey = (options?: Options<DownloadJobsListData>
 
 /**
  * List download jobs
+ *
  * List every download job with computed import-status summary.
  */
-export const downloadJobsListOptions = (options?: Options<DownloadJobsListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadJobsList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadJobsListQueryKey(options)
-    });
-};
+export const downloadJobsListOptions = (options?: Options<DownloadJobsListData>) => queryOptions<DownloadJobsListResponse, DownloadJobsListError, DownloadJobsListResponse, ReturnType<typeof downloadJobsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadJobsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadJobsListQueryKey(options)
+});
 
 /**
  * Cancel download job
+ *
  * Cancel the download and any pending import tasks linked to it.
  */
 export const downloadJobsCancelMutation = (options?: Partial<Options<DownloadJobsCancelData>>): UseMutationOptions<DownloadJobsCancelResponse, DownloadJobsCancelError, Options<DownloadJobsCancelData>> => {
@@ -437,63 +434,58 @@ export const downloadJobsGetQueryKey = (options: Options<DownloadJobsGetData>) =
 /**
  * Get download job
  */
-export const downloadJobsGetOptions = (options: Options<DownloadJobsGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadJobsGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadJobsGetQueryKey(options)
-    });
-};
+export const downloadJobsGetOptions = (options: Options<DownloadJobsGetData>) => queryOptions<DownloadJobsGetResponse, DownloadJobsGetError, DownloadJobsGetResponse, ReturnType<typeof downloadJobsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadJobsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadJobsGetQueryKey(options)
+});
 
 export const downloadJobsHistoryQueryKey = (options: Options<DownloadJobsHistoryData>) => createQueryKey('downloadJobsHistory', options);
 
 /**
  * Get download job retry history
  */
-export const downloadJobsHistoryOptions = (options: Options<DownloadJobsHistoryData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadJobsHistory({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadJobsHistoryQueryKey(options)
-    });
-};
+export const downloadJobsHistoryOptions = (options: Options<DownloadJobsHistoryData>) => queryOptions<DownloadJobsHistoryResponse, DownloadJobsHistoryError, DownloadJobsHistoryResponse, ReturnType<typeof downloadJobsHistoryQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadJobsHistory({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadJobsHistoryQueryKey(options)
+});
 
 export const downloadJobsListImportTasksQueryKey = (options: Options<DownloadJobsListImportTasksData>) => createQueryKey('downloadJobsListImportTasks', options);
 
 /**
  * List import tasks for download job
  */
-export const downloadJobsListImportTasksOptions = (options: Options<DownloadJobsListImportTasksData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadJobsListImportTasks({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadJobsListImportTasksQueryKey(options)
-    });
-};
+export const downloadJobsListImportTasksOptions = (options: Options<DownloadJobsListImportTasksData>) => queryOptions<DownloadJobsListImportTasksResponse, DownloadJobsListImportTasksError, DownloadJobsListImportTasksResponse, ReturnType<typeof downloadJobsListImportTasksQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadJobsListImportTasks({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadJobsListImportTasksQueryKey(options)
+});
 
 /**
  * Reimport failed import tasks
+ *
  * Create new import tasks for failed (or all terminal) tasks of this download job.
  */
 export const downloadJobsReimportMutation = (options?: Partial<Options<DownloadJobsReimportData>>): UseMutationOptions<DownloadJobsReimportResponse, DownloadJobsReimportError, Options<DownloadJobsReimportData>> => {
@@ -512,6 +504,7 @@ export const downloadJobsReimportMutation = (options?: Partial<Options<DownloadJ
 
 /**
  * Retry failed download job
+ *
  * Create a new download job linked to the failed one via previous_job_id. Returns 409 when the source status doesn't allow retrying.
  */
 export const downloadJobsRetryMutation = (options?: Partial<Options<DownloadJobsRetryData>>): UseMutationOptions<DownloadJobsRetryResponse, DownloadJobsRetryError, Options<DownloadJobsRetryData>> => {
@@ -532,42 +525,39 @@ export const downloadJobsTimelineQueryKey = (options: Options<DownloadJobsTimeli
 
 /**
  * Get download job timeline
+ *
  * Combined event log: download-job events plus all import-task events linked to this job.
  */
-export const downloadJobsTimelineOptions = (options: Options<DownloadJobsTimelineData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadJobsTimeline({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadJobsTimelineQueryKey(options)
-    });
-};
+export const downloadJobsTimelineOptions = (options: Options<DownloadJobsTimelineData>) => queryOptions<DownloadJobsTimelineResponse, DownloadJobsTimelineError, DownloadJobsTimelineResponse, ReturnType<typeof downloadJobsTimelineQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadJobsTimeline({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadJobsTimelineQueryKey(options)
+});
 
 export const downloadersListQueryKey = (options?: Options<DownloadersListData>) => createQueryKey('downloadersList', options);
 
 /**
  * List downloaders
  */
-export const downloadersListOptions = (options?: Options<DownloadersListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadersList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadersListQueryKey(options)
-    });
-};
+export const downloadersListOptions = (options?: Options<DownloadersListData>) => queryOptions<DownloadersListResponse, DownloadersListError, DownloadersListResponse, ReturnType<typeof downloadersListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadersList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadersListQueryKey(options)
+});
 
 /**
  * Create downloader
@@ -591,20 +581,18 @@ export const downloadersGetDefaultQueryKey = (options: Options<DownloadersGetDef
 /**
  * Get default downloader by protocol
  */
-export const downloadersGetDefaultOptions = (options: Options<DownloadersGetDefaultData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadersGetDefault({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadersGetDefaultQueryKey(options)
-    });
-};
+export const downloadersGetDefaultOptions = (options: Options<DownloadersGetDefaultData>) => queryOptions<DownloadersGetDefaultResponse, DownloadersGetDefaultError, DownloadersGetDefaultResponse, ReturnType<typeof downloadersGetDefaultQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadersGetDefault({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadersGetDefaultQueryKey(options)
+});
 
 /**
  * Test downloader connection from form configuration
@@ -645,20 +633,18 @@ export const downloadersGetQueryKey = (options: Options<DownloadersGetData>) => 
 /**
  * Get downloader
  */
-export const downloadersGetOptions = (options: Options<DownloadersGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadersGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadersGetQueryKey(options)
-    });
-};
+export const downloadersGetOptions = (options: Options<DownloadersGetData>) => queryOptions<DownloadersGetResponse, DownloadersGetError, DownloadersGetResponse, ReturnType<typeof downloadersGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadersGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadersGetQueryKey(options)
+});
 
 /**
  * Update downloader
@@ -698,25 +684,25 @@ export const eventsSubscriptionsListQueryKey = (options: Options<EventsSubscript
 
 /**
  * List the session's subscribed topics
+ *
  * Returns the current topic filter for the session identified by the X-Realtime-Session header, so a reconnecting client can resync.
  */
-export const eventsSubscriptionsListOptions = (options: Options<EventsSubscriptionsListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await eventsSubscriptionsList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: eventsSubscriptionsListQueryKey(options)
-    });
-};
+export const eventsSubscriptionsListOptions = (options: Options<EventsSubscriptionsListData>) => queryOptions<EventsSubscriptionsListResponse, EventsSubscriptionsListError, EventsSubscriptionsListResponse, ReturnType<typeof eventsSubscriptionsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await eventsSubscriptionsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: eventsSubscriptionsListQueryKey(options)
+});
 
 /**
  * Subscribe the session to topics
+ *
  * Adds topics to the session's filter. The client seeds state from the relevant query's REST baseline, so this returns 204.
  */
 export const eventsSubscriptionsAddMutation = (options?: Partial<Options<EventsSubscriptionsAddData>>): UseMutationOptions<EventsSubscriptionsAddResponse, EventsSubscriptionsAddError, Options<EventsSubscriptionsAddData>> => {
@@ -752,6 +738,7 @@ export const eventsSubscriptionsRemoveMutation = (options?: Partial<Options<Even
 
 /**
  * Detach a file from the library
+ *
  * Writes a detached decision and removes the file from arrflix's tracking tables. When quarantine=true and a quarantine path is configured in settings, the file is moved on disk; otherwise it stays in place. The match_decision row preserves the audit trail.
  */
 export const filesDetachMutation = (options?: Partial<Options<FilesDetachData>>): UseMutationOptions<FilesDetachResponse, FilesDetachError, Options<FilesDetachData>> => {
@@ -770,6 +757,7 @@ export const filesDetachMutation = (options?: Partial<Options<FilesDetachData>>)
 
 /**
  * Match a file to a media identity
+ *
  * Unified endpoint for match-by-ID (file currently in the inbox) and re-match (changing identity on an existing file). Validates the supplied (source, externalId) against the metadata provider; on a 404 returns NotFound and writes no decision row. On success, writes a confident match_decision row, supersedes the prior, and sets the file's identity.
  */
 export const filesMatchMutation = (options?: Partial<Options<FilesMatchData>>): UseMutationOptions<FilesMatchResponse, FilesMatchError, Options<FilesMatchData>> => {
@@ -790,25 +778,25 @@ export const filesMatchDecisionQueryKey = (options: Options<FilesMatchDecisionDa
 
 /**
  * Read the current match decision (and optional history)
+ *
  * Returns the file's current (non-superseded) match decision with the validated metadata.Item attached for display. When includeHistory=true, also returns the supersede chain (prior decisions, newest first).
  */
-export const filesMatchDecisionOptions = (options: Options<FilesMatchDecisionData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await filesMatchDecision({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: filesMatchDecisionQueryKey(options)
-    });
-};
+export const filesMatchDecisionOptions = (options: Options<FilesMatchDecisionData>) => queryOptions<FilesMatchDecisionResponse, FilesMatchDecisionError, FilesMatchDecisionResponse, ReturnType<typeof filesMatchDecisionQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await filesMatchDecision({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: filesMatchDecisionQueryKey(options)
+});
 
 /**
  * Un-match a file (back to the inbox)
+ *
  * Writes a no_match decision and clears the file's identity, leaving no suggestions. File stays on disk. Idempotent: returns the current decision unchanged when the file is already unmatched.
  */
 export const filesUnmatchMutation = (options?: Partial<Options<FilesUnmatchData>>): UseMutationOptions<FilesUnmatchResponse, FilesUnmatchError, Options<FilesUnmatchData>> => {
@@ -829,69 +817,64 @@ export const filesystemBrowseQueryKey = (options?: Options<FilesystemBrowseData>
 
 /**
  * Browse filesystem directories
+ *
  * Lists the immediate child directories of an absolute path. Used by the FE library-picker. Hides dotfiles and (at the root only) system directories.
  */
-export const filesystemBrowseOptions = (options?: Options<FilesystemBrowseData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await filesystemBrowse({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: filesystemBrowseQueryKey(options)
-    });
-};
+export const filesystemBrowseOptions = (options?: Options<FilesystemBrowseData>) => queryOptions<FilesystemBrowseResponse2, FilesystemBrowseError, FilesystemBrowseResponse2, ReturnType<typeof filesystemBrowseQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await filesystemBrowse({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: filesystemBrowseQueryKey(options)
+});
 
 export const feedGetQueryKey = (options?: Options<FeedGetData>) => createQueryKey('feedGet', options);
 
 /**
  * Get home feed
+ *
  * Returns the curated home-screen feed (hero items + rows).
  */
-export const feedGetOptions = (options?: Options<FeedGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await feedGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: feedGetQueryKey(options)
-    });
-};
+export const feedGetOptions = (options?: Options<FeedGetData>) => queryOptions<FeedGetResponse, FeedGetError, FeedGetResponse, ReturnType<typeof feedGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await feedGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: feedGetQueryKey(options)
+});
 
 export const importTasksListQueryKey = (options?: Options<ImportTasksListData>) => createQueryKey('importTasksList', options);
 
 /**
  * List import tasks
+ *
  * Paginated import tasks, optionally filtered by status.
  */
-export const importTasksListOptions = (options?: Options<ImportTasksListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await importTasksList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: importTasksListQueryKey(options)
-    });
-};
+export const importTasksListOptions = (options?: Options<ImportTasksListData>) => queryOptions<ImportTasksListResponse, ImportTasksListError, ImportTasksListResponse, ReturnType<typeof importTasksListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await importTasksList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: importTasksListQueryKey(options)
+});
 
 const createInfiniteParams = <K extends Pick<QueryKey<Options>[0], 'body' | 'headers' | 'path' | 'query'>>(queryKey: QueryKey<Options>, page: K) => {
-    const params = {
-        ...queryKey[0]
-    };
+    const params = { ...queryKey[0] };
     if (page.body) {
         params.body = {
             ...queryKey[0].body as any,
@@ -923,10 +906,11 @@ export const importTasksListInfiniteQueryKey = (options?: Options<ImportTasksLis
 
 /**
  * List import tasks
+ *
  * Paginated import tasks, optionally filtered by status.
  */
 export const importTasksListInfiniteOptions = (options?: Options<ImportTasksListData>) => {
-    return infiniteQueryOptions<ImportTasksListResponse, ImportTasksListError, InfiniteData<ImportTasksListResponse>, QueryKey<Options<ImportTasksListData>>, number | Pick<QueryKey<Options<ImportTasksListData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    const opts = infiniteQueryOptions<ImportTasksListResponse, ImportTasksListError, InfiniteData<ImportTasksListResponse>, QueryKey<Options<ImportTasksListData>>, number | Pick<QueryKey<Options<ImportTasksListData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
     // @ts-ignore
     {
         queryFn: async ({ pageParam, queryKey, signal }) => {
@@ -947,6 +931,7 @@ export const importTasksListInfiniteOptions = (options?: Options<ImportTasksList
         },
         queryKey: importTasksListInfiniteQueryKey(options)
     });
+    return opts as Omit<typeof opts, 'initialData'>;
 };
 
 export const importTasksCountsQueryKey = (options?: Options<ImportTasksCountsData>) => createQueryKey('importTasksCounts', options);
@@ -954,43 +939,40 @@ export const importTasksCountsQueryKey = (options?: Options<ImportTasksCountsDat
 /**
  * Get import task counts by status
  */
-export const importTasksCountsOptions = (options?: Options<ImportTasksCountsData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await importTasksCounts({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: importTasksCountsQueryKey(options)
-    });
-};
+export const importTasksCountsOptions = (options?: Options<ImportTasksCountsData>) => queryOptions<ImportTasksCountsResponse, ImportTasksCountsError, ImportTasksCountsResponse, ReturnType<typeof importTasksCountsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await importTasksCounts({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: importTasksCountsQueryKey(options)
+});
 
 export const importTasksGetQueryKey = (options: Options<ImportTasksGetData>) => createQueryKey('importTasksGet', options);
 
 /**
  * Get import task with details
  */
-export const importTasksGetOptions = (options: Options<ImportTasksGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await importTasksGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: importTasksGetQueryKey(options)
-    });
-};
+export const importTasksGetOptions = (options: Options<ImportTasksGetData>) => queryOptions<ImportTasksGetResponse, ImportTasksGetError, ImportTasksGetResponse, ReturnType<typeof importTasksGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await importTasksGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: importTasksGetQueryKey(options)
+});
 
 /**
  * Cancel import task
+ *
  * Cancel a pending import task. Returns 409 when the status doesn't allow cancelling.
  */
 export const importTasksCancelMutation = (options?: Partial<Options<ImportTasksCancelData>>): UseMutationOptions<ImportTasksCancelResponse, ImportTasksCancelError, Options<ImportTasksCancelData>> => {
@@ -1012,23 +994,22 @@ export const importTasksHistoryQueryKey = (options: Options<ImportTasksHistoryDa
 /**
  * Get import task reimport history
  */
-export const importTasksHistoryOptions = (options: Options<ImportTasksHistoryData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await importTasksHistory({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: importTasksHistoryQueryKey(options)
-    });
-};
+export const importTasksHistoryOptions = (options: Options<ImportTasksHistoryData>) => queryOptions<ImportTasksHistoryResponse, ImportTasksHistoryError, ImportTasksHistoryResponse, ReturnType<typeof importTasksHistoryQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await importTasksHistory({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: importTasksHistoryQueryKey(options)
+});
 
 /**
  * Reimport import task
+ *
  * Create a new import task linked to this one via previous_task_id. Returns 409 when the source status doesn't allow reimport.
  */
 export const importTasksReimportMutation = (options?: Partial<Options<ImportTasksReimportData>>): UseMutationOptions<ImportTasksReimportResponse, ImportTasksReimportError, Options<ImportTasksReimportData>> => {
@@ -1050,23 +1031,22 @@ export const importTasksTimelineQueryKey = (options: Options<ImportTasksTimeline
 /**
  * Get import task timeline
  */
-export const importTasksTimelineOptions = (options: Options<ImportTasksTimelineData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await importTasksTimeline({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: importTasksTimelineQueryKey(options)
-    });
-};
+export const importTasksTimelineOptions = (options: Options<ImportTasksTimelineData>) => queryOptions<ImportTasksTimelineResponse, ImportTasksTimelineError, ImportTasksTimelineResponse, ReturnType<typeof importTasksTimelineQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await importTasksTimeline({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: importTasksTimelineQueryKey(options)
+});
 
 /**
  * Create or update indexer
+ *
  * Saves an indexer configuration. ID == 0 in the body inserts a new indexer; non-zero updates the existing one.
  */
 export const indexersSaveMutation = (options?: Partial<Options<IndexersSaveData>>): UseMutationOptions<IndexersSaveResponse, IndexersSaveError, Options<IndexersSaveData>> => {
@@ -1085,6 +1065,7 @@ export const indexersSaveMutation = (options?: Partial<Options<IndexersSaveData>
 
 /**
  * Perform an indexer action
+ *
  * Proxies an arbitrary Prowlarr indexer-action call. Body and response shapes are opaque.
  */
 export const indexersActionMutation = (options?: Partial<Options<IndexersActionData>>): UseMutationOptions<unknown, IndexersActionError, Options<IndexersActionData>> => {
@@ -1140,20 +1121,18 @@ export const indexersGetQueryKey = (options: Options<IndexersGetData>) => create
 /**
  * Get indexer by ID
  */
-export const indexersGetOptions = (options: Options<IndexersGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await indexersGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: indexersGetQueryKey(options)
-    });
-};
+export const indexersGetOptions = (options: Options<IndexersGetData>) => queryOptions<IndexersGetResponse, IndexersGetError, IndexersGetResponse, ReturnType<typeof indexersGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await indexersGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: indexersGetQueryKey(options)
+});
 
 /**
  * Test saved indexer
@@ -1194,41 +1173,38 @@ export const indexersListConfiguredQueryKey = (options?: Options<IndexersListCon
 /**
  * List configured indexers
  */
-export const indexersListConfiguredOptions = (options?: Options<IndexersListConfiguredData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await indexersListConfigured({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: indexersListConfiguredQueryKey(options)
-    });
-};
+export const indexersListConfiguredOptions = (options?: Options<IndexersListConfiguredData>) => queryOptions<IndexersListConfiguredResponse, IndexersListConfiguredError, IndexersListConfiguredResponse, ReturnType<typeof indexersListConfiguredQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await indexersListConfigured({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: indexersListConfiguredQueryKey(options)
+});
 
 export const indexersGetSchemaQueryKey = (options?: Options<IndexersGetSchemaData>) => createQueryKey('indexersGetSchema', options);
 
 /**
  * Get indexer schema
+ *
  * Returns the catalog of indexer definitions Prowlarr knows how to configure.
  */
-export const indexersGetSchemaOptions = (options?: Options<IndexersGetSchemaData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await indexersGetSchema({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: indexersGetSchemaQueryKey(options)
-    });
-};
+export const indexersGetSchemaOptions = (options?: Options<IndexersGetSchemaData>) => queryOptions<IndexersGetSchemaResponse, IndexersGetSchemaError, IndexersGetSchemaResponse, ReturnType<typeof indexersGetSchemaQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await indexersGetSchema({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: indexersGetSchemaQueryKey(options)
+});
 
 /**
  * Test all configured indexers
@@ -1252,20 +1228,18 @@ export const invitesListQueryKey = (options?: Options<InvitesListData>) => creat
 /**
  * List invites
  */
-export const invitesListOptions = (options?: Options<InvitesListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await invitesList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: invitesListQueryKey(options)
-    });
-};
+export const invitesListOptions = (options?: Options<InvitesListData>) => queryOptions<InvitesListResponse, InvitesListError, InvitesListResponse, ReturnType<typeof invitesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await invitesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: invitesListQueryKey(options)
+});
 
 /**
  * Create invite
@@ -1306,20 +1280,18 @@ export const librariesListQueryKey = (options?: Options<LibrariesListData>) => c
 /**
  * List libraries
  */
-export const librariesListOptions = (options?: Options<LibrariesListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await librariesList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: librariesListQueryKey(options)
-    });
-};
+export const librariesListOptions = (options?: Options<LibrariesListData>) => queryOptions<LibrariesListResponse, LibrariesListError, LibrariesListResponse, ReturnType<typeof librariesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await librariesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: librariesListQueryKey(options)
+});
 
 /**
  * Create library
@@ -1360,20 +1332,18 @@ export const librariesGetQueryKey = (options: Options<LibrariesGetData>) => crea
 /**
  * Get library
  */
-export const librariesGetOptions = (options: Options<LibrariesGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await librariesGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: librariesGetQueryKey(options)
-    });
-};
+export const librariesGetOptions = (options: Options<LibrariesGetData>) => queryOptions<LibrariesGetResponse, LibrariesGetError, LibrariesGetResponse, ReturnType<typeof librariesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await librariesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: librariesGetQueryKey(options)
+});
 
 /**
  * Update library
@@ -1394,6 +1364,7 @@ export const librariesUpdateMutation = (options?: Partial<Options<LibrariesUpdat
 
 /**
  * Scan library
+ *
  * Kick off an async filesystem scan for the library. Returns 202 with the scan ID; 409 if a scan is already running.
  */
 export const librariesScanMutation = (options?: Partial<Options<LibrariesScanData>>): UseMutationOptions<LibrariesScanResponse, LibrariesScanError, Options<LibrariesScanData>> => {
@@ -1415,20 +1386,18 @@ export const libraryListQueryKey = (options?: Options<LibraryListData>) => creat
 /**
  * List library items
  */
-export const libraryListOptions = (options?: Options<LibraryListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await libraryList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: libraryListQueryKey(options)
-    });
-};
+export const libraryListOptions = (options?: Options<LibraryListData>) => queryOptions<LibraryListResponse, LibraryListError, LibraryListResponse, ReturnType<typeof libraryListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await libraryList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: libraryListQueryKey(options)
+});
 
 export const libraryListInfiniteQueryKey = (options?: Options<LibraryListData>): QueryKey<Options<LibraryListData>> => createQueryKey('libraryList', options, true);
 
@@ -1436,7 +1405,7 @@ export const libraryListInfiniteQueryKey = (options?: Options<LibraryListData>):
  * List library items
  */
 export const libraryListInfiniteOptions = (options?: Options<LibraryListData>) => {
-    return infiniteQueryOptions<LibraryListResponse, LibraryListError, InfiniteData<LibraryListResponse>, QueryKey<Options<LibraryListData>>, number | Pick<QueryKey<Options<LibraryListData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    const opts = infiniteQueryOptions<LibraryListResponse, LibraryListError, InfiniteData<LibraryListResponse>, QueryKey<Options<LibraryListData>>, number | Pick<QueryKey<Options<LibraryListData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
     // @ts-ignore
     {
         queryFn: async ({ pageParam, queryKey, signal }) => {
@@ -1457,31 +1426,32 @@ export const libraryListInfiniteOptions = (options?: Options<LibraryListData>) =
         },
         queryKey: libraryListInfiniteQueryKey(options)
     });
+    return opts as Omit<typeof opts, 'initialData'>;
 };
 
 export const mediaGetMovieQueryKey = (options: Options<MediaGetMovieData>) => createQueryKey('mediaGetMovie', options);
 
 /**
  * Get movie
+ *
  * Returns the full movie detail (TMDB + local files).
  */
-export const mediaGetMovieOptions = (options: Options<MediaGetMovieData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await mediaGetMovie({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: mediaGetMovieQueryKey(options)
-    });
-};
+export const mediaGetMovieOptions = (options: Options<MediaGetMovieData>) => queryOptions<MediaGetMovieResponse, MediaGetMovieError, MediaGetMovieResponse, ReturnType<typeof mediaGetMovieQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await mediaGetMovie({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: mediaGetMovieQueryKey(options)
+});
 
 /**
  * Enqueue a movie download candidate
+ *
  * Dispatches routing rules, creates a download job, and returns the evaluation + job.
  */
 export const downloadCandidatesDownloadMovieMutation = (options?: Partial<Options<DownloadCandidatesDownloadMovieData>>): UseMutationOptions<DownloadCandidatesDownloadMovieResponse, DownloadCandidatesDownloadMovieError, Options<DownloadCandidatesDownloadMovieData>> => {
@@ -1520,61 +1490,56 @@ export const downloadCandidatesListMovieQueryKey = (options: Options<DownloadCan
 /**
  * List download candidates for a movie
  */
-export const downloadCandidatesListMovieOptions = (options: Options<DownloadCandidatesListMovieData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadCandidatesListMovie({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadCandidatesListMovieQueryKey(options)
-    });
-};
+export const downloadCandidatesListMovieOptions = (options: Options<DownloadCandidatesListMovieData>) => queryOptions<DownloadCandidatesListMovieResponse, DownloadCandidatesListMovieError, DownloadCandidatesListMovieResponse, ReturnType<typeof downloadCandidatesListMovieQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadCandidatesListMovie({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadCandidatesListMovieQueryKey(options)
+});
 
 export const downloadJobsListForMovieQueryKey = (options: Options<DownloadJobsListForMovieData>) => createQueryKey('downloadJobsListForMovie', options);
 
 /**
  * List download jobs for movie
+ *
  * List every download job tied to the given TMDB movie id.
  */
-export const downloadJobsListForMovieOptions = (options: Options<DownloadJobsListForMovieData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadJobsListForMovie({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadJobsListForMovieQueryKey(options)
-    });
-};
+export const downloadJobsListForMovieOptions = (options: Options<DownloadJobsListForMovieData>) => queryOptions<DownloadJobsListForMovieResponse, DownloadJobsListForMovieError, DownloadJobsListForMovieResponse, ReturnType<typeof downloadJobsListForMovieQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadJobsListForMovie({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadJobsListForMovieQueryKey(options)
+});
 
 export const nameTemplatesListQueryKey = (options?: Options<NameTemplatesListData>) => createQueryKey('nameTemplatesList', options);
 
 /**
  * List name templates
  */
-export const nameTemplatesListOptions = (options?: Options<NameTemplatesListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await nameTemplatesList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: nameTemplatesListQueryKey(options)
-    });
-};
+export const nameTemplatesListOptions = (options?: Options<NameTemplatesListData>) => queryOptions<NameTemplatesListResponse, NameTemplatesListError, NameTemplatesListResponse, ReturnType<typeof nameTemplatesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await nameTemplatesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: nameTemplatesListQueryKey(options)
+});
 
 /**
  * Create name template
@@ -1598,20 +1563,18 @@ export const nameTemplatesGetDefaultQueryKey = (options: Options<NameTemplatesGe
 /**
  * Get default name template by type
  */
-export const nameTemplatesGetDefaultOptions = (options: Options<NameTemplatesGetDefaultData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await nameTemplatesGetDefault({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: nameTemplatesGetDefaultQueryKey(options)
-    });
-};
+export const nameTemplatesGetDefaultOptions = (options: Options<NameTemplatesGetDefaultData>) => queryOptions<NameTemplatesGetDefaultResponse, NameTemplatesGetDefaultError, NameTemplatesGetDefaultResponse, ReturnType<typeof nameTemplatesGetDefaultQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await nameTemplatesGetDefault({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: nameTemplatesGetDefaultQueryKey(options)
+});
 
 /**
  * Delete name template
@@ -1635,20 +1598,18 @@ export const nameTemplatesGetQueryKey = (options: Options<NameTemplatesGetData>)
 /**
  * Get name template
  */
-export const nameTemplatesGetOptions = (options: Options<NameTemplatesGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await nameTemplatesGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: nameTemplatesGetQueryKey(options)
-    });
-};
+export const nameTemplatesGetOptions = (options: Options<NameTemplatesGetData>) => queryOptions<NameTemplatesGetResponse, NameTemplatesGetError, NameTemplatesGetResponse, ReturnType<typeof nameTemplatesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await nameTemplatesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: nameTemplatesGetQueryKey(options)
+});
 
 /**
  * Update name template
@@ -1671,46 +1632,45 @@ export const notificationsListQueryKey = (options?: Options<NotificationsListDat
 
 /**
  * List my notifications
+ *
  * Returns the caller's delivered in-app notifications, newest first, each with its title and body rendered from the event template.
  */
-export const notificationsListOptions = (options?: Options<NotificationsListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await notificationsList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: notificationsListQueryKey(options)
-    });
-};
+export const notificationsListOptions = (options?: Options<NotificationsListData>) => queryOptions<NotificationsListResponse, NotificationsListError, NotificationsListResponse, ReturnType<typeof notificationsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await notificationsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: notificationsListQueryKey(options)
+});
 
 export const notificationPreferencesGetQueryKey = (options?: Options<NotificationPreferencesGetData>) => createQueryKey('notificationPreferencesGet', options);
 
 /**
  * Get my notification preferences
+ *
  * Returns the caller's per-bundle preferences: whether they're subscribed (the master — in-app follows it) and the resolved enablement plus deliverability of each outbound channel (email, push).
  */
-export const notificationPreferencesGetOptions = (options?: Options<NotificationPreferencesGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await notificationPreferencesGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: notificationPreferencesGetQueryKey(options)
-    });
-};
+export const notificationPreferencesGetOptions = (options?: Options<NotificationPreferencesGetData>) => queryOptions<NotificationPreferencesGetResponse, NotificationPreferencesGetError, NotificationPreferencesGetResponse, ReturnType<typeof notificationPreferencesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await notificationPreferencesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: notificationPreferencesGetQueryKey(options)
+});
 
 /**
  * Set a notification preference
+ *
  * Toggles one target for one bundle for the caller: the subscription master ('subscribed', which governs in-app), or an outbound channel ('email'/'push').
  */
 export const notificationPreferencesSetMutation = (options?: Partial<Options<NotificationPreferencesSetData>>): UseMutationOptions<NotificationPreferencesSetResponse, NotificationPreferencesSetError, Options<NotificationPreferencesSetData>> => {
@@ -1731,25 +1691,25 @@ export const pushPublicKeyQueryKey = (options?: Options<PushPublicKeyData>) => c
 
 /**
  * Get the VAPID public key
+ *
  * Returns the server's VAPID application server key, used by the browser to create a push subscription.
  */
-export const pushPublicKeyOptions = (options?: Options<PushPublicKeyData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await pushPublicKey({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: pushPublicKeyQueryKey(options)
-    });
-};
+export const pushPublicKeyOptions = (options?: Options<PushPublicKeyData>) => queryOptions<PushPublicKeyResponse, PushPublicKeyError, PushPublicKeyResponse, ReturnType<typeof pushPublicKeyQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await pushPublicKey({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: pushPublicKeyQueryKey(options)
+});
 
 /**
  * Register a push subscription
+ *
  * Stores (or refreshes) the caller's Web Push subscription for this browser. Idempotent on the endpoint.
  */
 export const pushSubscribeMutation = (options?: Partial<Options<PushSubscribeData>>): UseMutationOptions<PushSubscribeResponse, PushSubscribeError, Options<PushSubscribeData>> => {
@@ -1768,6 +1728,7 @@ export const pushSubscribeMutation = (options?: Partial<Options<PushSubscribeDat
 
 /**
  * Remove a push device
+ *
  * Removes one of the caller's registered Web Push devices by id. Idempotent.
  */
 export const pushRemoveMutation = (options?: Partial<Options<PushRemoveData>>): UseMutationOptions<PushRemoveResponse, PushRemoveError, Options<PushRemoveData>> => {
@@ -1786,6 +1747,7 @@ export const pushRemoveMutation = (options?: Partial<Options<PushRemoveData>>): 
 
 /**
  * Send a test push to a device
+ *
  * Sends a canned test notification to one of the caller's registered devices to verify it can receive pushes. Prunes and 404s a device the push service reports gone.
  */
 export const pushTestMutation = (options?: Partial<Options<PushTestData>>): UseMutationOptions<PushTestResponse, PushTestError, Options<PushTestData>> => {
@@ -1824,23 +1786,22 @@ export const notificationsUnreadCountQueryKey = (options?: Options<Notifications
 /**
  * Count my unread notifications
  */
-export const notificationsUnreadCountOptions = (options?: Options<NotificationsUnreadCountData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await notificationsUnreadCount({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: notificationsUnreadCountQueryKey(options)
-    });
-};
+export const notificationsUnreadCountOptions = (options?: Options<NotificationsUnreadCountData>) => queryOptions<NotificationsUnreadCountResponse, NotificationsUnreadCountError, NotificationsUnreadCountResponse, ReturnType<typeof notificationsUnreadCountQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await notificationsUnreadCount({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: notificationsUnreadCountQueryKey(options)
+});
 
 /**
  * Mark a notification read
+ *
  * Marks one of the caller's notifications read. Idempotent, and a no-op for an id that isn't the caller's.
  */
 export const notificationsMarkReadMutation = (options?: Partial<Options<NotificationsMarkReadData>>): UseMutationOptions<NotificationsMarkReadResponse, NotificationsMarkReadError, Options<NotificationsMarkReadData>> => {
@@ -1861,25 +1822,25 @@ export const mediaGetPersonQueryKey = (options: Options<MediaGetPersonData>) => 
 
 /**
  * Get person
+ *
  * Returns the full person detail.
  */
-export const mediaGetPersonOptions = (options: Options<MediaGetPersonData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await mediaGetPerson({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: mediaGetPersonQueryKey(options)
-    });
-};
+export const mediaGetPersonOptions = (options: Options<MediaGetPersonData>) => queryOptions<MediaGetPersonResponse, MediaGetPersonError, MediaGetPersonResponse, ReturnType<typeof mediaGetPersonQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await mediaGetPerson({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: mediaGetPersonQueryKey(options)
+});
 
 /**
  * Approve a proposal
+ *
  * Grabs the proposed release and clears the proposal. 404 if already resolved; 409 if the covered wants are no longer grabbable (a stale pack or a declined-then-approved race).
  */
 export const proposalsApproveMutation = (options?: Partial<Options<ProposalsApproveData>>): UseMutationOptions<ProposalsApproveResponse, ProposalsApproveError, Options<ProposalsApproveData>> => {
@@ -1898,6 +1859,7 @@ export const proposalsApproveMutation = (options?: Partial<Options<ProposalsAppr
 
 /**
  * Decline a proposal
+ *
  * Excludes the proposed release for every covered want and re-arms them so the next search proposes a different release. 404 if already resolved.
  */
 export const proposalsDeclineMutation = (options?: Partial<Options<ProposalsDeclineData>>): UseMutationOptions<ProposalsDeclineResponse, ProposalsDeclineError, Options<ProposalsDeclineData>> => {
@@ -1918,42 +1880,39 @@ export const qualityListBinsQueryKey = (options: Options<QualityListBinsData>) =
 
 /**
  * List the bin vocabulary for a domain
+ *
  * Returns the canonical quality bins for the domain with their rendered display names — the vocabulary editors label, pick, and order profile bins against.
  */
-export const qualityListBinsOptions = (options: Options<QualityListBinsData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await qualityListBins({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: qualityListBinsQueryKey(options)
-    });
-};
+export const qualityListBinsOptions = (options: Options<QualityListBinsData>) => queryOptions<QualityListBinsResponse, QualityListBinsError, QualityListBinsResponse, ReturnType<typeof qualityListBinsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await qualityListBins({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: qualityListBinsQueryKey(options)
+});
 
 export const qualityListProfilesQueryKey = (options?: Options<QualityListProfilesData>) => createQueryKey('qualityListProfiles', options);
 
 /**
  * List quality profiles
  */
-export const qualityListProfilesOptions = (options?: Options<QualityListProfilesData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await qualityListProfiles({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: qualityListProfilesQueryKey(options)
-    });
-};
+export const qualityListProfilesOptions = (options?: Options<QualityListProfilesData>) => queryOptions<QualityListProfilesResponse, QualityListProfilesError, QualityListProfilesResponse, ReturnType<typeof qualityListProfilesQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await qualityListProfiles({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: qualityListProfilesQueryKey(options)
+});
 
 /**
  * Create quality profile
@@ -1994,20 +1953,18 @@ export const qualityGetProfileQueryKey = (options: Options<QualityGetProfileData
 /**
  * Get quality profile
  */
-export const qualityGetProfileOptions = (options: Options<QualityGetProfileData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await qualityGetProfile({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: qualityGetProfileQueryKey(options)
-    });
-};
+export const qualityGetProfileOptions = (options: Options<QualityGetProfileData>) => queryOptions<QualityGetProfileResponse, QualityGetProfileError, QualityGetProfileResponse, ReturnType<typeof qualityGetProfileQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await qualityGetProfile({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: qualityGetProfileQueryKey(options)
+});
 
 /**
  * Update quality profile
@@ -2028,6 +1985,7 @@ export const qualityUpdateProfileMutation = (options?: Partial<Options<QualityUp
 
 /**
  * Test a quality profile against a release title
+ *
  * Parses the title in the profile's domain and returns the engine's verdict: bin, pass/reject, score, and rules traces.
  */
 export const qualityTestProfileMutation = (options?: Partial<Options<QualityTestProfileData>>): UseMutationOptions<QualityTestProfileResponse, QualityTestProfileError, Options<QualityTestProfileData>> => {
@@ -2049,40 +2007,36 @@ export const qualityListSizeDefaultsQueryKey = (options: Options<QualityListSize
 /**
  * List global per-bin size defaults for a domain
  */
-export const qualityListSizeDefaultsOptions = (options: Options<QualityListSizeDefaultsData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await qualityListSizeDefaults({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: qualityListSizeDefaultsQueryKey(options)
-    });
-};
+export const qualityListSizeDefaultsOptions = (options: Options<QualityListSizeDefaultsData>) => queryOptions<QualityListSizeDefaultsResponse, QualityListSizeDefaultsError, QualityListSizeDefaultsResponse, ReturnType<typeof qualityListSizeDefaultsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await qualityListSizeDefaults({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: qualityListSizeDefaultsQueryKey(options)
+});
 
 export const qualityListTiersQueryKey = (options?: Options<QualityListTiersData>) => createQueryKey('qualityListTiers', options);
 
 /**
  * List tier bindings
  */
-export const qualityListTiersOptions = (options?: Options<QualityListTiersData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await qualityListTiers({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: qualityListTiersQueryKey(options)
-    });
-};
+export const qualityListTiersOptions = (options?: Options<QualityListTiersData>) => queryOptions<QualityListTiersResponse, QualityListTiersError, QualityListTiersResponse, ReturnType<typeof qualityListTiersQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await qualityListTiers({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: qualityListTiersQueryKey(options)
+});
 
 /**
  * Bind a tier to a quality profile
@@ -2106,23 +2060,22 @@ export const requestsListQueryKey = (options?: Options<RequestsListData>) => cre
 /**
  * List requests
  */
-export const requestsListOptions = (options?: Options<RequestsListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await requestsList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: requestsListQueryKey(options)
-    });
-};
+export const requestsListOptions = (options?: Options<RequestsListData>) => queryOptions<RequestsListResponse, RequestsListError, RequestsListResponse, ReturnType<typeof requestsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await requestsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: requestsListQueryKey(options)
+});
 
 /**
  * Create a request
+ *
  * Validates the body and resolves the title against TMDB, then runs the spawn: an auto-approved request produces a tracking and a pending want; everyone else is persisted pending with no spawn, for an operator to approve or deny.
  */
 export const requestsCreateMutation = (options?: Partial<Options<RequestsCreateData>>): UseMutationOptions<RequestsCreateResponse, RequestsCreateError, Options<RequestsCreateData>> => {
@@ -2144,23 +2097,22 @@ export const requestsGetQueryKey = (options: Options<RequestsGetData>) => create
 /**
  * Get request
  */
-export const requestsGetOptions = (options: Options<RequestsGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await requestsGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: requestsGetQueryKey(options)
-    });
-};
+export const requestsGetOptions = (options: Options<RequestsGetData>) => queryOptions<RequestsGetResponse, RequestsGetError, RequestsGetResponse, ReturnType<typeof requestsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await requestsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: requestsGetQueryKey(options)
+});
 
 /**
  * Approve a pending request
+ *
  * Approves a pending request and runs the spawn (tracking + want). Requires an approve permission for the request's media type. A non-pending request is a 409; an upstream TMDB failure is a 502.
  */
 export const requestsApproveMutation = (options?: Partial<Options<RequestsApproveData>>): UseMutationOptions<RequestsApproveResponse, RequestsApproveError, Options<RequestsApproveData>> => {
@@ -2179,6 +2131,7 @@ export const requestsApproveMutation = (options?: Partial<Options<RequestsApprov
 
 /**
  * Cancel a request
+ *
  * Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409; already-canceled is idempotent.
  */
 export const requestsCancelMutation = (options?: Partial<Options<RequestsCancelData>>): UseMutationOptions<RequestsCancelResponse, RequestsCancelError, Options<RequestsCancelData>> => {
@@ -2197,6 +2150,7 @@ export const requestsCancelMutation = (options?: Partial<Options<RequestsCancelD
 
 /**
  * Deny a pending request
+ *
  * Denies a pending request with an optional reason. Requires a deny permission for the request's media type. A non-pending request is a 409.
  */
 export const requestsDenyMutation = (options?: Partial<Options<RequestsDenyData>>): UseMutationOptions<RequestsDenyResponse, RequestsDenyError, Options<RequestsDenyData>> => {
@@ -2218,23 +2172,22 @@ export const rolesListQueryKey = (options?: Options<RolesListData>) => createQue
 /**
  * List roles
  */
-export const rolesListOptions = (options?: Options<RolesListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await rolesList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: rolesListQueryKey(options)
-    });
-};
+export const rolesListOptions = (options?: Options<RolesListData>) => queryOptions<RolesListResponse, RolesListError, RolesListResponse, ReturnType<typeof rolesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await rolesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: rolesListQueryKey(options)
+});
 
 /**
  * Dry-run routing rules against a download candidate
+ *
  * Evaluates at the grab moment and returns the per-rule tri-state dispatch record.
  */
 export const routingEvaluateMutation = (options?: Partial<Options<RoutingEvaluateData>>): UseMutationOptions<RoutingEvaluateResponse, RoutingEvaluateError, Options<RoutingEvaluateData>> => {
@@ -2256,43 +2209,40 @@ export const routingGetFieldsQueryKey = (options?: Options<RoutingGetFieldsData>
 /**
  * Get routing field definitions
  */
-export const routingGetFieldsOptions = (options?: Options<RoutingGetFieldsData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await routingGetFields({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: routingGetFieldsQueryKey(options)
-    });
-};
+export const routingGetFieldsOptions = (options?: Options<RoutingGetFieldsData>) => queryOptions<RoutingGetFieldsResponse, RoutingGetFieldsError, RoutingGetFieldsResponse, ReturnType<typeof routingGetFieldsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await routingGetFields({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: routingGetFieldsQueryKey(options)
+});
 
 export const routingListRulesQueryKey = (options?: Options<RoutingListRulesData>) => createQueryKey('routingListRules', options);
 
 /**
  * List routing rules
  */
-export const routingListRulesOptions = (options?: Options<RoutingListRulesData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await routingListRules({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: routingListRulesQueryKey(options)
-    });
-};
+export const routingListRulesOptions = (options?: Options<RoutingListRulesData>) => queryOptions<RoutingListRulesResponse, RoutingListRulesError, RoutingListRulesResponse, ReturnType<typeof routingListRulesQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await routingListRules({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: routingListRulesQueryKey(options)
+});
 
 /**
  * Create routing rule
+ *
  * New rules append to the end of the evaluation order; use the positions endpoint to reorder.
  */
 export const routingCreateRuleMutation = (options?: Partial<Options<RoutingCreateRuleData>>): UseMutationOptions<RoutingCreateRuleResponse, RoutingCreateRuleError, Options<RoutingCreateRuleData>> => {
@@ -2311,6 +2261,7 @@ export const routingCreateRuleMutation = (options?: Partial<Options<RoutingCreat
 
 /**
  * Reorder routing rules
+ *
  * Takes the full ordered id list — reordering is a list-level operation.
  */
 export const routingReorderRulesMutation = (options?: Partial<Options<RoutingReorderRulesData>>): UseMutationOptions<RoutingReorderRulesResponse, RoutingReorderRulesError, Options<RoutingReorderRulesData>> => {
@@ -2349,20 +2300,18 @@ export const routingGetRuleQueryKey = (options: Options<RoutingGetRuleData>) => 
 /**
  * Get routing rule
  */
-export const routingGetRuleOptions = (options: Options<RoutingGetRuleData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await routingGetRule({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: routingGetRuleQueryKey(options)
-    });
-};
+export const routingGetRuleOptions = (options: Options<RoutingGetRuleData>) => queryOptions<RoutingGetRuleResponse, RoutingGetRuleError, RoutingGetRuleResponse, ReturnType<typeof routingGetRuleQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await routingGetRule({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: routingGetRuleQueryKey(options)
+});
 
 /**
  * Update routing rule
@@ -2385,31 +2334,31 @@ export const mediaSearchQueryKey = (options: Options<MediaSearchData>) => create
 
 /**
  * Search TMDB
+ *
  * Multi-search across movies, series, and people via TMDB.
  */
-export const mediaSearchOptions = (options: Options<MediaSearchData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await mediaSearch({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: mediaSearchQueryKey(options)
-    });
-};
+export const mediaSearchOptions = (options: Options<MediaSearchData>) => queryOptions<MediaSearchResponse, MediaSearchError, MediaSearchResponse, ReturnType<typeof mediaSearchQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await mediaSearch({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: mediaSearchQueryKey(options)
+});
 
 export const mediaSearchInfiniteQueryKey = (options: Options<MediaSearchData>): QueryKey<Options<MediaSearchData>> => createQueryKey('mediaSearch', options, true);
 
 /**
  * Search TMDB
+ *
  * Multi-search across movies, series, and people via TMDB.
  */
 export const mediaSearchInfiniteOptions = (options: Options<MediaSearchData>) => {
-    return infiniteQueryOptions<MediaSearchResponse, MediaSearchError, InfiniteData<MediaSearchResponse>, QueryKey<Options<MediaSearchData>>, number | Pick<QueryKey<Options<MediaSearchData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    const opts = infiniteQueryOptions<MediaSearchResponse, MediaSearchError, InfiniteData<MediaSearchResponse>, QueryKey<Options<MediaSearchData>>, number | Pick<QueryKey<Options<MediaSearchData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
     // @ts-ignore
     {
         queryFn: async ({ pageParam, queryKey, signal }) => {
@@ -2430,31 +2379,32 @@ export const mediaSearchInfiniteOptions = (options: Options<MediaSearchData>) =>
         },
         queryKey: mediaSearchInfiniteQueryKey(options)
     });
+    return opts as Omit<typeof opts, 'initialData'>;
 };
 
 export const mediaGetSeriesQueryKey = (options: Options<MediaGetSeriesData>) => createQueryKey('mediaGetSeries', options);
 
 /**
  * Get series
+ *
  * Returns the full series detail (TMDB + local files).
  */
-export const mediaGetSeriesOptions = (options: Options<MediaGetSeriesData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await mediaGetSeries({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: mediaGetSeriesQueryKey(options)
-    });
-};
+export const mediaGetSeriesOptions = (options: Options<MediaGetSeriesData>) => queryOptions<MediaGetSeriesResponse, MediaGetSeriesError, MediaGetSeriesResponse, ReturnType<typeof mediaGetSeriesQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await mediaGetSeries({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: mediaGetSeriesQueryKey(options)
+});
 
 /**
  * Enqueue a series download candidate
+ *
  * Dispatches routing rules, creates a download job (with season/episode if supplied), and returns the evaluation + job.
  */
 export const downloadCandidatesDownloadSeriesMutation = (options?: Partial<Options<DownloadCandidatesDownloadSeriesData>>): UseMutationOptions<DownloadCandidatesDownloadSeriesResponse, DownloadCandidatesDownloadSeriesError, Options<DownloadCandidatesDownloadSeriesData>> => {
@@ -2493,61 +2443,56 @@ export const downloadCandidatesListSeriesQueryKey = (options: Options<DownloadCa
 /**
  * List download candidates for a series
  */
-export const downloadCandidatesListSeriesOptions = (options: Options<DownloadCandidatesListSeriesData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadCandidatesListSeries({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadCandidatesListSeriesQueryKey(options)
-    });
-};
+export const downloadCandidatesListSeriesOptions = (options: Options<DownloadCandidatesListSeriesData>) => queryOptions<DownloadCandidatesListSeriesResponse, DownloadCandidatesListSeriesError, DownloadCandidatesListSeriesResponse, ReturnType<typeof downloadCandidatesListSeriesQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadCandidatesListSeries({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadCandidatesListSeriesQueryKey(options)
+});
 
 export const downloadJobsListForSeriesQueryKey = (options: Options<DownloadJobsListForSeriesData>) => createQueryKey('downloadJobsListForSeries', options);
 
 /**
  * List download jobs for series
+ *
  * List every download job tied to the given TMDB series id, enriched with season/episode numbers.
  */
-export const downloadJobsListForSeriesOptions = (options: Options<DownloadJobsListForSeriesData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await downloadJobsListForSeries({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: downloadJobsListForSeriesQueryKey(options)
-    });
-};
+export const downloadJobsListForSeriesOptions = (options: Options<DownloadJobsListForSeriesData>) => queryOptions<DownloadJobsListForSeriesResponse, DownloadJobsListForSeriesError, DownloadJobsListForSeriesResponse, ReturnType<typeof downloadJobsListForSeriesQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadJobsListForSeries({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadJobsListForSeriesQueryKey(options)
+});
 
 export const settingsListQueryKey = (options?: Options<SettingsListData>) => createQueryKey('settingsList', options);
 
 /**
  * List settings
  */
-export const settingsListOptions = (options?: Options<SettingsListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await settingsList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: settingsListQueryKey(options)
-    });
-};
+export const settingsListOptions = (options?: Options<SettingsListData>) => queryOptions<SettingsListResponse, SettingsListError, SettingsListResponse, ReturnType<typeof settingsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await settingsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: settingsListQueryKey(options)
+});
 
 /**
  * Update a setting
@@ -2571,20 +2516,18 @@ export const emailProviderGetQueryKey = (options?: Options<EmailProviderGetData>
 /**
  * Get email provider configuration
  */
-export const emailProviderGetOptions = (options?: Options<EmailProviderGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await emailProviderGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: emailProviderGetQueryKey(options)
-    });
-};
+export const emailProviderGetOptions = (options?: Options<EmailProviderGetData>) => queryOptions<EmailProviderGetResponse, EmailProviderGetError, EmailProviderGetResponse, ReturnType<typeof emailProviderGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await emailProviderGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: emailProviderGetQueryKey(options)
+});
 
 /**
  * Save email provider configuration
@@ -2639,6 +2582,7 @@ export const emailProviderTestConfigMutation = (options?: Partial<Options<EmailP
 
 /**
  * Initialize system
+ *
  * Creates the first admin and marks the system initialized.
  */
 export const setupInitializeMutation = (options?: Partial<Options<SetupInitializeData>>): UseMutationOptions<SetupInitializeResponse2, SetupInitializeError, Options<SetupInitializeData>> => {
@@ -2659,25 +2603,25 @@ export const setupStatusQueryKey = (options?: Options<SetupStatusData>) => creat
 
 /**
  * Get setup status
+ *
  * Reports init status and per-step completion. Returns 409 once the system is initialized.
  */
-export const setupStatusOptions = (options?: Options<SetupStatusData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await setupStatus({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: setupStatusQueryKey(options)
-    });
-};
+export const setupStatusOptions = (options?: Options<SetupStatusData>) => queryOptions<SetupStatusResponse2, SetupStatusError, SetupStatusResponse2, ReturnType<typeof setupStatusQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await setupStatus({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: setupStatusQueryKey(options)
+});
 
 /**
  * Set TMDB API key
+ *
  * Validates and stores the TMDB v3 key during setup. Returns 409 once the system is initialized.
  */
 export const setupTmdbMutation = (options?: Partial<Options<SetupTmdbData>>): UseMutationOptions<SetupTmdbResponse2, SetupTmdbError, Options<SetupTmdbData>> => {
@@ -2698,86 +2642,81 @@ export const titleStatusGetQueryKey = (options: Options<TitleStatusGetData>) => 
 
 /**
  * Get a title's acquisition status
+ *
  * The acquisition read model for one title, computed for the calling user: headline state, what the library holds, what work is in flight, and per-episode state for a series.
  */
-export const titleStatusGetOptions = (options: Options<TitleStatusGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await titleStatusGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: titleStatusGetQueryKey(options)
-    });
-};
+export const titleStatusGetOptions = (options: Options<TitleStatusGetData>) => queryOptions<TitleStatusGetResponse, TitleStatusGetError, TitleStatusGetResponse, ReturnType<typeof titleStatusGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await titleStatusGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: titleStatusGetQueryKey(options)
+});
 
 export const trackingListQueryKey = (options?: Options<TrackingListData>) => createQueryKey('trackingList', options);
 
 /**
  * List trackings
  */
-export const trackingListOptions = (options?: Options<TrackingListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await trackingList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: trackingListQueryKey(options)
-    });
-};
+export const trackingListOptions = (options?: Options<TrackingListData>) => queryOptions<TrackingListResponse, TrackingListError, TrackingListResponse, ReturnType<typeof trackingListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await trackingList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: trackingListQueryKey(options)
+});
 
 export const trackingByTmdbQueryKey = (options: Options<TrackingByTmdbData>) => createQueryKey('trackingByTmdb', options);
 
 /**
  * Get acquisition status by TMDB id
+ *
  * Resolves a title's acquisition status from its TMDB id and type: the tracking and its wants, plus the caller's own pending request. Untracked / un-requested titles return null fields rather than 404.
  */
-export const trackingByTmdbOptions = (options: Options<TrackingByTmdbData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await trackingByTmdb({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: trackingByTmdbQueryKey(options)
-    });
-};
+export const trackingByTmdbOptions = (options: Options<TrackingByTmdbData>) => queryOptions<TrackingByTmdbResponse, TrackingByTmdbError, TrackingByTmdbResponse, ReturnType<typeof trackingByTmdbQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await trackingByTmdb({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: trackingByTmdbQueryKey(options)
+});
 
 export const trackingGetQueryKey = (options: Options<TrackingGetData>) => createQueryKey('trackingGet', options);
 
 /**
  * Get tracking
  */
-export const trackingGetOptions = (options: Options<TrackingGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await trackingGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: trackingGetQueryKey(options)
-    });
-};
+export const trackingGetOptions = (options: Options<TrackingGetData>) => queryOptions<TrackingGetResponse, TrackingGetError, TrackingGetResponse, ReturnType<typeof trackingGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await trackingGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: trackingGetQueryKey(options)
+});
 
 /**
  * Set tracking autonomy
+ *
  * Sets per-segment acquisition autonomy (backfill and ongoing) to 'auto', 'propose', or 'manual', reconciling the segment's live wants to match (manual holds them; auto and propose release held ones).
  */
 export const trackingSetAutonomyMutation = (options?: Partial<Options<TrackingSetAutonomyData>>): UseMutationOptions<TrackingSetAutonomyResponse, TrackingSetAutonomyError, Options<TrackingSetAutonomyData>> => {
@@ -2796,6 +2735,7 @@ export const trackingSetAutonomyMutation = (options?: Partial<Options<TrackingSe
 
 /**
  * Stop tracking
+ *
  * Cancels in-flight wants (and their download jobs) and marks the tracking canceled. Already-available wants and their files are left intact.
  */
 export const trackingCancelMutation = (options?: Partial<Options<TrackingCancelData>>): UseMutationOptions<TrackingCancelResponse, TrackingCancelError, Options<TrackingCancelData>> => {
@@ -2816,45 +2756,43 @@ export const trackingProposalsQueryKey = (options: Options<TrackingProposalsData
 
 /**
  * List a tracking's proposals
+ *
  * Returns the tracking's open proposals (picks parked for confirmation), each with the episode and want ids it covers.
  */
-export const trackingProposalsOptions = (options: Options<TrackingProposalsData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await trackingProposals({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: trackingProposalsQueryKey(options)
-    });
-};
+export const trackingProposalsOptions = (options: Options<TrackingProposalsData>) => queryOptions<TrackingProposalsResponse, TrackingProposalsError, TrackingProposalsResponse, ReturnType<typeof trackingProposalsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await trackingProposals({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: trackingProposalsQueryKey(options)
+});
 
 export const trackingRequestersQueryKey = (options: Options<TrackingRequestersData>) => createQueryKey('trackingRequesters', options);
 
 /**
  * List a tracking's requesters
  */
-export const trackingRequestersOptions = (options: Options<TrackingRequestersData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await trackingRequesters({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: trackingRequestersQueryKey(options)
-    });
-};
+export const trackingRequestersOptions = (options: Options<TrackingRequestersData>) => queryOptions<TrackingRequestersResponse, TrackingRequestersError, TrackingRequestersResponse, ReturnType<typeof trackingRequestersQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await trackingRequesters({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: trackingRequestersQueryKey(options)
+});
 
 /**
  * Retry a tracking's acquisition
+ *
  * Re-arms terminal ('failed'/'canceled') wants and nudges pending wants to search immediately, resuming a tracking wedged by a transient outage or a since-fixed indexer. Parked (held), in-flight, and already-available wants are left untouched. Returns 404 when the tracking doesn't exist.
  */
 export const trackingRetryMutation = (options?: Partial<Options<TrackingRetryData>>): UseMutationOptions<TrackingRetryResponse, TrackingRetryError, Options<TrackingRetryData>> => {
@@ -2876,50 +2814,48 @@ export const trackingWantsQueryKey = (options: Options<TrackingWantsData>) => cr
 /**
  * List a tracking's wants
  */
-export const trackingWantsOptions = (options: Options<TrackingWantsData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await trackingWants({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: trackingWantsQueryKey(options)
-    });
-};
+export const trackingWantsOptions = (options: Options<TrackingWantsData>) => queryOptions<TrackingWantsResponse, TrackingWantsError, TrackingWantsResponse, ReturnType<typeof trackingWantsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await trackingWants({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: trackingWantsQueryKey(options)
+});
 
 export const unmatchedFilesListQueryKey = (options?: Options<UnmatchedFilesListData>) => createQueryKey('unmatchedFilesList', options);
 
 /**
  * List files needing review
+ *
  * Paginated matcher inbox: files whose current match decision banded to something other than confident/detached (includes confident_review and partial_series). Optional libraryId and outcome filters; response carries per-band counts. Match/un-match/detach are on /api/v1/files/{fileId}*.
  */
-export const unmatchedFilesListOptions = (options?: Options<UnmatchedFilesListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await unmatchedFilesList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: unmatchedFilesListQueryKey(options)
-    });
-};
+export const unmatchedFilesListOptions = (options?: Options<UnmatchedFilesListData>) => queryOptions<UnmatchedFilesListResponse, UnmatchedFilesListError, UnmatchedFilesListResponse, ReturnType<typeof unmatchedFilesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await unmatchedFilesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: unmatchedFilesListQueryKey(options)
+});
 
 export const unmatchedFilesListInfiniteQueryKey = (options?: Options<UnmatchedFilesListData>): QueryKey<Options<UnmatchedFilesListData>> => createQueryKey('unmatchedFilesList', options, true);
 
 /**
  * List files needing review
+ *
  * Paginated matcher inbox: files whose current match decision banded to something other than confident/detached (includes confident_review and partial_series). Optional libraryId and outcome filters; response carries per-band counts. Match/un-match/detach are on /api/v1/files/{fileId}*.
  */
 export const unmatchedFilesListInfiniteOptions = (options?: Options<UnmatchedFilesListData>) => {
-    return infiniteQueryOptions<UnmatchedFilesListResponse, UnmatchedFilesListError, InfiniteData<UnmatchedFilesListResponse>, QueryKey<Options<UnmatchedFilesListData>>, number | Pick<QueryKey<Options<UnmatchedFilesListData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    const opts = infiniteQueryOptions<UnmatchedFilesListResponse, UnmatchedFilesListError, InfiniteData<UnmatchedFilesListResponse>, QueryKey<Options<UnmatchedFilesListData>>, number | Pick<QueryKey<Options<UnmatchedFilesListData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
     // @ts-ignore
     {
         queryFn: async ({ pageParam, queryKey, signal }) => {
@@ -2940,6 +2876,7 @@ export const unmatchedFilesListInfiniteOptions = (options?: Options<UnmatchedFil
         },
         queryKey: unmatchedFilesListInfiniteQueryKey(options)
     });
+    return opts as Omit<typeof opts, 'initialData'>;
 };
 
 export const unmatchedFilesGetQueryKey = (options: Options<UnmatchedFilesGetData>) => createQueryKey('unmatchedFilesGet', options);
@@ -2947,40 +2884,36 @@ export const unmatchedFilesGetQueryKey = (options: Options<UnmatchedFilesGetData
 /**
  * Get a file needing review
  */
-export const unmatchedFilesGetOptions = (options: Options<UnmatchedFilesGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await unmatchedFilesGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: unmatchedFilesGetQueryKey(options)
-    });
-};
+export const unmatchedFilesGetOptions = (options: Options<UnmatchedFilesGetData>) => queryOptions<UnmatchedFilesGetResponse, UnmatchedFilesGetError, UnmatchedFilesGetResponse, ReturnType<typeof unmatchedFilesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await unmatchedFilesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: unmatchedFilesGetQueryKey(options)
+});
 
 export const usersListQueryKey = (options?: Options<UsersListData>) => createQueryKey('usersList', options);
 
 /**
  * List users
  */
-export const usersListOptions = (options?: Options<UsersListData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await usersList({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: usersListQueryKey(options)
-    });
-};
+export const usersListOptions = (options?: Options<UsersListData>) => queryOptions<UsersListResponse, UsersListError, UsersListResponse, ReturnType<typeof usersListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await usersList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: usersListQueryKey(options)
+});
 
 /**
  * Delete user
@@ -3004,20 +2937,18 @@ export const usersGetQueryKey = (options: Options<UsersGetData>) => createQueryK
 /**
  * Get user
  */
-export const usersGetOptions = (options: Options<UsersGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await usersGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: usersGetQueryKey(options)
-    });
-};
+export const usersGetOptions = (options: Options<UsersGetData>) => queryOptions<UsersGetResponse, UsersGetError, UsersGetResponse, ReturnType<typeof usersGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await usersGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: usersGetQueryKey(options)
+});
 
 /**
  * Update user
@@ -3074,25 +3005,25 @@ export const versionGetQueryKey = (options?: Options<VersionGetData>) => createQ
 
 /**
  * Get version and update information
+ *
  * Returns build metadata (version, commit, build date, components) plus update-check status. GitHub responses are cached for 15 minutes.
  */
-export const versionGetOptions = (options?: Options<VersionGetData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await versionGet({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: versionGetQueryKey(options)
-    });
-};
+export const versionGetOptions = (options?: Options<VersionGetData>) => queryOptions<VersionGetResponse, VersionGetError, VersionGetResponse, ReturnType<typeof versionGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await versionGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: versionGetQueryKey(options)
+});
 
 /**
  * Cancel a want
+ *
  * Cancels a want (and its tracking), stopping its in-flight download job and pending import tasks. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.
  */
 export const wantsCancelMutation = (options?: Partial<Options<WantsCancelData>>): UseMutationOptions<WantsCancelResponse, WantsCancelError, Options<WantsCancelData>> => {
@@ -3113,19 +3044,18 @@ export const healthCheckQueryKey = (options?: Options<HealthCheckData>) => creat
 
 /**
  * Health check
+ *
  * Liveness probe; returns 200 with body "ok". Bypasses auth and setup-mode.
  */
-export const healthCheckOptions = (options?: Options<HealthCheckData>) => {
-    return queryOptions({
-        queryFn: async ({ queryKey, signal }) => {
-            const { data } = await healthCheck({
-                ...options,
-                ...queryKey[0],
-                signal,
-                throwOnError: true
-            });
-            return data;
-        },
-        queryKey: healthCheckQueryKey(options)
-    });
-};
+export const healthCheckOptions = (options?: Options<HealthCheckData>) => queryOptions<HealthCheckResponse, HealthCheckError, HealthCheckResponse, ReturnType<typeof healthCheckQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await healthCheck({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: healthCheckQueryKey(options)
+});
