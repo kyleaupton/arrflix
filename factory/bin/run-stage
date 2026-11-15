@@ -15,7 +15,9 @@
 # factory/<Linear's branch name> from GitHub's main, starts its sandbox, and
 # moves the issue from Ready to In Progress. On a rework it reads the latest
 # "request changes" review on the issue's PR; --feedback passes a file
-# instead. judge runs in a fresh session that can't
+# instead. An implement that returns blocked posts its question on the issue
+# and moves it to Blocked. Answer in a comment and move the issue to Ready:
+# the next implement resumes with your answer as its feedback. judge runs in a fresh session that can't
 # see the implementer's.
 #
 # submit commits the judged work as the bot, pushes the branch, opens the PR
@@ -47,7 +49,7 @@ factory_home="${ARRFLIX_FACTORY_HOME:-$HOME/.local/share/arrflix-factory}"
 env_file="${ARRFLIX_FACTORY_ENV:-$HOME/.config/arrflix-factory/env}"
 
 die() { echo "run-stage: $*" >&2; exit 1; }
-usage() { sed -n '2,41p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { awk 'NR > 1 && !/^#/ { exit } NR > 1' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
 
 stage="${1:-}"; issue="${2:-}"
 case "$stage" in implement|judge|submit|watch|done) ;; *) usage ;; esac
@@ -135,6 +137,21 @@ if stage in ("implement", "judge"):
             spec = c["body"].strip()
             break
 
+    # A blocked run's question and the maintainer's answer settle part of the
+    # scope, so every later step reads them alongside the spec.
+    decisions, comments = [], issue["comments"]
+    asked = [i for i, c in enumerate(comments) if c["body"].lstrip().startswith("## Blocked")]
+    for n, i in enumerate(asked):
+        end = asked[n + 1] if n + 1 < len(asked) else len(comments)
+        answer = [c["body"].strip() for c in comments[i + 1:end]]
+        if answer:
+            question = comments[i]["body"].split("+++", 1)[0].replace("## Blocked", "", 1).strip()
+            decisions += ["### Asked", "", question, "", "### Answered", "", "\n\n".join(answer), ""]
+    if decisions:
+        spec = ("" if spec.startswith("None.") else spec + "\n\n") + \
+            "## Decided during the run\n\nAn earlier attempt stopped to ask, and the maintainer's answer " \
+            "overrides the issue where they differ.\n\n" + "\n".join(decisions).strip()
+
     feedback = "None. This is the first attempt."
     if os.environ.get("FEEDBACK"):
         feedback = open(os.environ["FEEDBACK"]).read().strip()
@@ -195,6 +212,55 @@ PY
   )
 }
 
+# --- a blocked run ---------------------------------------------------------------
+# A blocked implement asks its question in a comment that opens with a
+# "## Blocked" heading. The maintainer's answer is every comment after it.
+
+# block_issue posts the question from an implement result and moves the issue
+# to Blocked.
+block_issue() {
+  local comment="$logs/$stamp-blocked.md"
+  python3 - "$1" "$issue" "$comment" <<'PY'
+import json, sys
+
+result_path, issue, out_path = sys.argv[1:4]
+impl = json.load(open(result_path))["structured_output"]
+out = ["## Blocked", "", impl.get("question", "").strip() or "The implementer returned blocked without a question.", ""]
+if impl.get("needed"):
+    out += ["The sandbox also lacked:", ""] + [f"- {n}" for n in impl["needed"]] + [""]
+out += ["+++ The implementer's summary", "", impl["summary"].strip(), "", "+++", "",
+        f"Answer in a comment below, then move the issue to Ready and run `factory/bin/run-stage implement {issue}`. "
+        "Every comment after this one goes to the implementer as its feedback."]
+open(out_path, "w").write("\n".join(out) + "\n")
+PY
+  linear comment "$issue" "$comment"
+  linear move "$issue" Blocked
+  echo "run-stage: $issue is Blocked; its question is on the issue"
+}
+
+# blocked_answer prints the path of a feedback file holding the maintainer's
+# answer when the run's latest implement was blocked, and nothing otherwise.
+blocked_answer() {
+  local last; last="$(ls "$logs"/*-implement.json 2>/dev/null | sort | tail -1)"
+  [ -n "$last" ] && [ "$(jq -r .structured_output.outcome "$last" 2>/dev/null)" == blocked ] || return 0
+  linear issue "$issue" | python3 -c '
+import json, sys
+issue, out_path = json.load(sys.stdin), sys.argv[1]
+comments = issue["comments"]
+asked = max((i for i, c in enumerate(comments) if c["body"].lstrip().startswith("## Blocked")), default=None)
+if asked is None:
+    sys.exit(f"run-stage: the last implement for {issue['identifier']} was blocked, but the issue has no ## Blocked comment")
+answer = [c["body"].strip() for c in comments[asked + 1:]]
+if not answer:
+    sys.exit(f"run-stage: {issue['identifier']} has no answer to its blocked question yet; reply in a comment first")
+question = comments[asked]["body"].split("+++", 1)[0].strip()
+lines = ["Your last attempt stopped as blocked and asked:", "", question, "",
+         "The maintainer answered:", "", "\n\n".join(answer)]
+open(out_path, "w").write("\n".join(lines) + "\n")
+print(out_path)
+' "$logs/$stamp-answer.md"
+}
+
 # --- an agent step ---------------------------------------------------------------
 cmd_agent() {
   if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}${ANTHROPIC_API_KEY:-}" ] && [ -f "$env_file" ]; then
@@ -213,8 +279,13 @@ cmd_agent() {
   export TMDB_API_KEY="${TMDB_API_KEY:-}"
 
   if [ "$stage" == implement ] && [ -z "$feedback" ] && [ -d "$clone/.git" ]; then
-    feedback="$(review_feedback)"
-    [ -z "$feedback" ] || echo "run-stage: reworking from $feedback"
+    feedback="$(blocked_answer)"
+    if [ -n "$feedback" ]; then
+      echo "run-stage: resuming with the answer in $feedback"
+    else
+      feedback="$(review_feedback)"
+      [ -z "$feedback" ] || echo "run-stage: reworking from $feedback"
+    fi
   fi
 
   local branch; branch="$(check_issue)"
@@ -291,6 +362,10 @@ models = ", ".join(out.get("modelUsage", {})) or "model unknown"
 print(f"\nrun-stage: {models}, {secs / 60:.1f} min, "
       + (f"${cost:.2f}" if cost is not None else "cost unknown"), file=sys.stderr)
 PY
+
+  if [ "$stage" == implement ] && [ "$(jq -r .structured_output.outcome "$result")" == blocked ]; then
+    block_issue "$result"
+  fi
 }
 
 # --- submit ----------------------------------------------------------------------

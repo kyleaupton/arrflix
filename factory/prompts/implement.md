@@ -25,6 +25,8 @@ Your job is to build what the issue below asks for, prove it with tests, and sto
 
 **On a rework**, the branch already holds the earlier attempt as commits. `git diff main` shows the whole change so far. Address the feedback above, and don't redo work that already stands.
 
+**After a blocked attempt**, the feedback above is the maintainer's answer to your question, and your earlier work is still uncommitted in the tree. Carry on from it as the answer directs.
+
 **Scope is the issue, exactly.** Change what it asks for and nothing else. If you notice another problem along the way (a bug, a stale comment, a refactor worth doing), don't fix it: list it under `followups` in your result. A reviewer will reject a correct fix that also changes unrelated code.
 
 **Never edit** `factory/`, `.claude/`, `.github/` or `docker/`. They define how the factory and CI run, and they change only through their own reviewed issues.

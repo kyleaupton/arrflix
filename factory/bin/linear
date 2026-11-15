@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Reads and moves the factory's Linear issues. See factory/WORKFLOW.md.
+"""Reads, moves and comments on the factory's Linear issues. See factory/WORKFLOW.md.
 
   factory/bin/linear issue <ARFX-12>           the issue as JSON: title, description,
                                                state, labels, branch name, comments
   factory/bin/linear move <ARFX-12> <status>   move the issue to a status by name, e.g. "In Review"
+  factory/bin/linear comment <ARFX-12> <file>  post the file's markdown as a comment on the issue
   factory/bin/linear whoami                    the user the API key belongs to
 
 Authenticates with LINEAR_API_KEY, either exported or set in $ARRFLIX_FACTORY_ENV
@@ -59,7 +60,7 @@ def graphql(query, **variables):
 ISSUE = """
 query($id: String!) {
   issue(id: $id) {
-    identifier title description url branchName
+    id identifier title description url branchName
     state { name type }
     labels { nodes { name } }
     creator { name }
@@ -93,12 +94,24 @@ def move(identifier, status):
     )
 
 
+def comment(identifier, path):
+    body = Path(path).read_text().strip()
+    if not body:
+        die(f"{path} is empty")
+    graphql(
+        "mutation($issue: String!, $body: String!) { commentCreate(input: { issueId: $issue, body: $body }) { success } }",
+        issue=issue(identifier)["id"], body=body,
+    )
+
+
 def main(args):
     match args:
         case ["issue", identifier]:
             print(json.dumps(issue(identifier), indent=2))
         case ["move", identifier, status]:
             move(identifier, status)
+        case ["comment", identifier, path]:
+            comment(identifier, path)
         case ["whoami"]:
             print(graphql("{ viewer { name } }")["viewer"]["name"])
         case _:

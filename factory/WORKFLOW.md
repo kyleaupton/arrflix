@@ -101,7 +101,7 @@ A factory issue is the input to a run, not a plan. It states the problem, who it
 
 **The spec comment records decisions and their reasons, not the conversation that reached them.** The working-out stays private.
 
-Blocked is the escape hatch. An agent that reaches a real decision stops and states the question. It doesn't guess.
+Blocked is the escape hatch. An agent that reaches a real decision stops and states the question. It doesn't guess. The question goes on the issue, and the answer is a reply there, so the decision is recorded where the next run reads it.
 
 ## A run
 
@@ -137,7 +137,7 @@ Commands run as the caller's uid with a throwaway `HOME`, so no Claude config, m
 
 `factory/bin/run-stage <step> <issue>` runs one step of a run:
 
-- `implement` and `judge` are the agent steps. Each reads the issue from Linear on the host, refuses an issue that isn't labelled `factory` or isn't in the right status, makes the run's clone and sandbox on first use, and prints the step's structured result. `implement` moves a Ready issue to In Progress. On a rework, it reads the latest "request changes" review on the PR.
+- `implement` and `judge` are the agent steps. Each reads the issue from Linear on the host, refuses an issue that isn't labelled `factory` or isn't in the right status, makes the run's clone and sandbox on first use, and prints the step's structured result. `implement` moves a Ready issue to In Progress. On a rework, it reads the latest "request changes" review on the PR. When the implementer returns `blocked`, `implement` posts its question as a comment opening with `## Blocked` and moves the issue to Blocked. The maintainer answers in comments and moves the issue to Ready, and the next `implement` resumes with every comment after the question as its feedback.
 - `submit` is the Submit step, on the host. It commits the tree as the bot, pushes the branch, opens the PR (or comments the rework's results on it) and moves the issue to In Review. It refuses work the judge hasn't passed.
 - `watch` follows a running agent step's tool calls and messages.
 - `done` cleans up once the issue is Done or Canceled. It removes the sandbox and deletes the clone, and keeps the logs.
@@ -148,7 +148,7 @@ A run's branch starts from GitHub's `main`, not the local checkout's, because th
 
 Runs live outside the repo, under `~/.local/share/arrflix-factory/runs/<issue>/` (e.g. `runs/ARFX-12/`), with each step's prompt, result and transcript in `logs/`.
 
-`factory/bin/linear` reads an issue from Linear and moves it between statuses, with the API key in `~/.config/arrflix-factory/env`. That key is the maintainer's for now, so the factory's status moves show as theirs; a Linear app with its own identity can replace it.
+`factory/bin/linear` reads an issue from Linear, moves it between statuses and comments on it, with the API key in `~/.config/arrflix-factory/env`. That key is the maintainer's for now, so the factory's status moves show as theirs; a Linear app with its own identity can replace it.
 
 `factory/bin/gh-bot` is `gh` acting as the factory's GitHub App, `arrflix-factory-bot`. It mints an installation token, valid for an hour, from the App's private key, which stays on the factory host (`~/.config/arrflix-factory/bot.pem`) and is never mounted into a sandbox. The App can write contents, pull requests and issues, but not workflows, so nothing the factory pushes can change CI.
 
