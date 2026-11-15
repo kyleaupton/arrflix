@@ -402,7 +402,10 @@ cmd_done() {
     "$factory/bin/sandbox" down "$sandbox_name"
   fi
   if [ -d "$clone" ]; then
-    chmod -R u+w "$clone"
+    # The sandbox's node_modules volume leaves a root-owned empty mount point
+    # in the clone. It can't be chmodded, but removing it needs only write
+    # access to its parent.
+    chmod -R u+w "$clone" 2>/dev/null || true
     rm -rf "$clone"
     echo "run-stage: deleted $clone"
   fi
