@@ -524,8 +524,9 @@ func TestReqCancel007_LateCompletionDoesNotReviveCanceledWant(t *testing.T) {
 // The import runs with no media server of any kind wired in. When the placed
 // file is present with its bytes, Arrflix's own check alone must carry the want
 // to 'available'. When the placed file is empty (a zero-byte download payload,
-// hardlinked as-is), the verification must fail: the want stays short of
-// 'available' and no file row is recorded for it.
+// hardlinked as-is) or exists but can't be opened for reading (wrong
+// permissions, a broken mount), the verification must fail: the want stays
+// short of 'available' and no file row is recorded for it.
 func TestReqFulfil002_AvailableOnlyOnOwnDiskVerification(t *testing.T) {
 	t.Parallel()
 
@@ -564,33 +565,54 @@ func TestReqFulfil002_AvailableOnlyOnOwnDiskVerification(t *testing.T) {
 		}
 	})
 
-	t.Run("unverifiable file never makes the want available", func(t *testing.T) {
-		t.Parallel()
-		pool := dbtest.New(t)
-		r := repo.New(pool)
-		ctx := context.Background()
+	cases := []struct {
+		name      string
+		breakFile func(t *testing.T, sourcePath string)
+	}{
+		{"empty file never makes the want available", func(t *testing.T, sourcePath string) {
+			if err := os.Truncate(sourcePath, 0); err != nil {
+				t.Fatalf("truncate source: %v", err)
+			}
+		}},
+		// The placed file is a hardlink of the source, so it shares the
+		// source's mode: present, non-empty, but not openable for reading.
+		{"unreadable file never makes the want available", func(t *testing.T, sourcePath string) {
+			if err := os.Chmod(sourcePath, 0o000); err != nil {
+				t.Fatalf("chmod source: %v", err)
+			}
+			if f, err := os.Open(sourcePath); err == nil {
+				_ = f.Close()
+				t.Skip("process can read a mode-000 file (running as root?); cannot simulate an unreadable file")
+			}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			pool := dbtest.New(t)
+			r := repo.New(pool)
+			ctx := context.Background()
 
-		fix := seedImportTask(t, ctx, r, true)
-		if err := os.Truncate(fix.sourcePath, 0); err != nil {
-			t.Fatalf("truncate source: %v", err)
-		}
-		if err := newTestWorker(r).processTask(ctx, fix.task); err == nil {
-			t.Errorf("processTask succeeded importing an empty file, want a verification failure")
-		}
+			fix := seedImportTask(t, ctx, r, true)
+			tc.breakFile(t, fix.sourcePath)
+			if err := newTestWorker(r).processTask(ctx, fix.task); err == nil {
+				t.Errorf("processTask succeeded importing an unverifiable file, want a verification failure")
+			}
 
-		gotWant, err := r.GetWant(ctx, fix.want.ID)
-		if err != nil {
-			t.Fatalf("get want: %v", err)
-		}
-		if gotWant.Status == string(model.WantAvailable) || gotWant.Status == string(model.WantImported) {
-			t.Errorf("want status = %q after a failed verification, want it short of imported/available", gotWant.Status)
-		}
-		files, err := r.ListFilesForItem(ctx, fix.task.MediaItemID)
-		if err != nil {
-			t.Fatalf("list files: %v", err)
-		}
-		if len(files) != 0 {
-			t.Errorf("file rows after a failed verification = %d, want 0", len(files))
-		}
-	})
+			gotWant, err := r.GetWant(ctx, fix.want.ID)
+			if err != nil {
+				t.Fatalf("get want: %v", err)
+			}
+			if gotWant.Status == string(model.WantAvailable) || gotWant.Status == string(model.WantImported) {
+				t.Errorf("want status = %q after a failed verification, want it short of imported/available", gotWant.Status)
+			}
+			files, err := r.ListFilesForItem(ctx, fix.task.MediaItemID)
+			if err != nil {
+				t.Fatalf("list files: %v", err)
+			}
+			if len(files) != 0 {
+				t.Errorf("file rows after a failed verification = %d, want 0", len(files))
+			}
+		})
+	}
 }
