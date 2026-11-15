@@ -45,8 +45,11 @@ cmd_up() {
 
   # The web service installs node_modules as root, and tools such as vue-tsc
   # write caches inside it, so hand it to the uid that `exec` runs as.
+  # The web service runs npm install, then starts Vite on 5173. The port
+  # opening is the signal that the install is over: node_modules/.bin/vite
+  # appears partway through, while npm is still adding and pruning packages.
   echo "sandbox: waiting for npm install in $ctr"
-  wait_for "$ctr" 600 test -x /app/web/node_modules/.bin/vite || die "npm install in $ctr never finished (docker logs $ctr)"
+  wait_for "$ctr" 600 bash -c 'exec 3<>/dev/tcp/127.0.0.1/5173' || die "npm install in $ctr never finished (docker logs $ctr)"
   docker exec "$ctr" chown -R "$(id -u):$(id -g)" /app/web/node_modules
 
   echo "sandbox: $ctr is up"

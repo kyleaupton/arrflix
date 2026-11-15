@@ -121,7 +121,7 @@ ident, status = issue["identifier"], issue["state"]["name"]
 wanted = {"Ready", "In Progress"} if stage == "implement" else {"In Progress"}
 if status not in wanted:
     sys.exit(f"run-stage: {ident} is {status}; {stage} needs it to be {' or '.join(sorted(wanted))}")
-if "factory" not in issue["labels"]:
+if "factory" not in {l.lower() for l in issue["labels"]}:
     sys.exit(f"run-stage: {ident} isn't labelled factory, so it's built interactively, not by a run")
 
 if stage in ("implement", "judge"):
