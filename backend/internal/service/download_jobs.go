@@ -3,21 +3,33 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/kyleaupton/arrflix/internal/downloader"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/jobs/state"
+	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
+// cancelTagTimeout bounds how long a cancel waits on the downloader to tag the
+// torrent. The cancel has already committed by then, so an unreachable
+// downloader must not hold the request open for the HTTP client's full timeout.
+const cancelTagTimeout = 10 * time.Second
+
 type DownloadJobsService struct {
 	repo *repo.Repository
+	log  *logger.Logger
+	dlm  *downloader.Manager
 	sm   *state.DownloadJobMachine
 }
 
-func NewDownloadJobsService(r *repo.Repository) *DownloadJobsService {
-	return &DownloadJobsService{repo: r, sm: state.NewDownloadJobMachine()}
+// NewDownloadJobsService builds the service. dlm may be nil, in which case a
+// cancel stays database-only and tags nothing in the downloader.
+func NewDownloadJobsService(r *repo.Repository, l *logger.Logger, dlm *downloader.Manager) *DownloadJobsService {
+	return &DownloadJobsService{repo: r, log: l, dlm: dlm, sm: state.NewDownloadJobMachine()}
 }
 
 func (s *DownloadJobsService) Create(ctx context.Context, params repo.CreateDownloadJobParams) (model.DownloadJob, error) {
@@ -55,13 +67,48 @@ func (s *DownloadJobsService) ListBySeries(ctx context.Context, tmdbSeriesID int
 	return s.repo.ListDownloadJobsByTmdbSeriesID(ctx, tmdbSeriesID)
 }
 
-// Cancel cancels a download job and its pending import tasks. The cancel is
-// DB-only: Arrflix never removes torrents, so a job already handed to the
-// downloader keeps transferring there and is never imported.
+// Cancel cancels a download job and its pending import tasks. Arrflix never
+// removes torrents, so a job already handed to the downloader keeps transferring
+// there and is never imported; its torrent is tagged arrflix-canceled so the
+// user can find it (REQ-HARD-004). The tag is best-effort: once the cancel has
+// committed, a downloader failure is logged and never fails or reverts it.
 func (s *DownloadJobsService) Cancel(ctx context.Context, id uuid.UUID) error {
-	return s.repo.InTx(ctx, func(r *repo.Repository) error {
-		return cancelDownloadJob(ctx, r, id)
-	})
+	var job model.DownloadJob
+	if err := s.repo.InTx(ctx, func(r *repo.Repository) error {
+		var err error
+		job, err = cancelDownloadJob(ctx, r, id)
+		return err
+	}); err != nil {
+		return err
+	}
+	s.tagCanceled(ctx, job)
+	return nil
+}
+
+// tagCanceled tags a cancelled job's torrent in the downloader. A job that never
+// reached the downloader has no external ID and nothing to tag.
+func (s *DownloadJobsService) tagCanceled(ctx context.Context, job model.DownloadJob) {
+	if s.dlm == nil || job.DownloaderExternalID == nil || *job.DownloaderExternalID == "" {
+		return
+	}
+	externalID := *job.DownloaderExternalID
+	logFailure := func(err error) {
+		s.log.Warn().Err(err).
+			Str("job_id", job.ID.String()).
+			Str("external_id", externalID).
+			Msg("failed to tag cancelled download in the downloader")
+	}
+
+	client, err := s.dlm.GetClientByID(ctx, job.DownloaderID.String())
+	if err != nil {
+		logFailure(err)
+		return
+	}
+	tagCtx, cancel := context.WithTimeout(ctx, cancelTagTimeout)
+	defer cancel()
+	if err := client.AddTags(tagCtx, externalID, []string{downloader.TagCanceled}); err != nil {
+		logFailure(err)
+	}
 }
 
 // ListImportTasks returns all import tasks for a download job.

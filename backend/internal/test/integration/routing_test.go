@@ -41,12 +41,18 @@ func makeRoutingRuleBody(name string, conditions map[string]any) map[string]any 
 // through the public API so dispatch fallbacks resolve.
 func seedDefaults(t *testing.T, app *testapp.App) (downloader model.Downloader, library model.Library, template model.NameTemplate) {
 	t.Helper()
+	return seedDefaultsAt(t, app, "http://localhost:9999")
+}
+
+// seedDefaultsAt is seedDefaults with the default downloader at downloaderURL.
+func seedDefaultsAt(t *testing.T, app *testapp.App, downloaderURL string) (downloader model.Downloader, library model.Library, template model.NameTemplate) {
+	t.Helper()
 
 	app.POST(t, "/api/v1/downloaders", map[string]any{
 		"name":     "Default qBit",
 		"type":     "qbittorrent",
 		"protocol": "torrent",
-		"url":      "http://localhost:9999",
+		"url":      downloaderURL,
 		"enabled":  true,
 		"default":  true,
 	}, &downloader, http.StatusCreated)

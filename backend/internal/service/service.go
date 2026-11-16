@@ -7,6 +7,7 @@ import (
 	tmdb "github.com/cyruzin/golang-tmdb"
 
 	"github.com/kyleaupton/arrflix/internal/config"
+	"github.com/kyleaupton/arrflix/internal/downloader"
 	prowlarradapter "github.com/kyleaupton/arrflix/internal/indexer/prowlarr"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/matcher"
@@ -101,7 +102,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	reconcile := NewReconcileService(r, l)
 	scheduler := NewSchedulerService(r, l)
 	enrichment := NewEnrichmentService(r, l, tmdb, reconcile)
-	downloadJobs := NewDownloadJobsService(r)
+	downloadJobs := NewDownloadJobsService(r, l, cfg.downloaders)
 	wants := NewWantService(r)
 	// Proposals is constructed before Acquisition, which depends on it for the
 	// propose branch. broker is in scope from New's params.
@@ -167,9 +168,10 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 }
 
 type cfg struct {
-	jwtSecret  string
-	tmdbClient *tmdb.Client
-	titles     *titlenotify.Notifier
+	jwtSecret   string
+	tmdbClient  *tmdb.Client
+	titles      *titlenotify.Notifier
+	downloaders *downloader.Manager
 }
 
 type Option interface{ apply(*cfg) }
@@ -189,6 +191,15 @@ func (w withTitles) apply(c *cfg) { c.titles = w.n }
 // it leaves the notifier nil, which is a safe no-op — tests that don't assert on
 // realtime need not wire one.
 func WithTitleNotifier(n *titlenotify.Notifier) Option { return withTitles{n: n} }
+
+type withDownloaders struct{ m *downloader.Manager }
+
+func (w withDownloaders) apply(c *cfg) { c.downloaders = w.m }
+
+// WithDownloaders injects the downloader manager, which services that act on a
+// download already handed to the downloader (cancel's arrflix-canceled tag) reach
+// it through. Omitting it leaves those actions database-only.
+func WithDownloaders(m *downloader.Manager) Option { return withDownloaders{m: m} }
 
 type withTmdbClient struct{ c *tmdb.Client }
 

@@ -211,6 +211,9 @@ func (f *fakeDownloaderClient) Resume(ctx context.Context, externalID string) er
 func (f *fakeDownloaderClient) Remove(ctx context.Context, externalID string, deleteData bool) error {
 	return nil
 }
+func (f *fakeDownloaderClient) AddTags(ctx context.Context, externalID string, tags []string) error {
+	return nil
+}
 
 // newDownloadWorker wires a download worker around a fake client built for the
 // seeded (enabled) downloader, on a fast cadence so created→enqueued→completed
