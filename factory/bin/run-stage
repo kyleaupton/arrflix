@@ -397,8 +397,10 @@ impl_path, judge_path, issue, body_path, message_path, rework = sys.argv[1:7]
 impl_run, judge_run = json.load(open(impl_path)), json.load(open(judge_path))
 impl, judge = impl_run["structured_output"], judge_run["structured_output"]
 
-if impl["outcome"] != "implemented":
-    sys.exit(f"run-stage: the implementer returned {impl['outcome']}, so there's nothing to submit")
+# no_change still has work to submit: the REQ tests proving the behavior holds.
+# An empty tree was already refused before this.
+if impl["outcome"] == "blocked":
+    sys.exit("run-stage: the implementer is blocked, so there's nothing to submit; answer its question first")
 if judge["verdict"] != "pass":
     sys.exit("run-stage: the judge vetoed; rerun implement with its findings as --feedback")
 
@@ -411,7 +413,9 @@ def model_name(model_id):
 def cell(text):
     return str(text).replace("\n", " ").replace("|", "\\|")
 
-out = [impl["summary"].strip(), ""]
+# The footer below carries the attribution; drop any the agent wrote itself.
+summary = "\n".join(l for l in impl["summary"].strip().splitlines() if "Generated with [Claude Code]" not in l)
+out = [summary.strip(), ""]
 if not rework:
     # Linear's magic word: the merge moves the issue to Done.
     out += [f"Fixes {issue}", ""]
