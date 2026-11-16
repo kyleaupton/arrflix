@@ -70,7 +70,7 @@ Erin now cancels too, while a download is in flight.
 - **The in-flight download is allowed to finish.** Bandwidth and time are already committed, and stopping mid-transfer can carry obligations to the source that abandoning it would break. This follows the lean already committed in [multi-requester scope union § open questions](./05-multi-requester-scope-union.md#open-questions).
 - The completed file lands in the library, unrequested by anyone. It is governed from then on by library-wide [hygiene](../modules/hygiene/README.md) policy — the same as any other untracked content.
 
-**Not true today:** the last requester's withdrawal cancels every want not yet available, downloading ones included, along with their download jobs. That cancel is database-only — nothing stops the transfer in the downloader — so the bandwidth is spent anyway and the file is never imported. The requirements below make completion deliberate and bound it.
+A download counts as in flight once it has been handed to the downloader. Wants still waiting to be grabbed or sent are cancelled, along with any job not yet sent. If a surviving download later fails, its want ends failed rather than searching again for a title nobody wants.
 
 ### Phase 4 — What Erin sees afterward
 
@@ -113,12 +113,12 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 ### Withdrawal is scoped to the withdrawing user
 
 - **REQ-CANCEL-001** — Withdrawing a request must remove only that user's requester association. A tracking with any remaining requester, and its wants, must continue unchanged. *Currently true* — withdrawing a request removes only that requester's association, and touches wants only when no requester remains. Cancelling the tracking itself is a separate path; see REQ-CANCEL-012.
-- **REQ-CANCEL-002** — Cancelling a want must not cancel a download job that also serves other wants still justified. **Not currently true:** cancelling a want cancels every download job linked to it without checking the job's other wants. Latent for movies; breaks the moment a season pack serves several episode wants.
+- **REQ-CANCEL-002** — Cancelling a want must not cancel a download job that also serves other wants still justified. *Currently true* — a want's cancel cancels a download job only once no other live want is linked to it, so a season pack keeps running while any episode it covers is still wanted.
 - **REQ-CANCEL-003** — Removing a requester from a tracking must trigger reconciliation of that tracking's wants, so wants only the departing requester justified are cancelled. **Not currently true:** departure removes the association but never reconciles, leaving orphaned wants live.
 
 ### Work already committed is not thrown away
 
-- **REQ-CANCEL-004** — A download job already transferring must be allowed to complete. Only wants that have not yet reached a downloading state may be cancelled on withdrawal. **Not currently true:** the last requester's withdrawal cancels downloading wants and their download jobs, so the transfer's result is never imported.
+- **REQ-CANCEL-004** — A download job already transferring must be allowed to complete. Only wants that have not yet reached a downloading state may be cancelled on withdrawal. A download counts as transferring once it has been handed to the downloader, even before the first poll reports progress. *Currently true* — withdrawal leaves a want alone once its job has been handed to the downloader or its import is under way, and the series reconciler does the same for episodes that fall out of scope. The download completes, imports, and the want ends available.
 - **REQ-CANCEL-005** — Withdrawal must never delete files already acquired. They persist and fall under library retention policy. *Currently true* — no cancel path deletes files.
 - **REQ-CANCEL-006** — Cancelling a want must not exclude its release from future searches. Withdrawal means the requester stopped wanting the title, not that the release was unsuitable — recording an exclusion would poison later acquisition of the same title. *Currently true* — exclusions are recorded only for failed downloads and declined proposals.
 - **REQ-CANCEL-007** — A download job completing after its want was cancelled must not return that want to a live status. *Currently true.*
@@ -136,7 +136,7 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ## Out of scope (variant stories)
 
-- **Operator cancels the underlying work** — an admin stopping a download or abandoning acquisition outright. Different authority, different confirmation, and it may legitimately stop work others want. Deserves its own treatment.
+- **Operator cancels the underlying work** — an admin stopping a download or abandoning acquisition outright. Different authority, different confirmation, and it may legitimately stop work others want. Deserves its own treatment. **Decided:** stopping acquisition and stopping a transfer are separate operator actions. *Cancel acquisition* and *Stop tracking* follow the same rule as withdrawal: they stop searching, and a download already handed to the downloader finishes. A download job's *Cancel* is the only action that stops a transfer.
 - **Removing content from the library** — the action that replaces cancel once a title is available. Belongs with [hygiene](../modules/hygiene/README.md).
 - **Series scope narrowing** — one requester of a series reducing their scope rather than leaving entirely. Covered by [multi-requester scope union](./05-multi-requester-scope-union.md); this story deliberately uses a movie so the unit of intent is singular.
 - **Denial** — an admin refusing a request. That's [pending approval queue](./03-pending-approval-queue.md); the request never spawned work.

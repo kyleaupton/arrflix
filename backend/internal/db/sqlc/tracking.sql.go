@@ -214,6 +214,35 @@ func (q *Queries) ListTrackings(ctx context.Context) ([]Tracking, error) {
 	return items, nil
 }
 
+const lockTracking = `-- name: LockTracking :one
+SELECT id, media_item_id, quality_profile_id, state, scope, upgrade_behavior, schedule_strategy, autonomy_backfill, autonomy_ongoing, created_at, updated_at FROM tracking
+WHERE id = $1
+FOR NO KEY UPDATE
+`
+
+// LockTracking reads a tracking and holds its row lock until the transaction
+// ends. Withdrawal and spawn both take it before touching the requester set, so
+// the last requester leaving and a new requester joining can't interleave: each
+// sees the other's committed requester rows and tracking state.
+func (q *Queries) LockTracking(ctx context.Context, id pgtype.UUID) (Tracking, error) {
+	row := q.db.QueryRow(ctx, lockTracking, id)
+	var i Tracking
+	err := row.Scan(
+		&i.ID,
+		&i.MediaItemID,
+		&i.QualityProfileID,
+		&i.State,
+		&i.Scope,
+		&i.UpgradeBehavior,
+		&i.ScheduleStrategy,
+		&i.AutonomyBackfill,
+		&i.AutonomyOngoing,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const setTrackingAutonomy = `-- name: SetTrackingAutonomy :one
 UPDATE tracking
 SET autonomy_backfill = $1,

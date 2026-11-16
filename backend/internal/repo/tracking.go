@@ -93,6 +93,16 @@ func (r *Repository) GetTracking(ctx context.Context, id uuid.UUID) (model.Track
 	return toModelTracking(row), nil
 }
 
+// LockTracking reads a tracking and holds its row lock until the enclosing
+// transaction ends. Only meaningful on a transactional repo (InTx).
+func (r *Repository) LockTracking(ctx context.Context, id uuid.UUID) (model.Tracking, error) {
+	row, err := r.Q.LockTracking(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.Tracking{}, apperrors.FromPg(err, "tracking %s not found", id)
+	}
+	return toModelTracking(row), nil
+}
+
 func (r *Repository) ListTrackings(ctx context.Context) ([]model.Tracking, error) {
 	rows, err := r.Q.ListTrackings(ctx)
 	if err != nil {

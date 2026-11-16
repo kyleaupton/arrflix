@@ -55,19 +55,13 @@ func (s *DownloadJobsService) ListBySeries(ctx context.Context, tmdbSeriesID int
 	return s.repo.ListDownloadJobsByTmdbSeriesID(ctx, tmdbSeriesID)
 }
 
-// Cancel cancels a download job and all its pending import tasks.
+// Cancel cancels a download job and its pending import tasks. The cancel is
+// DB-only: Arrflix never removes torrents, so a job already handed to the
+// downloader keeps transferring there and is never imported.
 func (s *DownloadJobsService) Cancel(ctx context.Context, id uuid.UUID) error {
-	if _, err := s.repo.CancelDownloadJob(ctx, id); err != nil {
-		return err
-	}
-
-	// Also cancel all pending import tasks for this job
-	if err := s.repo.CancelPendingImportTasksForJob(ctx, id); err != nil {
-		// Log but don't fail the cancel operation
-		_ = err
-	}
-
-	return nil
+	return s.repo.InTx(ctx, func(r *repo.Repository) error {
+		return cancelDownloadJob(ctx, r, id)
+	})
 }
 
 // ListImportTasks returns all import tasks for a download job.

@@ -147,15 +147,18 @@ func (s *ReconcileService) Reconcile(ctx context.Context, trackingID uuid.UUID) 
 			}
 		}
 
-		// Cancel: a live want whose episode is no longer in scope is canceled via
-		// the CAS primitive directly. Not WantService.CancelWant — its movie-shaped
-		// cascade would flip the whole tracking to 'canceled', but a series tracking
-		// must stay active when one episode leaves scope.
+		// Stand down: a live want whose episode is no longer in scope is cancelled
+		// unless its download is already committed, which finishes
+		// (REQ-CANCEL-004). With no requesters left every episode is out of
+		// scope, so this is also what keeps a withdrawn series' in-flight
+		// downloads alive across later reconciles. Not WantService.CancelWant — its
+		// movie-shaped cascade would flip the whole tracking to 'canceled', but a
+		// series tracking must stay active when one episode leaves scope.
 		for epID, w := range existing {
 			if inScope[epID] {
 				continue
 			}
-			if _, _, err := r.CancelWant(ctx, w.ID); err != nil {
+			if _, _, err := standDownWant(ctx, r, w.ID); err != nil {
 				return err
 			}
 		}

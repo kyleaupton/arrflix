@@ -655,6 +655,36 @@ func (q *Queries) ListWantsByTracking(ctx context.Context, trackingID pgtype.UUI
 	return items, nil
 }
 
+const lockWant = `-- name: LockWant :one
+SELECT id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
+WHERE id = $1
+FOR NO KEY UPDATE
+`
+
+// LockWant reads a want and holds its row lock until the transaction ends, so
+// a decision made from its status (and its download jobs) can't be overtaken by
+// a concurrent grab or worker mirror before the decision's writes commit.
+func (q *Queries) LockWant(ctx context.Context, id pgtype.UUID) (Want, error) {
+	row := q.db.QueryRow(ctx, lockWant, id)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.Segment,
+		&i.Hold,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const markWantFailed = `-- name: MarkWantFailed :one
 UPDATE want
 SET status = 'failed',
@@ -1009,6 +1039,46 @@ type RescheduleWantRecheckParams struct {
 // 'searching' guard is the same CAS as ScheduleWantRetry.
 func (q *Queries) RescheduleWantRecheck(ctx context.Context, arg RescheduleWantRecheckParams) (Want, error) {
 	row := q.db.QueryRow(ctx, rescheduleWantRecheck, arg.LastError, arg.NextRunAt, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.Segment,
+		&i.Hold,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const retireWantFromGrab = `-- name: RetireWantFromGrab :one
+UPDATE want
+SET status = 'failed',
+    last_error = $1,
+    updated_at = now()
+WHERE id = $2
+  AND status IN ('grabbed', 'downloading')
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type RetireWantFromGrabParams struct {
+	LastError *string     `json:"last_error"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// RetireWantFromGrab terminally fails a want whose grab fell through, the
+// counterpart of ReleaseWantFromGrab for a want nobody wants searched again. The
+// same 'grabbed'/'downloading' guard makes a 0-row match (pgx.ErrNoRows) mean the
+// want already moved on (canceled, or released by another path).
+func (q *Queries) RetireWantFromGrab(ctx context.Context, arg RetireWantFromGrabParams) (Want, error) {
+	row := q.db.QueryRow(ctx, retireWantFromGrab, arg.LastError, arg.ID)
 	var i Want
 	err := row.Scan(
 		&i.ID,

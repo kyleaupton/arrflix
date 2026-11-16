@@ -21,6 +21,8 @@ type DownloadJobsRepo interface {
 	GetDownloadJobTimeline(ctx context.Context, downloadJobID uuid.UUID) ([]model.DownloadJobTimelineEvent, error)
 	ListDownloadJobsByMediaItem(ctx context.Context, mediaItemID uuid.UUID) ([]model.DownloadJob, error)
 	ListActiveDownloadJobsByWant(ctx context.Context, wantID uuid.UUID) ([]model.DownloadJob, error)
+	LockDownloadJobsByWant(ctx context.Context, wantID uuid.UUID) ([]model.DownloadJob, error)
+	CountLiveWantsForDownloadJob(ctx context.Context, jobID uuid.UUID) (int64, error)
 	LinkDownloadJobWant(ctx context.Context, jobID, wantID uuid.UUID) error
 	UnlinkDownloadJobWant(ctx context.Context, jobID, wantID uuid.UUID) error
 	ListWantsByDownloadJob(ctx context.Context, jobID uuid.UUID) ([]model.Want, error)
@@ -32,7 +34,7 @@ type DownloadJobsRepo interface {
 
 	ClaimRunnableDownloadJobs(ctx context.Context, limit int32) ([]model.DownloadJob, error)
 
-	SetDownloadJobEnqueued(ctx context.Context, id uuid.UUID, downloaderExternalID string) (model.DownloadJob, error)
+	SetDownloadJobEnqueued(ctx context.Context, id uuid.UUID, downloaderExternalID string) (model.DownloadJob, bool, error)
 	SetDownloadJobDownloadSnapshot(ctx context.Context, params SetDownloadJobDownloadSnapshotParams) (model.DownloadJob, error)
 	SetDownloadJobCompleted(ctx context.Context, id uuid.UUID, savePath, contentPath string) (model.DownloadJob, error)
 
@@ -481,6 +483,31 @@ func (r *Repository) ListActiveDownloadJobsByWant(ctx context.Context, wantID uu
 	return out, nil
 }
 
+// LockDownloadJobsByWant returns every download job linked to a want, in any
+// status, and holds their row locks until the enclosing transaction ends. Only
+// meaningful on a transactional repo (InTx).
+func (r *Repository) LockDownloadJobsByWant(ctx context.Context, wantID uuid.UUID) ([]model.DownloadJob, error) {
+	rows, err := r.Q.LockDownloadJobsByWant(ctx, pgtypeFromUUID(wantID))
+	if err != nil {
+		return nil, apperrors.FromPg(err, "lock download jobs for want %s", wantID)
+	}
+	out := make([]model.DownloadJob, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelDownloadJob(row))
+	}
+	return out, nil
+}
+
+// CountLiveWantsForDownloadJob counts the non-terminal wants a download job still
+// serves.
+func (r *Repository) CountLiveWantsForDownloadJob(ctx context.Context, jobID uuid.UUID) (int64, error) {
+	n, err := r.Q.CountLiveWantsForDownloadJob(ctx, pgtypeFromUUID(jobID))
+	if err != nil {
+		return 0, apperrors.FromPg(err, "count live wants for download job %s", jobID)
+	}
+	return n, nil
+}
+
 // LinkDownloadJobWant records the download_job↔want edge, idempotently. The grab
 // tx calls it after creating the job; a converging grab that re-links a covered
 // want is a no-op (ON CONFLICT DO NOTHING).
@@ -569,15 +596,22 @@ func (r *Repository) ClaimRunnableDownloadJobs(ctx context.Context, limit int32)
 	return out, nil
 }
 
-func (r *Repository) SetDownloadJobEnqueued(ctx context.Context, id uuid.UUID, downloaderExternalID string) (model.DownloadJob, error) {
+// SetDownloadJobEnqueued records the hand-off to the downloader via
+// compare-and-swap from 'created'. The bool reports whether it landed: false (a
+// 0-row CAS, surfaced as pgx.ErrNoRows) means the job left 'created' first —
+// cancelled while the worker was adding it.
+func (r *Repository) SetDownloadJobEnqueued(ctx context.Context, id uuid.UUID, downloaderExternalID string) (model.DownloadJob, bool, error) {
 	row, err := r.Q.SetDownloadJobEnqueued(ctx, dbgen.SetDownloadJobEnqueuedParams{
 		ID:                   pgtypeFromUUID(id),
 		DownloaderExternalID: &downloaderExternalID,
 	})
 	if err != nil {
-		return model.DownloadJob{}, apperrors.FromPg(err, "mark download job %s enqueued", id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.DownloadJob{}, false, nil
+		}
+		return model.DownloadJob{}, false, apperrors.FromPg(err, "mark download job %s enqueued", id)
 	}
-	return toModelDownloadJob(row), nil
+	return toModelDownloadJob(row), true, nil
 }
 
 func (r *Repository) SetDownloadJobDownloadSnapshot(ctx context.Context, params SetDownloadJobDownloadSnapshotParams) (model.DownloadJob, error) {

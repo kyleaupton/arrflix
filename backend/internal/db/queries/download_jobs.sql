@@ -73,6 +73,27 @@ WHERE djw.want_id = $1
   AND dj.status NOT IN ('completed', 'failed', 'cancelled')
 ORDER BY dj.created_at DESC;
 
+-- LockDownloadJobsByWant returns every download job linked to a want, in any
+-- status, and holds their row locks until the transaction ends. A withdrawal
+-- reads them to tell a job still waiting to be sent ('created') from one already
+-- handed to the downloader, and the lock keeps the download worker from sending
+-- it in between.
+-- name: LockDownloadJobsByWant :many
+SELECT dj.* FROM download_job dj
+JOIN download_job_want djw ON djw.download_job_id = dj.id
+WHERE djw.want_id = $1
+ORDER BY dj.id
+FOR NO KEY UPDATE OF dj;
+
+-- CountLiveWantsForDownloadJob counts the non-terminal wants a download job
+-- still serves. Cancelling a want cancels its job only when this is zero, so a
+-- season pack keeps running while any episode it covers is still wanted.
+-- name: CountLiveWantsForDownloadJob :one
+SELECT COUNT(*) FROM want w
+JOIN download_job_want djw ON djw.want_id = w.id
+WHERE djw.download_job_id = $1
+  AND w.status NOT IN ('available', 'failed', 'canceled');
+
 -- LinkDownloadJobWant records that a download_job advances a want, the M:N edge
 -- the grab tx writes after creating (or finding) the job. Idempotent via ON
 -- CONFLICT DO NOTHING so a converging grab that re-links a want it already
@@ -131,6 +152,10 @@ WHERE id = $1
   AND status NOT IN ('completed', 'failed', 'cancelled')
 RETURNING *;
 
+-- SetDownloadJobEnqueued records that the download worker handed a job to the
+-- downloader. It fires only from 'created': a job cancelled while the worker was
+-- adding it stays cancelled (a 0-row match, pgx.ErrNoRows) rather than being
+-- revived, and the torrent the worker just added is left in the downloader.
 -- name: SetDownloadJobEnqueued :one
 UPDATE download_job
 SET status = 'enqueued',
@@ -138,6 +163,7 @@ SET status = 'enqueued',
     attempt_count = attempt_count + 1,
     updated_at = now()
 WHERE id = sqlc.arg(id)
+  AND status = 'created'
 RETURNING *;
 
 -- SetDownloadJobDownloadSnapshot advances next_run_at on every poll so a polled
