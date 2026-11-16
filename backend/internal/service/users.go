@@ -12,12 +12,13 @@ import (
 )
 
 type UsersService struct {
-	repo  *repo.Repository
-	authz *AuthzService
+	repo     *repo.Repository
+	authz    *AuthzService
+	sessions *SessionService
 }
 
-func NewUsersService(r *repo.Repository, authz *AuthzService) *UsersService {
-	return &UsersService{repo: r, authz: authz}
+func NewUsersService(r *repo.Repository, authz *AuthzService, sessions *SessionService) *UsersService {
+	return &UsersService{repo: r, authz: authz, sessions: sessions}
 }
 
 // List returns all users with their roles
@@ -104,7 +105,10 @@ func (s *UsersService) Update(ctx context.Context, id uuid.UUID, email, username
 	// Saving a user as inactive revokes every session in the same transaction, so
 	// a disabled user can't refresh their way back in. Re-enabling restores
 	// nothing: the old sessions stay revoked and the user signs in again.
-	var user model.User
+	var (
+		user    model.User
+		revoked int64
+	)
 	err := s.repo.InTx(ctx, func(r *repo.Repository) error {
 		var err error
 		user, err = r.UpdateUser(ctx, repo.UpdateUserParams{
@@ -117,7 +121,8 @@ func (s *UsersService) Update(ctx context.Context, id uuid.UUID, email, username
 			return err
 		}
 		if !isActive {
-			if _, err := r.RevokeAllSessionsForUser(ctx, id); err != nil {
+			revoked, err = r.RevokeAllSessionsForUser(ctx, id)
+			if err != nil {
 				return err
 			}
 		}
@@ -125,6 +130,11 @@ func (s *UsersService) Update(ctx context.Context, id uuid.UUID, email, username
 	})
 	if err != nil {
 		return model.User{}, err
+	}
+	// Audited after commit: the write is best-effort, and a failed insert inside
+	// the transaction would abort the disable it records.
+	if revoked > 0 {
+		s.sessions.audit(ctx, id, auditSessionRevoked, auditDetail{Scope: "disabled", Count: revoked})
 	}
 	return user, nil
 }

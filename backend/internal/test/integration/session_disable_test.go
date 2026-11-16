@@ -104,6 +104,16 @@ func TestReqHard002_DisablingUserRevokesSessions(t *testing.T) {
 	if n := activeSessions(); n != 0 {
 		t.Fatalf("active sessions after disable = %d, want 0", n)
 	}
+	var audited int64
+	if err := pool.QueryRow(ctx, `
+		SELECT (detail->>'count')::bigint FROM auth_audit
+		WHERE user_id = $1 AND event = 'session.revoked' AND detail->>'scope' = 'disabled'`,
+		user.ID).Scan(&audited); err != nil {
+		t.Fatalf("read disable audit row: %v", err)
+	}
+	if audited != 2 {
+		t.Fatalf("disable audit count = %d, want 2", audited)
+	}
 	for i, c := range cookies {
 		if resp := postWithCookie(t, app.URL+"/api/v1/auth/refresh", c); resp.StatusCode != http.StatusUnauthorized {
 			t.Fatalf("refresh %d after disable status = %d, want 401", i, resp.StatusCode)
