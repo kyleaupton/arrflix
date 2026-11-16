@@ -32,9 +32,17 @@ type Worker struct {
 	titles *titlenotify.Notifier
 	sm     *state.DownloadJobMachine
 
-	pollInterval time.Duration
-	claimLimit   int32
-	maxAttempts  int
+	pollInterval     time.Duration
+	claimLimit       int32
+	maxAttempts      int
+	outageBackoffMax time.Duration
+
+	// outages counts each job's consecutive unreachable-downloader retries, the
+	// exponent of its outage backoff. It lives in memory, not on the row: losing
+	// it on restart only restarts the ramp, and the attempt_count column is
+	// reserved for failures that can blocklist the release. Only the tick
+	// goroutine touches it.
+	outages map[uuid.UUID]int
 }
 
 // Config holds worker configuration.
@@ -42,6 +50,9 @@ type Config struct {
 	PollInterval time.Duration
 	ClaimLimit   int32
 	MaxAttempts  int
+	// OutageBackoffMax caps the retry delay of a job whose downloader is
+	// unreachable. Such a job retries indefinitely, so its backoff plateaus here.
+	OutageBackoffMax time.Duration
 }
 
 // DefaultConfig returns default worker configuration.
@@ -50,6 +61,8 @@ func DefaultConfig() Config {
 		PollInterval: 3 * time.Second,
 		ClaimLimit:   20,
 		MaxAttempts:  3,
+
+		OutageBackoffMax: time.Minute,
 	}
 }
 
@@ -71,6 +84,9 @@ func NewWithConfig(r *repo.Repository, dlm *downloader.Manager, log *logger.Logg
 		pollInterval: cfg.PollInterval,
 		claimLimit:   cfg.ClaimLimit,
 		maxAttempts:  cfg.MaxAttempts,
+
+		outageBackoffMax: cfg.OutageBackoffMax,
+		outages:          make(map[uuid.UUID]int),
 	}
 }
 
@@ -100,7 +116,13 @@ func (w *Worker) tick(ctx context.Context) {
 	}
 
 	for _, job := range jobs {
-		if err := w.processJob(ctx, job); err != nil {
+		err := w.processJob(ctx, job)
+		if err != nil && downloader.IsUnreachable(err) {
+			w.scheduleOutageRetry(ctx, job, err)
+			continue
+		}
+		delete(w.outages, job.ID)
+		if err != nil {
 			w.handleError(ctx, job, err)
 		}
 	}
@@ -114,9 +136,8 @@ func (w *Worker) processJob(ctx context.Context, job model.DownloadJob) error {
 
 	client, err := w.dlm.GetClientByID(ctx, job.DownloaderID.String())
 	if err != nil {
-		return apperrors.Internalf("get downloader client: %v", err).
-			Op("DownloadWorker.processJob").
-			NotRetryable()
+		return apperrors.BadGatewayf("get downloader client: %w", err).
+			Op("DownloadWorker.processJob")
 	}
 
 	switch job.Status {
@@ -151,7 +172,7 @@ func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, 
 	res, err := client.Add(ctx, addReq)
 	if err != nil {
 		w.log.Error().Err(err).Str("job_id", job.ID.String()).Msg("[DEBUG] Add() failed")
-		return apperrors.BadGatewayf("downloader add: %v", err).
+		return apperrors.BadGatewayf("downloader add: %w", err).
 			Op("DownloadWorker.enqueueDownload")
 	}
 
@@ -204,7 +225,7 @@ func (w *Worker) pollDownload(ctx context.Context, client downloader.Client, job
 	externalID := *job.DownloaderExternalID
 	item, err := client.Get(ctx, externalID)
 	if err != nil {
-		return apperrors.BadGatewayf("downloader get: %v", err).
+		return apperrors.BadGatewayf("downloader get: %w", err).
 			Op("DownloadWorker.pollDownload")
 	}
 
@@ -288,7 +309,7 @@ func (w *Worker) spawnMovieImportTask(ctx context.Context, client downloader.Cli
 
 	files, err := client.ListFiles(ctx, externalID)
 	if err != nil && err != downloader.ErrUnsupported {
-		return apperrors.BadGatewayf("list files: %v", err).
+		return apperrors.BadGatewayf("list files: %w", err).
 			Op("DownloadWorker.spawnMovieImportTask")
 	}
 
@@ -352,7 +373,7 @@ func (w *Worker) spawnSeriesImportTasks(ctx context.Context, client downloader.C
 
 	files, err := client.ListFiles(ctx, externalID)
 	if err != nil {
-		return apperrors.BadGatewayf("list files: %v", err).
+		return apperrors.BadGatewayf("list files: %w", err).
 			Op("DownloadWorker.spawnSeriesImportTasks")
 	}
 
@@ -772,6 +793,44 @@ func (w *Worker) handleError(ctx context.Context, job model.DownloadJob, err err
 		Kind:      kind,
 		NextRunAt: nextRun,
 	})
+}
+
+// scheduleOutageRetry reschedules a job whose downloader could not be reached
+// (REQ-HARD-003). An outage says nothing about the release, so the job neither
+// spends an attempt nor fails, and no release is excluded: it retries
+// indefinitely, its backoff capped at outageBackoffMax.
+func (w *Worker) scheduleOutageRetry(ctx context.Context, job model.DownloadJob, err error) {
+	msg := err.Error()
+	kind := apperrors.KindOf(err)
+
+	w.outages[job.ID]++
+	outage := w.outages[job.ID]
+	backoff := jobutil.BackoffCapped(outage, w.outageBackoffMax)
+	nextRun := time.Now().Add(backoff)
+
+	w.log.Warn().
+		Err(err).
+		Str("job_id", job.ID.String()).
+		Int("consecutive_outages", outage).
+		Str("backoff", backoff.String()).
+		Msg("downloader unreachable; download job will retry")
+
+	w.logEvent(ctx, job.ID, "retry_scheduled", msg, map[string]any{
+		"kind":                kind,
+		"downloader_outage":   true,
+		"consecutive_outages": outage,
+		"next_run_at":         nextRun,
+		"backoff":             backoff.String(),
+	})
+
+	if _, err := w.repo.ScheduleDownloadJobOutageRetry(ctx, repo.ScheduleDownloadJobRetryParams{
+		ID:        job.ID,
+		LastError: msg,
+		Kind:      kind,
+		NextRunAt: nextRun,
+	}); err != nil {
+		w.log.Warn().Err(err).Str("job_id", job.ID.String()).Msg("failed to schedule outage retry")
+	}
 }
 
 func (w *Worker) logEvent(ctx context.Context, jobID uuid.UUID, eventType, message string, metadata map[string]any) {
