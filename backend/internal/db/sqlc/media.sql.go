@@ -185,9 +185,10 @@ func (q *Queries) CreateFileImport(ctx context.Context, arg CreateFileImportPara
 
 const createFileState = `-- name: CreateFileState :one
 
-insert into file_state (file_id, exists, size_bytes, osdb_hash, last_verified_at)
-values ($1, $2, $3, $4, now())
-returning file_id, exists, size_bytes, osdb_hash, last_verified_at
+insert into file_state (file_id, exists, size_bytes, osdb_hash, st_dev, st_ino, st_nlink, last_verified_at)
+values ($1, $2, $3, $4,
+        $5, $6, $7, now())
+returning file_id, exists, size_bytes, osdb_hash, last_verified_at, st_dev, st_ino, st_nlink
 `
 
 type CreateFileStateParams struct {
@@ -195,6 +196,9 @@ type CreateFileStateParams struct {
 	Exists    bool        `json:"exists"`
 	SizeBytes *int64      `json:"size_bytes"`
 	OsdbHash  *string     `json:"osdb_hash"`
+	StDev     *int64      `json:"st_dev"`
+	StIno     *int64      `json:"st_ino"`
+	StNlink   *int64      `json:"st_nlink"`
 }
 
 // File State queries
@@ -204,6 +208,9 @@ func (q *Queries) CreateFileState(ctx context.Context, arg CreateFileStateParams
 		arg.Exists,
 		arg.SizeBytes,
 		arg.OsdbHash,
+		arg.StDev,
+		arg.StIno,
+		arg.StNlink,
 	)
 	var i FileState
 	err := row.Scan(
@@ -212,6 +219,9 @@ func (q *Queries) CreateFileState(ctx context.Context, arg CreateFileStateParams
 		&i.SizeBytes,
 		&i.OsdbHash,
 		&i.LastVerifiedAt,
+		&i.StDev,
+		&i.StIno,
+		&i.StNlink,
 	)
 	return i, err
 }
@@ -432,7 +442,7 @@ func (q *Queries) GetFileImport(ctx context.Context, id pgtype.UUID) (FileImport
 }
 
 const getFileState = `-- name: GetFileState :one
-select file_id, exists, size_bytes, osdb_hash, last_verified_at from file_state where file_id = $1
+select file_id, exists, size_bytes, osdb_hash, last_verified_at, st_dev, st_ino, st_nlink from file_state where file_id = $1
 `
 
 func (q *Queries) GetFileState(ctx context.Context, fileID pgtype.UUID) (FileState, error) {
@@ -444,6 +454,9 @@ func (q *Queries) GetFileState(ctx context.Context, fileID pgtype.UUID) (FileSta
 		&i.SizeBytes,
 		&i.OsdbHash,
 		&i.LastVerifiedAt,
+		&i.StDev,
+		&i.StIno,
+		&i.StNlink,
 	)
 	return i, err
 }
@@ -1588,6 +1601,47 @@ func (q *Queries) RecordMetadataFailure(ctx context.Context, arg RecordMetadataF
 	return err
 }
 
+const refreshFileStateByPath = `-- name: RefreshFileStateByPath :execrows
+insert into file_state (file_id, exists, size_bytes, st_dev, st_ino, st_nlink, last_verified_at)
+select f.id, true, $1, $2, $3, $4, now()
+from file f
+where f.library_id = $5 and f.path = $6 and f.deleted_at is null
+on conflict (file_id)
+do update set exists = true,
+              size_bytes = excluded.size_bytes,
+              st_dev = excluded.st_dev,
+              st_ino = excluded.st_ino,
+              st_nlink = excluded.st_nlink,
+              last_verified_at = now()
+`
+
+type RefreshFileStateByPathParams struct {
+	SizeBytes *int64      `json:"size_bytes"`
+	StDev     *int64      `json:"st_dev"`
+	StIno     *int64      `json:"st_ino"`
+	StNlink   *int64      `json:"st_nlink"`
+	LibraryID pgtype.UUID `json:"library_id"`
+	Path      string      `json:"path"`
+}
+
+// Re-stat refresh for a file the scan already knows, addressed by its live
+// (library_id, path). Rewrites the stat facts and last_verified_at; the
+// osdb_hash is left as captured at discovery.
+func (q *Queries) RefreshFileStateByPath(ctx context.Context, arg RefreshFileStateByPathParams) (int64, error) {
+	result, err := q.db.Exec(ctx, refreshFileStateByPath,
+		arg.SizeBytes,
+		arg.StDev,
+		arg.StIno,
+		arg.StNlink,
+		arg.LibraryID,
+		arg.Path,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setFileIdentity = `-- name: SetFileIdentity :one
 update file
 set media_item_id = $1,
@@ -1662,15 +1716,21 @@ update file_state
 set exists = $1,
     size_bytes = $2,
     osdb_hash = $3,
+    st_dev = $4,
+    st_ino = $5,
+    st_nlink = $6,
     last_verified_at = now()
-where file_id = $4
-returning file_id, exists, size_bytes, osdb_hash, last_verified_at
+where file_id = $7
+returning file_id, exists, size_bytes, osdb_hash, last_verified_at, st_dev, st_ino, st_nlink
 `
 
 type UpdateFileStateParams struct {
 	Exists    bool        `json:"exists"`
 	SizeBytes *int64      `json:"size_bytes"`
 	OsdbHash  *string     `json:"osdb_hash"`
+	StDev     *int64      `json:"st_dev"`
+	StIno     *int64      `json:"st_ino"`
+	StNlink   *int64      `json:"st_nlink"`
 	FileID    pgtype.UUID `json:"file_id"`
 }
 
@@ -1679,6 +1739,9 @@ func (q *Queries) UpdateFileState(ctx context.Context, arg UpdateFileStateParams
 		arg.Exists,
 		arg.SizeBytes,
 		arg.OsdbHash,
+		arg.StDev,
+		arg.StIno,
+		arg.StNlink,
 		arg.FileID,
 	)
 	var i FileState
@@ -1688,6 +1751,9 @@ func (q *Queries) UpdateFileState(ctx context.Context, arg UpdateFileStateParams
 		&i.SizeBytes,
 		&i.OsdbHash,
 		&i.LastVerifiedAt,
+		&i.StDev,
+		&i.StIno,
+		&i.StNlink,
 	)
 	return i, err
 }
@@ -1908,14 +1974,18 @@ func (q *Queries) UpsertEpisode(ctx context.Context, arg UpsertEpisodeParams) (M
 }
 
 const upsertFileState = `-- name: UpsertFileState :one
-insert into file_state (file_id, exists, size_bytes, osdb_hash, last_verified_at)
-values ($1, $2, $3, $4, now())
+insert into file_state (file_id, exists, size_bytes, osdb_hash, st_dev, st_ino, st_nlink, last_verified_at)
+values ($1, $2, $3, $4,
+        $5, $6, $7, now())
 on conflict (file_id)
 do update set exists = excluded.exists,
               size_bytes = excluded.size_bytes,
               osdb_hash = excluded.osdb_hash,
+              st_dev = coalesce(excluded.st_dev, file_state.st_dev),
+              st_ino = coalesce(excluded.st_ino, file_state.st_ino),
+              st_nlink = coalesce(excluded.st_nlink, file_state.st_nlink),
               last_verified_at = now()
-returning file_id, exists, size_bytes, osdb_hash, last_verified_at
+returning file_id, exists, size_bytes, osdb_hash, last_verified_at, st_dev, st_ino, st_nlink
 `
 
 type UpsertFileStateParams struct {
@@ -1923,14 +1993,23 @@ type UpsertFileStateParams struct {
 	Exists    bool        `json:"exists"`
 	SizeBytes *int64      `json:"size_bytes"`
 	OsdbHash  *string     `json:"osdb_hash"`
+	StDev     *int64      `json:"st_dev"`
+	StIno     *int64      `json:"st_ino"`
+	StNlink   *int64      `json:"st_nlink"`
 }
 
+// The link facts (st_dev/st_ino/st_nlink) are only overwritten when the
+// caller supplies them: a caller that didn't stat the file (a manual match)
+// passes NULL and keeps the last stat's values.
 func (q *Queries) UpsertFileState(ctx context.Context, arg UpsertFileStateParams) (FileState, error) {
 	row := q.db.QueryRow(ctx, upsertFileState,
 		arg.FileID,
 		arg.Exists,
 		arg.SizeBytes,
 		arg.OsdbHash,
+		arg.StDev,
+		arg.StIno,
+		arg.StNlink,
 	)
 	var i FileState
 	err := row.Scan(
@@ -1939,6 +2018,9 @@ func (q *Queries) UpsertFileState(ctx context.Context, arg UpsertFileStateParams
 		&i.SizeBytes,
 		&i.OsdbHash,
 		&i.LastVerifiedAt,
+		&i.StDev,
+		&i.StIno,
+		&i.StNlink,
 	)
 	return i, err
 }

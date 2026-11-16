@@ -409,6 +409,9 @@ type FileState struct {
 	SizeBytes      *int64      `json:"size_bytes"`
 	OsdbHash       *string     `json:"osdb_hash"`
 	LastVerifiedAt time.Time   `json:"last_verified_at"`
+	StDev          *int64      `json:"st_dev"`
+	StIno          *int64      `json:"st_ino"`
+	StNlink        *int64      `json:"st_nlink"`
 }
 
 type ImportTask struct {

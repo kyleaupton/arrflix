@@ -43,6 +43,9 @@ type commitMatchInput struct {
 	// FileSize is the on-disk file size in bytes. nil leaves the column
 	// unset on file_state.
 	FileSize *int64
+	// Links is the walk's link facts for the file. nil keeps whatever
+	// file_state already holds (a caller that didn't stat the file).
+	Links *model.LinkFacts
 	// OsdbHash is the OSDB content hash. nil leaves the column unset on
 	// file_state (too-small file / read error at walk time).
 	OsdbHash *string
@@ -250,6 +253,7 @@ func commitMatch(ctx context.Context, d commitMatchDeps, in commitMatchInput) (c
 			Exists:    true,
 			SizeBytes: in.FileSize,
 			OsdbHash:  in.OsdbHash,
+			Links:     in.Links,
 		}); serr != nil {
 			return serr
 		}
