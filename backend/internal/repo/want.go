@@ -161,6 +161,16 @@ func (r *Repository) ClaimRunnableWants(ctx context.Context, limit int32) ([]mod
 	return out, nil
 }
 
+// LockWant reads a want and holds its row lock until the enclosing transaction
+// ends. Only meaningful on a transactional repo (InTx).
+func (r *Repository) LockWant(ctx context.Context, id uuid.UUID) (model.Want, error) {
+	row, err := r.Q.LockWant(ctx, pgtypeFromUUID(id))
+	if err != nil {
+		return model.Want{}, apperrors.FromPg(err, "want %s not found", id)
+	}
+	return toModelWant(row), nil
+}
+
 func (r *Repository) SetWantStatus(ctx context.Context, id uuid.UUID, status string) (model.Want, error) {
 	row, err := r.Q.SetWantStatus(ctx, dbgen.SetWantStatusParams{
 		ID:     pgtypeFromUUID(id),
@@ -257,6 +267,25 @@ func (r *Repository) ReleaseWantFromGrab(ctx context.Context, id uuid.UUID, last
 			return model.Want{}, false, nil
 		}
 		return model.Want{}, false, apperrors.FromPg(err, "release want %s from grab", id)
+	}
+	return toModelWant(row), true, nil
+}
+
+// RetireWantFromGrab terminally fails a want whose grab fell through instead of
+// returning it to search, for a want nobody justifies any more. The bool reports
+// whether it landed: false (a 0-row CAS, surfaced as pgx.ErrNoRows) means the want
+// wasn't 'grabbed'/'downloading' — a benign no-op, the same contract as
+// ReleaseWantFromGrab.
+func (r *Repository) RetireWantFromGrab(ctx context.Context, id uuid.UUID, lastError string) (model.Want, bool, error) {
+	row, err := r.Q.RetireWantFromGrab(ctx, dbgen.RetireWantFromGrabParams{
+		ID:        pgtypeFromUUID(id),
+		LastError: &lastError,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "retire want %s from grab", id)
 	}
 	return toModelWant(row), true, nil
 }

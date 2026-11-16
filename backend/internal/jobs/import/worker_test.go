@@ -488,7 +488,7 @@ func TestReqCancel007_LateCompletionDoesNotReviveCanceledWant(t *testing.T) {
 		t.Fatalf("claimed import tasks = %d, want the seeded task", len(claimed))
 	}
 
-	wants := service.NewWantService(r, service.NewDownloadJobsService(r))
+	wants := service.NewWantService(r)
 	if _, err := wants.CancelWant(ctx, fix.want.ID); err != nil {
 		t.Fatalf("CancelWant: %v", err)
 	}

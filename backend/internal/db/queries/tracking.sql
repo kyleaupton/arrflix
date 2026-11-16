@@ -48,6 +48,15 @@ ORDER BY created_at DESC;
 SELECT * FROM tracking
 WHERE media_item_id = $1;
 
+-- LockTracking reads a tracking and holds its row lock until the transaction
+-- ends. Withdrawal and spawn both take it before touching the requester set, so
+-- the last requester leaving and a new requester joining can't interleave: each
+-- sees the other's committed requester rows and tracking state.
+-- name: LockTracking :one
+SELECT * FROM tracking
+WHERE id = $1
+FOR NO KEY UPDATE;
+
 -- name: SetTrackingState :one
 UPDATE tracking
 SET state = sqlc.arg(state),

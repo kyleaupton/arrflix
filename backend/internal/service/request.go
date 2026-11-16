@@ -31,11 +31,10 @@ type RequestService struct {
 	enrichment *EnrichmentService
 	reconcile  *ReconcileService
 	authz      *AuthzService
-	wants      *WantService
 }
 
-func NewRequestService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, quality *QualityProfileService, enrichment *EnrichmentService, reconcile *ReconcileService, authz *AuthzService, wants *WantService) *RequestService {
-	return &RequestService{repo: r, log: l, tmdb: tmdb, quality: quality, enrichment: enrichment, reconcile: reconcile, authz: authz, wants: wants}
+func NewRequestService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, quality *QualityProfileService, enrichment *EnrichmentService, reconcile *ReconcileService, authz *AuthzService) *RequestService {
+	return &RequestService{repo: r, log: l, tmdb: tmdb, quality: quality, enrichment: enrichment, reconcile: reconcile, authz: authz}
 }
 
 // CreateRequestInput is the writeable shape for a new request. Type is the
@@ -231,6 +230,10 @@ func (s *RequestService) spawnMovie(ctx context.Context, req model.Request, tier
 		if err != nil {
 			return err
 		}
+		tracking, err = joinTracking(ctx, r, tracking)
+		if err != nil {
+			return err
+		}
 
 		// The requester joins whether the tracking was created or already
 		// existed; upsert on (tracking, user) refreshes the tier on re-request.
@@ -338,6 +341,10 @@ func (s *RequestService) spawnSeries(ctx context.Context, req model.Request, tie
 		if err != nil {
 			return err
 		}
+		tracking, err = joinTracking(ctx, r, tracking)
+		if err != nil {
+			return err
+		}
 
 		// Seed the requester at the chosen scope ('all' or 'future_only',
 		// defaulted to 'all'). The reconciler reads this to decide which episodes
@@ -408,6 +415,23 @@ func ensureTracking(ctx context.Context, r *repo.Repository, mediaItemID, profil
 		return model.Tracking{}, false, err
 	}
 	return tracking, false, nil
+}
+
+// joinTracking locks the tracking a request is joining, re-reading it under the
+// lock, and resumes it to 'active' if a withdrawal parked it 'paused': a new
+// requester means the title is wanted again, so a download that survived the
+// withdrawal recovers normally if it fails. The lock is the one cancelSpawned
+// takes, so a concurrent last-requester withdrawal is either fully committed or
+// not yet begun when the requester joins.
+func joinTracking(ctx context.Context, r *repo.Repository, tracking model.Tracking) (model.Tracking, error) {
+	locked, err := r.LockTracking(ctx, tracking.ID)
+	if err != nil {
+		return model.Tracking{}, err
+	}
+	if locked.State != string(model.TrackingPaused) {
+		return locked, nil
+	}
+	return r.SetTrackingState(ctx, locked.ID, string(model.TrackingActive))
 }
 
 // rearmMovieWant resumes acquisition when an already-tracked movie is requested
@@ -598,53 +622,63 @@ func (s *RequestService) Cancel(ctx context.Context, userID, requestID uuid.UUID
 	}
 }
 
-// cancelSpawned withdraws a spawned request from its tracking, mirroring
-// TrackingService.Cancel's non-transactional own/any + want-cancel cascade. The
-// requester drops out of the tracking's live set; only when they were the last
-// requester (tracking is shared under the dedup invariant) are the tracking's
-// non-terminal wants canceled and the tracking parked 'paused'. A non-last
-// withdrawal must NOT touch wants — the remaining requesters still want it.
+// cancelSpawned withdraws a spawned request from its tracking. The requester
+// drops out of the tracking's live set. A non-last withdrawal touches nothing
+// else — the remaining requesters still want the title. When the last requester
+// leaves, work nothing justifies any more is stood down: wants still waiting to
+// be grabbed or sent are cancelled, while a download already handed to the
+// downloader finishes and is imported (REQ-CANCEL-004). The tracking is then
+// parked 'paused', which marks it withdrawn until a new request resumes it.
+//
+// The whole withdrawal is one transaction, opened by locking the tracking row:
+// a concurrent spawn onto the same tracking takes the same lock, so a requester
+// joining can't interleave with the last one leaving.
 func (s *RequestService) cancelSpawned(ctx context.Context, userID uuid.UUID, req model.Request) (model.Request, error) {
-	canceled, err := s.repo.SetRequestCanceled(ctx, req.ID, userID)
-	if err != nil {
-		return model.Request{}, err
-	}
-
-	if req.SpawnedTrackingID == nil {
-		return canceled, nil // spawned status but no tracking recorded — nothing to cascade
-	}
-	tid := *req.SpawnedTrackingID
-
-	if err := s.repo.RemoveRequester(ctx, tid, req.RequestedBy); err != nil {
-		return model.Request{}, err
-	}
-	remaining, err := s.repo.ListRequestersByTracking(ctx, tid)
-	if err != nil {
-		return model.Request{}, err
-	}
-	if len(remaining) > 0 {
-		// Shared (deduped) tracking: other requesters still want this, so the
-		// wants stay live and the tracking stays active.
-		return canceled, nil
-	}
-
-	// Last requester withdrew: cancel every non-terminal want (and its in-flight
-	// download job) via the tested WantService cascade, then park the tracking.
-	// Ordering caveat: CancelWant mirrors the tracking to 'canceled', so 'paused'
-	// is set AFTER cancelling wants, or it gets clobbered.
-	wants, err := s.repo.ListWantsByTracking(ctx, tid)
-	if err != nil {
-		return model.Request{}, err
-	}
-	for _, w := range wants {
-		if model.WantStatus(w.Status).IsTerminal() {
-			continue
+	var canceled model.Request
+	err := s.repo.InTx(ctx, func(r *repo.Repository) error {
+		if req.SpawnedTrackingID != nil {
+			if _, err := r.LockTracking(ctx, *req.SpawnedTrackingID); err != nil {
+				return err
+			}
 		}
-		if _, err := s.wants.CancelWant(ctx, w.ID); err != nil {
-			return model.Request{}, err
+
+		var err error
+		canceled, err = r.SetRequestCanceled(ctx, req.ID, userID)
+		if err != nil {
+			return err
 		}
-	}
-	if _, err := s.repo.SetTrackingState(ctx, tid, string(model.TrackingPaused)); err != nil {
+		if req.SpawnedTrackingID == nil {
+			return nil // spawned status but no tracking recorded — nothing to cascade
+		}
+		tid := *req.SpawnedTrackingID
+
+		if err := r.RemoveRequester(ctx, tid, req.RequestedBy); err != nil {
+			return err
+		}
+		remaining, err := r.ListRequestersByTracking(ctx, tid)
+		if err != nil {
+			return err
+		}
+		if len(remaining) > 0 {
+			return nil
+		}
+
+		wants, err := r.ListWantsByTracking(ctx, tid)
+		if err != nil {
+			return err
+		}
+		for _, w := range wants {
+			if model.WantStatus(w.Status).IsTerminal() {
+				continue
+			}
+			if _, _, err := standDownWant(ctx, r, w.ID); err != nil {
+				return err
+			}
+		}
+		_, err = r.SetTrackingState(ctx, tid, string(model.TrackingPaused))
+		return err
+	})
+	if err != nil {
 		return model.Request{}, err
 	}
 	return canceled, nil

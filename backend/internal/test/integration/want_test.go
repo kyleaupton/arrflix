@@ -93,7 +93,7 @@ func TestWant_Cancel(t *testing.T) {
 		t.Fatalf("create import task: %v", err)
 	}
 
-	svc := service.NewWantService(r, service.NewDownloadJobsService(r))
+	svc := service.NewWantService(r)
 	canceled, err := svc.CancelWant(ctx, want.ID)
 	if err != nil {
 		t.Fatalf("CancelWant: %v", err)
@@ -139,7 +139,7 @@ func TestWant_Cancel_Terminal(t *testing.T) {
 	ctx := context.Background()
 
 	want := seedPendingWant(t, ctx, r)
-	svc := service.NewWantService(r, service.NewDownloadJobsService(r))
+	svc := service.NewWantService(r)
 
 	// Available is terminal-for-another-reason: cancel must conflict.
 	if _, err := r.SetWantStatus(ctx, want.ID, string(model.WantAvailable)); err != nil {

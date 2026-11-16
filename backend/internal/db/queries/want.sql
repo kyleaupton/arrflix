@@ -85,6 +85,14 @@ FROM cte
 WHERE w.id = cte.id
 RETURNING w.*;
 
+-- LockWant reads a want and holds its row lock until the transaction ends, so
+-- a decision made from its status (and its download jobs) can't be overtaken by
+-- a concurrent grab or worker mirror before the decision's writes commit.
+-- name: LockWant :one
+SELECT * FROM want
+WHERE id = $1
+FOR NO KEY UPDATE;
+
 -- name: SetWantStatus :one
 UPDATE want
 SET status = sqlc.arg(status),
@@ -162,6 +170,19 @@ SET status = 'pending',
     attempt_count = 0,
     last_error = sqlc.arg(last_error),
     next_run_at = now(),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND status IN ('grabbed', 'downloading')
+RETURNING *;
+
+-- RetireWantFromGrab terminally fails a want whose grab fell through, the
+-- counterpart of ReleaseWantFromGrab for a want nobody wants searched again. The
+-- same 'grabbed'/'downloading' guard makes a 0-row match (pgx.ErrNoRows) mean the
+-- want already moved on (canceled, or released by another path).
+-- name: RetireWantFromGrab :one
+UPDATE want
+SET status = 'failed',
+    last_error = sqlc.arg(last_error),
     updated_at = now()
 WHERE id = sqlc.arg(id)
   AND status IN ('grabbed', 'downloading')

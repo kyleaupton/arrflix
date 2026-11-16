@@ -148,6 +148,23 @@ func (q *Queries) CopyDownloadJobWants(ctx context.Context, arg CopyDownloadJobW
 	return err
 }
 
+const countLiveWantsForDownloadJob = `-- name: CountLiveWantsForDownloadJob :one
+SELECT COUNT(*) FROM want w
+JOIN download_job_want djw ON djw.want_id = w.id
+WHERE djw.download_job_id = $1
+  AND w.status NOT IN ('available', 'failed', 'canceled')
+`
+
+// CountLiveWantsForDownloadJob counts the non-terminal wants a download job
+// still serves. Cancelling a want cancels its job only when this is zero, so a
+// season pack keeps running while any episode it covers is still wanted.
+func (q *Queries) CountLiveWantsForDownloadJob(ctx context.Context, downloadJobID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveWantsForDownloadJob, downloadJobID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createDownloadJob = `-- name: CreateDownloadJob :one
 
 INSERT INTO download_job (
@@ -1221,6 +1238,69 @@ func (q *Queries) ListDownloadJobsWithImportSummary(ctx context.Context) ([]List
 	return items, nil
 }
 
+const lockDownloadJobsByWant = `-- name: LockDownloadJobsByWant :many
+SELECT dj.id, dj.status, dj.protocol, dj.indexer_id, dj.guid, dj.candidate_title, dj.candidate_link, dj.media_type, dj.media_item_id, dj.season_id, dj.episode_id, dj.library_id, dj.name_template_id, dj.downloader_id, dj.downloader_external_id, dj.downloader_status, dj.progress, dj.save_path, dj.content_path, dj.attempt_count, dj.next_run_at, dj.last_error, dj.created_at, dj.updated_at, dj.previous_job_id, dj.download_speed, dj.eta_seconds, dj.total_size, dj.error_kind FROM download_job dj
+JOIN download_job_want djw ON djw.download_job_id = dj.id
+WHERE djw.want_id = $1
+ORDER BY dj.id
+FOR NO KEY UPDATE OF dj
+`
+
+// LockDownloadJobsByWant returns every download job linked to a want, in any
+// status, and holds their row locks until the transaction ends. A withdrawal
+// reads them to tell a job still waiting to be sent ('created') from one already
+// handed to the downloader, and the lock keeps the download worker from sending
+// it in between.
+func (q *Queries) LockDownloadJobsByWant(ctx context.Context, wantID pgtype.UUID) ([]DownloadJob, error) {
+	rows, err := q.db.Query(ctx, lockDownloadJobsByWant, wantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DownloadJob
+	for rows.Next() {
+		var i DownloadJob
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.Protocol,
+			&i.IndexerID,
+			&i.Guid,
+			&i.CandidateTitle,
+			&i.CandidateLink,
+			&i.MediaType,
+			&i.MediaItemID,
+			&i.SeasonID,
+			&i.EpisodeID,
+			&i.LibraryID,
+			&i.NameTemplateID,
+			&i.DownloaderID,
+			&i.DownloaderExternalID,
+			&i.DownloaderStatus,
+			&i.Progress,
+			&i.SavePath,
+			&i.ContentPath,
+			&i.AttemptCount,
+			&i.NextRunAt,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PreviousJobID,
+			&i.DownloadSpeed,
+			&i.EtaSeconds,
+			&i.TotalSize,
+			&i.ErrorKind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markDownloadJobFailed = `-- name: MarkDownloadJobFailed :one
 UPDATE download_job
 SET status = 'failed',
@@ -1550,6 +1630,7 @@ SET status = 'enqueued',
     attempt_count = attempt_count + 1,
     updated_at = now()
 WHERE id = $2
+  AND status = 'created'
 RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind
 `
 
@@ -1558,6 +1639,10 @@ type SetDownloadJobEnqueuedParams struct {
 	ID                   pgtype.UUID `json:"id"`
 }
 
+// SetDownloadJobEnqueued records that the download worker handed a job to the
+// downloader. It fires only from 'created': a job cancelled while the worker was
+// adding it stays cancelled (a 0-row match, pgx.ErrNoRows) rather than being
+// revived, and the torrent the worker just added is left in the downloader.
 func (q *Queries) SetDownloadJobEnqueued(ctx context.Context, arg SetDownloadJobEnqueuedParams) (DownloadJob, error) {
 	row := q.db.QueryRow(ctx, setDownloadJobEnqueued, arg.DownloaderExternalID, arg.ID)
 	var i DownloadJob

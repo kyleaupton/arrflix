@@ -102,7 +102,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	scheduler := NewSchedulerService(r, l)
 	enrichment := NewEnrichmentService(r, l, tmdb, reconcile)
 	downloadJobs := NewDownloadJobsService(r)
-	wants := NewWantService(r, downloadJobs)
+	wants := NewWantService(r)
 	// Proposals is constructed before Acquisition, which depends on it for the
 	// propose branch. broker is in scope from New's params.
 	proposals := NewProposalService(r, quality, broker, cfg.titles, l)
@@ -149,7 +149,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Proposals:          proposals,
 		QualityProfiles:    quality,
 		Reconcile:          reconcile,
-		Requests:           NewRequestService(r, l, tmdb, quality, enrichment, reconcile, authz, wants),
+		Requests:           NewRequestService(r, l, tmdb, quality, enrichment, reconcile, authz),
 		Routing:            routingSvc,
 		Scanner:            NewScannerService(r, l, tmdb, broker, matcherSvc, enrichment),
 		Scheduler:          scheduler,

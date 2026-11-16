@@ -161,9 +161,19 @@ func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, 
 		Str("name", res.Name).
 		Msg("[DEBUG] Add() succeeded")
 
-	updated, err := w.repo.SetDownloadJobEnqueued(ctx, job.ID, res.ExternalID)
+	updated, ok, err := w.repo.SetDownloadJobEnqueued(ctx, job.ID, res.ExternalID)
 	if err != nil {
 		return err
+	}
+	if !ok {
+		// The job was cancelled while Add was in flight. It stays cancelled and is
+		// never imported; Arrflix never removes torrents, so the one just added
+		// stays in the downloader.
+		w.log.Warn().
+			Str("job_id", job.ID.String()).
+			Str("external_id", res.ExternalID).
+			Msg("download job cancelled while being added; torrent left in the downloader")
+		return nil
 	}
 
 	w.logEvent(ctx, job.ID, "status_changed", "", map[string]any{
@@ -487,7 +497,8 @@ func (w *Worker) wantsByEpisode(ctx context.Context, jobID uuid.UUID) (map[int]u
 }
 
 // releaseUncoveredWants returns every linked want the pack didn't carry a file for
-// to 'pending' and unlinks it from the job. Best-effort: a release/unlink failure
+// to 'pending' (or fails it, if its request was withdrawn; see releaseOrRetire)
+// and unlinks it from the job. Best-effort: a release/unlink failure
 // is logged, not propagated — it must not break the import of the files that did
 // land.
 func (w *Worker) releaseUncoveredWants(ctx context.Context, jobID uuid.UUID, wantByEpisode map[int]uuid.UUID, matched map[int]downloader.File) {
@@ -497,8 +508,12 @@ func (w *Worker) releaseUncoveredWants(ctx context.Context, jobID uuid.UUID, wan
 		}
 		// Release and unlink commit together: no reader may see the want back in
 		// 'pending' (re-searchable) while it is still linked to the pack job.
+		var settled model.Want
 		err := w.repo.InTx(ctx, func(tx *repo.Repository) error {
-			if _, _, err := tx.ReleaseWantFromGrab(ctx, wantID, "season pack did not contain this episode; re-searching"); err != nil {
+			var err error
+			if settled, _, err = releaseOrRetire(ctx, tx, wantID,
+				"season pack did not contain this episode; re-searching",
+				"season pack did not contain this episode; request withdrawn, not re-searching"); err != nil {
 				return err
 			}
 			return tx.UnlinkDownloadJobWant(ctx, jobID, wantID)
@@ -511,7 +526,8 @@ func (w *Worker) releaseUncoveredWants(ctx context.Context, jobID uuid.UUID, wan
 			Str("job_id", jobID.String()).
 			Str("want_id", wantID.String()).
 			Int("episode", epNum).
-			Msg("released under-covered want back to pending")
+			Str("status", settled.Status).
+			Msg("settled under-covered want")
 	}
 }
 
@@ -521,7 +537,8 @@ func (w *Worker) releaseUncoveredWants(ctx context.Context, jobID uuid.UUID, wan
 // searched again — replacing the pre-A2 "mark the want failed", which required a
 // manual re-request. The recovery loop is bounded precisely because the exclusion
 // bars re-picking the same release: ProcessWant re-searches once and, on no other
-// winner, falls back to the scheduler's recheck cadence.
+// winner, falls back to the scheduler's recheck cadence. A want whose request
+// was withdrawn is failed rather than re-searched (releaseOrRetire).
 //
 // Best-effort per want (log-and-continue), the same contract as
 // releaseUncoveredWants: one want's recovery failure must not block the others or
@@ -563,9 +580,10 @@ func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJ
 		var ok bool
 		err := w.repo.InTx(ctx, func(tx *repo.Repository) error {
 			var err error
-			released, ok, err = tx.ReleaseWantFromGrab(ctx, want.ID,
-				fmt.Sprintf("download failed (%s); release excluded, re-searching", lastError))
-			if err != nil || !ok {
+			released, ok, err = releaseOrRetire(ctx, tx, want.ID,
+				fmt.Sprintf("download failed (%s); release excluded, re-searching", lastError),
+				fmt.Sprintf("download failed (%s); request withdrawn, not re-searching", lastError))
+			if err != nil || !ok || released.Status != string(model.WantPending) {
 				return err
 			}
 			released, err = restampManualHold(ctx, tx, released)
@@ -582,6 +600,31 @@ func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJ
 		realtime.Emit(ctx, w.broker, realtime.WantUpdated(released))
 		w.titles.Notify(released.MediaItemID)
 	}
+}
+
+// releaseOrRetire settles a want whose grab fell through. Normally the want goes
+// back to 'pending' to search again (releaseReason). If its tracking was
+// withdrawn ('paused') nobody wants the title any more, so the want ends 'failed'
+// instead (retireReason) rather than acquiring it for no one. The bool reports
+// whether either landed: false means the want had already left
+// 'grabbed'/'downloading'.
+//
+// The tracking row is locked first, the order withdrawal and spawn use, so a
+// concurrent withdrawal or re-request is settled before the decision. tx must be
+// a transactional repo.
+func releaseOrRetire(ctx context.Context, tx *repo.Repository, wantID uuid.UUID, releaseReason, retireReason string) (model.Want, bool, error) {
+	want, err := tx.GetWant(ctx, wantID)
+	if err != nil {
+		return model.Want{}, false, err
+	}
+	tracking, err := tx.LockTracking(ctx, want.TrackingID)
+	if err != nil {
+		return model.Want{}, false, err
+	}
+	if tracking.State == string(model.TrackingPaused) {
+		return tx.RetireWantFromGrab(ctx, wantID, retireReason)
+	}
+	return tx.ReleaseWantFromGrab(ctx, wantID, releaseReason)
 }
 
 // restampManualHold re-stamps the 'needs_pick' hold on a just-released want whose
