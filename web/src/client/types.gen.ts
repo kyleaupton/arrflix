@@ -2040,11 +2040,11 @@ export type RequestCreateBody = {
      */
     readonly $schema?: string;
     /**
-     * Who picks releases for atoms dated before tracking began (defaults to 'auto')
+     * Who picks releases for atoms dated before tracking began (defaults to 'auto'; setting it requires jobs.manage)
      */
     backfillAutonomy?: 'auto' | 'propose' | 'manual';
     /**
-     * Who picks releases for atoms dated after tracking began (defaults to 'auto')
+     * Who picks releases for atoms dated after tracking began (defaults to 'auto'; setting it requires jobs.manage)
      */
     ongoingAutonomy?: 'auto' | 'propose' | 'manual';
     /**
@@ -3747,11 +3747,11 @@ export type RequestWritable = {
 
 export type RequestCreateBodyWritable = {
     /**
-     * Who picks releases for atoms dated before tracking began (defaults to 'auto')
+     * Who picks releases for atoms dated before tracking began (defaults to 'auto'; setting it requires jobs.manage)
      */
     backfillAutonomy?: 'auto' | 'propose' | 'manual';
     /**
-     * Who picks releases for atoms dated after tracking began (defaults to 'auto')
+     * Who picks releases for atoms dated after tracking began (defaults to 'auto'; setting it requires jobs.manage)
      */
     ongoingAutonomy?: 'auto' | 'propose' | 'manual';
     /**
