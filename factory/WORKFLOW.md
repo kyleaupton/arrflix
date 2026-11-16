@@ -112,7 +112,7 @@ A run is one `factory` issue moving through In Progress. It alternates determini
 | Workspace | deterministic | Makes a self-contained clone of GitHub's `main` on branch `factory/<Linear's branch name>`, e.g. `factory/arfx-12-pin-search`, and starts a sandbox on it (see [Sandbox](#sandbox)). A git worktree won't do: its `.git` points outside the mount. |
 | Implement | agent | Builds the ticket and writes a test named for each REQ it closes. |
 | Preflight | deterministic | Runs `just preflight-all` (preflight plus the integration suite, where most REQ tests live). A failure goes back to Implement, at most 3 times. |
-| Judge | agent, fresh context | Rules on the diff against the ticket: is everything inside scope, and does each REQ test assert its requirement? A veto goes back to Implement once. |
+| Judge | agent, fresh context | Rules on the diff against the ticket: is everything inside scope, does each REQ test assert its requirement, is each acceptance criterion met, and does the change bring in a defect? A veto goes back to Implement once. |
 | Evidence | deterministic | Captures screenshots of touched screens at desktop and mobile widths, and lists the REQ tests that pass. |
 | Submit | deterministic | Commits the tree as the bot, using the implementer's `commit_message`, pushes the branch, and opens the PR with the implementer's summary, the judge's summary and the evidence. Agents never commit. |
 
