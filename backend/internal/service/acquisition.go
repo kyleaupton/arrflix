@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
@@ -323,12 +324,23 @@ func (s *AcquisitionService) alreadyCoveredByPack(ctx context.Context, want mode
 
 // loadSeasonSiblings resolves the in-flight episode wants of the processed want's
 // tracking+season into (want, episode-number) pairs — the candidate set a season
-// pack's coverage is computed against. The processed want is itself one of them.
+// pack's coverage is computed against and the count behind the season-scoped
+// search threshold. The processed want is itself one of them.
+//
+// A sibling other than the processed want counts only once its episode has aired
+// (air date on or before now): work for an unaired episode must not be attempted
+// early, so a pack never grabs its want and it never tips the threshold. The test
+// is the air date, not the want's next_run_at — an aired episode waiting out a
+// retry backoff also has a future next_run_at and a pack should still take it. An
+// undated episode stays a sibling: with no air date to wait for, its own want is
+// already searched from creation time (SchedulerService.NextSearchAt), so a pack
+// taking it attempts nothing early.
 func (s *AcquisitionService) loadSeasonSiblings(ctx context.Context, want model.Want, epCtx *episodeCtx) ([]seasonSibling, error) {
 	wants, err := s.repo.ListInFlightWantsForTrackingSeason(ctx, want.TrackingID, epCtx.seasonID)
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now()
 	out := make([]seasonSibling, 0, len(wants))
 	for _, w := range wants {
 		if w.EpisodeID == nil {
@@ -337,6 +349,9 @@ func (s *AcquisitionService) loadSeasonSiblings(ctx context.Context, want model.
 		ep, err := s.repo.GetEpisode(ctx, *w.EpisodeID)
 		if err != nil {
 			return nil, err
+		}
+		if w.ID != want.ID && ep.AirDate != nil && ep.AirDate.After(now) {
+			continue
 		}
 		out = append(out, seasonSibling{want: w, episode: int(ep.EpisodeNumber)})
 	}
