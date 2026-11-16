@@ -163,7 +163,9 @@ if stage in ("implement", "judge"):
     prompt = (prompt
         .replace("{{ISSUE}}", f"{ident}: {issue['title']}\n\n{(issue['description'] or '').strip()}")
         .replace("{{SPEC}}", spec)
-        .replace("{{REVIEW_COMMENTS}}", feedback))
+        .replace("{{REVIEW_COMMENTS}}", feedback)
+        .replace("{{PR_STYLE}}", open(os.path.join(os.path.dirname(template_path), "pr-style.md"))
+                 .read().split("<!-- prompt -->", 1)[1].strip()))
     if "{{" in prompt:
         sys.exit(f"run-stage: unfilled placeholder in {template_path}")
     open(out_path, "w").write(prompt)
@@ -415,29 +417,46 @@ def cell(text):
 
 # The footer below carries the attribution; drop any the agent wrote itself.
 summary = "\n".join(l for l in impl["summary"].strip().splitlines() if "Generated with [Claude Code]" not in l)
-out = [summary.strip(), ""]
+
+def details(title, lines):
+    return ["<details>", f"<summary>{title}</summary>", "", *lines, "", "</details>", ""]
+
+# The top of the body is what the reviewer acts on; everything else is collapsed.
+# A judge from before needs_you and what_works existed falls back to its summary.
+needs = judge.get("needs_you")
+out = ["**Needs you before merging**", ""]
+if needs:
+    out += [f"{i}. {n}" for i, n in enumerate(needs, 1)]
+elif needs is None:
+    out += ["See the judge's notes below."]
+else:
+    out += ["Nothing. The judge passed it with no open questions."]
+out += [""]
+if judge.get("what_works"):
+    out += ["**What now works**", ""] + [f"- {w}" for w in judge["what_works"]] + [""]
 if not rework:
     # Linear's magic word: the merge moves the issue to Done.
     out += [f"Fixes {issue}", ""]
-out += [f"## Judge: {judge['verdict']}", "", judge["summary"].strip(), ""]
+
+met = sum(a["met"] for a in judge["acceptance"])
+proof = [judge["summary"].strip(), ""]
 if judge["acceptance"]:
-    out += ["| Acceptance criterion | Met | Evidence |", "| --- | --- | --- |"]
-    out += [f"| {cell(a['criterion'])} | {'yes' if a['met'] else '**no**'} | {cell(a['evidence'])} |"
-            for a in judge["acceptance"]]
-    out += [""]
+    proof += ["| Acceptance criterion | Met | Evidence |", "| --- | --- | --- |"]
+    proof += [f"| {cell(a['criterion'])} | {'yes' if a['met'] else '**no**'} | {cell(a['evidence'])} |"
+              for a in judge["acceptance"]]
+out += details(f"How it's proven: judge {judge['verdict']}, acceptance {met}/{len(judge['acceptance'])} met", proof)
+
 notes = [f for f in judge["findings"] if f["severity"] == "note"]
 if notes:
-    out += ["### Judge's notes", ""]
-    out += [f"- **{f['kind']}**" + (f" `{f['file']}`" if f.get("file") else "") + f": {f['detail']}" for f in notes]
-    out += [""]
+    out += details(f"Judge's notes ({len(notes)})",
+                   [f"- **{f['kind']}**" + (f" `{f['file']}`" if f.get("file") else "") + f": {f['detail']}" for f in notes])
 if impl["unrelated_failures"]:
-    out += ["### Unrelated failures", ""]
-    out += [f"- `{u['test']}`: {u['detail']}" for u in impl["unrelated_failures"]]
-    out += [""]
+    out += details(f"Unrelated failures ({len(impl['unrelated_failures'])})",
+                   [f"- `{u['test']}`: {u['detail']}" for u in impl["unrelated_failures"]])
 if impl["followups"]:
-    out += ["### Followups the implementer noticed", ""]
-    out += [f"- {f}" for f in impl["followups"]]
-    out += [""]
+    out += details(f"Followups the implementer noticed ({len(impl['followups'])})",
+                   [f"- {f}" for f in impl["followups"]])
+out += details("The implementer's summary", [summary])
 
 steps = []
 for name, run in (("implement", impl_run), ("judge", judge_run)):

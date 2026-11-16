@@ -46,4 +46,16 @@ Code style, formatting and lint are out of scope: `just preflight-all` gates tho
 - **`veto`:** at least one blocking finding. That's a scope violation, a REQ test that's missing or hollow, an acceptance criterion that isn't met, or a defect the change introduces. The implementer gets your findings and one more try, so make each one specific enough to act on: what, where, and what would fix it.
 - **`pass`:** no blocking findings. You can still record non-blocking `note` findings for the human reviewer.
 
-Don't veto over taste. If you'd merely have done it differently, that's a note at most. Your `summary` goes on the PR for the human reviewer, so say in a few sentences what the change does and how confident you are that it does what the issue asks.
+Don't veto over taste. If you'd merely have done it differently, that's a note at most.
+
+## Writing for the reviewer
+
+On a pass, your result becomes the top of the PR, in this order:
+
+1. **`needs_you`**: the decisions and checks the reviewer must make before merging. A note that asks the reviewer to decide something goes here as one line, and its full detail stays in `findings`. A note that's only worth knowing stays in `findings` alone.
+2. **`what_works`**: what a user or operator can now do or see.
+3. **`summary`**, collapsed below them: a few sentences on what the change does and how confident you are that it does what the issue asks.
+
+Write all three this way:
+
+{{PR_STYLE}}
