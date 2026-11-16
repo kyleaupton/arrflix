@@ -101,12 +101,32 @@ func (s *UsersService) Update(ctx context.Context, id uuid.UUID, email, username
 		return model.User{}, apperrors.Validation("invalid user", fields...).Op("UsersService.Update")
 	}
 
-	return s.repo.UpdateUser(ctx, repo.UpdateUserParams{
-		ID:       id,
-		Email:    email,
-		Username: username,
-		IsActive: isActive,
+	// Saving a user as inactive revokes every session in the same transaction, so
+	// a disabled user can't refresh their way back in. Re-enabling restores
+	// nothing: the old sessions stay revoked and the user signs in again.
+	var user model.User
+	err := s.repo.InTx(ctx, func(r *repo.Repository) error {
+		var err error
+		user, err = r.UpdateUser(ctx, repo.UpdateUserParams{
+			ID:       id,
+			Email:    email,
+			Username: username,
+			IsActive: isActive,
+		})
+		if err != nil {
+			return err
+		}
+		if !isActive {
+			if _, err := r.RevokeAllSessionsForUser(ctx, id); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
+	if err != nil {
+		return model.User{}, err
+	}
+	return user, nil
 }
 
 // UpdatePassword changes a user's password
