@@ -1246,7 +1246,7 @@ export type InvitesCreateBody = {
     /**
      * Target role for the invited user (defaults to requester)
      */
-    role?: 'requester' | 'viewer' | 'co_admin' | 'admin';
+    role?: 'requester' | 'admin';
 };
 
 export type InvitesCreateResponse = {
@@ -2698,7 +2698,7 @@ export type UsersAssignRoleBody = {
     /**
      * Role name
      */
-    role: string;
+    role: 'requester' | 'admin';
 };
 
 export type VersionInfo = {
@@ -3314,7 +3314,7 @@ export type InvitesCreateBodyWritable = {
     /**
      * Target role for the invited user (defaults to requester)
      */
-    role?: 'requester' | 'viewer' | 'co_admin' | 'admin';
+    role?: 'requester' | 'admin';
 };
 
 export type InvitesCreateResponseWritable = {
@@ -4063,7 +4063,7 @@ export type UsersAssignRoleBodyWritable = {
     /**
      * Role name
      */
-    role: string;
+    role: 'requester' | 'admin';
 };
 
 export type VersionInfoWritable = {

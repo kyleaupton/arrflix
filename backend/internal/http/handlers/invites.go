@@ -38,7 +38,7 @@ func (h *Invites) List(ctx context.Context, _ *InvitesListInput) (*InvitesListOu
 
 type InvitesCreateBody struct {
 	Email string `json:"email" required:"true" format:"email" minLength:"1" doc:"Invitee email"`
-	Role  string `json:"role,omitempty" enum:"requester,viewer,co_admin,admin" doc:"Target role for the invited user (defaults to requester)"`
+	Role  string `json:"role,omitempty" enum:"requester,admin" doc:"Target role for the invited user (defaults to requester)"`
 }
 
 type InvitesCreateInput struct {

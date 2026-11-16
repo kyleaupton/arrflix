@@ -48,40 +48,43 @@ func (s *UsersService) Create(ctx context.Context, email, username, password str
 	} else if len(password) < 8 {
 		fields = append(fields, apperrors.Field("body.password", "must be at least 8 characters"))
 	}
+	if roleName == "" {
+		roleName = model.RoleRequester
+	}
+	if !model.IsAssignableRole(roleName) {
+		fields = append(fields, apperrors.Field("body.role", "must be one of: requester, admin"))
+	}
 	if len(fields) > 0 {
 		return model.User{}, apperrors.Validation("invalid user", fields...).Op("UsersService.Create")
 	}
 
-	if roleName == "" {
-		roleName = "requester" // Default to 'requester' role
-	}
-
-	// Hash password
 	passwordHash, err := pw.Hash(password)
 	if err != nil {
 		return model.User{}, apperrors.Internalf("failed to hash password: %v", err).Op("UsersService.Create")
 	}
 
-	// Create user. Repo translates unique violation to Conflict.
-	user, err := s.repo.CreateUser(ctx, repo.CreateUserParams{
-		Email:        email,
-		Username:     username,
-		PasswordHash: passwordHash,
-		IsActive:     isActive,
+	// The user and their role are written together so a failed role assignment
+	// never leaves a user with no role. Repo translates unique violation to Conflict.
+	var user model.User
+	err = s.repo.InTx(ctx, func(tx *repo.Repository) error {
+		role, err := tx.GetRoleByName(ctx, roleName)
+		if err != nil {
+			return err
+		}
+		user, err = tx.CreateUser(ctx, repo.CreateUserParams{
+			Email:        email,
+			Username:     username,
+			PasswordHash: passwordHash,
+			IsActive:     isActive,
+		})
+		if err != nil {
+			return err
+		}
+		return tx.AssignRole(ctx, user.ID, role.ID)
 	})
 	if err != nil {
 		return model.User{}, err
 	}
-
-	// Assign role
-	role, err := s.repo.GetRoleByName(ctx, roleName)
-	if err != nil {
-		// User created but role assignment failed - still return user
-		return user, nil
-	}
-
-	_ = s.repo.AssignRole(ctx, user.ID, role.ID)
-
 	return user, nil
 }
 

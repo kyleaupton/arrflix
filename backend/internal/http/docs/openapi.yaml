@@ -3045,8 +3045,6 @@ components:
           description: Target role for the invited user (defaults to requester)
           enum:
             - requester
-            - viewer
-            - co_admin
             - admin
           type: string
       required:
@@ -6046,7 +6044,9 @@ components:
           type: string
         role:
           description: Role name
-          minLength: 1
+          enum:
+            - requester
+            - admin
           type: string
       required:
         - role

@@ -2,7 +2,7 @@
 // neutral defaults, so a test states only the fields its scenario turns on.
 
 import { HttpResponse } from 'msw'
-import type { ProblemDetails, Request, TitleStatus } from '@/client/types.gen'
+import type { ProblemDetails, Request, Role, TitleStatus, User } from '@/client/types.gen'
 import { requester } from './render'
 
 export function request(overrides: Partial<Request> = {}): Request {
@@ -19,6 +19,30 @@ export function request(overrides: Partial<Request> = {}): Request {
     decisionAuto: true,
     deniedReason: null,
     spawnedTrackingId: '20000000-0000-0000-0000-000000000001',
+    createdAt: '2026-11-01T12:00:00Z',
+    updatedAt: '2026-11-01T12:00:00Z',
+    ...overrides,
+  }
+}
+
+export function role(name: string, overrides: Partial<Role> = {}): Role {
+  return {
+    id: `role-${name}`,
+    name,
+    description: null,
+    builtIn: true,
+    createdAt: '2026-11-01T12:00:00Z',
+    ...overrides,
+  }
+}
+
+export function user(overrides: Partial<User> = {}): User {
+  return {
+    id: '30000000-0000-0000-0000-000000000001',
+    email: 'member@example.com',
+    username: 'member',
+    isActive: true,
+    roles: [role('requester')],
     createdAt: '2026-11-01T12:00:00Z',
     updatedAt: '2026-11-01T12:00:00Z',
     ...overrides,

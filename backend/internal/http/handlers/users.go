@@ -148,7 +148,7 @@ func (h *Users) UpdatePassword(ctx context.Context, input *UsersUpdatePasswordIn
 // ----- AssignRole -----
 
 type UsersAssignRoleBody struct {
-	Role string `json:"role" required:"true" minLength:"1" doc:"Role name"`
+	Role string `json:"role" required:"true" enum:"requester,admin" doc:"Role name"`
 }
 
 type UsersAssignRoleInput struct {
