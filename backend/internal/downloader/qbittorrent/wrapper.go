@@ -3,6 +3,7 @@ package qbittorrent
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -86,6 +88,9 @@ func (c *qBittorrentClient) Add(ctx context.Context, req downloader.AddRequest) 
 		opts["savepath"] = req.SavePath
 	}
 	if req.Category != "" {
+		if err := c.ensureCategory(ctx, req.Category); err != nil {
+			return result, err
+		}
 		opts["category"] = req.Category
 	}
 	if req.Paused {
@@ -250,6 +255,35 @@ func (c *qBittorrentClient) Resume(ctx context.Context, externalID string) error
 
 func (c *qBittorrentClient) Remove(ctx context.Context, externalID string, deleteData bool) error {
 	return c.client.Delete(ctx, []string{externalID}, deleteData)
+}
+
+// AddTags tags a torrent. qBittorrent creates tags that don't exist yet.
+func (c *qBittorrentClient) AddTags(ctx context.Context, externalID string, tags []string) error {
+	if err := c.client.AddTags(ctx, []string{externalID}, tags); err != nil {
+		return fmt.Errorf("add tags: %w", err)
+	}
+	return nil
+}
+
+// ensureCategory creates the category unless qBittorrent already has it, so an
+// add never depends on qBittorrent's own handling of an unknown category.
+func (c *qBittorrentClient) ensureCategory(ctx context.Context, name string) error {
+	existing, err := c.client.ListCategories(ctx)
+	if err != nil {
+		return fmt.Errorf("list categories: %w", err)
+	}
+	if slices.Contains(existing, name) {
+		return nil
+	}
+	if err := c.client.CreateCategory(ctx, name); err != nil {
+		// A concurrent add may have created it between the list and the create.
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict {
+			return nil
+		}
+		return fmt.Errorf("create category %q: %w", name, err)
+	}
+	return nil
 }
 
 // --- Helpers ---

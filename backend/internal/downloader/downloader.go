@@ -18,6 +18,15 @@ const (
 
 type InstanceID string // your DB UUID string, etc.
 
+// Category is the downloader category every item Arrflix adds carries, so the
+// user can scope the downloader's own seeding limits to Arrflix's torrents.
+const Category = "arrflix"
+
+// TagCanceled marks an item whose download job was cancelled. Arrflix never
+// removes items from the downloader; the tag is how the user finds the ones
+// Arrflix abandoned.
+const TagCanceled = "arrflix-canceled"
+
 type AddRequest struct {
 	// One of these is required depending on kind
 	MagnetURL string // torrent
@@ -108,6 +117,9 @@ type Client interface {
 	Pause(ctx context.Context, externalID string) error
 	Resume(ctx context.Context, externalID string) error
 	Remove(ctx context.Context, externalID string, deleteData bool) error
+
+	// AddTags attaches tags to an existing item, keeping any it already has.
+	AddTags(ctx context.Context, externalID string, tags []string) error
 }
 
 type ConfigRecord struct {

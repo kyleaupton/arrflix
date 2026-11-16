@@ -81,10 +81,20 @@ func main() {
 		return titlenotify.Ref{MediaType: item.Type, TmdbID: *item.TmdbID}, nil
 	}, repo.ListMediaItemsTouchedSince, logg)
 
+	// Downloader Manager
+	downloaderRegistry := downloader.NewRegistry()
+	qbittorrent.Register(downloaderRegistry)
+	downloaderManager := downloader.NewManager(downloaderRegistry, repo, logg)
+	if err := downloaderManager.Initialize(ctx); err != nil {
+		logg.Error().Err(err).Msg("failed to initialize downloader manager")
+		// Don't fatal - allow server to start even if downloaders fail
+	}
+
 	// Services
 	services := service.New(ctx, repo, logg, &cfg, broker,
 		service.WithJWTSecret(cfg.JWTSecret),
 		service.WithTitleNotifier(titles),
+		service.WithDownloaders(downloaderManager),
 	)
 
 	// Seed settings from env vars (e.g. TMDB_API_KEY) for backwards compat
@@ -102,15 +112,6 @@ func main() {
 	// fresh install can route a grab without the dev seed.
 	if err := services.NameTemplates.SeedDefaults(ctx); err != nil {
 		logg.Error().Err(err).Msg("failed to seed default name templates")
-	}
-
-	// Downloader Manager
-	downloaderRegistry := downloader.NewRegistry()
-	qbittorrent.Register(downloaderRegistry)
-	downloaderManager := downloader.NewManager(downloaderRegistry, repo, logg)
-	if err := downloaderManager.Initialize(ctx); err != nil {
-		logg.Error().Err(err).Msg("failed to initialize downloader manager")
-		// Don't fatal - allow server to start even if downloaders fail
 	}
 
 	// Email Manager. Phase 1 wires the SMTP transport behind the seam; the

@@ -38,6 +38,12 @@ func cancelApp(t *testing.T) (*testapp.App, context.Context, model.Library) {
 // grab created.
 func grabTrackedMovie(t *testing.T, ctx context.Context, app *testapp.App, trackingID uuid.UUID, guid string) model.DownloadJob {
 	t.Helper()
+	return grabTrackedMovieRelease(t, ctx, app, trackingID, movieResult(guid))
+}
+
+// grabTrackedMovieRelease is grabTrackedMovie offered the given release.
+func grabTrackedMovieRelease(t *testing.T, ctx context.Context, app *testapp.App, trackingID uuid.UUID, release indexer.SearchResult) model.DownloadJob {
+	t.Helper()
 	wants, err := app.Repo.ListWantsByTracking(ctx, trackingID)
 	if err != nil {
 		t.Fatalf("list wants: %v", err)
@@ -50,7 +56,7 @@ func grabTrackedMovie(t *testing.T, ctx context.Context, app *testapp.App, track
 	r := app.Repo
 	source := stubIndexerSource{
 		SearchFn: func(ctx context.Context, q indexer.SearchQuery) ([]indexer.SearchResult, error) {
-			return []indexer.SearchResult{movieResult(guid)}, nil
+			return []indexer.SearchResult{release}, nil
 		},
 	}
 	quality := service.NewQualityProfileService(r)
@@ -59,7 +65,7 @@ func grabTrackedMovie(t *testing.T, ctx context.Context, app *testapp.App, track
 	if _, outcome, err := svc.ProcessWant(ctx, claimed); err != nil {
 		t.Fatalf("ProcessWant: %v", err)
 	} else if outcome != service.OutcomeGrabbed {
-		t.Fatalf("ProcessWant outcome = %v, want grabbed (release %q)", outcome, guid)
+		t.Fatalf("ProcessWant outcome = %v, want grabbed (release %q)", outcome, release.GUID)
 	}
 
 	jobs, err := app.Repo.ListActiveDownloadJobsByWant(ctx, claimed.ID)

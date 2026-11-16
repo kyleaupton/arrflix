@@ -88,7 +88,7 @@ func cancelWantCascade(ctx context.Context, r *repo.Repository, wantID uuid.UUID
 		if live > 0 {
 			continue
 		}
-		if err := cancelDownloadJob(ctx, r, j.ID); err != nil {
+		if _, err := cancelDownloadJob(ctx, r, j.ID); err != nil {
 			// The job reached a terminal state between the list and the cancel;
 			// its CAS matched 0 rows, surfaced as NotFound. That is the outcome
 			// the cancel wanted.
@@ -147,12 +147,13 @@ func downloadJobHandedOff(status string) bool {
 	}
 }
 
-// cancelDownloadJob cancels a download job and its pending import tasks. A job
-// already terminal surfaces as NotFound from the CAS. r must be a transactional
-// repo so the two writes commit together.
-func cancelDownloadJob(ctx context.Context, r *repo.Repository, jobID uuid.UUID) error {
-	if _, err := r.CancelDownloadJob(ctx, jobID); err != nil {
-		return err
+// cancelDownloadJob cancels a download job and its pending import tasks, and
+// returns the cancelled job. A job already terminal surfaces as NotFound from the
+// CAS. r must be a transactional repo so the two writes commit together.
+func cancelDownloadJob(ctx context.Context, r *repo.Repository, jobID uuid.UUID) (model.DownloadJob, error) {
+	job, err := r.CancelDownloadJob(ctx, jobID)
+	if err != nil {
+		return model.DownloadJob{}, err
 	}
-	return r.CancelPendingImportTasksForJob(ctx, jobID)
+	return job, r.CancelPendingImportTasksForJob(ctx, jobID)
 }

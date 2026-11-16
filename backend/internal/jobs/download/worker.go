@@ -130,7 +130,7 @@ func (w *Worker) processJob(ctx context.Context, job model.DownloadJob) error {
 }
 
 func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, job model.DownloadJob) error {
-	addReq := downloader.AddRequest{}
+	addReq := downloader.AddRequest{Category: downloader.Category}
 	switch job.Protocol {
 	case "torrent":
 		addReq.MagnetURL = job.CandidateLink
@@ -168,11 +168,19 @@ func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, 
 	if !ok {
 		// The job was cancelled while Add was in flight. It stays cancelled and is
 		// never imported; Arrflix never removes torrents, so the one just added
-		// stays in the downloader.
+		// stays in the downloader. The cancel had no external ID to tag, so the
+		// tag is applied here (REQ-HARD-004). A tagging failure is only logged:
+		// the job is cancelled either way.
 		w.log.Warn().
 			Str("job_id", job.ID.String()).
 			Str("external_id", res.ExternalID).
 			Msg("download job cancelled while being added; torrent left in the downloader")
+		if err := client.AddTags(ctx, res.ExternalID, []string{downloader.TagCanceled}); err != nil {
+			w.log.Warn().Err(err).
+				Str("job_id", job.ID.String()).
+				Str("external_id", res.ExternalID).
+				Msg("failed to tag cancelled download in the downloader")
+		}
 		return nil
 	}
 
