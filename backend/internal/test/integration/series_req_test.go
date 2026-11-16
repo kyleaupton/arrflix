@@ -497,6 +497,142 @@ func TestReqSeries006_UncoveredPackWantReturnsToQueue(t *testing.T) {
 	}
 }
 
+// REQ-SERIES-003 — Work for an unaired episode must not be attempted before it airs.
+//
+// A series is requested with S01E01 and S01E02 aired and S01E03 airing in three
+// days. The real acquisition worker runs against an indexer offering a full
+// S01 pack. The aired episodes are searched and grabbed; the unaired episode's
+// want must be left exactly as reconcile made it — pending, never searched for,
+// never grabbed or linked to a download (not even as a sibling of the pack), and
+// still scheduled for its air date.
+func TestReqSeries003_UnairedEpisodeIsNotWorkedBeforeAirDate(t *testing.T) {
+	t.Parallel()
+	s := newSeriesReqApp(t)
+	ctx := s.ctx
+
+	airs := dateOffset(3)
+	s.scriptSeries(map[int][]tmdbtest.SeasonEpisode{
+		1: {
+			{ID: 6001, EpisodeNumber: 1, Name: "One", AirDate: dateOffset(-14)},
+			{ID: 6002, EpisodeNumber: 2, Name: "Two", AirDate: dateOffset(-7)},
+			{ID: 6003, EpisodeNumber: 3, Name: "Three", AirDate: airs},
+		},
+	})
+	trackingID := s.requestSeries(t)
+	before := s.episodeWants(t, trackingID)
+	if len(before) != 3 {
+		t.Fatalf("wants after request = %v, want S01E01..S01E03", keys(before))
+	}
+	unaired := before["S01E03"]
+
+	idx := &recordingIndexer{respond: func(int, indexer.SearchQuery) []indexer.SearchResult {
+		return []indexer.SearchResult{seasonOnePack("guid-s01-pack")}
+	}}
+	stop := s.runSeriesPipeline(t, idx, &fakeDownloaderClient{status: downloader.StatusDownloading})
+	defer stop()
+
+	waitForWantStatus(t, ctx, s.app.Repo, before["S01E01"].ID, model.WantGrabbed, 15*time.Second)
+	waitForWantStatus(t, ctx, s.app.Repo, before["S01E02"].ID, model.WantGrabbed, 15*time.Second)
+	// Let the worker run more cycles: a premature claim would happen here.
+	time.Sleep(300 * time.Millisecond)
+	stop()
+
+	after, err := s.app.Repo.GetWant(ctx, unaired.ID)
+	if err != nil {
+		t.Fatalf("get S01E03 want: %v", err)
+	}
+	if after.Status != string(model.WantPending) {
+		t.Errorf("S01E03 want status = %q, want pending (it hasn't aired)", after.Status)
+	}
+	if !after.NextRunAt.Equal(unaired.NextRunAt) {
+		t.Errorf("S01E03 next_run_at = %v, want unchanged %v (its air date)", after.NextRunAt, unaired.NextRunAt)
+	}
+	if after.AttemptCount != 0 {
+		t.Errorf("S01E03 attempt_count = %d, want 0", after.AttemptCount)
+	}
+	jobs, err := s.app.Repo.ListActiveDownloadJobsByWant(ctx, unaired.ID)
+	if err != nil {
+		t.Fatalf("list S01E03 download jobs: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Errorf("S01E03 is linked to %d download job(s), want none before it airs", len(jobs))
+	}
+	for _, q := range idx.recorded() {
+		if q.Episode != nil && *q.Episode == 3 {
+			t.Errorf("indexer was searched for S01E03 before it aired: %+v", q)
+		}
+	}
+}
+
+// REQ-SERIES-003 — Work for an unaired episode must not be attempted before it airs.
+//
+// Unaired episodes don't count toward the two-or-more-siblings threshold that
+// widens a want's search to the whole season. With S01E01 aired and S01E02–E03
+// airing later, E01 has no aired sibling: its search stays scoped to E01 alone,
+// and the unaired wants are left pending, unsearched and unlinked.
+func TestReqSeries003_UnairedEpisodesDoNotCountAsPackSiblings(t *testing.T) {
+	t.Parallel()
+	s := newSeriesReqApp(t)
+	ctx := s.ctx
+
+	s.scriptSeries(map[int][]tmdbtest.SeasonEpisode{
+		1: {
+			{ID: 6101, EpisodeNumber: 1, Name: "One", AirDate: dateOffset(-7)},
+			{ID: 6102, EpisodeNumber: 2, Name: "Two", AirDate: dateOffset(3)},
+			{ID: 6103, EpisodeNumber: 3, Name: "Three", AirDate: dateOffset(10)},
+		},
+	})
+	trackingID := s.requestSeries(t)
+	before := s.episodeWants(t, trackingID)
+	if len(before) != 3 {
+		t.Fatalf("wants after request = %v, want S01E01..S01E03", keys(before))
+	}
+
+	idx := &recordingIndexer{respond: func(int, indexer.SearchQuery) []indexer.SearchResult {
+		return []indexer.SearchResult{seasonOnePack("guid-s01-pack")}
+	}}
+	stop := s.runSeriesPipeline(t, idx, &fakeDownloaderClient{status: downloader.StatusDownloading})
+	defer stop()
+
+	deadline := time.Now().Add(15 * time.Second)
+	for len(idx.recorded()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("S01E01 was never searched for")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// Let the worker run more cycles: a premature claim would happen here.
+	time.Sleep(300 * time.Millisecond)
+	stop()
+
+	for _, q := range idx.recorded() {
+		if q.Episode == nil {
+			t.Errorf("search widened to the whole season with only one aired episode: %+v", q)
+		} else if *q.Episode != 1 {
+			t.Errorf("indexer was searched for S01E%02d before it aired: %+v", *q.Episode, q)
+		}
+	}
+	for _, key := range []string{"S01E02", "S01E03"} {
+		after, err := s.app.Repo.GetWant(ctx, before[key].ID)
+		if err != nil {
+			t.Fatalf("get %s want: %v", key, err)
+		}
+		if after.Status != string(model.WantPending) {
+			t.Errorf("%s want status = %q, want pending (it hasn't aired)", key, after.Status)
+		}
+		if !after.NextRunAt.Equal(before[key].NextRunAt) {
+			t.Errorf("%s next_run_at = %v, want unchanged %v (its air date)", key, after.NextRunAt, before[key].NextRunAt)
+		}
+		jobs, err := s.app.Repo.ListActiveDownloadJobsByWant(ctx, before[key].ID)
+		if err != nil {
+			t.Fatalf("list %s download jobs: %v", key, err)
+		}
+		if len(jobs) != 0 {
+			t.Errorf("%s is linked to %d download job(s), want none before it airs", key, len(jobs))
+		}
+	}
+}
+
 func keys(m map[string]model.Want) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

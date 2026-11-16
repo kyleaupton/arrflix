@@ -297,6 +297,26 @@ func (c *Client) AddTags(ctx context.Context, hashes, tags []string) error {
 	return c.doForm(ctx, "/api/v2/torrents/addTags", form, nil)
 }
 
+// ListCategories returns the names of the categories qBittorrent knows.
+func (c *Client) ListCategories(ctx context.Context) ([]string, error) {
+	var categories map[string]json.RawMessage
+	if err := c.doGet(ctx, "/api/v2/torrents/categories", nil, &categories); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(categories))
+	for name := range categories {
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+// CreateCategory creates a category with qBittorrent's default save path.
+// qBittorrent answers 409 when the category already exists.
+func (c *Client) CreateCategory(ctx context.Context, name string) error {
+	form := url.Values{"category": {name}, "savePath": {""}}
+	return c.doForm(ctx, "/api/v2/torrents/createCategory", form, nil)
+}
+
 // BaseURL returns the base URL of the qBittorrent instance.
 func (c *Client) BaseURL() string {
 	return c.baseURL

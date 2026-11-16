@@ -104,7 +104,7 @@ func New(t *testing.T, pool *pgxpool.Pool, opts ...Option) *App {
 	// When WithTmdbClient is set, service.New skips registering the OnChange
 	// hook for "tmdb.api_key", so the Settings.Set call below stays a plain
 	// row write and won't clobber the injected client.
-	svcOpts := []service.Option{service.WithJWTSecret(jwtSecret)}
+	svcOpts := []service.Option{service.WithJWTSecret(jwtSecret), service.WithDownloaders(dm)}
 	if o.tmdbClient != nil {
 		svcOpts = append(svcOpts, service.WithTmdbClient(o.tmdbClient))
 	}
