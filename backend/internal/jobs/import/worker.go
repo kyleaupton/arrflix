@@ -233,7 +233,10 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 	// disk stay consistent — the import retries, and the want only advances once
 	// the bytes are confirmed on disk. This is the VerifyStep, run as a precondition
 	// of the commit rather than after it.
-	if info, serr := os.Stat(fullDest); serr != nil || info.Size() == 0 {
+	// This stat is also what file_state records: size and link facts of the
+	// placed file, so a hardlink's st_nlink counts the download's name too.
+	destInfo, serr := os.Stat(fullDest)
+	if serr != nil || destInfo.Size() == 0 {
 		return apperrors.Internalf("verify failed: imported file missing or empty: %s", fullDest).
 			Op("ImportWorker.processTask")
 	}
@@ -264,7 +267,7 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 			return ferr
 		}
 
-		fileSize := srcInfo.Size()
+		fileSize := destInfo.Size()
 
 		// Best-effort: the import is byte-identical to the source, so hashing
 		// the dest matches scan-discovered files. Nullable column; never fatal.
@@ -280,6 +283,7 @@ func (w *Worker) processTask(ctx context.Context, task model.ImportTask) error {
 			Exists:    true,
 			SizeBytes: &fileSize,
 			OsdbHash:  osdbHash,
+			Links:     importer.LinkFactsOf(destInfo),
 		}); serr != nil {
 			return serr
 		}

@@ -86,6 +86,7 @@ type MediaRepo interface {
 	UpsertFileState(ctx context.Context, params UpsertFileStateParams) (model.FileState, error)
 	GetFileState(ctx context.Context, fileID uuid.UUID) (model.FileState, error)
 	UpdateFileState(ctx context.Context, params UpdateFileStateParams) (model.FileState, error)
+	RefreshFileStateByPath(ctx context.Context, params RefreshFileStateParams) error
 	ListMissingFiles(ctx context.Context) ([]model.FileWithState, error)
 	ListFilesNeedingVerification(ctx context.Context, beforeTime time.Time, limit int32) ([]model.FileWithState, error)
 
@@ -665,6 +666,8 @@ type CreateFileStateParams struct {
 	Exists    bool
 	SizeBytes *int64
 	OsdbHash  *string
+	// Links is the stat()'s link facts; nil when the caller didn't stat the file.
+	Links *model.LinkFacts
 }
 
 // UpsertFileStateParams is the domain-shaped input for UpsertFileState.
@@ -673,6 +676,8 @@ type UpsertFileStateParams struct {
 	Exists    bool
 	SizeBytes *int64
 	OsdbHash  *string
+	// Links is the stat()'s link facts; nil when the caller didn't stat the file.
+	Links *model.LinkFacts
 }
 
 // UpdateFileStateParams is the domain-shaped input for UpdateFileState.
@@ -681,6 +686,8 @@ type UpdateFileStateParams struct {
 	Exists    bool
 	SizeBytes *int64
 	OsdbHash  *string
+	// Links is the stat()'s link facts; nil when the caller didn't stat the file.
+	Links *model.LinkFacts
 }
 
 // toModelFile translates the persistence-shaped dbgen.File into the
@@ -717,8 +724,20 @@ func toModelFileState(row dbgen.FileState) model.FileState {
 		Exists:         row.Exists,
 		SizeBytes:      row.SizeBytes,
 		OsdbHash:       row.OsdbHash,
+		Device:         row.StDev,
+		Inode:          row.StIno,
+		LinkCount:      row.StNlink,
 		LastVerifiedAt: row.LastVerifiedAt,
 	}
+}
+
+// linkFactColumns splits optional link facts into the three nullable
+// st_dev / st_ino / st_nlink column values.
+func linkFactColumns(l *model.LinkFacts) (dev, ino, nlink *int64) {
+	if l == nil {
+		return nil, nil, nil
+	}
+	return &l.Device, &l.Inode, &l.LinkCount
 }
 
 // toModelFileWithState translates a ListFilesForItemRow (which LEFT-JOINs
@@ -1058,11 +1077,15 @@ func (r *Repository) CheckMediaItemsInLibrary(ctx context.Context, tmdbIDs []int
 // File State methods
 
 func (r *Repository) CreateFileState(ctx context.Context, params CreateFileStateParams) (model.FileState, error) {
+	dev, ino, nlink := linkFactColumns(params.Links)
 	row, err := r.Q.CreateFileState(ctx, dbgen.CreateFileStateParams{
 		FileID:    pgtypeFromUUID(params.FileID),
 		Exists:    params.Exists,
 		SizeBytes: params.SizeBytes,
 		OsdbHash:  params.OsdbHash,
+		StDev:     dev,
+		StIno:     ino,
+		StNlink:   nlink,
 	})
 	if err != nil {
 		return model.FileState{}, apperrors.FromPg(err, "create file state for %s", params.FileID)
@@ -1071,16 +1094,51 @@ func (r *Repository) CreateFileState(ctx context.Context, params CreateFileState
 }
 
 func (r *Repository) UpsertFileState(ctx context.Context, params UpsertFileStateParams) (model.FileState, error) {
+	dev, ino, nlink := linkFactColumns(params.Links)
 	row, err := r.Q.UpsertFileState(ctx, dbgen.UpsertFileStateParams{
 		FileID:    pgtypeFromUUID(params.FileID),
 		Exists:    params.Exists,
 		SizeBytes: params.SizeBytes,
 		OsdbHash:  params.OsdbHash,
+		StDev:     dev,
+		StIno:     ino,
+		StNlink:   nlink,
 	})
 	if err != nil {
 		return model.FileState{}, apperrors.FromPg(err, "upsert file state for %s", params.FileID)
 	}
 	return toModelFileState(row), nil
+}
+
+// RefreshFileStateParams is the domain-shaped input for RefreshFileStateByPath.
+type RefreshFileStateParams struct {
+	LibraryID uuid.UUID
+	Path      string
+	SizeBytes *int64
+	// Links is the re-stat's link facts; nil clears them (the stat carried none).
+	Links *model.LinkFacts
+}
+
+// RefreshFileStateByPath rewrites the re-stat facts (size, link facts,
+// last_verified_at; exists=true) of the live file at (library, path),
+// keeping its osdb_hash. Returns NotFound when no live file has that path.
+func (r *Repository) RefreshFileStateByPath(ctx context.Context, params RefreshFileStateParams) error {
+	dev, ino, nlink := linkFactColumns(params.Links)
+	n, err := r.Q.RefreshFileStateByPath(ctx, dbgen.RefreshFileStateByPathParams{
+		LibraryID: pgtypeFromUUID(params.LibraryID),
+		Path:      params.Path,
+		SizeBytes: params.SizeBytes,
+		StDev:     dev,
+		StIno:     ino,
+		StNlink:   nlink,
+	})
+	if err != nil {
+		return apperrors.FromPg(err, "refresh file state for %s in library %s", params.Path, params.LibraryID)
+	}
+	if n == 0 {
+		return apperrors.NotFoundf("live file %s in library %s not found", params.Path, params.LibraryID)
+	}
+	return nil
 }
 
 func (r *Repository) GetFileState(ctx context.Context, fileID uuid.UUID) (model.FileState, error) {
@@ -1092,11 +1150,15 @@ func (r *Repository) GetFileState(ctx context.Context, fileID uuid.UUID) (model.
 }
 
 func (r *Repository) UpdateFileState(ctx context.Context, params UpdateFileStateParams) (model.FileState, error) {
+	dev, ino, nlink := linkFactColumns(params.Links)
 	row, err := r.Q.UpdateFileState(ctx, dbgen.UpdateFileStateParams{
 		FileID:    pgtypeFromUUID(params.FileID),
 		Exists:    params.Exists,
 		SizeBytes: params.SizeBytes,
 		OsdbHash:  params.OsdbHash,
+		StDev:     dev,
+		StIno:     ino,
+		StNlink:   nlink,
 	})
 	if err != nil {
 		return model.FileState{}, apperrors.FromPg(err, "update file state for %s", params.FileID)

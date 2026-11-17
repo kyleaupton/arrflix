@@ -305,19 +305,43 @@ WHERE tmdb_id = ANY(sqlc.arg(tmdb_ids)::bigint[]) AND type = sqlc.arg(type);
 -- File State queries
 
 -- name: CreateFileState :one
-insert into file_state (file_id, exists, size_bytes, osdb_hash, last_verified_at)
-values (sqlc.arg(file_id), sqlc.arg(exists), sqlc.arg(size_bytes), sqlc.arg(osdb_hash), now())
+insert into file_state (file_id, exists, size_bytes, osdb_hash, st_dev, st_ino, st_nlink, last_verified_at)
+values (sqlc.arg(file_id), sqlc.arg(exists), sqlc.arg(size_bytes), sqlc.arg(osdb_hash),
+        sqlc.narg(st_dev), sqlc.narg(st_ino), sqlc.narg(st_nlink), now())
 returning *;
 
 -- name: UpsertFileState :one
-insert into file_state (file_id, exists, size_bytes, osdb_hash, last_verified_at)
-values (sqlc.arg(file_id), sqlc.arg(exists), sqlc.arg(size_bytes), sqlc.arg(osdb_hash), now())
+-- The link facts (st_dev/st_ino/st_nlink) are only overwritten when the
+-- caller supplies them: a caller that didn't stat the file (a manual match)
+-- passes NULL and keeps the last stat's values.
+insert into file_state (file_id, exists, size_bytes, osdb_hash, st_dev, st_ino, st_nlink, last_verified_at)
+values (sqlc.arg(file_id), sqlc.arg(exists), sqlc.arg(size_bytes), sqlc.arg(osdb_hash),
+        sqlc.narg(st_dev), sqlc.narg(st_ino), sqlc.narg(st_nlink), now())
 on conflict (file_id)
 do update set exists = excluded.exists,
               size_bytes = excluded.size_bytes,
               osdb_hash = excluded.osdb_hash,
+              st_dev = coalesce(excluded.st_dev, file_state.st_dev),
+              st_ino = coalesce(excluded.st_ino, file_state.st_ino),
+              st_nlink = coalesce(excluded.st_nlink, file_state.st_nlink),
               last_verified_at = now()
 returning *;
+
+-- name: RefreshFileStateByPath :execrows
+-- Re-stat refresh for a file the scan already knows, addressed by its live
+-- (library_id, path). Rewrites the stat facts and last_verified_at; the
+-- osdb_hash is left as captured at discovery.
+insert into file_state (file_id, exists, size_bytes, st_dev, st_ino, st_nlink, last_verified_at)
+select f.id, true, sqlc.narg(size_bytes), sqlc.narg(st_dev), sqlc.narg(st_ino), sqlc.narg(st_nlink), now()
+from file f
+where f.library_id = sqlc.arg(library_id) and f.path = sqlc.arg(path) and f.deleted_at is null
+on conflict (file_id)
+do update set exists = true,
+              size_bytes = excluded.size_bytes,
+              st_dev = excluded.st_dev,
+              st_ino = excluded.st_ino,
+              st_nlink = excluded.st_nlink,
+              last_verified_at = now();
 
 -- name: GetFileState :one
 select * from file_state where file_id = $1;
@@ -327,6 +351,9 @@ update file_state
 set exists = sqlc.arg(exists),
     size_bytes = sqlc.arg(size_bytes),
     osdb_hash = sqlc.arg(osdb_hash),
+    st_dev = sqlc.narg(st_dev),
+    st_ino = sqlc.narg(st_ino),
+    st_nlink = sqlc.narg(st_nlink),
     last_verified_at = now()
 where file_id = sqlc.arg(file_id)
 returning *;
