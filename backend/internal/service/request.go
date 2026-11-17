@@ -42,8 +42,9 @@ func NewRequestService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, 
 // the quality tier resolved to a profile at spawn (empty → 'HD'); ScopeRule is
 // the requester's series-scope choice, persisted on the request row so it
 // survives the pending state (empty → 'all'; inert for movies); the autonomy
-// pair is the operator's tracking config, applied only on the auto-approve
-// spawn of a fresh tracking (empty → 'auto').
+// pair is the operator's tracking config, settable only by a jobs.manage
+// holder and applied only on the auto-approve spawn of a fresh tracking
+// (empty → 'auto').
 type CreateRequestInput struct {
 	RequestedBy      uuid.UUID
 	TmdbID           int64
@@ -93,6 +94,7 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 	if len(fields) > 0 {
 		return model.Request{}, apperrors.Validation("invalid request", fields...).Op(op)
 	}
+	autonomySet := in.BackfillAutonomy != "" || in.OngoingAutonomy != ""
 	// Replace the raw inputs with their normalized (defaulted) forms; the spawn
 	// path reads these, not the wire strings.
 	in.Tier = string(tier)
@@ -104,6 +106,16 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 	// builder lowercases the tier to match the catalog keyspace.
 	if err := s.authz.Require(ctx, in.RequestedBy, authz.RequestCreate(model.MediaType(in.Type), string(tier)), nil); err != nil {
 		return model.Request{}, err
+	}
+
+	// Tracking autonomy is operator policy, not requester intent: choosing it at
+	// all requires jobs.manage, so a requester's auto-approve grant can't be used
+	// to spawn a tracking held in 'manual' or 'propose'. Omitting both fields
+	// keeps the defaults for every caller.
+	if autonomySet {
+		if err := s.authz.Require(ctx, in.RequestedBy, authz.JobsManage, nil); err != nil {
+			return model.Request{}, err
+		}
 	}
 
 	// Auto-approval is the per-tier permission: a caller holding

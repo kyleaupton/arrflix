@@ -4721,14 +4721,14 @@ components:
           readOnly: true
           type: string
         backfillAutonomy:
-          description: Who picks releases for atoms dated before tracking began (defaults to 'auto')
+          description: Who picks releases for atoms dated before tracking began (defaults to 'auto'; setting it requires jobs.manage)
           enum:
             - auto
             - propose
             - manual
           type: string
         ongoingAutonomy:
-          description: Who picks releases for atoms dated after tracking began (defaults to 'auto')
+          description: Who picks releases for atoms dated after tracking began (defaults to 'auto'; setting it requires jobs.manage)
           enum:
             - auto
             - propose
