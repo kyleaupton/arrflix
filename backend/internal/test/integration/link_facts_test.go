@@ -101,21 +101,21 @@ func assertStateMatchesStat(t *testing.T, state model.FileState, path string) mo
 	t.Helper()
 	size, want := statLinkFacts(t, path)
 	if state.SizeBytes == nil || *state.SizeBytes != size {
-		t.Errorf("file_state.size_bytes = %v, want %d", deref(state.SizeBytes), size)
+		t.Errorf("file_state.size_bytes = %v, want %d", int64OrNull(state.SizeBytes), size)
 	}
 	if state.Device == nil || *state.Device != want.Device {
-		t.Errorf("file_state.st_dev = %v, want %d", deref(state.Device), want.Device)
+		t.Errorf("file_state.st_dev = %v, want %d", int64OrNull(state.Device), want.Device)
 	}
 	if state.Inode == nil || *state.Inode != want.Inode {
-		t.Errorf("file_state.st_ino = %v, want %d", deref(state.Inode), want.Inode)
+		t.Errorf("file_state.st_ino = %v, want %d", int64OrNull(state.Inode), want.Inode)
 	}
 	if state.LinkCount == nil || *state.LinkCount != want.LinkCount {
-		t.Errorf("file_state.st_nlink = %v, want %d", deref(state.LinkCount), want.LinkCount)
+		t.Errorf("file_state.st_nlink = %v, want %d", int64OrNull(state.LinkCount), want.LinkCount)
 	}
 	return want
 }
 
-func deref(p *int64) any {
+func int64OrNull(p *int64) any {
 	if p == nil {
 		return "NULL"
 	}
@@ -137,7 +137,7 @@ func TestReqLink001_ImportRecordsPostLinkStat(t *testing.T) {
 		t.Fatalf("stat of %s reports %d links, want 2 (import should hardlink)", dest, facts.LinkCount)
 	}
 	if state.LinkCount == nil || *state.LinkCount != 2 {
-		t.Errorf("file_state.st_nlink = %v, want 2", deref(state.LinkCount))
+		t.Errorf("file_state.st_nlink = %v, want 2", int64OrNull(state.LinkCount))
 	}
 }
 
@@ -177,7 +177,7 @@ func TestReqLink002_RescanRefreshesKnownFileState(t *testing.T) {
 	}
 
 	if after.LinkCount == nil || *after.LinkCount != 3 {
-		t.Errorf("file_state.st_nlink after rescan = %v, want 3", deref(after.LinkCount))
+		t.Errorf("file_state.st_nlink after rescan = %v, want 3", int64OrNull(after.LinkCount))
 	}
 	assertStateMatchesStat(t, after, dest)
 }
