@@ -531,8 +531,17 @@ func TestReqSeries003_UnairedEpisodeIsNotWorkedBeforeAirDate(t *testing.T) {
 	stop := s.runSeriesPipeline(t, idx, &fakeDownloaderClient{status: downloader.StatusDownloading})
 	defer stop()
 
-	waitForWantStatus(t, ctx, s.app.Repo, before["S01E01"].ID, model.WantGrabbed, 15*time.Second)
-	waitForWantStatus(t, ctx, s.app.Repo, before["S01E02"].ID, model.WantGrabbed, 15*time.Second)
+	// The download worker moves a grabbed want on to downloading as soon as it
+	// polls the fake downloader, so either status means the episode was grabbed.
+	for _, ep := range []string{"S01E01", "S01E02"} {
+		waitFor(t, 15*time.Second, ep+" grabbed", func() bool {
+			w, err := s.app.Repo.GetWant(ctx, before[ep].ID)
+			if err != nil {
+				t.Fatalf("get %s want: %v", ep, err)
+			}
+			return w.Status == string(model.WantGrabbed) || w.Status == string(model.WantDownloading)
+		})
+	}
 	// Let the worker run more cycles: a premature claim would happen here.
 	time.Sleep(300 * time.Millisecond)
 	stop()
