@@ -36,6 +36,11 @@ func (e *AuthError) Error() string {
 	return fmt.Sprintf("qbittorrent auth error (HTTP %d): %s", e.StatusCode, e.Body)
 }
 
+// Unreachable marks an auth failure as the downloader being unusable rather than
+// a verdict on the torrent: bad credentials or a banned IP never mean the
+// release is bad.
+func (e *AuthError) Unreachable() bool { return true }
+
 // APIError indicates a non-2xx response from qBittorrent that isn't an auth error.
 type APIError struct {
 	StatusCode int
@@ -45,3 +50,7 @@ type APIError struct {
 func (e *APIError) Error() string {
 	return fmt.Sprintf("qbittorrent API error (HTTP %d): %s", e.StatusCode, e.Body)
 }
+
+// Unreachable reports a 5xx as qBittorrent failing, not rejecting the request.
+// A 4xx is qBittorrent's verdict on the request itself.
+func (e *APIError) Unreachable() bool { return e.StatusCode >= 500 }

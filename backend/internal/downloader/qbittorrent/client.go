@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kyleaupton/arrflix/internal/downloader"
 )
 
 // Client is a low-level HTTP client for the qBittorrent Web API.
@@ -59,7 +61,7 @@ func (c *Client) loginLocked(ctx context.Context) error {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("login request: %w", err)
+		return downloader.MarkUnreachable(fmt.Errorf("login request: %w", err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -153,13 +155,13 @@ func (c *Client) doOnce(ctx context.Context, method, path string, body []byte, c
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request %s %s: %w", method, path, err)
+		return nil, downloader.MarkUnreachable(fmt.Errorf("request %s %s: %w", method, path, err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, downloader.MarkUnreachable(fmt.Errorf("read response: %w", err))
 	}
 
 	// Auth errors — signal the caller to re-auth

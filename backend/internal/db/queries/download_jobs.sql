@@ -204,6 +204,18 @@ SET attempt_count = attempt_count + 1,
 WHERE id = sqlc.arg(id)
 RETURNING *;
 
+-- ScheduleDownloadJobOutageRetry reschedules a job whose downloader was
+-- unreachable. Unlike ScheduleDownloadJobRetry it leaves attempt_count alone: an
+-- outage says nothing about the release, so it never spends the job's attempts.
+-- name: ScheduleDownloadJobOutageRetry :one
+UPDATE download_job
+SET last_error = sqlc.arg(last_error),
+    error_kind = sqlc.arg(error_kind),
+    next_run_at = sqlc.arg(next_run_at),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+RETURNING *;
+
 -- name: MarkDownloadJobFailed :one
 UPDATE download_job
 SET status = 'failed',

@@ -39,6 +39,7 @@ type DownloadJobsRepo interface {
 	SetDownloadJobCompleted(ctx context.Context, id uuid.UUID, savePath, contentPath string) (model.DownloadJob, error)
 
 	ScheduleDownloadJobRetry(ctx context.Context, params ScheduleDownloadJobRetryParams) (model.DownloadJob, error)
+	ScheduleDownloadJobOutageRetry(ctx context.Context, params ScheduleDownloadJobRetryParams) (model.DownloadJob, error)
 	MarkDownloadJobFailed(ctx context.Context, id uuid.UUID, lastError string, kind apperrors.Kind) (model.DownloadJob, error)
 
 	RetryDownloadJob(ctx context.Context, id uuid.UUID) (model.DownloadJob, error)
@@ -654,6 +655,21 @@ func (r *Repository) ScheduleDownloadJobRetry(ctx context.Context, params Schedu
 	})
 	if err != nil {
 		return model.DownloadJob{}, apperrors.FromPg(err, "schedule retry for download job %s", params.ID)
+	}
+	return toModelDownloadJob(row), nil
+}
+
+// ScheduleDownloadJobOutageRetry reschedules a job whose downloader was
+// unreachable without counting it as an attempt.
+func (r *Repository) ScheduleDownloadJobOutageRetry(ctx context.Context, params ScheduleDownloadJobRetryParams) (model.DownloadJob, error) {
+	row, err := r.Q.ScheduleDownloadJobOutageRetry(ctx, dbgen.ScheduleDownloadJobOutageRetryParams{
+		ID:        pgtypeFromUUID(params.ID),
+		LastError: &params.LastError,
+		ErrorKind: nullableKind(params.Kind),
+		NextRunAt: params.NextRunAt,
+	})
+	if err != nil {
+		return model.DownloadJob{}, apperrors.FromPg(err, "schedule outage retry for download job %s", params.ID)
 	}
 	return toModelDownloadJob(row), nil
 }

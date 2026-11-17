@@ -1429,6 +1429,68 @@ func (q *Queries) RetryDownloadJob(ctx context.Context, id pgtype.UUID) (Downloa
 	return i, err
 }
 
+const scheduleDownloadJobOutageRetry = `-- name: ScheduleDownloadJobOutageRetry :one
+UPDATE download_job
+SET last_error = $1,
+    error_kind = $2,
+    next_run_at = $3,
+    updated_at = now()
+WHERE id = $4
+RETURNING id, status, protocol, indexer_id, guid, candidate_title, candidate_link, media_type, media_item_id, season_id, episode_id, library_id, name_template_id, downloader_id, downloader_external_id, downloader_status, progress, save_path, content_path, attempt_count, next_run_at, last_error, created_at, updated_at, previous_job_id, download_speed, eta_seconds, total_size, error_kind
+`
+
+type ScheduleDownloadJobOutageRetryParams struct {
+	LastError *string       `json:"last_error"`
+	ErrorKind NullErrorKind `json:"error_kind"`
+	NextRunAt time.Time     `json:"next_run_at"`
+	ID        pgtype.UUID   `json:"id"`
+}
+
+// ScheduleDownloadJobOutageRetry reschedules a job whose downloader was
+// unreachable. Unlike ScheduleDownloadJobRetry it leaves attempt_count alone: an
+// outage says nothing about the release, so it never spends the job's attempts.
+func (q *Queries) ScheduleDownloadJobOutageRetry(ctx context.Context, arg ScheduleDownloadJobOutageRetryParams) (DownloadJob, error) {
+	row := q.db.QueryRow(ctx, scheduleDownloadJobOutageRetry,
+		arg.LastError,
+		arg.ErrorKind,
+		arg.NextRunAt,
+		arg.ID,
+	)
+	var i DownloadJob
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.Protocol,
+		&i.IndexerID,
+		&i.Guid,
+		&i.CandidateTitle,
+		&i.CandidateLink,
+		&i.MediaType,
+		&i.MediaItemID,
+		&i.SeasonID,
+		&i.EpisodeID,
+		&i.LibraryID,
+		&i.NameTemplateID,
+		&i.DownloaderID,
+		&i.DownloaderExternalID,
+		&i.DownloaderStatus,
+		&i.Progress,
+		&i.SavePath,
+		&i.ContentPath,
+		&i.AttemptCount,
+		&i.NextRunAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PreviousJobID,
+		&i.DownloadSpeed,
+		&i.EtaSeconds,
+		&i.TotalSize,
+		&i.ErrorKind,
+	)
+	return i, err
+}
+
 const scheduleDownloadJobRetry = `-- name: ScheduleDownloadJobRetry :one
 UPDATE download_job
 SET attempt_count = attempt_count + 1,
