@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { ref, inject, watch, computed } from 'vue'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import {
   usersUpdateMutation,
   usersAssignRoleMutation,
-  rolesListOptions,
   usersListQueryKey,
 } from '@/client/@tanstack/vue-query.gen'
 import type { User } from '@/components/tables/configs/userTableConfig'
@@ -21,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { problemMessage } from '@/lib/api'
+import { ASSIGNABLE_ROLES, isAssignableRole, type AssignableRole } from '@/lib/roles'
 
 interface Props {
   user: User
@@ -34,39 +34,38 @@ const queryClient = useQueryClient()
 const updateUserMutation = useMutation(usersUpdateMutation())
 const updateRoleMutation = useMutation(usersAssignRoleMutation())
 
-// Fetch roles
-const { data: roles } = useQuery(rolesListOptions())
-
-const userForm = ref({
+const userForm = ref<{ email: string; username: string; role: AssignableRole; isActive: boolean }>({
   email: '',
   username: '',
-  role: 'user',
+  role: 'requester',
   isActive: true,
 })
 
 const userError = ref<string | null>(null)
 
+// The name of the user's role, read from the roles JSONB; null when they hold none.
+function currentRoleName(user: User): string | null {
+  if (!user.roles) return null
+  try {
+    const rolesArray = typeof user.roles === 'string' ? JSON.parse(user.roles) : user.roles
+    if (Array.isArray(rolesArray) && rolesArray.length > 0) {
+      return rolesArray[0].name || null
+    }
+  } catch {
+    // Unparseable roles read as no role.
+  }
+  return null
+}
+
 // Initialize form when user changes
 watch(
   () => props.user,
   (user) => {
-    // Extract role name from roles JSONB
-    let roleName = 'user'
-    if (user.roles) {
-      try {
-        const rolesArray = typeof user.roles === 'string' ? JSON.parse(user.roles) : user.roles
-        if (Array.isArray(rolesArray) && rolesArray.length > 0) {
-          roleName = rolesArray[0].name || 'user'
-        }
-      } catch {
-        roleName = 'user'
-      }
-    }
-
+    const roleName = currentRoleName(user)
     userForm.value = {
       email: user.email || '',
       username: user.username || '',
-      role: roleName,
+      role: isAssignableRole(roleName) ? roleName : 'requester',
       isActive: user.isActive ?? true,
     }
     userError.value = null
@@ -90,22 +89,8 @@ const handleSave = async () => {
       },
     })
 
-    // Extract current role
-    let currentRole = 'user'
-    if (props.user.roles) {
-      try {
-        const rolesArray =
-          typeof props.user.roles === 'string' ? JSON.parse(props.user.roles) : props.user.roles
-        if (Array.isArray(rolesArray) && rolesArray.length > 0) {
-          currentRole = rolesArray[0].name || 'user'
-        }
-      } catch {
-        currentRole = 'user'
-      }
-    }
-
     // If role changed, update role separately
-    if (currentRole !== userForm.value.role) {
+    if (currentRoleName(props.user) !== userForm.value.role) {
       await updateRoleMutation.mutateAsync({
         path: { id: props.user.id },
         body: { role: userForm.value.role },
@@ -153,8 +138,8 @@ const isLoading = computed(
             <SelectValue placeholder="Select role" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem v-for="role in roles" :key="role.id" :value="role.name">
-              {{ role.name }}
+            <SelectItem v-for="role in ASSIGNABLE_ROLES" :key="role" :value="role">
+              {{ role }}
             </SelectItem>
           </SelectContent>
         </Select>

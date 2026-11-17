@@ -1,12 +1,8 @@
 <script setup lang="ts">
 import { ref, inject } from 'vue'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Check, Copy } from 'lucide-vue-next'
-import {
-  invitesCreateMutation,
-  invitesListQueryKey,
-  rolesListOptions,
-} from '@/client/@tanstack/vue-query.gen'
+import { invitesCreateMutation, invitesListQueryKey } from '@/client/@tanstack/vue-query.gen'
 import BaseDialog from './BaseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,17 +14,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { InvitesCreateBody } from '@/client/types.gen'
 import { problemMessage } from '@/lib/api'
+import { ASSIGNABLE_ROLES, type AssignableRole } from '@/lib/roles'
 
 const dialogRef = inject('dialogRef') as { value: { close: (data?: unknown) => void } }
 const queryClient = useQueryClient()
 
-// Role is the invite body's enum, not a free string — the create endpoint only
-// accepts the frozen role set.
-type InviteRole = NonNullable<InvitesCreateBody['role']>
 const email = ref('')
-const role = ref<InviteRole>('requester')
+const role = ref<AssignableRole>('requester')
 const error = ref<string | null>(null)
 
 // After creation we show the accept link instead of closing: the copyable link is
@@ -38,8 +31,6 @@ const error = ref<string | null>(null)
 const acceptLink = ref<string | null>(null)
 const emailed = ref(false)
 const copied = ref(false)
-
-const { data: roles } = useQuery(rolesListOptions())
 
 const createInviteMutation = useMutation({
   ...invitesCreateMutation(),
@@ -100,8 +91,8 @@ const handleClose = () => {
             <SelectValue placeholder="Select role" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem v-for="r in roles" :key="r.id" :value="r.name">
-              {{ r.name }}
+            <SelectItem v-for="r in ASSIGNABLE_ROLES" :key="r" :value="r">
+              {{ r }}
             </SelectItem>
           </SelectContent>
         </Select>
