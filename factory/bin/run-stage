@@ -18,7 +18,8 @@
 # instead. An implement that returns blocked posts its question on the issue
 # and moves it to Blocked. Answer in a comment and move the issue to Ready:
 # the next implement resumes with your answer as its feedback. judge runs in a fresh session that can't
-# see the implementer's.
+# see the implementer's. When the judge vetoes or asks for fixes, the next
+# implement reworks from its findings; a run gets one such rework.
 #
 # submit commits the judged work as the bot, pushes the branch, opens the PR
 # (or comments on it, for a rework) and moves the issue to In Review.
@@ -163,7 +164,9 @@ if stage in ("implement", "judge"):
     prompt = (prompt
         .replace("{{ISSUE}}", f"{ident}: {issue['title']}\n\n{(issue['description'] or '').strip()}")
         .replace("{{SPEC}}", spec)
-        .replace("{{REVIEW_COMMENTS}}", feedback))
+        .replace("{{REVIEW_COMMENTS}}", feedback)
+        .replace("{{PR_STYLE}}", open(os.path.join(os.path.dirname(template_path), "pr-style.md"))
+                 .read().split("<!-- prompt -->", 1)[1].strip()))
     if "{{" in prompt:
         sys.exit(f"run-stage: unfilled placeholder in {template_path}")
     open(out_path, "w").write(prompt)
@@ -262,6 +265,33 @@ print(out_path)
 }
 
 # --- an agent step ---------------------------------------------------------------
+# The latest judge's blocking and fix findings, as the next implement's feedback,
+# when that judge is newer than the latest implement and hasn't been submitted.
+# Prints the file's path, or nothing.
+judge_feedback() {
+  local impl judge submitted
+  impl="$(ls "$logs"/*-implement.json 2>/dev/null | sort | tail -1)"
+  judge="$(ls "$logs"/*-judge.json 2>/dev/null | sort | tail -1)"
+  submitted="$(ls "$logs"/*-submit-body.md 2>/dev/null | sort | tail -1)"
+  [ -n "$judge" ] && [[ "$(basename "$judge")" > "$(basename "$impl")" ]] || return 0
+  [[ -z "$submitted" || "$(basename "$submitted")" < "$(basename "$judge")" ]] || return 0
+  python3 - "$judge" "$logs/$stamp-judge-feedback.md" <<'PY'
+import json, sys
+judge_path, out_path = sys.argv[1:3]
+findings = [f for f in json.load(open(judge_path))["structured_output"]["findings"]
+            if f["severity"] in ("blocking", "fix")]
+if not findings:
+    sys.exit(0)
+lines = ["The judge reviewed your last attempt and asked for these changes. Make every one, "
+         "then run the gate again. Leave the rest of your work as it is.", ""]
+for f in findings:
+    where = f" in `{f['file']}`" if f.get("file") else ""
+    lines += [f"## {f['severity']} ({f['kind']}){where}", "", f["detail"].strip(), ""]
+open(out_path, "w").write("\n".join(lines))
+print(out_path)
+PY
+}
+
 cmd_agent() {
   if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}${ANTHROPIC_API_KEY:-}" ] && [ -f "$env_file" ]; then
     # The env file keeps the Claude credential out of shell history and out of
@@ -283,8 +313,13 @@ cmd_agent() {
     if [ -n "$feedback" ]; then
       echo "run-stage: resuming with the answer in $feedback"
     else
-      feedback="$(review_feedback)"
-      [ -z "$feedback" ] || echo "run-stage: reworking from $feedback"
+      feedback="$(judge_feedback)"
+      if [ -n "$feedback" ]; then
+        echo "run-stage: reworking from the judge's findings in $feedback"
+      else
+        feedback="$(review_feedback)"
+        [ -z "$feedback" ] || echo "run-stage: reworking from $feedback"
+      fi
     fi
   fi
 
@@ -381,6 +416,18 @@ cmd_submit() {
   [[ -n "$judge" && "$(basename "$judge")" > "$(basename "$impl")" ]] ||
     die "the latest implement for $issue hasn't been judged; run judge first"
   [ -n "$(git -C "$clone" status --porcelain)" ] || die "the clone for $issue has nothing to commit"
+  # Fix findings get one rework: until an implement has followed this round's
+  # first judge, submit sends the run back instead.
+  if [ "$(jq '[.structured_output.findings[] | select(.severity == "fix")] | length' "$judge")" -gt 0 ]; then
+    local since first_judge reworked
+    since="$(ls "$logs"/*-submit-body.md 2>/dev/null | sort | tail -1)"
+    first_judge="$(ls "$logs"/*-judge.json | sort | while read -r j; do
+      [[ -z "$since" || "$(basename "$j")" > "$(basename "$since")" ]] && { echo "$j"; break; }; done)"
+    reworked="$(ls "$logs"/*-implement.json | sort | while read -r i; do
+      [[ "$(basename "$i")" > "$(basename "$first_judge")" ]] && { echo yes; break; }; done)"
+    [ -n "$reworked" ] ||
+      die "the judge asked for fixes; run \`run-stage implement $issue\` to make them (it reads the judge's findings), then judge again"
+  fi
 
   local slug branch pr bot_login bot_id token
   slug="$(gh_user repo view --json nameWithOwner -q .nameWithOwner)"
@@ -402,7 +449,7 @@ impl, judge = impl_run["structured_output"], judge_run["structured_output"]
 if impl["outcome"] == "blocked":
     sys.exit("run-stage: the implementer is blocked, so there's nothing to submit; answer its question first")
 if judge["verdict"] != "pass":
-    sys.exit("run-stage: the judge vetoed; rerun implement with its findings as --feedback")
+    sys.exit("run-stage: the judge vetoed; rerun implement, which reads its findings, then judge again")
 
 def model_name(model_id):
     # claude-opus-5-5 -> Claude Opus 5.5
@@ -415,29 +462,48 @@ def cell(text):
 
 # The footer below carries the attribution; drop any the agent wrote itself.
 summary = "\n".join(l for l in impl["summary"].strip().splitlines() if "Generated with [Claude Code]" not in l)
-out = [summary.strip(), ""]
+
+def details(title, lines):
+    return ["<details>", f"<summary>{title}</summary>", "", *lines, "", "</details>", ""]
+
+# The top of the body is what the reviewer acts on; everything else is collapsed.
+# A judge from before needs_you and what_works existed falls back to its summary.
+needs = judge.get("needs_you")
+out = ["**Needs you before merging**", ""]
+if needs:
+    out += [f"{i}. {n}" for i, n in enumerate(needs, 1)]
+elif needs is None:
+    out += ["See the judge's notes below."]
+else:
+    out += ["Nothing. The judge passed it with no open questions."]
+out += [""]
+if judge.get("what_works"):
+    out += ["**What now works**", ""] + [f"- {w}" for w in judge["what_works"]] + [""]
 if not rework:
     # Linear's magic word: the merge moves the issue to Done.
     out += [f"Fixes {issue}", ""]
-out += [f"## Judge: {judge['verdict']}", "", judge["summary"].strip(), ""]
+
+met = sum(a["met"] for a in judge["acceptance"])
+proof = [judge["summary"].strip(), ""]
 if judge["acceptance"]:
-    out += ["| Acceptance criterion | Met | Evidence |", "| --- | --- | --- |"]
-    out += [f"| {cell(a['criterion'])} | {'yes' if a['met'] else '**no**'} | {cell(a['evidence'])} |"
-            for a in judge["acceptance"]]
-    out += [""]
-notes = [f for f in judge["findings"] if f["severity"] == "note"]
+    proof += ["| Acceptance criterion | Met | Evidence |", "| --- | --- | --- |"]
+    proof += [f"| {cell(a['criterion'])} | {'yes' if a['met'] else '**no**'} | {cell(a['evidence'])} |"
+              for a in judge["acceptance"]]
+out += details(f"How it's proven: judge {judge['verdict']}, acceptance {met}/{len(judge['acceptance'])} met", proof)
+
+# A fix still listed here survived the run's one rework.
+notes = [f for f in judge["findings"] if f["severity"] in ("note", "fix")]
 if notes:
-    out += ["### Judge's notes", ""]
-    out += [f"- **{f['kind']}**" + (f" `{f['file']}`" if f.get("file") else "") + f": {f['detail']}" for f in notes]
-    out += [""]
+    out += details(f"Judge's notes ({len(notes)})",
+                   [f"- **{f['kind']}**" + (" (a fix the rework didn't make)" if f["severity"] == "fix" else "")
+                    + (f" `{f['file']}`" if f.get("file") else "") + f": {f['detail']}" for f in notes])
 if impl["unrelated_failures"]:
-    out += ["### Unrelated failures", ""]
-    out += [f"- `{u['test']}`: {u['detail']}" for u in impl["unrelated_failures"]]
-    out += [""]
+    out += details(f"Unrelated failures ({len(impl['unrelated_failures'])})",
+                   [f"- `{u['test']}`: {u['detail']}" for u in impl["unrelated_failures"]])
 if impl["followups"]:
-    out += ["### Followups the implementer noticed", ""]
-    out += [f"- {f}" for f in impl["followups"]]
-    out += [""]
+    out += details(f"Followups the implementer noticed ({len(impl['followups'])})",
+                   [f"- {f}" for f in impl["followups"]])
+out += details("The implementer's summary", [summary])
 
 steps = []
 for name, run in (("implement", impl_run), ("judge", judge_run)):

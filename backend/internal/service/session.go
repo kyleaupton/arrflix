@@ -154,6 +154,20 @@ func (s *SessionService) Refresh(ctx context.Context, rawToken string, ip *strin
 		return Issued{}, apperrors.Unauthenticatedf("refresh token reuse detected").Op("SessionService.Refresh")
 	}
 
+	// A disabled user's session is burned, not just refused, so re-enabling the
+	// account never revives it — they sign in again.
+	user, err := s.repo.GetUserByID(ctx, sess.UserID)
+	if err != nil {
+		return Issued{}, err
+	}
+	if !user.IsActive {
+		if _, err := s.repo.RevokeSession(ctx, sess.ID); err != nil {
+			return Issued{}, err
+		}
+		s.audit(ctx, sess.UserID, auditSessionRevoked, auditDetail{SessionID: sess.ID.String(), Scope: "inactive"})
+		return Issued{}, apperrors.Unauthenticatedf("account is disabled").Op("SessionService.Refresh")
+	}
+
 	newSecret, newHash, err := newRefreshSecret()
 	if err != nil {
 		return Issued{}, apperrors.Internalf("generate refresh secret: %v", err).Op("SessionService.Refresh")
@@ -178,10 +192,6 @@ func (s *SessionService) Refresh(ctx context.Context, rawToken string, ip *strin
 		})
 	}
 
-	user, err := s.repo.GetUserByID(ctx, rotated.UserID)
-	if err != nil {
-		return Issued{}, err
-	}
 	return s.issue(rotated, user, newSecret)
 }
 

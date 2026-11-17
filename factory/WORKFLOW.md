@@ -30,7 +30,7 @@ stateDiagram-v2
         implement --> preflight
         preflight --> implement: fail (max 3)
         preflight --> judge
-        judge --> implement: veto (max 1)
+        judge --> implement: veto or fixes (max 1)
         judge --> evidence
         evidence --> [*]
     }
@@ -112,7 +112,7 @@ A run is one `factory` issue moving through In Progress. It alternates determini
 | Workspace | deterministic | Makes a self-contained clone of GitHub's `main` on branch `factory/<Linear's branch name>`, e.g. `factory/arfx-12-pin-search`, and starts a sandbox on it (see [Sandbox](#sandbox)). A git worktree won't do: its `.git` points outside the mount. |
 | Implement | agent | Builds the ticket and writes a test named for each REQ it closes. |
 | Preflight | deterministic | Runs `just preflight-all` (preflight plus the integration suite, where most REQ tests live). A failure goes back to Implement, at most 3 times. |
-| Judge | agent, fresh context | Rules on the diff against the ticket: is everything inside scope, does each REQ test assert its requirement, is each acceptance criterion met, and does the change bring in a defect? A veto goes back to Implement once. |
+| Judge | agent, fresh context | Rules on the diff against the ticket: is everything inside scope, does each REQ test assert its requirement, is each acceptance criterion met, and does the change bring in a defect? A veto goes back to Implement once. So do `fix` findings: not wrong, but cheap and clearly right, the kind a maintainer would ask for before merging. A veto and fixes share that one rework. |
 | Evidence | deterministic | Captures screenshots of touched screens at desktop and mobile widths, and lists the REQ tests that pass. |
 | Submit | deterministic | Commits the tree as the bot, using the implementer's `commit_message`, pushes the branch, and opens the PR with the implementer's summary, the judge's summary and the evidence. Agents never commit. |
 
@@ -161,7 +161,7 @@ Agents in a run never hold GitHub or Linear credentials, and never commit. An in
 | Step | Schema | Outcomes |
 | --- | --- | --- |
 | Implement | `factory/schemas/implement-result.json` | `implemented`, `blocked` (with a question), `no_change` (the behavior already holds) |
-| Judge | `factory/schemas/judge-result.json` | `pass`, `veto` (with findings) |
+| Judge | `factory/schemas/judge-result.json` | `pass` (with any `fix` findings), `veto` (with blocking findings) |
 
 Besides the outcome, the implementer reports out-of-scope problems it left alone (`followups`, which may become Triage issues), gate failures in code it didn't touch (`unrelated_failures`), and anything the sandbox lacked (`needed`, which decides what the factory image gains). Retry counts, cost and tokens come from the orchestrator and the CLI, not from the agent.
 
@@ -179,7 +179,7 @@ Discussion of the code happens in the PR.
 | Issues In Review before the orchestrator stops pulling from Ready | 2 |
 | Concurrent runs | 1 |
 | Preflight fix attempts per run | 3 |
-| Judge vetoes per run | 1 |
+| Judge reworks per run (veto or fixes) | 1 |
 
 Raise the review limit only when the factory is waiting on the maintainer, not the other way round.
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
+	"github.com/kyleaupton/arrflix/internal/importer"
 	"github.com/kyleaupton/arrflix/internal/jobs/jobutil"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/matcher"
@@ -62,12 +63,14 @@ type scanStats struct {
 }
 
 // collectedFile is the walk phase's view of one file: paths + size +
-// OSDB content hash. OsdbHash is nil when the file is too small or
-// unreadable for hashing.
+// link facts + OSDB content hash. OsdbHash is nil when the file is too
+// small or unreadable for hashing. Links is nil only when the stat
+// carries no syscall.Stat_t.
 type collectedFile struct {
 	RelPath  string
 	AbsPath  string
 	FileSize *int64
+	Links    *model.LinkFacts
 	OsdbHash *string
 }
 
@@ -194,31 +197,44 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 			return nil
 		}
 
-		// Dedup against known paths
+		// A file whose stat fails is left alone this pass: no file_state is
+		// written from it, so a known file keeps its last good facts and a
+		// new one is picked up by a later scan.
+		fileSize, links, statErr := statWalkEntry(d)
+		if statErr != nil {
+			s.logger.Warn().Str("path", path).Err(statErr).Msg("stat failed, skipping file")
+			return nil
+		}
+
+		// A file the library already knows is not re-matched, but its
+		// file_state is refreshed from this stat.
+		known := false
 		if knownPaths != nil {
-			if _, exists := knownPaths[relPath]; exists {
-				stats.FilesSkipped++
-				return nil
-			}
+			_, known = knownPaths[relPath]
 		} else {
 			// Fallback: per-file DB check
 			_, dbErr := s.repo.GetFileByLibraryAndPath(ctx, repo.GetFileByLibraryAndPathParams{
 				LibraryID: library.ID,
 				Path:      relPath,
 			})
-			if dbErr == nil {
-				stats.FilesSkipped++
-				return nil
-			}
-			if !apperrors.IsNotFound(dbErr) {
+			if dbErr != nil && !apperrors.IsNotFound(dbErr) {
 				return dbErr
 			}
+			known = dbErr == nil
 		}
-
-		var fileSize *int64
-		if info, infoErr := d.Info(); infoErr == nil && info != nil {
-			size := info.Size()
-			fileSize = &size
+		if known {
+			stats.FilesSkipped++
+			rerr := s.repo.RefreshFileStateByPath(ctx, repo.RefreshFileStateParams{
+				LibraryID: library.ID,
+				Path:      relPath,
+				SizeBytes: fileSize,
+				Links:     links,
+			})
+			// NotFound: the row was detached since knownPaths was loaded.
+			if rerr != nil && !apperrors.IsNotFound(rerr) {
+				return rerr
+			}
+			return nil
 		}
 
 		// Best-effort: a NULL hash (too-small file / read error) is tolerated
@@ -234,6 +250,7 @@ func (s *ScannerService) executeScan(ctx context.Context, library model.Library,
 			RelPath:  relPath,
 			AbsPath:  path,
 			FileSize: fileSize,
+			Links:    links,
 			OsdbHash: osdbHash,
 		})
 
@@ -407,6 +424,17 @@ func (s *ScannerService) toFileRefs(ctx context.Context, library model.Library, 
 	return refs, nil
 }
 
+// statWalkEntry stats a walked entry for the facts file_state records. It
+// returns an error, and no facts, when the stat fails.
+func statWalkEntry(d fs.DirEntry) (*int64, *model.LinkFacts, error) {
+	info, err := d.Info()
+	if err != nil {
+		return nil, nil, err
+	}
+	size := info.Size()
+	return &size, importer.LinkFactsOf(info), nil
+}
+
 // ensureFileRow returns the stable file id for a collected file, creating
 // the row (identity NULL) when it doesn't yet exist. The id is the
 // match_decision.file_id join key and must outlive every outcome — a file
@@ -438,6 +466,7 @@ func (s *ScannerService) ensureFileRow(ctx context.Context, libraryID uuid.UUID,
 		Exists:    true,
 		SizeBytes: f.FileSize,
 		OsdbHash:  f.OsdbHash,
+		Links:     f.Links,
 	}); err != nil {
 		return uuid.Nil, err
 	}
@@ -496,6 +525,7 @@ func (s *ScannerService) persistConfident(ctx context.Context, library model.Lib
 		RelPath:  f.RelPath,
 		AbsPath:  f.AbsPath,
 		FileSize: f.FileSize,
+		Links:    f.Links,
 		OsdbHash: f.OsdbHash,
 		TmdbID:   tmdbID,
 		Item:     rec.ChosenItem,
@@ -563,6 +593,7 @@ func (s *ScannerService) persistPartialSeries(ctx context.Context, library model
 		RelPath:  f.RelPath,
 		AbsPath:  f.AbsPath,
 		FileSize: f.FileSize,
+		Links:    f.Links,
 		OsdbHash: f.OsdbHash,
 		TmdbID:   tmdbID,
 		Item:     rec.ChosenItem,

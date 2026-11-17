@@ -102,9 +102,11 @@ file_state (
   exists           boolean NOT NULL DEFAULT true,
   size_bytes       bigint,
   osdb_hash        text,                                 -- content fingerprint
+  st_dev           bigint,                               -- hardlinks (REQ-LINK-001/002);
+  st_ino           bigint,                               --   NULL until a stat fills them
+  st_nlink         bigint,
   last_verified_at timestamptz NOT NULL DEFAULT now()
-  -- unbuilt: mtime (diff-scan heuristic), st_dev / st_ino / st_nlink
-  -- (hardlinks, V1 REQ-LINK-001/002), updated_at
+  -- unbuilt: mtime (diff-scan heuristic), updated_at
 )
 -- INDEX (exists)            orphan-row detection (hygiene)
 -- INDEX (last_verified_at)  verify-pass selection

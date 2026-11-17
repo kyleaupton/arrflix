@@ -4,15 +4,27 @@
   "description": "What the judge returns after reviewing an implementation (factory/prompts/judge.md). A veto sends the findings back to the implementer; a pass sends the work to human review.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["verdict", "summary", "findings", "acceptance"],
+  "required": ["verdict", "summary", "needs_you", "what_works", "findings", "acceptance"],
   "properties": {
     "verdict": {
-      "description": "veto when any finding is blocking, pass otherwise.",
+      "description": "veto when any finding is blocking, pass otherwise. fix findings don't affect the verdict.",
       "enum": ["pass", "veto"]
     },
     "summary": {
       "description": "For the human reviewer, posted on the PR: what the change does and how confident the judge is that it does what the issue asks.",
       "type": "string"
+    },
+    "needs_you": {
+      "description": "Opens the PR body. The decisions and checks the human reviewer must make before merging, each starting with the verb they perform (Decide, Check, Confirm, Try). At most five; empty when nothing needs them.",
+      "type": "array",
+      "maxItems": 5,
+      "items": { "type": "string" }
+    },
+    "what_works": {
+      "description": "Follows needs_you on the PR. What a user or operator now sees, one behavior per item, in plain terms. At most five.",
+      "type": "array",
+      "maxItems": 5,
+      "items": { "type": "string" }
     },
     "findings": {
       "type": "array",
@@ -21,7 +33,7 @@
         "additionalProperties": false,
         "required": ["severity", "kind", "detail"],
         "properties": {
-          "severity": { "enum": ["blocking", "note"] },
+          "severity": { "enum": ["blocking", "fix", "note"] },
           "kind": { "enum": ["scope", "req_test", "acceptance", "defect", "other"] },
           "file": { "type": "string" },
           "detail": {

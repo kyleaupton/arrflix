@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import DialogContainer from '@/components/DialogContainer.vue'
+import { installRealtime } from '@/realtime/bindings'
 import { useAuthStore } from '@/stores/auth'
 import { useDialogStore } from '@/stores/dialog'
 
@@ -23,10 +24,15 @@ export const requester: Viewer = {
  * instances, a router, the signed-in viewer, and the dialog container that
  * `useModal()` dialogs render into. Every API call goes through MSW, so declare
  * the responses the component needs with `server.use(...)` first.
+ *
+ * `realtime` installs the app's realtime bindings on this render's query
+ * client, as `main.ts` does. Pair it with `@/test/realtime` to deliver events.
+ * The bindings register on the realtime module's listener registry, which lives
+ * for the whole test file, so use it in at most one test per file.
  */
 export function renderWithApp(
   component: Component,
-  options: { props?: Record<string, unknown>; viewer?: Viewer } = {},
+  options: { props?: Record<string, unknown>; viewer?: Viewer; realtime?: boolean } = {},
 ) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -40,6 +46,7 @@ export function renderWithApp(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
+  if (options.realtime) installRealtime(queryClient)
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }],

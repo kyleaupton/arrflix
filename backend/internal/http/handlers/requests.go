@@ -81,8 +81,8 @@ type requestCreateBody struct {
 	// requester joining an existing tracking never changes autonomy.
 	Tier             *string `json:"tier,omitempty" enum:"HD,4K" doc:"Requested quality tier (defaults to 'HD'; operator-picked, requesters omit it)"`
 	ScopeRule        *string `json:"scopeRule,omitempty" enum:"all,future_only" doc:"Series scope preset (series only; defaults to 'all')"`
-	BackfillAutonomy *string `json:"backfillAutonomy,omitempty" enum:"auto,propose,manual" doc:"Who picks releases for atoms dated before tracking began (defaults to 'auto')"`
-	OngoingAutonomy  *string `json:"ongoingAutonomy,omitempty" enum:"auto,propose,manual" doc:"Who picks releases for atoms dated after tracking began (defaults to 'auto')"`
+	BackfillAutonomy *string `json:"backfillAutonomy,omitempty" enum:"auto,propose,manual" doc:"Who picks releases for atoms dated before tracking began (defaults to 'auto'; setting it requires jobs.manage)"`
+	OngoingAutonomy  *string `json:"ongoingAutonomy,omitempty" enum:"auto,propose,manual" doc:"Who picks releases for atoms dated after tracking began (defaults to 'auto'; setting it requires jobs.manage)"`
 }
 
 type RequestsCreateInput struct {

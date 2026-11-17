@@ -4,7 +4,7 @@ status: as-built
 
 # Scan — keeping disk and database in sync
 
-> **Beyond what's built:** the built scan is discovery-only — see [What's built](#whats-built). §The reconciliation gap, §Scan modes, §Triggers (all but manual), §Inotify, §Streaming pipeline architecture, §ffprobe metadata, §Killer features and most of §Edge cases describe unbuilt design, as do the `mtime`, inode, `file_probe`, `scan_run` and `hygiene_finding` writes in §What scan writes.
+> **Beyond what's built:** the built scan is discovery-only — see [What's built](#whats-built). §The reconciliation gap, §Scan modes, §Triggers (all but manual), §Inotify, §Streaming pipeline architecture, §ffprobe metadata, §Killer features and most of §Edge cases describe unbuilt design, as do the `mtime`, `file_probe`, `scan_run` and `hygiene_finding` writes in §What scan writes.
 
 This doc defines **scan**: the subsystem that reconciles what's on disk with what's in the database. It captures _what scan owns_, _what it doesn't_, _how it reconciles missing and changed files_, _what cheap metadata it extracts on the way_, and _what scan modes and triggers we need_. It does **not** pin down table names, column types, or wire formats for the unbuilt parts.
 
@@ -15,13 +15,13 @@ Scan is `ScannerService` in `backend/internal/service/scan.go`. Identification l
 One mode (a full walk), one trigger (manual), batched phases:
 
 1. **Trigger.** `POST /api/v1/libraries/{id}/scan` (`library.scan`) returns 202 with a `scanId` and runs the scan in a goroutine. An in-memory guard allows one scan per library at a time; a second request gets 409.
-2. **Walk & collect.** `filepath.WalkDir` over `root_path` (symlinks aren't followed). A file is kept when its extension is `.mkv/.mp4/.avi/.mov/.wmv/.flv/.m4v/.webm` and it isn't extra content: any path segment named `featurettes`, `extras`, `samples`, `trailers`, `behind the scenes`, etc., or a basename of `sample` / `sample.*` / `sample-*`. A path already held by a live `file` row in this library is **skipped** — known files are neither re-stat'd nor re-matched. For each new file scan records size and the OSDb hash (best-effort; NULL when too small or unreadable).
+2. **Walk & collect.** `filepath.WalkDir` over `root_path` (symlinks aren't followed). A file is kept when its extension is `.mkv/.mp4/.avi/.mov/.wmv/.flv/.m4v/.webm` and it isn't extra content: any path segment named `featurettes`, `extras`, `samples`, `trailers`, `behind the scenes`, etc., or a basename of `sample` / `sample.*` / `sample-*`. Every kept file is stat'd for its size and link facts (`st_dev` / `st_ino` / `st_nlink`). A file whose stat fails is skipped for that pass: no `file_state` is written from it, so a known file keeps its last good facts. A path already held by a live `file` row in this library is not re-matched: its `file_state` is refreshed from that stat (size, link facts, `exists`, `last_verified_at`; the OSDb hash is kept) and the walk moves on. For each new file scan also records the OSDb hash (best-effort; NULL when too small or unreadable).
 3. **Mint rows.** Each new file is parsed (`parsing.Parse(relpath, domain, AsPath())`), then gets a `file` row (identity NULL), a `file_state` row, and an insert-once `file_origin` row (`origin='scan'`, `source_title` = the relpath as discovered). The row exists before matching because `match_decision.file_id` is a real FK.
 4. **Match.** One `MatcherService.MatchBatch` call over all new files, which writes a `match_decision` per file.
 5. **Persist.** `confident` / `confident_review` outcomes, and `partial_series` with a TMDB series ref, go through `commitMatch` (shared with manual match): upsert `media_item` / season / episode, set identity on the file, rewrite `file_state`, append a `file_import` row with `method='scan'`. Other bands leave identity NULL. A newly created `media_item` gets fire-and-forget enrichment.
 6. **Events.** [Realtime](../realtime/README.md) `scan_started`, `scan_progress` (every 50 files, with files seen and items created), `scan_completed` (per-band counts, items created, episode-lookup failures, duration) and `scan_failed`, targeted at `library.read` holders.
 
-Not built: reconciliation of missing or changed files, state refresh on known files, re-matching files a previous scan left unidentified, scheduled or event triggers, `scan_run` history, ffprobe, and drop-in want fulfillment (a `TODO(tracking)` in `persistConfident`).
+Not built: reconciliation of missing or changed files, re-matching files a previous scan left unidentified, scheduled or event triggers, `scan_run` history, ffprobe, and drop-in want fulfillment (a `TODO(tracking)` in `persistConfident`).
 
 ## TL;DR
 
@@ -231,7 +231,7 @@ Scan is mostly plumbing, but a few well-placed features make it feel like a thin
 | **[Matching](../matching/README.md)**                 | Scan hands new files to one `MatcherService.MatchBatch` call as `FileRef`s (event-driven batches are unbuilt) and persists confident outcomes through the shared `commitMatch`. |
 | **[Files](../files/README.md)**                       | Scan creates (and, unbuilt, reconciles) `file` + `file_state` rows. The file is the unit scan discovers, dedups against, and marks present/missing — identified or not. |
 | **[Hygiene](../hygiene/README.md)**                   | **Unbuilt.** Scan opportunistically populates `hygiene_finding` rows during walks (broken hardlinks, orphan rows, phantom files, drift). |
-| **[Hardlinks](../hardlinks/README.md)**               | **Unbuilt (V1: REQ-LINK-002).** Scan is the capture point: stamps `st_dev` / `st_ino` / `st_nlink` on `file_state` during the stats it already does; the exact `nlink` predicate replaces the old drift heuristic for broken-link detection. |
+| **[Hardlinks](../hardlinks/README.md)**               | **Built (V1: REQ-LINK-002).** Scan is the capture point: stamps `st_dev` / `st_ino` / `st_nlink` on `file_state` during the stats it already does; **Unbuilt:** the exact `nlink` predicate for broken-link detection. |
 | **[Metadata](../metadata/README.md)**                 | New matches trigger enrichment downstream — scan itself is metadata-agnostic.                                      |
 | **[Tracking / wants](../tracking/README.md)**         | A file appearing on disk (drop-in or scan-discovered) can satisfy an open want via matcher's drop-in flow (**unbuilt**). Scan doesn't talk to tracking directly. |
 | **Import**                                            | Import is the *write* side; scan is the *read* side. Together they keep DB and FS in sync. **Unbuilt:** a post-import targeted scan confirms the file landed. |
@@ -260,7 +260,7 @@ Sketching the touch points clarifies the model (built items first):
 
 - `file` — added (on new discoveries, identity NULL until the matcher resolves it), kept (on present files), unchanged (on missing — see state below). The unit scan tracks; owned by [files](../files/README.md)
 - `file_origin` — insert-once provenance (`origin='scan'`, the relpath as first discovered, its parse) on each new file
-- `file_state` — `exists`, `size_bytes`, `last_verified_at` on new files. **Unbuilt:** refreshing them on known files, `mtime` for Diff heuristics, and `st_dev` / `st_ino` / `st_nlink` captured on every `stat()` (zero extra I/O — same `Stat_t`) for the [hardlinks](../hardlinks/README.md) reference graph (V1: [REQ-LINK-002](../../V1.md#hardlink-inode-capture--hardlinks))
+- `file_state` — `exists`, `size_bytes`, `st_dev` / `st_ino` / `st_nlink` and `last_verified_at` for every file the walk stats: written on new files, refreshed on known ones (the link facts come from the same `Stat_t`, zero extra I/O) for the [hardlinks](../hardlinks/README.md) reference graph (V1: [REQ-LINK-002](../../V1.md#hardlink-inode-capture--hardlinks)). **Unbuilt:** `mtime` for Diff heuristics
 - `file_state.osdb_hash` — populated on first discovery (every file, identified or not); never recomputed unless drift detected
 - `match_decision`, and via `commitMatch` `media_item` / `media_season` / `media_episode` / `file_import` for confident outcomes
 - `file_probe` (new table, unbuilt) — ffprobe output keyed on `file_id`; populated by `MediaProbeWorker`
