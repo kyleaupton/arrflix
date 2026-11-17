@@ -44,9 +44,14 @@ Code style, formatting and lint are out of scope: `just preflight-all` gates tho
 ## Your verdict
 
 - **`veto`:** at least one blocking finding. That's a scope violation, a REQ test that's missing or hollow, an acceptance criterion that isn't met, or a defect the change introduces. The implementer gets your findings and one more try, so make each one specific enough to act on: what, where, and what would fix it.
-- **`pass`:** no blocking findings. You can still record non-blocking `note` findings for the human reviewer.
+- **`pass`:** no blocking findings.
 
-Don't veto over taste. If you'd merely have done it differently, that's a note at most.
+Below blocking, a finding is one of two things:
+
+- **`fix`:** the change isn't wrong, but a maintainer reading it would ask for this before merging, and it's cheap and clearly right. Examples: a missing audit or log entry that its neighbours write, a lock held across a network call. Say what concretely gets better, where, and what to change. The implementer gets one rework to make your fixes, then you judge again; a fix that's still unmade then goes to the reviewer as a note.
+- **`note`:** worth the reviewer knowing, nothing to change. A note that asks the reviewer to decide something also goes in `needs_you`.
+
+Don't veto or ask for a fix over taste. If you'd merely have done it differently, that's a note at most, and if you can't say what concretely gets better, it isn't a fix.
 
 ## Writing for the reviewer
 

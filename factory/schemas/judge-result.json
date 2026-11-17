@@ -7,7 +7,7 @@
   "required": ["verdict", "summary", "needs_you", "what_works", "findings", "acceptance"],
   "properties": {
     "verdict": {
-      "description": "veto when any finding is blocking, pass otherwise.",
+      "description": "veto when any finding is blocking, pass otherwise. fix findings don't affect the verdict.",
       "enum": ["pass", "veto"]
     },
     "summary": {
@@ -33,7 +33,7 @@
         "additionalProperties": false,
         "required": ["severity", "kind", "detail"],
         "properties": {
-          "severity": { "enum": ["blocking", "note"] },
+          "severity": { "enum": ["blocking", "fix", "note"] },
           "kind": { "enum": ["scope", "req_test", "acceptance", "defect", "other"] },
           "file": { "type": "string" },
           "detail": {
