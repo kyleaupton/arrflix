@@ -25,3 +25,30 @@ test('REQ-CANCEL-009: the requests list withdraw confirmation does not promise a
     expect(promisesAcquisitionStops(button.textContent ?? '')).toBe(false)
   }
 })
+
+test('REQ-APPROVE-005: the review queue shows a reviewer only requests they can decide, and a requester none', async () => {
+  const pending = [
+    request({ id: '10000000-0000-0000-0000-000000000011', status: 'pending', requestedBy: 'u-a' }),
+    request({ id: '10000000-0000-0000-0000-000000000012', status: 'pending', requestedBy: 'u-b' }),
+  ]
+  server.use(handleRequestsList({ body: pending }), handleMediaGetMovie(notFound))
+
+  // A requester holds no review authority: there is no queue to see.
+  const { unmount } = renderWithApp(Requests)
+  await screen.findByRole('tab', { name: 'My Requests' })
+  expect(screen.queryByRole('tab', { name: 'Review Queue' })).toBeNull()
+  unmount()
+
+  renderWithApp(Requests, {
+    viewer: {
+      sub: '00000000-0000-0000-0000-000000000002',
+      permissions: ['requests.view.any', 'requests.approve:movie', 'requests.deny:movie'],
+    },
+  })
+  await userEvent.click(await screen.findByRole('tab', { name: 'Review Queue' }))
+  const panel = await screen.findByRole('tabpanel')
+  await within(panel).findAllByRole('button', { name: 'Approve' })
+  // Every queued request carries the controls to decide it.
+  expect(within(panel).getAllByRole('button', { name: 'Approve' })).toHaveLength(pending.length)
+  expect(within(panel).getAllByRole('button', { name: 'Deny' })).toHaveLength(pending.length)
+})

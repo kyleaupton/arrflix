@@ -549,7 +549,9 @@ func (s *RequestService) List(ctx context.Context, userID uuid.UUID, status *str
 // It refines the coarse approve gate against the request's exact media type,
 // stamps the manual decision provenance (decided_by = the approver), then runs
 // the shared spawn. A request that isn't pending is a Conflict — only the
-// queued state is approvable. Autonomy defaults to auto/auto: the approving
+// queued state is approvable. The pending check is re-asserted atomically by the
+// decision write, so of two concurrent decisions exactly one lands and the loser
+// is a Conflict that spawns nothing. Autonomy defaults to auto/auto: the approving
 // operator didn't dial it, and the requester's choice deliberately doesn't ride
 // the row.
 func (s *RequestService) Approve(ctx context.Context, approverID, requestID uuid.UUID) (model.Request, error) {
@@ -570,17 +572,20 @@ func (s *RequestService) Approve(ctx context.Context, approverID, requestID uuid
 		return model.Request{}, apperrors.Internalf("request %s has unknown tier %q", requestID, req.Tier).Op(op)
 	}
 
-	approved, err := s.repo.SetRequestApproved(ctx, requestID, approverID)
+	approved, ok, err := s.repo.SetRequestApproved(ctx, requestID, approverID)
 	if err != nil {
 		return model.Request{}, err
+	}
+	if !ok {
+		return model.Request{}, apperrors.Conflictf("request %s is no longer pending", requestID).Op(op)
 	}
 	return s.spawnFor(ctx, approved, tier, string(model.AutonomyAuto), string(model.AutonomyAuto))
 }
 
 // Deny rejects a pending request with an optional reason, refining the coarse
 // deny gate against the request's exact media type and stamping the decision
-// provenance (decided_by = the denier). A request that isn't pending is a
-// Conflict.
+// provenance (decided_by = the denier). A request that isn't pending — checked
+// atomically by the decision write — is a Conflict.
 func (s *RequestService) Deny(ctx context.Context, approverID, requestID uuid.UUID, reason *string) (model.Request, error) {
 	const op = "RequestService.Deny"
 
@@ -594,7 +599,14 @@ func (s *RequestService) Deny(ctx context.Context, approverID, requestID uuid.UU
 	if err := s.authz.Require(ctx, approverID, authz.RequestDeny(model.MediaType(req.Type)), nil); err != nil {
 		return model.Request{}, err
 	}
-	return s.repo.SetRequestDenied(ctx, requestID, approverID, reason)
+	denied, ok, err := s.repo.SetRequestDenied(ctx, requestID, approverID, reason)
+	if err != nil {
+		return model.Request{}, err
+	}
+	if !ok {
+		return model.Request{}, apperrors.Conflictf("request %s is no longer pending", requestID).Op(op)
+	}
+	return denied, nil
 }
 
 // Cancel withdraws a request, gated own/any: a holder of requests.cancel.any
