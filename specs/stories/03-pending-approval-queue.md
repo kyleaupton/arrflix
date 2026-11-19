@@ -103,7 +103,7 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 - **REQ-APPROVE-004** — A reviewer must be able to decide from the queue itself: what it costs, who asked, what their history is, and whether the library already has it. **Not currently true** — the queue shows title, tier, status, and requester.
 - **REQ-APPROVE-005** — A reviewer must only see requests they are permitted to act on. *Currently true* under V1's roles, where only operators review. The queue is gated on authority to view any request, and the approve and deny controls on per-type authority, so a reviewer holding the first without the second would see requests they cannot decide.
-- **REQ-APPROVE-006** — Two reviewers acting on the same request must not both succeed. **Partly true:** an attempt made after another decision has committed is refused as a conflict, and the interface surfaces it. The pending check and the decision write are not atomic, though, so two truly concurrent decisions can both succeed.
+- **REQ-APPROVE-006** — Two reviewers acting on the same request must not both succeed. *Currently true:* a decision lands only if the request is still pending at the moment it is written, so of two concurrent decisions exactly one succeeds; the other is refused as a conflict, does nothing, and the interface surfaces it.
 
 ### The outcome reaches the requester
 

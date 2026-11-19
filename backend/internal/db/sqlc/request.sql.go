@@ -263,6 +263,7 @@ SET status = 'approved',
     decision_auto = false,
     updated_at = now()
 WHERE id = $2
+  AND status = 'pending'
 RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto
 `
 
@@ -271,6 +272,10 @@ type SetRequestApprovedParams struct {
 	ID        pgtype.UUID `json:"id"`
 }
 
+// SetRequestApproved and SetRequestDenied are compare-and-swaps from 'pending':
+// of two concurrent decisions on one request only the first to write matches a
+// row; the other matches none (pgx.ErrNoRows) and leaves the winner's decision
+// standing.
 func (q *Queries) SetRequestApproved(ctx context.Context, arg SetRequestApprovedParams) (Request, error) {
 	row := q.db.QueryRow(ctx, setRequestApproved, arg.DecidedBy, arg.ID)
 	var i Request
@@ -341,6 +346,7 @@ SET status = 'denied',
     decision_auto = false,
     updated_at = now()
 WHERE id = $3
+  AND status = 'pending'
 RETURNING id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto
 `
 
