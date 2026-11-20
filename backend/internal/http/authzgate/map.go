@@ -11,10 +11,14 @@ import (
 // fails CI naming any unclassified — or stale — entry.
 //
 // Grouped by requirement. A few assignments are judgment calls worth stating:
-//   - The acquisition-operator surface (proposals-*, download-candidates-*,
-//     tracking-{set-autonomy,retry}, wants-cancel) maps to jobs.manage: admin
-//     and co_admin hold it, requester and viewer don't, so access is correct
-//     without a dedicated acquisition.manage key (a possible later addition).
+//   - The acquisition-operator surface (proposals-*, tracking-proposals,
+//     download-candidates-*, tracking-{set-autonomy,retry}, wants-cancel) maps
+//     to jobs.manage: admin and co_admin hold it, requester and viewer don't,
+//     so access is correct without a dedicated acquisition.manage key (a
+//     possible later addition).
+//   - tracking-requesters maps to requests.view.any: who asked for a title is
+//     the same authority as seeing the whole request queue, so a requester
+//     cannot list the other users sharing a tracking.
 //   - filesystem-browse maps to library.write (operator-only server-FS browse).
 var operationPerms = map[string]requirement{
 	// ----- Public (gate skips; must match middlewares.publicPathSet) -----
@@ -81,8 +85,6 @@ var operationPerms = map[string]requirement{
 	"tracking-get":         perm(authz.LibraryRead),
 	"tracking-wants":       perm(authz.LibraryRead),
 	"tracking-by-tmdb":     perm(authz.LibraryRead),
-	"tracking-requesters":  perm(authz.LibraryRead),
-	"tracking-proposals":   perm(authz.LibraryRead),
 
 	// ----- library.write -----
 	"libraries-create":  perm(authz.LibraryWrite),
@@ -128,6 +130,7 @@ var operationPerms = map[string]requirement{
 	"download-candidates-preview-series":  perm(authz.JobsManage),
 	"download-candidates-download-movie":  perm(authz.JobsManage),
 	"download-candidates-download-series": perm(authz.JobsManage),
+	"tracking-proposals":                  perm(authz.JobsManage),
 	"proposals-approve":                   perm(authz.JobsManage),
 	"proposals-decline":                   perm(authz.JobsManage),
 	"tracking-set-autonomy":               perm(authz.JobsManage),
@@ -194,6 +197,9 @@ var operationPerms = map[string]requirement{
 	"downloaders-delete":      perm(authz.AdminDownloadersManage),
 	"downloaders-test":        perm(authz.AdminDownloadersManage),
 	"downloaders-test-config": perm(authz.AdminDownloadersManage),
+
+	// ----- requests.view.any (see header) -----
+	"tracking-requesters": perm(authz.RequestViewAny),
 
 	// ----- AnyOf floor + service refinement -----
 	// requests read = own/any: the gate passes a holder of either key; the

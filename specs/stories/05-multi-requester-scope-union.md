@@ -122,7 +122,7 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 ### Nobody learns about what they didn't ask for
 
 - **REQ-UNION-010** — A requester must only be notified about content their own intent covers. **Not currently true:** every requester is notified about every want on the tracking.
-- **REQ-UNION-011** — A requester must not be told who else wants a title. *Currently true by omission* — nothing surfaces it, though nothing enforces it either.
+- **REQ-UNION-011** — A requester must not be told who else wants a title. *Currently true* — no requester screen surfaces it, and listing a tracking's requesters needs `requests.view.any`, which requesters don't hold.
 
 ## Out of scope (variant stories)
 
