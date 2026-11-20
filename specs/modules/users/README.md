@@ -241,7 +241,7 @@ Each strategy has a configurable default role for newly-created users. `requeste
 
 ### Inactive accounts
 
-`app_user.is_active = false` blocks login (local and Plex). Admins disable rather than delete when a user might come back — disabling preserves the row, all request history, and any tracking the user was a requester for. **Unbuilt:** disabling doesn't revoke existing sessions, and refresh doesn't re-check `is_active`. Deletion is a hard delete that cascades through `user_role`, identity rows, and sessions; `request.requested_by` is `ON DELETE RESTRICT`, so a user with requests can't be deleted. Deleting the last admin is a Conflict.
+`app_user.is_active = false` blocks login (local and Plex). Admins disable rather than delete when a user might come back — disabling preserves the row, all request history, and any tracking the user was a requester for. **Unbuilt:** disabling doesn't revoke existing sessions, and refresh doesn't re-check `is_active`. Deletion is a hard delete that cascades through `user_role`, identity rows, and sessions; `request.requested_by` is `ON DELETE RESTRICT`, so a user with requests can't be deleted. Deleting, disabling or demoting the last active admin is a Conflict; an inactive admin doesn't count toward keeping one.
 
 ## Activity-visibility scoping
 
