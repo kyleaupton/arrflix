@@ -31,7 +31,8 @@ type AuthRepo interface {
 	GetRoleByName(ctx context.Context, name string) (model.Role, error)
 	AssignRole(ctx context.Context, userID uuid.UUID, roleID uuid.UUID) error
 	UnassignAllRoles(ctx context.Context, userID uuid.UUID) error
-	CountUsersByRole(ctx context.Context, roleID uuid.UUID) (int64, error)
+	LockRoleByName(ctx context.Context, name string) (model.Role, error)
+	CountActiveUsersByRole(ctx context.Context, roleID uuid.UUID) (int64, error)
 	// Grants
 	ListUserGrants(ctx context.Context, userID uuid.UUID) ([]model.Grant, error)
 	// Identity
@@ -376,9 +377,20 @@ func (r *Repository) UnassignAllRoles(ctx context.Context, userID uuid.UUID) err
 	return apperrors.FromPg(r.Q.UnassignAllRoles(ctx, pgtypeFromUUID(userID)), "unassign roles for user %s", userID)
 }
 
-func (r *Repository) CountUsersByRole(ctx context.Context, roleID uuid.UUID) (int64, error) {
-	count, err := r.Q.CountUsersByRole(ctx, pgtypeFromUUID(roleID))
-	return count, apperrors.FromPg(err, "count users by role %s", roleID)
+// LockRoleByName reads a role and holds a row lock on it until the enclosing
+// transaction ends, serializing transactions that lock the same role.
+func (r *Repository) LockRoleByName(ctx context.Context, name string) (model.Role, error) {
+	row, err := r.Q.LockRoleByName(ctx, name)
+	if err != nil {
+		return model.Role{}, apperrors.FromPg(err, "role %q not found", name)
+	}
+	return toModelRole(row), nil
+}
+
+// CountActiveUsersByRole counts the active users holding a role.
+func (r *Repository) CountActiveUsersByRole(ctx context.Context, roleID uuid.UUID) (int64, error) {
+	count, err := r.Q.CountActiveUsersByRole(ctx, pgtypeFromUUID(roleID))
+	return count, apperrors.FromPg(err, "count active users by role %s", roleID)
 }
 
 // Identity
