@@ -374,6 +374,23 @@ func (r *Repository) RescheduleWantRecheck(ctx context.Context, params ScheduleW
 	return toModelWant(row), true, nil
 }
 
+// DeferPendingWant sets when a 'pending' want next comes due. The bool reports
+// whether the want was still pending: false (a 0-row match, surfaced as
+// pgx.ErrNoRows) means the worker claimed it or it moved on, a benign no-op.
+func (r *Repository) DeferPendingWant(ctx context.Context, id uuid.UUID, nextRunAt time.Time) (model.Want, bool, error) {
+	row, err := r.Q.DeferPendingWant(ctx, dbgen.DeferPendingWantParams{
+		ID:        pgtypeFromUUID(id),
+		NextRunAt: nextRunAt,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Want{}, false, nil
+		}
+		return model.Want{}, false, apperrors.FromPg(err, "defer want %s", id)
+	}
+	return toModelWant(row), true, nil
+}
+
 // RearmWant resumes a terminal want when its movie is re-requested, flipping a
 // 'failed'/'canceled' want back to 'pending' (attempt counter and backoff reset)
 // so the AcquisitionWorker re-claims it. The single-atom invariant means the one

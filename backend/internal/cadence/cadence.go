@@ -1,6 +1,6 @@
 // Package cadence answers "when should this want be searched next?" It is the
 // pure domain concept behind smart scheduling: search frequency rides a curve
-// anchored on a release moment (an episode's air_date, a movie's release_date)
+// anchored on a release moment (an episode's air_date, a movie's search date)
 // rather than a flat interval — frequent right after air, when releases land,
 // and decaying to a daily poll for cold back-catalog gaps.
 //
@@ -45,13 +45,38 @@ const (
 )
 
 // NextRunAt is pure and total: given the schedule strategy, the anchor (episode
-// air_date or movie release_date), and now, it returns when the want should
+// air_date or movie search date), and now, it returns when the want should
 // next be searched. An unknown strategy is treated as smart.
 func NextRunAt(strategy Strategy, anchor, now time.Time) time.Time {
 	if strategy == StrategyFixed {
 		return now.Add(fixedInterval)
 	}
 	return smartNextRunAt(anchor, now)
+}
+
+// Movie search-date offsets. Releases often surface a little before the
+// official home-release date, so searching opens a day early (story 09, open
+// question 2). With no home date known, a film is assumed obtainable about a
+// month after it reaches cinemas — an internal estimate, never shown as a date.
+const (
+	movieHomeReleaseLead  = 24 * time.Hour
+	movieTheatricalWindow = 30 * 24 * time.Hour
+)
+
+// MovieSearchFrom returns when a movie can plausibly first be obtained, and so
+// when searching for it should start: the home-release date minus a day when
+// one is known, otherwise the theatrical release plus 30 days. Nil when neither
+// date is known — the caller falls back to its own anchor. Pure and total.
+func MovieSearchFrom(homeRelease, theatrical *time.Time) *time.Time {
+	switch {
+	case homeRelease != nil:
+		t := homeRelease.Add(-movieHomeReleaseLead)
+		return &t
+	case theatrical != nil:
+		t := theatrical.Add(movieTheatricalWindow)
+		return &t
+	}
+	return nil
 }
 
 // smartNextRunAt walks the 6-tier air-date curve. A not-yet-aired anchor fires

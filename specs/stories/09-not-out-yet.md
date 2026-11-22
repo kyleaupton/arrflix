@@ -89,25 +89,25 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ### Not-yet-obtainable is a distinct condition
 
-- **REQ-UNREL-001** — A title that cannot yet be obtained must be presented as waiting for a date, never as searching or failing. **Not currently true for movies:** the projection has a *not out yet* state that episodes reach through their air date, but no obtainable date reaches the movie path, so requesting a film replaces "not available yet" with "searching for a release."
-- **REQ-UNREL-002** — For a movie, obtainability must be determined by the home-release date, not the theatrical one. A film in cinemas is released and not obtainable. **Not currently true anywhere but the frontend's copy:** the backend extracts per-type dates for the detail response, but everything that schedules searches or derives state reads the theatrical release date.
-- **REQ-UNREL-003** — The obtainable date must be durable, not recomputed per page view. **Not currently true:** per-type release dates are extracted correctly and well tested, then discarded — they exist only on the detail response, with no persisted column, so no scheduler or worker can consult them.
+- **REQ-UNREL-001** — A title that cannot yet be obtained must be presented as waiting for a date, never as searching or failing. *Currently true:* episodes reach the projection's *not out yet* state through their air date, and a requested movie reaches it while its search date — the day before its home release — is still ahead.
+- **REQ-UNREL-002** — For a movie, obtainability must be determined by the home-release date, not the theatrical one. A film in cinemas is released and not obtainable. *Currently true:* the home-release date is the earliest digital or physical release across US, GB, CA and AU, and the search schedule and the projection read it. With none announced, the theatrical date plus 30 days stands in, internally only.
+- **REQ-UNREL-003** — The obtainable date must be durable, not recomputed per page view. *Currently true:* the home-release date is stored on the movie by enrichment and updated by each metadata refresh.
 
 ### The system does not chase what cannot exist
 
-- **REQ-UNREL-004** — No search may be issued for a title before it could plausibly be obtainable. **Not currently true, and this is the expensive one:** a theatrically-released film's persisted date is already past, so its want enters a normal search tier and polls indexers daily for months.
+- **REQ-UNREL-004** — No search may be issued for a title before it could plausibly be obtainable. *Currently true:* a movie's want is created dormant until the day before its home release (or theatrical + 30 days when none is known), as an episode's waits for its air date. A movie want that was already searching takes one more pass before going dormant.
 - **REQ-UNREL-005** — A want that is waiting for a date must record that it is waiting, not accumulate failed attempts. Attempt counts and error text describe a system that tried and failed; neither applies to a title that isn't out. **Not currently true for movies:** each futile pass stamps "no eligible release" on the want. An episode's want waits for its air date untouched.
-- **REQ-UNREL-006** — When the obtainable date passes, the want must become ordinary searching work under the normal cadence and recovery rules. *Currently true for episodes*, whose wants come due at their air date. A movie has no obtainable date to pass (REQ-UNREL-003).
+- **REQ-UNREL-006** — When the obtainable date passes, the want must become ordinary searching work under the normal cadence and recovery rules. *Currently true:* an episode's want comes due at its air date, a movie's at its search date.
 - **REQ-UNREL-007** — Failing to find a release once the date has passed must not read as a system failure. Home releases slip; the first days after a date are ordinary searching. *Currently true* — an unfound release keeps the want searching, never failed (REQ-SEARCH-001).
 
 ### Dates change, and some don't exist
 
-- **REQ-UNREL-008** — An obtainable date that changes upstream must reschedule the wait and update what the user is told. **Partly true for episodes:** what the user is told reads the current air date, but a want's first wake-up stays at the date it was created with. A movie has no obtainable date to reschedule.
+- **REQ-UNREL-008** — An obtainable date that changes upstream must reschedule the wait and update what the user is told. **Partly true:** for a movie, a refresh that moves its home-release or theatrical date reschedules a want still waiting, and the stated date follows it. For episodes, what the user is told reads the current air date, but a want's first wake-up stays at the date it was created with.
 - **REQ-UNREL-009** — A title with no known date must be accepted and presented as an indefinite watch, never as a scheduled wait against an invented date. **Not currently true:** the request is accepted, but an undated movie reads as searching, and a series whose episodes are all undated reads as not requested — undated episodes get no want, so nothing counts them as in scope.
 
 ### The wait is legible
 
-- **REQ-UNREL-010** — The expected date must be shown wherever the wait is shown, on the title and anywhere the request is listed. **Not currently true:** a requested movie shows no expected date, and the requests list shows none for anything.
+- **REQ-UNREL-010** — The expected date must be shown wherever the wait is shown, on the title and anywhere the request is listed. **Not currently true:** a requested movie's page shows its expected home-release date, but the requests list shows none for anything.
 - **REQ-UNREL-011** — A requester must be able to see everything they are waiting on, with dates, without visiting each title individually. **Not currently possible:** there is no calendar and no upcoming view of any kind.
 
 ## Out of scope (variant stories)

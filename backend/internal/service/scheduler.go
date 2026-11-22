@@ -24,19 +24,23 @@ func NewSchedulerService(r *repo.Repository, l *logger.Logger) *SchedulerService
 	return &SchedulerService{repo: r, log: l}
 }
 
-// NextSearchAt resolves the want's anchor (episode air_date / movie
-// release_date) and its tracking's schedule strategy, then defers to
-// cadence.NextRunAt. The acquisition worker calls it for the "no eligible
-// release" recheck (S1); reconcile will reuse it to pre-create future wants at
-// air_date (S2).
+// NextSearchAt resolves the want's anchor (episode air_date / movie search
+// date) and its tracking's schedule strategy, then defers to cadence.NextRunAt.
+// The acquisition worker calls it after every search that found nothing to
+// grab, and the movie spawn uses it to create a want dormant until its date.
 //
-// Anchor fallback: an undated episode or unreleased movie has no release moment
-// to ride, so the curve anchors on the want's creation time instead — matching
-// the spec's "anchor on request time if the movie is unreleased".
+// A movie's anchor is its search date (cadence.MovieSearchFrom): the
+// home-release date minus a day, or theatrical + 30 days when no home date is
+// known. While that date is ahead, it is the answer whatever the strategy — no
+// search is issued for a film before it could plausibly be obtained
+// (REQ-UNREL-004).
+//
+// Anchor fallback: an undated episode or a movie with no dates at all has no
+// release moment to ride, so the curve anchors on the want's creation time.
 func (s *SchedulerService) NextSearchAt(ctx context.Context, want model.Want, now time.Time) (time.Time, error) {
-	// air_date and release_date are DATE columns (no time component), so a real
-	// anchor is midnight UTC of that day — the curve's sub-day tiers (peak/low)
-	// are reachable only for the CreatedAt fallback, which carries full precision.
+	// air_date and release dates are DATE columns (no time component), so a real
+	// anchor is midnight UTC of a day — the curve's sub-day tiers (peak/low) are
+	// reachable only for the CreatedAt fallback, which carries full precision.
 	anchor := want.CreatedAt
 
 	if want.EpisodeID != nil {
@@ -52,8 +56,11 @@ func (s *SchedulerService) NextSearchAt(ctx context.Context, want model.Want, no
 		if err != nil {
 			return time.Time{}, err
 		}
-		if item.ReleaseDate != nil {
-			anchor = *item.ReleaseDate
+		if from := MovieSearchFrom(item); from != nil {
+			if from.After(now) {
+				return *from, nil
+			}
+			anchor = *from
 		}
 	}
 
@@ -64,4 +71,19 @@ func (s *SchedulerService) NextSearchAt(ctx context.Context, want model.Want, no
 	strategy := cadence.Strategy(tracking.ScheduleStrategy)
 
 	return cadence.NextRunAt(strategy, anchor, now), nil
+}
+
+// MovieSearchFrom is a movie's search date read off its stored release dates:
+// when searching for it should start. Nil when the movie has no dates at all.
+func MovieSearchFrom(item model.MediaItem) *time.Time {
+	return cadence.MovieSearchFrom(item.HomeReleaseDate, item.ReleaseDate)
+}
+
+// dormantUntil is the next_run_at a fresh or re-armed movie want is given: the
+// movie's search date while it is still ahead, nil (due now) otherwise.
+func dormantUntil(item model.MediaItem, now time.Time) *time.Time {
+	if from := MovieSearchFrom(item); from != nil && from.After(now) {
+		return from
+	}
+	return nil
 }

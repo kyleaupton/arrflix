@@ -183,6 +183,41 @@ func extractMovieReleaseDates(releaseDates *tmdb.MovieReleaseDates) *model.Relea
 	return nil
 }
 
+// homeReleaseRegions are the regions whose home releases count toward a
+// movie's home-release date. A home release in any of them is generally the
+// same English-language film, and indexers aren't regional, so the earliest one
+// is when a release can first appear. Other regions are ignored so a dubbed-only
+// release can't count. Revisit when the region becomes configurable.
+var homeReleaseRegions = map[string]bool{"US": true, "GB": true, "CA": true, "AU": true}
+
+// extractMovieHomeReleaseDate picks a movie's home-release date: the earliest
+// digital (TMDB type 4) or physical (type 5) date across homeReleaseRegions.
+// Theatrical and other release types never count. Unlike
+// extractMovieReleaseDates, which keeps one region's trio together for display,
+// this mixes regions on purpose — the question is when any copy can first exist.
+// Nil when no qualifying date is known.
+func extractMovieHomeReleaseDate(releaseDates *tmdb.MovieReleaseDates) *time.Time {
+	if releaseDates == nil || releaseDates.MovieReleaseDatesResults == nil {
+		return nil
+	}
+	var earliest *time.Time
+	for _, result := range releaseDates.Results {
+		if !homeReleaseRegions[result.Iso3166_1] {
+			continue
+		}
+		for _, rd := range result.ReleaseDates {
+			if rd.Type != 4 && rd.Type != 5 {
+				continue
+			}
+			d := parseDateToTimePtr(trimToDate(rd.ReleaseDate))
+			if d != nil && (earliest == nil || d.Before(*earliest)) {
+				earliest = d
+			}
+		}
+	}
+	return earliest
+}
+
 // trimToDate reduces a TMDB RFC3339-ish timestamp ("2018-12-15T00:00:00.000Z")
 // to its date part ("2018-12-15"). Already-date strings pass through.
 func trimToDate(ts string) string {

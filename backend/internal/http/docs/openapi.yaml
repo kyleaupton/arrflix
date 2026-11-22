@@ -5719,6 +5719,9 @@ components:
           type:
             - array
             - "null"
+        homeReleaseDate:
+          format: date-time
+          type: string
         library:
           $ref: "#/components/schemas/TitleLibrary"
         mediaType:

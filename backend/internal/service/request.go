@@ -211,8 +211,10 @@ func (s *RequestService) spawnMovie(ctx context.Context, req model.Request, tier
 	}
 
 	tmdbID := req.TmdbID
+	now := time.Now()
 	var spawned model.Request
 	var mediaItem model.MediaItem
+	var datesMoved, trackingCreated bool
 	err = s.repo.InTx(ctx, func(r *repo.Repository) error {
 		mediaItem, err = r.UpsertMediaItem(ctx, repo.UpsertMediaItemParams{
 			Type:   string(parsing.DomainMovie),
@@ -229,9 +231,12 @@ func (s *RequestService) spawnMovie(ctx context.Context, req model.Request, tier
 		// inside this tx and with no extra TMDB call — the fetch above already
 		// carries it. The item is never visible metadata-less, and the advanced
 		// metadata_updated_at keeps the enrichment worker from re-fetching it.
-		if err := s.enrichment.applyMovieMetadata(ctx, r, mediaItem, details); err != nil {
+		prior := mediaItem
+		mediaItem, err = s.enrichment.applyMovieMetadata(ctx, r, mediaItem, details)
+		if err != nil {
 			return err
 		}
+		datesMoved = !sameDate(prior.HomeReleaseDate, mediaItem.HomeReleaseDate) || !sameDate(prior.ReleaseDate, mediaItem.ReleaseDate)
 
 		// Dedup: at most one tracking per media item. ensureTracking finds
 		// the existing tracking (join path: a second requester for an
@@ -239,7 +244,8 @@ func (s *RequestService) spawnMovie(ctx context.Context, req model.Request, tier
 		// is single-valued, set from this request's tier on creation; two
 		// requesters at different tiers (HD vs 4K) on one movie is real
 		// multi-tier reconciliation, deferred — the first spawn wins the profile.
-		tracking, trackingCreated, err := ensureTracking(ctx, r, mediaItem.ID, profile.ID, backfillAutonomy, ongoingAutonomy)
+		var tracking model.Tracking
+		tracking, trackingCreated, err = ensureTracking(ctx, r, mediaItem.ID, profile.ID, backfillAutonomy, ongoingAutonomy)
 		if err != nil {
 			return err
 		}
@@ -271,6 +277,8 @@ func (s *RequestService) spawnMovie(ctx context.Context, req model.Request, tier
 			// movie is backfill, an unreleased one ongoing (an unparseable date
 			// falls to ongoing). Hold is nil in practice — a fresh tracking is
 			// born auto/auto — but the helper keeps the born-held rule uniform.
+			// A film that isn't obtainable yet is born dormant until its search
+			// date, the way a future episode's want waits for its air date.
 			seg := model.SegmentFor(parseReleaseDate(details.ReleaseDate), tracking.CreatedAt)
 			if _, err := r.CreateWant(ctx, repo.CreateWantParams{
 				TrackingID:       tracking.ID,
@@ -279,10 +287,11 @@ func (s *RequestService) spawnMovie(ctx context.Context, req model.Request, tier
 				Status:           string(model.WantPending),
 				Segment:          string(seg),
 				Hold:             model.HoldForNewWant(tracking, seg),
+				NextRunAt:        dormantUntil(mediaItem, now),
 			}); err != nil {
 				return err
 			}
-		} else if err := rearmMovieWant(ctx, r, tracking, mediaItem.ID, profile.ID, parseReleaseDate(details.ReleaseDate)); err != nil {
+		} else if err := rearmMovieWant(ctx, r, tracking, mediaItem, profile.ID, parseReleaseDate(details.ReleaseDate), now); err != nil {
 			return err
 		}
 
@@ -297,6 +306,15 @@ func (s *RequestService) spawnMovie(ctx context.Context, req model.Request, tier
 	// portability blob) off the atomic spawn path. A failure just defers the raw
 	// row to the next enrichment sweep; the user-visible metadata is committed.
 	s.enrichment.storeRawPayload(ctx, mediaItem.ID, "tmdb", details)
+
+	// Joining an existing tracking re-applied the movie's metadata; if that moved
+	// its release dates, a dormant want follows them, as on a metadata refresh.
+	if !trackingCreated && datesMoved {
+		if err := s.enrichment.rescheduleDormantMovieWants(ctx, mediaItem); err != nil {
+			s.log.Warn().Err(err).Str("title", title).
+				Msg("movie spawn: rescheduling dormant wants failed, will retry on next date change")
+		}
+	}
 
 	return spawned, nil
 }
@@ -458,7 +476,7 @@ func joinTracking(ctx context.Context, r *repo.Repository, tracking model.Tracki
 // RearmWant clears any hold as part of the reset, so if the want's segment is on
 // a manual dial the hold is re-stamped here — a re-request must land back under
 // the manual gate, not slip through auto.
-func rearmMovieWant(ctx context.Context, r *repo.Repository, tracking model.Tracking, mediaItemID, profileID uuid.UUID, releaseDate *time.Time) error {
+func rearmMovieWant(ctx context.Context, r *repo.Repository, tracking model.Tracking, mediaItem model.MediaItem, profileID uuid.UUID, releaseDate *time.Time, now time.Time) error {
 	wants, err := r.ListWantsByTracking(ctx, tracking.ID)
 	if err != nil {
 		return err
@@ -467,11 +485,12 @@ func rearmMovieWant(ctx context.Context, r *repo.Repository, tracking model.Trac
 		seg := model.SegmentFor(releaseDate, tracking.CreatedAt)
 		_, err := r.CreateWant(ctx, repo.CreateWantParams{
 			TrackingID:       tracking.ID,
-			MediaItemID:      mediaItemID,
+			MediaItemID:      mediaItem.ID,
 			QualityProfileID: profileID,
 			Status:           string(model.WantPending),
 			Segment:          string(seg),
 			Hold:             model.HoldForNewWant(tracking, seg),
+			NextRunAt:        dormantUntil(mediaItem, now),
 		})
 		return err
 	}
@@ -489,6 +508,13 @@ func rearmMovieWant(ctx context.Context, r *repo.Repository, tracking model.Trac
 	// 'canceled'. A no-op for a still-active tracking (the failed-want case).
 	if _, err := r.SetTrackingState(ctx, tracking.ID, string(model.TrackingActive)); err != nil {
 		return err
+	}
+	// RearmWant makes the want due now; a film not yet obtainable waits for its
+	// search date instead.
+	if until := dormantUntil(mediaItem, now); until != nil {
+		if _, _, err := r.DeferPendingWant(ctx, want.ID, *until); err != nil {
+			return err
+		}
 	}
 	// Re-stamp the hold the rearm cleared when the want's segment is manual.
 	if hold := model.HoldForNewWant(tracking, model.WantSegment(want.Segment)); hold != nil {

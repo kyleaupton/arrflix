@@ -89,12 +89,14 @@ func (s *TitleStatusService) Get(ctx context.Context, viewerID uuid.UUID, mediaT
 		return s.finish(in, episodes, tmdbID, mediaType, ownRequest), nil
 	}
 
-	movie, err := s.movieItem(ctx, item.ID, tmdbID, wants)
+	movie, err := s.movieItem(ctx, item, tmdbID, wants)
 	if err != nil {
 		return model.TitleStatus{}, err
 	}
 	in.Items = []titlestatus.Item{movie}
-	return s.finish(in, nil, tmdbID, mediaType, ownRequest), nil
+	out := s.finish(in, nil, tmdbID, mediaType, ownRequest)
+	out.HomeReleaseDate = item.HomeReleaseDate
+	return out, nil
 }
 
 // Available reports whether the title is available — for a movie, a file on
@@ -221,17 +223,17 @@ func (s *TitleStatusService) wantsForItem(ctx context.Context, mediaItemID uuid.
 
 // movieItem builds the single atom for a movie.
 //
-// ObtainableAt is always nil: no obtainable date is persisted for a movie, so
-// the projection cannot yet distinguish "not out yet" from "can't find it" on
-// the movie path. That is REQ-UNREL-003, and it is a gap in the data rather
-// than in this assembly — see specs/stories/09-not-out-yet.md.
-func (s *TitleStatusService) movieItem(ctx context.Context, mediaItemID uuid.UUID, tmdbID int64, wants map[uuid.UUID]model.Want) (titlestatus.Item, error) {
-	files, err := s.repo.ListFilesForItem(ctx, mediaItemID)
+// ObtainableAt is the movie's search date — the same date the scheduler holds
+// its want dormant until — so a requested film that can't be searched for yet
+// reads as unreleased rather than searching. It may be an estimate from the
+// theatrical date; it shapes the state only and never reaches the wire.
+func (s *TitleStatusService) movieItem(ctx context.Context, mediaItem model.MediaItem, tmdbID int64, wants map[uuid.UUID]model.Want) (titlestatus.Item, error) {
+	files, err := s.repo.ListFilesForItem(ctx, mediaItem.ID)
 	if err != nil {
 		return titlestatus.Item{}, err
 	}
 
-	item := titlestatus.Item{}
+	item := titlestatus.Item{ObtainableAt: MovieSearchFrom(mediaItem)}
 	for _, f := range files {
 		if f.Exists != nil && *f.Exists {
 			item.HasFile = true

@@ -33,6 +33,8 @@ const subline = computed(() => {
   switch (state.value) {
     case 'available':
       return 'Available to watch'
+    case 'unreleased':
+      return waitLine.value
     case 'not_requested':
       return releaseLine.value
     default:
@@ -40,21 +42,31 @@ const subline = computed(() => {
   }
 })
 
+const theatrical = computed(() => props.movie.releaseDates?.theatrical || props.movie.releaseDate)
+
+// A requested film that isn't out yet says when it's expected. The projection
+// carries the home-release date only when one is announced; otherwise the
+// cinema release is all there is to say, and no date is invented for home.
+const waitLine = computed(() => {
+  const home = status.value?.homeReleaseDate
+  if (home) return `Expected ${dayMonth(home)}`
+  const cinema = theatrical.value
+  if (cinema && isoDate(cinema) > todayIso()) {
+    return `In cinemas ${dayMonth(cinema)} · home release not announced yet`
+  }
+  return 'In cinemas · home release not announced yet'
+})
+
 // Release dates are TMDB metadata the page already holds, not acquisition state,
 // so rendering them here is copy rather than a second derivation.
-//
-// They also stand in for a state the projection cannot reach yet: no obtainable
-// date is persisted for a movie, so an unreleased film derives as not_requested
-// rather than unreleased (REQ-UNREL-003). Until that date exists server-side,
-// this line is what tells a user the film simply isn't out.
 const releaseLine = computed(() => {
   const rd = props.movie.releaseDates
-  const parts: string[] = []
-  if (rd?.theatrical) parts.push(`In theaters ${formatDate(rd.theatrical)}`)
-  if (rd?.digital) parts.push(`digital release ${formatDate(rd.digital)}`)
-  else if (rd?.theatrical) parts.push('digital release not yet announced')
-  const line = parts.join(' · ')
-  if (line) return line.charAt(0).toUpperCase() + line.slice(1)
+  if (rd?.theatrical) {
+    const home = rd.digital
+      ? `digital release ${dayMonth(rd.digital)}`
+      : 'home release not announced yet'
+    return `In cinemas ${dayMonth(rd.theatrical)} · ${home}`
+  }
   return props.movie.releaseDate ? `Released ${formatDate(props.movie.releaseDate)}` : ''
 })
 
@@ -70,6 +82,28 @@ const downloadMeta = computed(() => {
   parts.push(formatEta(p.etaSeconds))
   return parts.filter(Boolean).join(' · ')
 })
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// isoDate reduces a date or timestamp to its YYYY-MM-DD part. Release dates are
+// calendar days, so they are read as written rather than shifted into the
+// viewer's time zone.
+function isoDate(iso: string): string {
+  return iso.slice(0, 10)
+}
+
+function todayIso(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+// dayMonth renders a release date as "12 Sep".
+function dayMonth(iso: string): string {
+  const [, month, day] = isoDate(iso).split('-').map(Number)
+  if (!month || !day || month > 12) return iso
+  return `${day} ${MONTHS[month - 1]}`
+}
 
 function formatDate(iso?: string): string {
   if (!iso) return ''
