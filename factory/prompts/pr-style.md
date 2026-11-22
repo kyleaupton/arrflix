@@ -1,5 +1,5 @@
 <!--
-How the factory writes for the human reviewer. run-stage puts the part after
+How the factory writes for the human reviewer. The engine puts the part after
 the marker into any prompt with a {{PR_STYLE}} placeholder; the judge uses it
 for the fields that open the PR body (needs_you, what_works).
 

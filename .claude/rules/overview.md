@@ -42,6 +42,18 @@ The backend is strictly layered. Requests flow **handler → service → repo �
 - **Repo** (`internal/repo/`) — the only layer that touches SQLC/`pgtype`. Every method routes DB errors through `apperrors.FromPg`, returns `model.*` (never `dbgen.*`), and owns the `dbgen → model` / `pgtype ↔ Go` translation. It knows nothing about HTTP status codes.
 - **Domain modules** (`internal/<domain>/`) — the **pure** half of a feature: engines, parsers, registries, aggregators, and the domain types they return. They are stateless (or hold only in-memory state) and **MUST compile without importing `internal/repo`, `internal/db/sqlc`, or `pgtype`.** When a domain module needs persistence, the `*Service` in `internal/service/` is what holds the repo and does the `domain-record → repo params` translation — **do not** define a `FooService` inside `internal/foo/` or push a repo-shaped interface into a domain package. That inversion is the most common design-time mistake; if you're reaching for it, the service belongs in `internal/service/` instead.
 
+### Acquisition decisions are rule-driven (product invariant)
+
+Anything a user might want to vary while acquiring a title is decided by a consumer of the **rules substrate** (`internal/rules`, the Subject in `internal/model/subject.go`), evaluated against the Subject for that acquisition. The substrate has one evaluator and one field registry; each consumer owns what a match *means*:
+
+| Consumer | Decides | Reduction |
+| --- | --- | --- |
+| Quality profiles | which release, if any | reject, or add a score weight |
+| Routing | where a grab goes: downloader, library, name template, save location | apply an action set; unset slots fall back to defaults |
+| Name templates | what the imported file is called | render registry fields |
+
+A new option in the acquisition flow is a new **registry field** (more context to ask about) or a new **action on an existing consumer**. It is never a fixed setting on a downloader, library or user. A fixed setting is only the *default* a rule can override. If a decision fits no existing consumer, raise it as a design question instead of adding a setting. Never build a second evaluator or condition vocabulary. `specs/patterns/rules/README.md` is the source of truth.
+
 ### The error model (cross-cutting — relevant to every design)
 
 Errors are typed via `internal/errors` (`apperrors`). The kind determines the wire status:
