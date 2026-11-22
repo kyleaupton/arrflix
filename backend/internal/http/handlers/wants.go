@@ -29,9 +29,11 @@ type WantsCancelOutput struct {
 	Body model.Want
 }
 
-// Cancel flips a want (and its tracking) terminal and cancels its in-flight
-// download job + pending import tasks. Any authenticated user may cancel today;
-// restricting to requester-or-admin is the deferred per-action authz work.
+// Cancel stops acquiring a want: it flips the tracking to 'canceled' and
+// cancels the want with any job not yet handed to the downloader. A download
+// already in the downloader finishes and is imported. Any authenticated user may
+// cancel today; restricting to requester-or-admin is the deferred per-action
+// authz work.
 func (h *Wants) Cancel(ctx context.Context, input *WantsCancelInput) (*WantsCancelOutput, error) {
 	want, err := h.svc.Wants.CancelWant(ctx, input.ID)
 	if err != nil {
@@ -48,7 +50,7 @@ func (h *Wants) RegisterHumachi(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/wants/{id}/cancel",
 		Summary:     "Cancel a want",
-		Description: "Cancels a want (and its tracking), stopping its in-flight download job and pending import tasks. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.",
+		Description: "Stops acquiring a want and cancels its tracking. A want still searching, or whose download job hasn't been sent to the downloader, is cancelled with that job and its pending import tasks; a download already handed to the downloader is left to finish and be imported, and the want is returned as it stands. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.",
 		Tags:        []string{"tracking"},
 		Errors:      errs(errsRead, errsWrite),
 	}, h.Cancel)

@@ -12,12 +12,14 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countUsersByRole = `-- name: CountUsersByRole :one
-SELECT COUNT(*) FROM user_role WHERE role_id = $1
+const countActiveUsersByRole = `-- name: CountActiveUsersByRole :one
+SELECT COUNT(*) FROM user_role ur
+JOIN app_user u ON u.id = ur.user_id
+WHERE ur.role_id = $1 AND u.is_active
 `
 
-func (q *Queries) CountUsersByRole(ctx context.Context, roleID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countUsersByRole, roleID)
+func (q *Queries) CountActiveUsersByRole(ctx context.Context, roleID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveUsersByRole, roleID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -301,6 +303,23 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockRoleByName = `-- name: LockRoleByName :one
+SELECT id, name, description, built_in, created_at FROM role WHERE name = $1 FOR UPDATE
+`
+
+func (q *Queries) LockRoleByName(ctx context.Context, name string) (Role, error) {
+	row := q.db.QueryRow(ctx, lockRoleByName, name)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.BuiltIn,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const unassignAllRoles = `-- name: UnassignAllRoles :exec

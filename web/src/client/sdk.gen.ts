@@ -888,7 +888,7 @@ export const requestsApprove = <ThrowOnError extends boolean = false>(options: O
 /**
  * Cancel a request
  *
- * Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409; already-canceled is idempotent.
+ * Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409, as is a request whose title is already available; already-canceled is idempotent.
  */
 export const requestsCancel = <ThrowOnError extends boolean = false>(options: Options<RequestsCancelData, ThrowOnError>): RequestResult<RequestsCancelResponses, RequestsCancelErrors, ThrowOnError> => (options.client ?? client).post<RequestsCancelResponses, RequestsCancelErrors, ThrowOnError>({ url: '/api/v1/requests/{id}/cancel', ...options });
 
@@ -1272,7 +1272,7 @@ export const versionGet = <ThrowOnError extends boolean = false>(options?: Optio
 /**
  * Cancel a want
  *
- * Cancels a want (and its tracking), stopping its in-flight download job and pending import tasks. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.
+ * Stops acquiring a want and cancels its tracking. A want still searching, or whose download job hasn't been sent to the downloader, is cancelled with that job and its pending import tasks; a download already handed to the downloader is left to finish and be imported, and the want is returned as it stands. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.
  */
 export const wantsCancel = <ThrowOnError extends boolean = false>(options: Options<WantsCancelData, ThrowOnError>): RequestResult<WantsCancelResponses, WantsCancelErrors, ThrowOnError> => (options.client ?? client).post<WantsCancelResponses, WantsCancelErrors, ThrowOnError>({ url: '/api/v1/wants/{id}/cancel', ...options });
 

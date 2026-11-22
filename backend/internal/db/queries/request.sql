@@ -48,6 +48,10 @@ FROM request
 JOIN app_user ON app_user.id = request.requested_by
 ORDER BY request.created_at DESC;
 
+-- SetRequestApproved and SetRequestDenied are compare-and-swaps from 'pending':
+-- of two concurrent decisions on one request only the first to write matches a
+-- row; the other matches none (pgx.ErrNoRows) and leaves the winner's decision
+-- standing.
 -- name: SetRequestApproved :one
 UPDATE request
 SET status = 'approved',
@@ -56,6 +60,7 @@ SET status = 'approved',
     decision_auto = false,
     updated_at = now()
 WHERE id = sqlc.arg(id)
+  AND status = 'pending'
 RETURNING *;
 
 -- name: SetRequestSpawned :one
@@ -75,6 +80,7 @@ SET status = 'denied',
     decision_auto = false,
     updated_at = now()
 WHERE id = sqlc.arg(id)
+  AND status = 'pending'
 RETURNING *;
 
 -- SetRequestCanceled records a withdrawal: decision_auto is left NULL (a cancel

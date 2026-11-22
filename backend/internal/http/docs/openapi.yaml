@@ -10961,7 +10961,7 @@ paths:
         - requests
   /api/v1/requests/{id}/cancel:
     post:
-      description: Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409; already-canceled is idempotent.
+      description: Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409, as is a request whose title is already available; already-canceled is idempotent.
       operationId: requests-cancel
       parameters:
         - description: Request ID
@@ -12885,7 +12885,7 @@ paths:
         - version
   /api/v1/wants/{id}/cancel:
     post:
-      description: Cancels a want (and its tracking), stopping its in-flight download job and pending import tasks. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.
+      description: Stops acquiring a want and cancels its tracking. A want still searching, or whose download job hasn't been sent to the downloader, is cancelled with that job and its pending import tasks; a download already handed to the downloader is left to finish and be imported, and the want is returned as it stands. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.
       operationId: wants-cancel
       parameters:
         - description: Want ID

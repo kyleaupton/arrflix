@@ -17,9 +17,10 @@ import (
 	"github.com/kyleaupton/arrflix/internal/test/testapp"
 )
 
-// TestTracking_Cancel proves stop-tracking: every non-terminal want (and its
-// in-flight download job) is canceled, the tracking is normalized to 'canceled',
-// and an already-'available' want plus its file are left intact.
+// TestTracking_Cancel proves stop-tracking: a want still searching is canceled,
+// a want whose download is already in the downloader is left to finish with its
+// job (story 07), the tracking is normalized to 'canceled', and an
+// already-'available' want plus its file are left intact.
 func TestTracking_Cancel(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -181,18 +182,19 @@ func TestTracking_Cancel(t *testing.T) {
 			t.Errorf("%s want status = %q, want %q", label, got.Status, wantStatus)
 		}
 	}
-	// Non-terminal wants flipped canceled; the available want is untouched.
+	// The pending want is canceled; the downloading want and the available want
+	// are untouched.
 	assertWantStatus("pending", wPending.ID, model.WantCanceled)
-	assertWantStatus("downloading", wDownloading.ID, model.WantCanceled)
+	assertWantStatus("downloading", wDownloading.ID, model.WantDownloading)
 	assertWantStatus("available", wAvail.ID, model.WantAvailable)
 
-	// The in-flight job for the downloading want is cancelled.
+	// The handed-off job for the downloading want keeps running.
 	gotJob, err := app.Repo.GetDownloadJob(ctx, job.ID)
 	if err != nil {
 		t.Fatalf("get download job: %v", err)
 	}
-	if gotJob.Status != "cancelled" {
-		t.Errorf("download job status = %q, want %q", gotJob.Status, "cancelled")
+	if gotJob.Status != "downloading" {
+		t.Errorf("download job status = %q, want %q", gotJob.Status, "downloading")
 	}
 
 	// The available want's file is left intact.

@@ -73,8 +73,13 @@ SELECT * FROM role ORDER BY name ASC;
 -- name: GetRoleByName :one
 SELECT * FROM role WHERE name = $1;
 
--- name: CountUsersByRole :one
-SELECT COUNT(*) FROM user_role WHERE role_id = $1;
+-- name: LockRoleByName :one
+SELECT * FROM role WHERE name = $1 FOR UPDATE;
+
+-- name: CountActiveUsersByRole :one
+SELECT COUNT(*) FROM user_role ur
+JOIN app_user u ON u.id = ur.user_id
+WHERE ur.role_id = $1 AND u.is_active;
 
 -- name: GetIdentityByProviderSubject :one
 SELECT * FROM user_identity WHERE provider = $1 AND subject = $2;

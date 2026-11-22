@@ -2,9 +2,11 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -144,19 +146,24 @@ func (r *Repository) ListRequests(ctx context.Context) ([]model.Request, error) 
 	return out, nil
 }
 
-// SetRequestApproved transitions a request to 'approved' and stamps the manual
-// decision provenance (decided_by = the approver, decision_auto = false). The
-// subsequent SetRequestSpawned leaves these fields intact, so a spawned request
-// still carries who approved it.
-func (r *Repository) SetRequestApproved(ctx context.Context, id, approverID uuid.UUID) (model.Request, error) {
+// SetRequestApproved transitions a pending request to 'approved' and stamps the
+// manual decision provenance (decided_by = the approver, decision_auto = false).
+// The subsequent SetRequestSpawned leaves these fields intact, so a spawned
+// request still carries who approved it. It is a compare-and-swap from
+// 'pending': the bool reports whether it landed, false meaning the request had
+// already left 'pending' (another decision won).
+func (r *Repository) SetRequestApproved(ctx context.Context, id, approverID uuid.UUID) (model.Request, bool, error) {
 	row, err := r.Q.SetRequestApproved(ctx, dbgen.SetRequestApprovedParams{
 		ID:        pgtypeFromUUID(id),
 		DecidedBy: pgtypeFromUUID(approverID),
 	})
 	if err != nil {
-		return model.Request{}, apperrors.FromPg(err, "mark request %s approved", id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Request{}, false, nil
+		}
+		return model.Request{}, false, apperrors.FromPg(err, "mark request %s approved", id)
 	}
-	return toModelRequest(row), nil
+	return toModelRequest(row), true, nil
 }
 
 func (r *Repository) SetRequestSpawned(ctx context.Context, id, trackingID uuid.UUID) (model.Request, error) {
@@ -170,18 +177,23 @@ func (r *Repository) SetRequestSpawned(ctx context.Context, id, trackingID uuid.
 	return toModelRequest(row), nil
 }
 
-// SetRequestDenied transitions a request to 'denied' with an optional reason and
-// stamps the manual decision provenance (decided_by = the denier).
-func (r *Repository) SetRequestDenied(ctx context.Context, id, approverID uuid.UUID, deniedReason *string) (model.Request, error) {
+// SetRequestDenied transitions a pending request to 'denied' with an optional
+// reason and stamps the manual decision provenance (decided_by = the denier).
+// Like SetRequestApproved it is a compare-and-swap from 'pending': false means
+// the request had already left 'pending'.
+func (r *Repository) SetRequestDenied(ctx context.Context, id, approverID uuid.UUID, deniedReason *string) (model.Request, bool, error) {
 	row, err := r.Q.SetRequestDenied(ctx, dbgen.SetRequestDeniedParams{
 		ID:           pgtypeFromUUID(id),
 		DeniedReason: deniedReason,
 		DecidedBy:    pgtypeFromUUID(approverID),
 	})
 	if err != nil {
-		return model.Request{}, apperrors.FromPg(err, "mark request %s denied", id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Request{}, false, nil
+		}
+		return model.Request{}, false, apperrors.FromPg(err, "mark request %s denied", id)
 	}
-	return toModelRequest(row), nil
+	return toModelRequest(row), true, nil
 }
 
 // SetRequestCanceled transitions a request to 'canceled' and records who

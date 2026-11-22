@@ -112,7 +112,7 @@ func (s *UsersService) Update(ctx context.Context, id uuid.UUID, email, username
 		user    model.User
 		revoked int64
 	)
-	err := s.repo.InTx(ctx, func(r *repo.Repository) error {
+	err := s.withLastAdminGuard(ctx, "cannot deactivate the last active admin", "UsersService.Update", func(r *repo.Repository) error {
 		var err error
 		user, err = r.UpdateUser(ctx, repo.UpdateUserParams{
 			ID:       id,
@@ -170,12 +170,13 @@ func (s *UsersService) AssignRole(ctx context.Context, userID uuid.UUID, roleNam
 		return err
 	}
 
-	// Unassign all existing roles first
-	if err := s.repo.UnassignAllRoles(ctx, userID); err != nil {
-		return err
-	}
-
-	if err := s.repo.AssignRole(ctx, userID, role.ID); err != nil {
+	err = s.withLastAdminGuard(ctx, "cannot demote the last active admin", "UsersService.AssignRole", func(tx *repo.Repository) error {
+		if err := tx.UnassignAllRoles(ctx, userID); err != nil {
+			return err
+		}
+		return tx.AssignRole(ctx, userID, role.ID)
+	})
+	if err != nil {
 		return err
 	}
 
@@ -190,23 +191,38 @@ func (s *UsersService) AssignRole(ctx context.Context, userID uuid.UUID, roleNam
 
 // Delete removes a user
 func (s *UsersService) Delete(ctx context.Context, id uuid.UUID) error {
-	// Check if this is the last admin
-	roles, err := s.repo.ListUserRoles(ctx, id)
-	if err == nil {
-		for _, role := range roles {
-			if role.Name == "admin" {
-				// Count admins
-				adminRole, _ := s.repo.GetRoleByName(ctx, "admin")
-				count, _ := s.repo.CountUsersByRole(ctx, adminRole.ID)
-				if count <= 1 {
-					return apperrors.Conflictf("cannot delete the last admin user").
-						Op("UsersService.Delete")
-				}
-			}
-		}
-	}
+	return s.withLastAdminGuard(ctx, "cannot delete the last active admin", "UsersService.Delete", func(tx *repo.Repository) error {
+		return tx.DeleteUser(ctx, id)
+	})
+}
 
-	return s.repo.DeleteUser(ctx, id)
+// withLastAdminGuard runs change in a transaction and refuses it as a Conflict
+// when it takes the install from at least one active admin to none. Every
+// path that can remove an active admin goes through here: the admin role row
+// is locked first, so concurrent guarded changes serialize and each one counts
+// the others' committed result rather than a stale snapshot.
+func (s *UsersService) withLastAdminGuard(ctx context.Context, refusal, op string, change func(tx *repo.Repository) error) error {
+	return s.repo.InTx(ctx, func(tx *repo.Repository) error {
+		admin, err := tx.LockRoleByName(ctx, model.RoleAdmin)
+		if err != nil {
+			return err
+		}
+		before, err := tx.CountActiveUsersByRole(ctx, admin.ID)
+		if err != nil {
+			return err
+		}
+		if err := change(tx); err != nil {
+			return err
+		}
+		after, err := tx.CountActiveUsersByRole(ctx, admin.ID)
+		if err != nil {
+			return err
+		}
+		if before > 0 && after == 0 {
+			return apperrors.Conflictf("%s", refusal).Op(op)
+		}
+		return nil
+	})
 }
 
 // ListRoles returns all available roles
