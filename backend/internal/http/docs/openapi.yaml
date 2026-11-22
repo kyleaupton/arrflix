@@ -2754,6 +2754,17 @@ components:
         readAt:
           format: date-time
           type: string
+        resolution:
+          description: How the condition cleared; set with resolvedAt
+          enum:
+            - approved
+            - denied
+            - withdrawn
+          type: string
+        resolvedAt:
+          description: When the condition behind the notification cleared; a resolved entry is not unread
+          format: date-time
+          type: string
         title:
           type: string
       required:

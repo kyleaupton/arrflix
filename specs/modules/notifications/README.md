@@ -4,7 +4,7 @@ status: v1
 
 # Notifications — typed events, templated delivery, per-user routing
 
-> **Beyond what's built:** the `admin` audience and its [reverse resolver](#admin-recipient-resolution), the [resolution lifecycle](#resolvable-notifications-resolution-lifecycle), [dedup coalescing](#dedup-and-coalescing), event-level preference overrides, the admin bundles, and every event except `want.available` (user) and `invite.created` (transactional email) describe unbuilt design. Password-reset and 2FA producers don't exist. V1's slice is the `want.available` notification in [Happy path](../../V1.md#request-a-movie-get-it-be-told--happy-path).
+> **Beyond what's built:** the `admin` audience and its [reverse resolver](#admin-recipient-resolution), the [resolution lifecycle](#resolvable-notifications-resolution-lifecycle) beyond `request.pending`, [dedup coalescing](#dedup-and-coalescing), event-level preference overrides, the admin bundles, and every event except `want.available` (user) and `invite.created` (transactional email) describe unbuilt design. Password-reset and 2FA producers don't exist. V1's slice is the `want.available` notification in [Happy path](../../V1.md#request-a-movie-get-it-be-told--happy-path).
 
 This doc defines how Arrflix produces, routes, and delivers notifications across multiple channels (push, in-app, email, and a future-extensible set). It captures the three-audience model that distinguishes user-facing from admin-facing from system-bypass events, the typed-event API that doubles as the event registry, the per-event-type × per-channel template system, the shared outbox-and-retry delivery substrate, and the bundled preference model. It does **not** pin column types, API shapes, or specific UI layouts — those are implementation.
 
@@ -213,7 +213,7 @@ Every enqueue writes one row per `(recipient, channel)` pair to `notification_ou
 | `channel`               | `push` / `in_app` / `email`                                                            |
 | `payload`               | JSONB — the typed event's serialized payload                                           |
 | `dedup_key`             | nullable — see [Dedup](#dedup-and-coalescing)                                          |
-| `status`                | `queued` / `delivering` / `delivered` / `failed` / `dead` / `awaiting_config` / `superseded` (`failed` and `superseded` are reserved; nothing writes them) |
+| `status`                | `queued` / `delivering` / `delivered` / `failed` / `dead` / `awaiting_config` / `superseded` (`failed` is reserved; nothing writes it. `superseded` is written by `request.pending` resolution) |
 | `attempts`              | integer; incremented on each failed try                                                |
 | `next_attempt_at`       | timestamptz, default `now()`; pushed out on retry back-off                             |
 | `claimed_at`            | nullable timestamptz — when the worker claimed the row into `delivering`               |
@@ -223,7 +223,8 @@ Every enqueue writes one row per `(recipient, channel)` pair to `notification_ou
 | `read_at`               | nullable timestamptz — `in_app` only; updated by the bell-icon UI                     |
 | `resolvable`            | **Unbuilt.** bool — true if this event represents a standing condition with a resolution lifecycle (see [Resolvable notifications](#resolvable-notifications-resolution-lifecycle)) |
 | `resolution_state`      | **Unbuilt.** nullable — `active` / `resolved`; only set when `resolvable`             |
-| `resolved_at`           | **Unbuilt.** nullable timestamptz — when the condition cleared                        |
+| `resolved_at`           | nullable timestamptz — `in_app` only; when the condition cleared. A resolved row doesn't count as unread |
+| `resolution`            | nullable — `approved` / `denied` / `withdrawn`; how it cleared, set with `resolved_at` |
 
 The delivery worker (`internal/jobs/notification`, 5s poll, batches of 50) selects `status='queued' AND next_attempt_at <= now()`. If the channel's adapter isn't configured, a non-transactional row parks as `awaiting_config` before being claimed. Otherwise it claims the row with a compare-and-swap to `delivering` (stamping `claimed_at`), hands it to the adapter, and settles it: `delivered`, back to `queued` with back-off (transient), or `dead` (permanent — no adapter for the channel, a malformed payload, a rejected address, or retries exhausted). A reaper returns rows stuck in `delivering` for over 5 minutes to the queue, which is the crash-window self-heal. A transactional row on an unconfigured channel fails as retryable and eventually dies, so it never waits silently. A resolvable row whose condition clears before delivery transitions to `superseded` (cancelled, never sent) — see [Resolvable notifications](#resolvable-notifications-resolution-lifecycle).
 
@@ -269,6 +270,8 @@ The headline win: a "still searching" push that hasn't fired yet is *cancelled* 
 **Relationship to dedup (resolves [open question #4](#open-questions)).** Resolution also settles drop-vs-replace: for a **resolvable** event, a repeat enqueue under the same `(dedup_key, recipient)` while a row is still `active` **replaces** the payload (you want the latest state of the standing condition — e.g. "47 considered" → "52 considered"), keeping the original `created_at`. For a **transient** event, the original behavior holds — the repeat is **dropped**. So drop is the default; replace is what resolvable conditions get.
 
 One-shot events are unaffected: no `resolvable` flag, no `resolution_state`, exactly today's behavior.
+
+**What's built.** Only `request.pending` resolves, keyed on its dedup key (`request:<id>:request.pending`), via `NotificationService.ResolveRequestPending` — called after a request is approved, denied or withdrawn while pending, best-effort. It differs from the generic model above in one place: every recipient's `in_app` row is resolved whatever its delivery status (a still-queued one is delivered resolved, not superseded), so the bell shows the request dimmed with its outcome. Undelivered `push`/`email` rows (`queued` or `awaiting_config`) become `superseded`; delivered and in-flight rows are left alone. There is no `resolvable` flag, `Resolves:` declaration, or replace-on-repeat yet.
 
 ### Push subscriptions
 

@@ -41,6 +41,17 @@ const (
 	OutboxSuperseded     NotificationStatus = "superseded"
 )
 
+// NotificationResolution is how the condition behind a resolvable notification
+// cleared. Today only request.pending is resolvable: its request was approved,
+// denied, or withdrawn by the requester.
+type NotificationResolution string
+
+const (
+	ResolutionApproved  NotificationResolution = "approved"
+	ResolutionDenied    NotificationResolution = "denied"
+	ResolutionWithdrawn NotificationResolution = "withdrawn"
+)
+
 // NotificationOutbox is the domain shape for a notification_outbox row — one
 // delivery attempt and, once delivered on the in_app channel, one bell-icon
 // history entry. A row targets either a known user (RecipientUserID) or a literal
@@ -49,8 +60,9 @@ const (
 // preference-gating at enqueue and must never park as awaiting_config at delivery.
 // DeliveredAt/ReadAt are nil until the worker delivers and the user reads. ClaimedAt
 // is the worker's claim stamp, meaningful only while Status is 'delivering' — it is
-// how the crash-window reaper spots a row whose worker died mid-delivery. Mirrors
-// dbgen.NotificationOutbox.
+// how the crash-window reaper spots a row whose worker died mid-delivery.
+// ResolvedAt/Resolution are set together, on in_app rows only, once the condition
+// a resolvable notification asks about clears. Mirrors dbgen.NotificationOutbox.
 type NotificationOutbox struct {
 	ID              uuid.UUID       `json:"id"`
 	EventType       string          `json:"eventType"`
@@ -69,6 +81,8 @@ type NotificationOutbox struct {
 	ClaimedAt       *time.Time      `json:"claimedAt"`
 	DeliveredAt     *time.Time      `json:"deliveredAt"`
 	ReadAt          *time.Time      `json:"readAt"`
+	ResolvedAt      *time.Time      `json:"resolvedAt"`
+	Resolution      *string         `json:"resolution"`
 }
 
 // InboxNotification is the bell-icon read shape: a delivered in_app outbox row
@@ -76,14 +90,18 @@ type NotificationOutbox struct {
 // frontend renders text server-side (one templating syntax across the app) while
 // Payload still carries the structured extras (poster path, deep link) a rich
 // card wants. It is a read projection of NotificationOutbox, not a stored row.
+// A resolved entry (ResolvedAt set) no longer counts as unread; the bell shows it
+// dimmed with its Resolution.
 type InboxNotification struct {
-	ID        uuid.UUID       `json:"id"`
-	EventType string          `json:"eventType"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body"`
-	Payload   json.RawMessage `json:"payload"`
-	CreatedAt time.Time       `json:"createdAt"`
-	ReadAt    *time.Time      `json:"readAt,omitempty"`
+	ID         uuid.UUID       `json:"id"`
+	EventType  string          `json:"eventType"`
+	Title      string          `json:"title"`
+	Body       string          `json:"body"`
+	Payload    json.RawMessage `json:"payload"`
+	CreatedAt  time.Time       `json:"createdAt"`
+	ReadAt     *time.Time      `json:"readAt,omitempty"`
+	ResolvedAt *time.Time      `json:"resolvedAt,omitempty" doc:"When the condition behind the notification cleared; a resolved entry is not unread"`
+	Resolution *string         `json:"resolution,omitempty" enum:"approved,denied,withdrawn" doc:"How the condition cleared; set with resolvedAt"`
 }
 
 // BundlePreference is the prefs read view for one preference bundle: whether the

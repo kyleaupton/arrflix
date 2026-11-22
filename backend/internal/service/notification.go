@@ -132,13 +132,15 @@ func (s *NotificationService) Inbox(ctx context.Context, userID uuid.UUID, limit
 			title, body = row.EventType, ""
 		}
 		out = append(out, model.InboxNotification{
-			ID:        row.ID,
-			EventType: row.EventType,
-			Title:     title,
-			Body:      body,
-			Payload:   row.Payload,
-			CreatedAt: row.CreatedAt,
-			ReadAt:    row.ReadAt,
+			ID:         row.ID,
+			EventType:  row.EventType,
+			Title:      title,
+			Body:       body,
+			Payload:    row.Payload,
+			CreatedAt:  row.CreatedAt,
+			ReadAt:     row.ReadAt,
+			ResolvedAt: row.ResolvedAt,
+			Resolution: row.Resolution,
 		})
 	}
 	return out, nil
@@ -253,6 +255,23 @@ func (s *NotificationService) NotifyRequestDenied(ctx context.Context, req model
 		RequestID: req.ID,
 		Media:     media,
 		Reason:    reason,
+	})
+}
+
+// ResolveRequestPending clears a request's request.pending from every reviewer's
+// attention once the request stops being pending: each recipient's bell row is
+// resolved with the outcome, and push/email rows not yet sent are superseded so
+// no one is alerted afterwards. A push already delivered is left alone — it can't
+// be reliably withdrawn, and its tap target (the approval queue) no longer lists
+// the request.
+func (s *NotificationService) ResolveRequestPending(ctx context.Context, requestID uuid.UUID, outcome model.NotificationResolution) error {
+	key := notifications.RequestPendingDedupKey(requestID)
+	return s.repo.InTx(ctx, func(r *repo.Repository) error {
+		if _, err := r.ResolveInAppByDedupKey(ctx, key, outcome); err != nil {
+			return err
+		}
+		_, err := r.SupersedeUndeliveredByDedupKey(ctx, key)
+		return err
 	})
 }
 

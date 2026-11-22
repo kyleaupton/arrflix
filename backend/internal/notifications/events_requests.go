@@ -25,7 +25,7 @@ func (e RequestPending) EventType() string                    { return EventRequ
 func (e RequestPending) Audience() model.NotificationAudience { return model.AudienceAdmin }
 func (e RequestPending) Bundle() string                       { return BundleAdminAlerts }
 func (e RequestPending) Recipients() []uuid.UUID              { return e.Deciders }
-func (e RequestPending) DedupKey() string                     { return requestDedupKey(e.RequestID, EventRequestPending) }
+func (e RequestPending) DedupKey() string                     { return RequestPendingDedupKey(e.RequestID) }
 func (e RequestPending) Payload() any                         { return e }
 
 // RequestApproved — audience: user, bundle: my_requests. Emitted when an operator
@@ -66,6 +66,12 @@ const (
 	EventRequestApproved = "request.approved"
 	EventRequestDenied   = "request.denied"
 )
+
+// RequestPendingDedupKey is the dedup key of a request's request.pending rows —
+// the handle by which they are resolved once the request is decided.
+func RequestPendingDedupKey(requestID uuid.UUID) string {
+	return requestDedupKey(requestID, EventRequestPending)
+}
 
 func requestDedupKey(id uuid.UUID, eventType string) string {
 	return "request:" + id.String() + ":" + eventType

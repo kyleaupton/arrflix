@@ -585,6 +585,8 @@ type NotificationOutbox struct {
 	ClaimedAt       pgtype.Timestamptz `json:"claimed_at"`
 	RecipientEmail  *string            `json:"recipient_email"`
 	Transactional   bool               `json:"transactional"`
+	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
+	Resolution      *string            `json:"resolution"`
 }
 
 type NotificationPreference struct {

@@ -132,12 +132,41 @@ WHERE recipient_user_id = sqlc.arg(user_id)
 ORDER BY created_at DESC
 LIMIT sqlc.arg(row_limit);
 
+-- CountUnreadInbox is the bell badge. A resolved row is no longer asking for
+-- attention, so it doesn't count even if the user never opened it.
 -- name: CountUnreadInbox :one
 SELECT count(*) FROM notification_outbox
 WHERE recipient_user_id = sqlc.arg(user_id)
   AND channel = 'in_app'
   AND status = 'delivered'
-  AND read_at IS NULL;
+  AND read_at IS NULL
+  AND resolved_at IS NULL;
+
+-- ResolveInAppByDedupKey stamps every recipient's in_app row for one resolvable
+-- notification with its outcome, whatever the row's delivery status, so a row
+-- delivered later still lands resolved. The first resolution wins: a row already
+-- resolved keeps its outcome. Returns the number of rows resolved.
+-- name: ResolveInAppByDedupKey :execrows
+UPDATE notification_outbox
+SET resolved_at = now(),
+    resolution = sqlc.arg(resolution)
+WHERE dedup_key = sqlc.arg(dedup_key)
+  AND channel = 'in_app'
+  AND resolved_at IS NULL;
+
+-- SupersedeUndeliveredByDedupKey cancels the outbound (push/email) rows of a
+-- resolvable notification that haven't gone out yet — queued (fresh or awaiting
+-- a retry) or parked awaiting_config — so no one is alerted about a condition
+-- that already cleared. A row the worker has claimed ('delivering') is left to
+-- finish; the worker's own transitions are guarded on status='queued', so a row
+-- superseded between its poll and its claim is never delivered. Returns the
+-- number of rows superseded.
+-- name: SupersedeUndeliveredByDedupKey :execrows
+UPDATE notification_outbox
+SET status = 'superseded'
+WHERE dedup_key = sqlc.arg(dedup_key)
+  AND channel <> 'in_app'
+  AND status IN ('queued', 'failed', 'awaiting_config');
 
 -- MarkInboxRead marks one entry read, guarded by recipient so a user only touches
 -- their own rows. Idempotent — re-marking a read row is a no-op.

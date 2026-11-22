@@ -18,8 +18,11 @@ WHERE recipient_user_id = $1
   AND channel = 'in_app'
   AND status = 'delivered'
   AND read_at IS NULL
+  AND resolved_at IS NULL
 `
 
+// CountUnreadInbox is the bell badge. A resolved row is no longer asking for
+// attention, so it doesn't count even if the user never opened it.
 func (q *Queries) CountUnreadInbox(ctx context.Context, userID pgtype.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countUnreadInbox, userID)
 	var count int64
@@ -42,7 +45,7 @@ VALUES (
   $7,
   $8
 )
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional, resolved_at, resolution
 `
 
 type EnqueueOutboxParams struct {
@@ -95,12 +98,14 @@ func (q *Queries) EnqueueOutbox(ctx context.Context, arg EnqueueOutboxParams) (N
 		&i.ClaimedAt,
 		&i.RecipientEmail,
 		&i.Transactional,
+		&i.ResolvedAt,
+		&i.Resolution,
 	)
 	return i, err
 }
 
 const getOutbox = `-- name: GetOutbox :one
-SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional FROM notification_outbox WHERE id = $1
+SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional, resolved_at, resolution FROM notification_outbox WHERE id = $1
 `
 
 func (q *Queries) GetOutbox(ctx context.Context, id pgtype.UUID) (NotificationOutbox, error) {
@@ -124,12 +129,14 @@ func (q *Queries) GetOutbox(ctx context.Context, id pgtype.UUID) (NotificationOu
 		&i.ClaimedAt,
 		&i.RecipientEmail,
 		&i.Transactional,
+		&i.ResolvedAt,
+		&i.Resolution,
 	)
 	return i, err
 }
 
 const listDueOutbox = `-- name: ListDueOutbox :many
-SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional FROM notification_outbox
+SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional, resolved_at, resolution FROM notification_outbox
 WHERE status = 'queued' AND next_attempt_at <= now()
 ORDER BY created_at
 LIMIT $1
@@ -166,6 +173,8 @@ func (q *Queries) ListDueOutbox(ctx context.Context, batchSize int32) ([]Notific
 			&i.ClaimedAt,
 			&i.RecipientEmail,
 			&i.Transactional,
+			&i.ResolvedAt,
+			&i.Resolution,
 		); err != nil {
 			return nil, err
 		}
@@ -178,7 +187,7 @@ func (q *Queries) ListDueOutbox(ctx context.Context, batchSize int32) ([]Notific
 }
 
 const listInbox = `-- name: ListInbox :many
-SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional FROM notification_outbox
+SELECT id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional, resolved_at, resolution FROM notification_outbox
 WHERE recipient_user_id = $1
   AND channel = 'in_app'
   AND status = 'delivered'
@@ -220,6 +229,8 @@ func (q *Queries) ListInbox(ctx context.Context, arg ListInboxParams) ([]Notific
 			&i.ClaimedAt,
 			&i.RecipientEmail,
 			&i.Transactional,
+			&i.ResolvedAt,
+			&i.Resolution,
 		); err != nil {
 			return nil, err
 		}
@@ -303,7 +314,7 @@ const markOutboxAwaitingConfig = `-- name: MarkOutboxAwaitingConfig :one
 UPDATE notification_outbox
 SET status = 'awaiting_config'
 WHERE id = $1 AND status = 'queued'
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional, resolved_at, resolution
 `
 
 // MarkOutboxAwaitingConfig parks a queued row whose channel adapter isn't
@@ -333,6 +344,8 @@ func (q *Queries) MarkOutboxAwaitingConfig(ctx context.Context, id pgtype.UUID) 
 		&i.ClaimedAt,
 		&i.RecipientEmail,
 		&i.Transactional,
+		&i.ResolvedAt,
+		&i.Resolution,
 	)
 	return i, err
 }
@@ -343,7 +356,7 @@ SET status = 'dead',
     attempts = attempts + 1,
     last_error = $1
 WHERE id = $2
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional, resolved_at, resolution
 `
 
 type MarkOutboxDeadParams struct {
@@ -372,6 +385,8 @@ func (q *Queries) MarkOutboxDead(ctx context.Context, arg MarkOutboxDeadParams) 
 		&i.ClaimedAt,
 		&i.RecipientEmail,
 		&i.Transactional,
+		&i.ResolvedAt,
+		&i.Resolution,
 	)
 	return i, err
 }
@@ -380,7 +395,7 @@ const markOutboxDelivered = `-- name: MarkOutboxDelivered :one
 UPDATE notification_outbox
 SET status = 'delivered', delivered_at = now()
 WHERE id = $1
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional, resolved_at, resolution
 `
 
 func (q *Queries) MarkOutboxDelivered(ctx context.Context, id pgtype.UUID) (NotificationOutbox, error) {
@@ -404,6 +419,8 @@ func (q *Queries) MarkOutboxDelivered(ctx context.Context, id pgtype.UUID) (Noti
 		&i.ClaimedAt,
 		&i.RecipientEmail,
 		&i.Transactional,
+		&i.ResolvedAt,
+		&i.Resolution,
 	)
 	return i, err
 }
@@ -413,7 +430,7 @@ UPDATE notification_outbox
 SET status = 'delivering',
     claimed_at = now()
 WHERE id = $1 AND status = 'queued'
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional, resolved_at, resolution
 `
 
 // MarkOutboxDelivering is the worker's claim: it flips a queued row to
@@ -443,6 +460,8 @@ func (q *Queries) MarkOutboxDelivering(ctx context.Context, id pgtype.UUID) (Not
 		&i.ClaimedAt,
 		&i.RecipientEmail,
 		&i.Transactional,
+		&i.ResolvedAt,
+		&i.Resolution,
 	)
 	return i, err
 }
@@ -456,7 +475,7 @@ SET status = 'queued',
     claimed_at = NULL
 WHERE status = 'delivering'
   AND claimed_at < $2
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional, resolved_at, resolution
 `
 
 type ReclaimStaleDeliveringParams struct {
@@ -504,6 +523,8 @@ func (q *Queries) ReclaimStaleDelivering(ctx context.Context, arg ReclaimStaleDe
 			&i.ClaimedAt,
 			&i.RecipientEmail,
 			&i.Transactional,
+			&i.ResolvedAt,
+			&i.Resolution,
 		); err != nil {
 			return nil, err
 		}
@@ -541,7 +562,7 @@ SET status = 'queued',
     next_attempt_at = $1,
     last_error = $2
 WHERE id = $3
-RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional
+RETURNING id, event_type, audience, recipient_user_id, channel, payload, dedup_key, status, attempts, next_attempt_at, last_error, created_at, delivered_at, read_at, claimed_at, recipient_email, transactional, resolved_at, resolution
 `
 
 type RescheduleOutboxParams struct {
@@ -574,8 +595,36 @@ func (q *Queries) RescheduleOutbox(ctx context.Context, arg RescheduleOutboxPara
 		&i.ClaimedAt,
 		&i.RecipientEmail,
 		&i.Transactional,
+		&i.ResolvedAt,
+		&i.Resolution,
 	)
 	return i, err
+}
+
+const resolveInAppByDedupKey = `-- name: ResolveInAppByDedupKey :execrows
+UPDATE notification_outbox
+SET resolved_at = now(),
+    resolution = $1
+WHERE dedup_key = $2
+  AND channel = 'in_app'
+  AND resolved_at IS NULL
+`
+
+type ResolveInAppByDedupKeyParams struct {
+	Resolution *string `json:"resolution"`
+	DedupKey   *string `json:"dedup_key"`
+}
+
+// ResolveInAppByDedupKey stamps every recipient's in_app row for one resolvable
+// notification with its outcome, whatever the row's delivery status, so a row
+// delivered later still lands resolved. The first resolution wins: a row already
+// resolved keeps its outcome. Returns the number of rows resolved.
+func (q *Queries) ResolveInAppByDedupKey(ctx context.Context, arg ResolveInAppByDedupKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resolveInAppByDedupKey, arg.Resolution, arg.DedupKey)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setBundleEmail = `-- name: SetBundleEmail :one
@@ -671,4 +720,27 @@ func (q *Queries) SetBundleSubscribed(ctx context.Context, arg SetBundleSubscrib
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const supersedeUndeliveredByDedupKey = `-- name: SupersedeUndeliveredByDedupKey :execrows
+UPDATE notification_outbox
+SET status = 'superseded'
+WHERE dedup_key = $1
+  AND channel <> 'in_app'
+  AND status IN ('queued', 'failed', 'awaiting_config')
+`
+
+// SupersedeUndeliveredByDedupKey cancels the outbound (push/email) rows of a
+// resolvable notification that haven't gone out yet — queued (fresh or awaiting
+// a retry) or parked awaiting_config — so no one is alerted about a condition
+// that already cleared. A row the worker has claimed ('delivering') is left to
+// finish; the worker's own transitions are guarded on status='queued', so a row
+// superseded between its poll and its claim is never delivered. Returns the
+// number of rows superseded.
+func (q *Queries) SupersedeUndeliveredByDedupKey(ctx context.Context, dedupKey *string) (int64, error) {
+	result, err := q.db.Exec(ctx, supersedeUndeliveredByDedupKey, dedupKey)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

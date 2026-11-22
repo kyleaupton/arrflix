@@ -614,6 +614,7 @@ func (s *RequestService) Approve(ctx context.Context, approverID, requestID uuid
 	if !ok {
 		return model.Request{}, apperrors.Conflictf("request %s is no longer pending", requestID).Op(op)
 	}
+	s.resolvePending(ctx, requestID, model.ResolutionApproved)
 	// The approval is committed whether or not the spawn succeeds (a failed
 	// spawn leaves the request recoverable in 'approved'), so the requester is
 	// told either way.
@@ -652,8 +653,19 @@ func (s *RequestService) Deny(ctx context.Context, approverID, requestID uuid.UU
 	if !ok {
 		return model.Request{}, apperrors.Conflictf("request %s is no longer pending", requestID).Op(op)
 	}
+	s.resolvePending(ctx, requestID, model.ResolutionDenied)
 	s.notifyDecision(ctx, denied, s.notify.NotifyRequestDenied)
 	return denied, nil
+}
+
+// resolvePending clears the request's request.pending notification from every
+// reviewer once the request has left pending. Like notifyDecision it runs after
+// the change commits and is best-effort: a failure is logged and never fails the
+// decision.
+func (s *RequestService) resolvePending(ctx context.Context, requestID uuid.UUID, outcome model.NotificationResolution) {
+	if err := s.notify.ResolveRequestPending(ctx, requestID, outcome); err != nil {
+		s.log.Warn().Err(err).Str("request_id", requestID.String()).Str("outcome", string(outcome)).Msg("request.pending notification not resolved")
+	}
 }
 
 // notifyDecision resolves the request's title and hands it to a request
@@ -757,7 +769,14 @@ func (s *RequestService) Cancel(ctx context.Context, userID, requestID uuid.UUID
 	default:
 		// pending (nothing spawned) or the transient approved-without-tracking
 		// state: just mark canceled.
-		return s.repo.SetRequestCanceled(ctx, requestID, userID)
+		canceled, err := s.repo.SetRequestCanceled(ctx, requestID, userID)
+		if err != nil {
+			return model.Request{}, err
+		}
+		if req.Status == string(model.RequestPending) {
+			s.resolvePending(ctx, requestID, model.ResolutionWithdrawn)
+		}
+		return canceled, nil
 	}
 }
 

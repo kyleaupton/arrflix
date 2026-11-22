@@ -11,7 +11,21 @@ const emit = defineEmits<{
   read: [id: string]
 }>()
 
-const isUnread = computed(() => !props.notification.readAt)
+// A resolved notification (e.g. a pending request someone has since decided) no
+// longer asks for attention: it stays in the list, dimmed and labelled with its
+// outcome, and never reads as unread.
+const isResolved = computed(() => !!props.notification.resolvedAt)
+const isUnread = computed(() => !props.notification.readAt && !isResolved.value)
+
+const outcomeLabels: Record<NonNullable<InboxNotification['resolution']>, string> = {
+  approved: 'Approved',
+  denied: 'Declined',
+  withdrawn: 'Withdrawn',
+}
+const outcome = computed(() => {
+  const r = props.notification.resolution
+  return isResolved.value && r ? outcomeLabels[r] : null
+})
 
 // The payload is an opaque bag of template extras (see InboxNotification). Read
 // the one field the card uses defensively — a poster thumbnail when the event
@@ -30,7 +44,7 @@ const when = computed(() => timeAgo(props.notification.createdAt))
   <button
     type="button"
     class="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-    :class="{ 'bg-primary/5': isUnread }"
+    :class="{ 'bg-primary/5': isUnread, 'opacity-60': isResolved }"
     @click="emit('read', notification.id)"
   >
     <!-- Poster thumbnail, or a neutral placeholder so text aligns across rows. -->
@@ -62,7 +76,10 @@ const when = computed(() => timeAgo(props.notification.createdAt))
       <p class="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
         {{ notification.body }}
       </p>
-      <p class="mt-1 text-xs text-muted-foreground/70">{{ when }}</p>
+      <p class="mt-1 text-xs text-muted-foreground/70">
+        <span v-if="outcome" class="font-medium text-muted-foreground">{{ outcome }} · </span>
+        {{ when }}
+      </p>
     </div>
   </button>
 </template>
