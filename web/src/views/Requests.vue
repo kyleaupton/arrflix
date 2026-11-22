@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { toast } from 'vue-sonner'
 import { Inbox, ClipboardCheck } from 'lucide-vue-next'
@@ -24,7 +25,11 @@ const auth = useAuthStore()
 const modal = useModal()
 const queryClient = useQueryClient()
 
-const activeTab = ref('mine')
+const route = useRoute()
+
+// ?tab=queue opens the review queue directly (a pending-request notification
+// links here); it falls back to My Requests for anyone who can't review.
+const activeTab = ref(route.query.tab === 'queue' && auth.canReviewRequests ? 'queue' : 'mine')
 
 // My Requests reads the whole list and filters to the caller: a view.any holder
 // gets everyone's requests from this endpoint, so the self-filter is what makes

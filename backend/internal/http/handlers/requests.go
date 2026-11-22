@@ -132,7 +132,7 @@ func (h *Requests) Approve(ctx context.Context, input *RequestsApproveInput) (*R
 type RequestsDenyInput struct {
 	ID   uuid.UUID `path:"id" format:"uuid" doc:"Request ID"`
 	Body struct {
-		Reason *string `json:"reason,omitempty" doc:"Optional reason shown to the requester"`
+		Reason string `json:"reason" required:"true" doc:"Why the request was declined; shown to the requester. Must not be blank."`
 	}
 }
 
@@ -221,7 +221,7 @@ func (h *Requests) RegisterHumachi(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/requests/{id}/deny",
 		Summary:     "Deny a pending request",
-		Description: "Denies a pending request with an optional reason. Requires a deny permission for the request's media type. A non-pending request is a 409.",
+		Description: "Denies a pending request with a reason, which the requester is notified of. Requires a deny permission for the request's media type. A blank reason is a 422; a non-pending request is a 409.",
 		Tags:        []string{"requests"},
 		Errors:      errs(errsRead, errsForbidden, []int{http.StatusConflict}),
 	}, h.Deny)

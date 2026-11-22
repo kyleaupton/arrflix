@@ -69,6 +69,9 @@ type Message struct {
 	// which is the only layer that owns them. A message without media (a test
 	// send, a future non-media alert) opens the app root.
 	Media *MessageMedia `json:"media,omitempty"`
+	// Event is the notification's event type (e.g. "request.pending"). The
+	// service worker routes a tap on it when the target isn't the title itself.
+	Event string `json:"event,omitempty"`
 }
 
 // MessageMedia is the routing slice of a notification's media: enough to

@@ -4782,8 +4782,10 @@ components:
           readOnly: true
           type: string
         reason:
-          description: Optional reason shown to the requester
+          description: Why the request was declined; shown to the requester. Must not be blank.
           type: string
+      required:
+        - reason
       type: object
     Resolved:
       additionalProperties: false
@@ -11055,7 +11057,7 @@ paths:
         - requests
   /api/v1/requests/{id}/deny:
     post:
-      description: Denies a pending request with an optional reason. Requires a deny permission for the request's media type. A non-pending request is a 409.
+      description: Denies a pending request with a reason, which the requester is notified of. Requires a deny permission for the request's media type. A blank reason is a 422; a non-pending request is a 409.
       operationId: requests-deny
       parameters:
         - description: Request ID

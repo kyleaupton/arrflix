@@ -8,7 +8,7 @@ Two people submit requests within seconds of each other. Neither auto-approves. 
 
 This is the **human-in-the-loop story** — the bottleneck [the happy path](./01-happy-path-auto-approve.md) deliberately skips. It validates the queue, both decision paths, the reason flowing back to the requester, and who is allowed to see what.
 
-> **Triage note.** The decision mechanics and the queue itself shipped and work. Everything that *tells anyone about them* did not: **no admin is notified that a request is waiting, and no requester is notified of the outcome.** That inverts the story — the flow below reads as a communication story, and the communication is the unbuilt half. Field names and mechanism have been removed per [the stories contract](./README.md).
+> **Triage note.** The decision mechanics and the queue itself shipped and work. The basic communication now does too: reviewers are notified that a request is waiting, and requesters are notified of the outcome, with the reason on a denial. What remains unbuilt is its refinement — grouping, self-clearing alerts, the approver's note, and a quieter denial. Field names and mechanism have been removed per [the stories contract](./README.md).
 
 ## Cast
 
@@ -33,13 +33,15 @@ They tap Request. The pill reads **"Awaiting approval"** — deliberately not th
 
 **Behind the scenes:** the create grant is checked, auto-approval is found not to apply, and the request is held pending. **An admin is notified that something needs review.**
 
-> **Unbuilt.** Nothing is emitted when a request lands in the queue. **No admin is told anything.** The queue is real and correct; discovering that it has something in it depends entirely on someone opening it.
+> **Built.** Every active user who may decide the request is notified when it lands in the queue — in the bell, and by push unless they've turned it off. The requester is not.
 
 ### Phase 2 — Cousin submits an HD request (T+10s)
 
 **User-visible:** Cousin sees HD as their only option, with the same up-front warning that new accounts are reviewed. Same pill, same toast.
 
 **Notifications, and the grouping question:** this is the second thing needing review inside ten seconds. Two separate alerts for what a reviewer will handle in one sitting is noise; they should arrive as one — *"2 requests need review."*
+
+> **Unbuilt.** Each request sends its own alert.
 
 ### Phase 3 — Admin reviews the queue (T+15 min)
 
@@ -72,7 +74,7 @@ The request is approved and immediately spawns the acquisition machinery. From h
 
 **User-visible:** a notification that the request was approved, carrying the admin's note. The pill moves from *Awaiting approval* to ordinary acquisition status, and the film arrives.
 
-> **Unbuilt.** No decision notification exists. Friend's page will eventually reflect reality if they look at it; nothing tells them.
+> **Partly built.** Friend is notified that the request was approved. The admin's note is not built, so the notification can't carry one.
 
 ### Phase 6 — Cousin learns they were denied (T+~16 min)
 
@@ -80,7 +82,7 @@ The request is approved and immediately spawns the acquisition machinery. From h
 
 The request is terminal and read-only. Cousin can ask again; nothing structurally prevents it.
 
-> **Unbuilt.** Same as Phase 5 — the reason is stored and displayed on the request, but nothing delivers it.
+> **Partly built.** Cousin is notified of the denial, with the reason, and the reason is shown inline on the request. The denial is delivered on the same channels as an approval, push included, rather than more quietly.
 
 ## Postconditions
 
@@ -95,8 +97,8 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ### A decision reaches a decider
 
-- **REQ-APPROVE-001** — A request needing review must reach someone able to decide it, without them having to check. **Not currently true:** nothing is emitted when a request enters the queue.
-- **REQ-APPROVE-002** — Multiple requests arriving close together must not produce one alert each. *True only by omission* — no alert is produced at all (REQ-APPROVE-001).
+- **REQ-APPROVE-001** — A request needing review must reach someone able to decide it, without them having to check. *Currently true:* a request entering the queue notifies every active user who may decide it (in-app, plus push by default), never the requester.
+- **REQ-APPROVE-002** — Multiple requests arriving close together must not produce one alert each. **Not currently true:** each pending request sends its own alert.
 - **REQ-APPROVE-003** — Deciding a request must clear it from every reviewer's attention, including reviewers who did not act on it. **Unbuilt**, and dependent on the missing resolution lifecycle.
 
 ### The decision is informed
@@ -107,10 +109,10 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ### The outcome reaches the requester
 
-- **REQ-APPROVE-007** — A requester must learn the outcome of their request without checking. **Not currently true** for either outcome.
-- **REQ-APPROVE-008** — A denial must carry a reason, and the requester must see it. *Half true:* the interface requires a reason (the API accepts a denial without one), and it is stored and shown inline on the requester's requests view. Nothing delivers it.
+- **REQ-APPROVE-007** — A requester must learn the outcome of their request without checking. *Currently true* for both outcomes: an operator's approval or denial notifies the requester. An auto-approved request sends no approval notice; its next notification is the ready one.
+- **REQ-APPROVE-008** — A denial must carry a reason, and the requester must see it. *Currently true:* the API rejects a blank reason with a 422, the reason is stored and shown on the requester's requests view, and the denial notification carries it.
 - **REQ-APPROVE-009** — An approver's note, where given, must reach the requester. **Unbuilt** — there is nowhere to record one.
-- **REQ-APPROVE-010** — Bad news must not be delivered more loudly than good news. A denial defaults to a quieter channel than an approval. *True only by omission* — neither outcome is delivered (REQ-APPROVE-007).
+- **REQ-APPROVE-010** — Bad news must not be delivered more loudly than good news. A denial defaults to a quieter channel than an approval. **Not currently true:** both outcomes are delivered on the same channels.
 
 ### Nothing waits forever
 

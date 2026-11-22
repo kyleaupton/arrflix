@@ -2081,9 +2081,9 @@ export type RequestsDenyInputBody = {
      */
     readonly $schema?: string;
     /**
-     * Optional reason shown to the requester
+     * Why the request was declined; shown to the requester. Must not be blank.
      */
-    reason?: string;
+    reason: string;
 };
 
 export type Resolved = {
@@ -3810,9 +3810,9 @@ export type RequestCreateBodyWritable = {
 
 export type RequestsDenyInputBodyWritable = {
     /**
-     * Optional reason shown to the requester
+     * Why the request was declined; shown to the requester. Must not be blank.
      */
-    reason?: string;
+    reason: string;
 };
 
 export type RoutingEvaluateBodyWritable = {

@@ -243,7 +243,7 @@ func TestNotification_EnqueueEmailWhenOptedIn(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
 	r := repo.New(pool)
-	svc := service.NewNotificationService(r)
+	svc := service.NewNotificationService(r, service.NewAuthzService(r))
 	ctx := context.Background()
 
 	user := newNotifUser(t, ctx, r, "notif-email-optin@test.local")
@@ -369,7 +369,7 @@ func TestNotificationWorker_EmailRequeueDrains(t *testing.T) {
 
 	// 2. Configure an enabled relay and drain the parked backlog back to queued.
 	seedEmailProvider(t, ctx, r, host, port, true)
-	n, err := service.NewNotificationService(r).RequeueAwaitingConfig(ctx, time.Now().Add(-time.Hour))
+	n, err := service.NewNotificationService(r, service.NewAuthzService(r)).RequeueAwaitingConfig(ctx, time.Now().Add(-time.Hour))
 	if err != nil {
 		t.Fatalf("requeue: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestNotification_EnqueueTransactionalEmail(t *testing.T) {
 	pool := dbtest.New(t)
 	r := repo.New(pool)
 	ctx := context.Background()
-	svc := service.NewNotificationService(r)
+	svc := service.NewNotificationService(r, service.NewAuthzService(r))
 
 	payload := notifications.InviteCreatedPayload{AcceptURL: "https://arrflix.test/accept?token=t"}
 

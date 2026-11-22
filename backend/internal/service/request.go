@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,6 +11,7 @@ import (
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/notifications"
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/qualityprofile"
 	"github.com/kyleaupton/arrflix/internal/repo"
@@ -32,10 +34,11 @@ type RequestService struct {
 	reconcile  *ReconcileService
 	authz      *AuthzService
 	titles     *TitleStatusService
+	notify     *NotificationService
 }
 
-func NewRequestService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, quality *QualityProfileService, enrichment *EnrichmentService, reconcile *ReconcileService, authz *AuthzService, titles *TitleStatusService) *RequestService {
-	return &RequestService{repo: r, log: l, tmdb: tmdb, quality: quality, enrichment: enrichment, reconcile: reconcile, authz: authz, titles: titles}
+func NewRequestService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, quality *QualityProfileService, enrichment *EnrichmentService, reconcile *ReconcileService, authz *AuthzService, titles *TitleStatusService, notify *NotificationService) *RequestService {
+	return &RequestService{repo: r, log: l, tmdb: tmdb, quality: quality, enrichment: enrichment, reconcile: reconcile, authz: authz, titles: titles, notify: notify}
 }
 
 // CreateRequestInput is the writeable shape for a new request. Type is the
@@ -133,7 +136,7 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 	// deliberately does not — it's the approving operator's call, not the
 	// requester's.
 	if !autoApprove {
-		return s.repo.CreateRequest(ctx, repo.CreateRequestParams{
+		pending, err := s.repo.CreateRequest(ctx, repo.CreateRequestParams{
 			RequestedBy: in.RequestedBy,
 			TmdbID:      in.TmdbID,
 			Type:        in.Type,
@@ -141,6 +144,11 @@ func (s *RequestService) Create(ctx context.Context, in CreateRequestInput) (mod
 			Status:      string(model.RequestPending),
 			ScopeRule:   in.ScopeRule,
 		})
+		if err != nil {
+			return model.Request{}, err
+		}
+		s.notifyDecision(ctx, pending, s.notify.NotifyRequestPending)
+		return pending, nil
 	}
 
 	// Auto path: create the request already approved, with self-decided
@@ -606,15 +614,26 @@ func (s *RequestService) Approve(ctx context.Context, approverID, requestID uuid
 	if !ok {
 		return model.Request{}, apperrors.Conflictf("request %s is no longer pending", requestID).Op(op)
 	}
-	return s.spawnFor(ctx, approved, tier, string(model.AutonomyAuto), string(model.AutonomyAuto))
+	// The approval is committed whether or not the spawn succeeds (a failed
+	// spawn leaves the request recoverable in 'approved'), so the requester is
+	// told either way.
+	spawned, err := s.spawnFor(ctx, approved, tier, string(model.AutonomyAuto), string(model.AutonomyAuto))
+	s.notifyDecision(ctx, approved, s.notify.NotifyRequestApproved)
+	return spawned, err
 }
 
-// Deny rejects a pending request with an optional reason, refining the coarse
-// deny gate against the request's exact media type and stamping the decision
-// provenance (decided_by = the denier). A request that isn't pending — checked
+// Deny rejects a pending request with a reason the requester is shown, refining
+// the coarse deny gate against the request's exact media type and stamping the
+// decision provenance (decided_by = the denier). An empty or whitespace-only
+// reason is a Validation error. A request that isn't pending — checked
 // atomically by the decision write — is a Conflict.
-func (s *RequestService) Deny(ctx context.Context, approverID, requestID uuid.UUID, reason *string) (model.Request, error) {
+func (s *RequestService) Deny(ctx context.Context, approverID, requestID uuid.UUID, reason string) (model.Request, error) {
 	const op = "RequestService.Deny"
+
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return model.Request{}, apperrors.Validation("invalid denial", apperrors.Field("body.reason", "required")).Op(op)
+	}
 
 	req, err := s.repo.GetRequest(ctx, requestID)
 	if err != nil {
@@ -626,14 +645,68 @@ func (s *RequestService) Deny(ctx context.Context, approverID, requestID uuid.UU
 	if err := s.authz.Require(ctx, approverID, authz.RequestDeny(model.MediaType(req.Type)), nil); err != nil {
 		return model.Request{}, err
 	}
-	denied, ok, err := s.repo.SetRequestDenied(ctx, requestID, approverID, reason)
+	denied, ok, err := s.repo.SetRequestDenied(ctx, requestID, approverID, &reason)
 	if err != nil {
 		return model.Request{}, err
 	}
 	if !ok {
 		return model.Request{}, apperrors.Conflictf("request %s is no longer pending", requestID).Op(op)
 	}
+	s.notifyDecision(ctx, denied, s.notify.NotifyRequestDenied)
 	return denied, nil
+}
+
+// notifyDecision resolves the request's title and hands it to a request
+// producer. It is best-effort, like the import worker's NotifyWantAvailable: a
+// failure is logged and never fails the request action that already committed.
+func (s *RequestService) notifyDecision(ctx context.Context, req model.Request, produce func(context.Context, model.Request, notifications.MediaRef) error) {
+	media, err := s.mediaRefFor(ctx, req)
+	if err == nil {
+		err = produce(ctx, req, media)
+	}
+	if err != nil {
+		s.log.Warn().Err(err).Str("request_id", req.ID.String()).Str("status", req.Status).Msg("request notification not enqueued")
+	}
+}
+
+// mediaRefFor describes the request's title for a notification. A tracked title
+// has a media item; a pending or denied request usually doesn't, so its title
+// comes from TMDB (served from the response cache when already fetched).
+func (s *RequestService) mediaRefFor(ctx context.Context, req model.Request) (notifications.MediaRef, error) {
+	ref := notifications.MediaRef{TmdbID: req.TmdbID, Type: model.MediaType(req.Type)}
+	item, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, req.TmdbID, req.Type)
+	switch {
+	case err == nil:
+		ref.Title = item.Title
+		if item.Year != nil {
+			ref.Year = int(*item.Year)
+		}
+		if item.PosterPath != nil {
+			ref.PosterPath = *item.PosterPath
+		}
+		return ref, nil
+	case !apperrors.IsNotFound(err):
+		return ref, err
+	}
+
+	var date string
+	if req.Type == string(parsing.DomainSeries) {
+		details, err := s.tmdb.GetSeriesDetails(ctx, req.TmdbID)
+		if err != nil {
+			return ref, err
+		}
+		ref.Title, ref.PosterPath, date = details.Name, details.PosterPath, details.FirstAirDate
+	} else {
+		details, err := s.tmdb.GetMovieDetails(ctx, req.TmdbID)
+		if err != nil {
+			return ref, err
+		}
+		ref.Title, ref.PosterPath, date = details.Title, details.PosterPath, details.ReleaseDate
+	}
+	if t := parseReleaseDate(date); t != nil {
+		ref.Year = t.Year()
+	}
+	return ref, nil
 }
 
 // Cancel withdraws a request, gated own/any: a holder of requests.cancel.any

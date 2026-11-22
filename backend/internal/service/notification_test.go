@@ -17,7 +17,7 @@ import (
 func TestRegisterPushSubscription_ValidationRejects(t *testing.T) {
 	t.Parallel()
 
-	svc := NewNotificationService(nil)
+	svc := NewNotificationService(nil, nil)
 	ctx := context.Background()
 
 	cases := []struct {
@@ -48,7 +48,7 @@ func TestRegisterPushSubscription_ValidationRejects(t *testing.T) {
 func TestSetPreference_ValidationRejects(t *testing.T) {
 	t.Parallel()
 
-	svc := NewNotificationService(nil)
+	svc := NewNotificationService(nil, nil)
 	ctx := context.Background()
 
 	cases := []struct {

@@ -21,8 +21,8 @@ import (
 
 // Preference bundle names group event types for toggling. They are stable strings
 // (stored in notification_preference.bundle); renaming one is a data migration, so
-// treat them as frozen. v1 ships the two user-audience bundles; the admin bundles
-// are declared for forward reference and light up with the admin audience (v1.1).
+// treat them as frozen. admin_alerts is the one live admin-audience bundle;
+// admin_summaries is declared for forward reference and has no catalog entry yet.
 const (
 	BundleMyRequests      = "my_requests"
 	BundleLibraryActivity = "library_activity"
@@ -42,11 +42,10 @@ type Bundle struct {
 	Defaults   map[model.NotificationChannel]bool
 }
 
-// bundles is the static bundle catalog. Every user-audience bundle is subscribed by
-// default (a new user is in the bell for it). Outbound defaults follow the spec:
-// my_requests pushes by default; library_activity does not; email defaults off
-// everywhere (inert until SMTP is configured). Only user-audience bundles are
-// populated in v1.
+// bundles is the static bundle catalog. Every bundle is subscribed by default (a
+// new user is in the bell for it). Outbound defaults follow the spec: my_requests
+// and admin_alerts push by default; library_activity does not; email defaults off
+// everywhere (inert until SMTP is configured).
 var bundles = map[string]Bundle{
 	BundleMyRequests: {
 		Name:       BundleMyRequests,
@@ -66,17 +65,35 @@ var bundles = map[string]Bundle{
 			model.ChannelEmail: false,
 		},
 	},
+	BundleAdminAlerts: {
+		Name:       BundleAdminAlerts,
+		Audience:   model.AudienceAdmin,
+		Subscribed: true,
+		Defaults: map[model.NotificationChannel]bool{
+			model.ChannelPush:  true,
+			model.ChannelEmail: false,
+		},
+	},
 }
 
-// UserBundles returns the user-audience bundles in a stable (name-sorted) order.
-// It is the single source of truth for "which preference groups does a v1 user
-// toggle?" — the prefs read API iterates it, so a bundle added to the catalog with
-// AudienceUser is surfaced without touching the caller. Admin-audience bundles are
-// excluded until the admin audience lands (v1.1).
+// UserBundles returns the user-audience bundles in a stable (name-sorted) order:
+// the preference groups every user toggles. A bundle added to the catalog with
+// AudienceUser is surfaced to the prefs API without touching the caller.
 func UserBundles() []Bundle {
+	return bundlesFor(model.AudienceUser)
+}
+
+// AdminBundles returns the admin-audience bundles in a stable (name-sorted)
+// order. They belong only to users who may decide requests; the caller decides
+// who that is, since it is a permission question this package can't answer.
+func AdminBundles() []Bundle {
+	return bundlesFor(model.AudienceAdmin)
+}
+
+func bundlesFor(audience model.NotificationAudience) []Bundle {
 	out := make([]Bundle, 0, len(bundles))
 	for _, b := range bundles {
-		if b.Audience == model.AudienceUser {
+		if b.Audience == audience {
 			out = append(out, b)
 		}
 	}
@@ -92,13 +109,12 @@ type Event interface {
 	// EventType is the stable dotted identifier, e.g. "want.available". It keys
 	// templates and event-scope preferences.
 	EventType() string
-	// Audience fixes the recipient-resolution strategy. v1 events are all
-	// AudienceUser.
+	// Audience fixes the recipient-resolution strategy.
 	Audience() model.NotificationAudience
 	// Bundle is the preference group this event toggles under.
 	Bundle() string
-	// Recipients is the user-audience target set (one or more users). Empty for
-	// non-user audiences, whose recipients NotificationService resolves itself.
+	// Recipients is the target user set. For an admin-audience event it is the
+	// set NotificationService resolved from permissions when building the event.
 	Recipients() []uuid.UUID
 	// DedupKey is the optional coalescing key; "" means no coalescing.
 	DedupKey() string

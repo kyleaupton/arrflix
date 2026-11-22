@@ -51,6 +51,21 @@ var samples = []sample{
 		payload:   `{"media":{"title":"Severance"},"plexLink":"https://plex.example/web"}`,
 	},
 	{
+		eventType: "request.pending",
+		variant:   "with year",
+		payload:   `{"requestId":"00000000-0000-0000-0000-000000000001","media":{"title":"Dune: Part Two","year":2024},"requester":"alice"}`,
+	},
+	{
+		eventType: "request.approved",
+		variant:   "default",
+		payload:   `{"requestId":"00000000-0000-0000-0000-000000000001","media":{"title":"The Bear","year":2023}}`,
+	},
+	{
+		eventType: "request.denied",
+		variant:   "default",
+		payload:   `{"requestId":"00000000-0000-0000-0000-000000000001","media":{"title":"Severance"},"reason":"We already have this in 4K."}`,
+	},
+	{
 		eventType: "invite.created",
 		variant:   "default",
 		payload:   `{"acceptUrl":"https://arrflix.example/accept?token=demo-1a2b3c4d5e6f"}`,
