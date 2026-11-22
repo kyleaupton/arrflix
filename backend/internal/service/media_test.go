@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -118,14 +119,16 @@ func TestExtractMovieReleaseDates(t *testing.T) {
 // TestReqUnrel002_HomeReleaseIsEarliestDigitalOrPhysical — REQ-UNREL-002 — A
 // movie's obtainability is decided by its home-release date, not the
 // theatrical one: the earliest digital or physical date across US, GB, CA and
-// AU, ignoring theatrical releases and every other region.
+// AU, ignoring theatrical releases and every other region. A home date more
+// than a year after the movie's first release is a reissue and doesn't count.
 func TestReqUnrel002_HomeReleaseIsEarliestDigitalOrPhysical(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		json string
-		want string // "" = nil
+		name    string
+		json    string
+		primary string // TMDB's primary release_date; "" = unknown
+		want    string // "" = nil
 	}{
 		{
 			name: "nil input",
@@ -172,6 +175,38 @@ func TestReqUnrel002_HomeReleaseIsEarliestDigitalOrPhysical(t *testing.T) {
 			]}]}`,
 			want: "2026-11-01",
 		},
+		{
+			name:    "a home date over a year after the theatrical one is a reissue",
+			primary: "1975-06-20",
+			json: `{"results":[{"iso_3166_1":"US","release_dates":[
+				{"type":3,"release_date":"1975-06-20T00:00:00.000Z"},
+				{"type":5,"release_date":"2026-03-10T00:00:00.000Z"}
+			]}]}`,
+			want: "",
+		},
+		{
+			name: "the reissue window runs from the earliest theatrical date",
+			json: `{"results":[
+				{"iso_3166_1":"US","release_dates":[{"type":3,"release_date":"2025-01-10T00:00:00.000Z"}]},
+				{"iso_3166_1":"GB","release_dates":[{"type":3,"release_date":"2026-02-01T00:00:00.000Z"},{"type":4,"release_date":"2026-03-01T00:00:00.000Z"}]}
+			]}`,
+			want: "",
+		},
+		{
+			name:    "the reissue window runs from the primary date when no theatrical one is known",
+			primary: "1975-06-20",
+			json:    `{"results":[{"iso_3166_1":"US","release_dates":[{"type":4,"release_date":"2026-03-10T00:00:00.000Z"}]}]}`,
+			want:    "",
+		},
+		{
+			name:    "a home date within a year of release counts",
+			primary: "2026-07-03",
+			json: `{"results":[{"iso_3166_1":"US","release_dates":[
+				{"type":3,"release_date":"2026-07-03T00:00:00.000Z"},
+				{"type":4,"release_date":"2027-06-30T00:00:00.000Z"}
+			]}]}`,
+			want: "2027-06-30",
+		},
 	}
 
 	for _, tt := range tests {
@@ -186,7 +221,16 @@ func TestReqUnrel002_HomeReleaseIsEarliestDigitalOrPhysical(t *testing.T) {
 				}
 			}
 
-			got := extractMovieHomeReleaseDate(rd)
+			var primary *time.Time
+			if tt.primary != "" {
+				p, err := time.Parse("2006-01-02", tt.primary)
+				if err != nil {
+					t.Fatalf("parse primary: %v", err)
+				}
+				primary = &p
+			}
+
+			got := extractMovieHomeReleaseDate(rd, primary)
 			switch {
 			case tt.want == "" && got != nil:
 				t.Fatalf("want nil, got %v", *got)

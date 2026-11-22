@@ -131,14 +131,14 @@ func sameDate(a, b *time.Time) bool {
 // (see storeRawPayload). It returns the item as written.
 func (s *EnrichmentService) applyMovieMetadata(ctx context.Context, r *repo.Repository, item model.MediaItem, details tmdb.MovieDetails) (model.MediaItem, error) {
 	// Certification and the home-release date come from the appended release dates.
+	releaseDate := parseDateToTimePtr(details.ReleaseDate)
 	var certification string
 	var homeReleaseDate *time.Time
 	if details.MovieReleaseDatesAppend != nil && details.ReleaseDates != nil {
 		certification = extractMovieCertification(details.ReleaseDates)
-		homeReleaseDate = extractMovieHomeReleaseDate(details.ReleaseDates)
+		homeReleaseDate = extractMovieHomeReleaseDate(details.ReleaseDates, releaseDate)
 	}
 
-	releaseDate := parseDateToTimePtr(details.ReleaseDate)
 	runtime := int32(details.Runtime)
 	voteAvg := float64(details.VoteAverage)
 	voteCount := int32(details.VoteCount)

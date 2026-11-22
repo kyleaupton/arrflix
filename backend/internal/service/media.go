@@ -190,30 +190,52 @@ func extractMovieReleaseDates(releaseDates *tmdb.MovieReleaseDates) *model.Relea
 // release can't count. Revisit when the region becomes configurable.
 var homeReleaseRegions = map[string]bool{"US": true, "GB": true, "CA": true, "AU": true}
 
+// homeReleaseReissueWindow bounds how long after a movie's first release a
+// home release still counts as its first one. A later digital or physical date
+// is a reissue (a remaster, an anniversary disc) of a film long obtainable, so
+// it must not hold the movie back.
+const homeReleaseReissueWindow = 365 * 24 * time.Hour
+
 // extractMovieHomeReleaseDate picks a movie's home-release date: the earliest
 // digital (TMDB type 4) or physical (type 5) date across homeReleaseRegions.
 // Theatrical and other release types never count. Unlike
 // extractMovieReleaseDates, which keeps one region's trio together for display,
 // this mixes regions on purpose — the question is when any copy can first exist.
-// Nil when no qualifying date is known.
-func extractMovieHomeReleaseDate(releaseDates *tmdb.MovieReleaseDates) *time.Time {
+//
+// The movie's first release is the earliest theatrical date across
+// homeReleaseRegions or the primary release date, whichever is earlier. A home
+// date more than homeReleaseReissueWindow after it is a reissue and is ignored,
+// leaving the movie on the no-home-date rule. Nil when no qualifying date is
+// known.
+func extractMovieHomeReleaseDate(releaseDates *tmdb.MovieReleaseDates, primary *time.Time) *time.Time {
 	if releaseDates == nil || releaseDates.MovieReleaseDatesResults == nil {
 		return nil
 	}
+	first := primary
 	var earliest *time.Time
 	for _, result := range releaseDates.Results {
 		if !homeReleaseRegions[result.Iso3166_1] {
 			continue
 		}
 		for _, rd := range result.ReleaseDates {
-			if rd.Type != 4 && rd.Type != 5 {
+			d := parseDateToTimePtr(trimToDate(rd.ReleaseDate))
+			if d == nil {
 				continue
 			}
-			d := parseDateToTimePtr(trimToDate(rd.ReleaseDate))
-			if d != nil && (earliest == nil || d.Before(*earliest)) {
-				earliest = d
+			switch rd.Type {
+			case 3:
+				if first == nil || d.Before(*first) {
+					first = d
+				}
+			case 4, 5:
+				if earliest == nil || d.Before(*earliest) {
+					earliest = d
+				}
 			}
 		}
+	}
+	if earliest != nil && first != nil && earliest.Sub(*first) > homeReleaseReissueWindow {
+		return nil
 	}
 	return earliest
 }

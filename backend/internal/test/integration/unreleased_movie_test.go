@@ -180,7 +180,8 @@ func TestReqUnrel003_HomeReleaseDateIsStored(t *testing.T) {
 // issued for a title before it could plausibly be obtainable: for a movie, the
 // day before its home release, or 30 days after it reached cinemas when no home
 // release is known. A new want is born dormant until then, and a want that was
-// already being searched goes dormant after its next pass.
+// already being searched goes dormant after its next pass. A home date more than
+// a year after release is a reissue and holds nothing back.
 func TestReqUnrel004_NoSearchBeforeObtainable(t *testing.T) {
 	t.Parallel()
 
@@ -223,6 +224,36 @@ func TestReqUnrel004_NoSearchBeforeObtainable(t *testing.T) {
 		dormantOnCreate(t, movieWithReleases(t, theatrical,
 			releaseDate{"US", 3, theatrical},
 		), midnight(t, theatrical).Add(30*24*time.Hour))
+	})
+
+	t.Run("reissue: a home date years after release is not waited for", func(t *testing.T) {
+		t.Parallel()
+		// A 1975 film whose only home date is an upcoming physical reissue. That
+		// date isn't its first home release, so it falls back to theatrical + 30
+		// days — long past — and is searched straight away.
+		reissue := day(time.Now(), 40)
+		app, _, item := requestUnreleased(t, movieWithReleases(t, "1975-06-20",
+			releaseDate{"US", 3, "1975-06-20"},
+			releaseDate{"US", 5, reissue},
+		))
+		if item.HomeReleaseDate != nil {
+			t.Fatalf("home_release_date = %v, want nil (the %s physical date is a reissue)", *item.HomeReleaseDate, reissue)
+		}
+		if want := onlyWant(t, app, item); want.NextRunAt.After(time.Now()) {
+			t.Fatalf("new want due %v, want due now (not held dormant for the reissue)", want.NextRunAt)
+		}
+
+		var searches atomic.Int32
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go newAcquisitionWorker(app.Repo, countingSource(&searches)).Run(ctx)
+		deadline := time.Now().Add(10 * time.Second)
+		for searches.Load() == 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("no search issued; the reissue held the movie dormant")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 	})
 
 	t.Run("already searching: goes dormant after its next pass", func(t *testing.T) {

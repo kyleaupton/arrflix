@@ -90,7 +90,7 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 ### Not-yet-obtainable is a distinct condition
 
 - **REQ-UNREL-001** — A title that cannot yet be obtained must be presented as waiting for a date, never as searching or failing. *Currently true:* episodes reach the projection's *not out yet* state through their air date, and a requested movie reaches it while its search date — the day before its home release — is still ahead.
-- **REQ-UNREL-002** — For a movie, obtainability must be determined by the home-release date, not the theatrical one. A film in cinemas is released and not obtainable. *Currently true:* the home-release date is the earliest digital or physical release across US, GB, CA and AU, and the search schedule and the projection read it. With none announced, the theatrical date plus 30 days stands in, internally only.
+- **REQ-UNREL-002** — For a movie, obtainability must be determined by the home-release date, not the theatrical one. A film in cinemas is released and not obtainable. *Currently true:* the home-release date is the earliest digital or physical release across US, GB, CA and AU, and the search schedule and the projection read it. A digital or physical date more than a year after the first release is a reissue and is ignored. With none announced, the theatrical date plus 30 days stands in, internally only.
 - **REQ-UNREL-003** — The obtainable date must be durable, not recomputed per page view. *Currently true:* the home-release date is stored on the movie by enrichment and updated by each metadata refresh.
 
 ### The system does not chase what cannot exist
