@@ -229,7 +229,7 @@ func (q *Queries) CreateFileState(ctx context.Context, arg CreateFileStateParams
 const createMediaItem = `-- name: CreateMediaItem :one
 insert into media_item (type, title, year, tmdb_id)
 values ($1, $2, $3, $4)
-returning id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count
+returning id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count, home_release_date
 `
 
 type CreateMediaItemParams struct {
@@ -273,6 +273,7 @@ func (q *Queries) CreateMediaItem(ctx context.Context, arg CreateMediaItemParams
 		&i.MetadataLastAttemptedAt,
 		&i.MetadataLastError,
 		&i.MetadataAttemptCount,
+		&i.HomeReleaseDate,
 	)
 	return i, err
 }
@@ -517,7 +518,7 @@ func (q *Queries) GetInboxItem(ctx context.Context, fileID pgtype.UUID) (GetInbo
 }
 
 const getMediaItem = `-- name: GetMediaItem :one
-select id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count from media_item
+select id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count, home_release_date from media_item
 where id = $1
 `
 
@@ -550,12 +551,13 @@ func (q *Queries) GetMediaItem(ctx context.Context, id pgtype.UUID) (MediaItem, 
 		&i.MetadataLastAttemptedAt,
 		&i.MetadataLastError,
 		&i.MetadataAttemptCount,
+		&i.HomeReleaseDate,
 	)
 	return i, err
 }
 
 const getMediaItemByTmdbID = `-- name: GetMediaItemByTmdbID :one
-select id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count from media_item
+select id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count, home_release_date from media_item
 where tmdb_id = $1
 `
 
@@ -588,12 +590,13 @@ func (q *Queries) GetMediaItemByTmdbID(ctx context.Context, tmdbID *int64) (Medi
 		&i.MetadataLastAttemptedAt,
 		&i.MetadataLastError,
 		&i.MetadataAttemptCount,
+		&i.HomeReleaseDate,
 	)
 	return i, err
 }
 
 const getMediaItemByTmdbIDAndType = `-- name: GetMediaItemByTmdbIDAndType :one
-select id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count from media_item
+select id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count, home_release_date from media_item
 where tmdb_id = $1 and type = $2
 `
 
@@ -631,6 +634,7 @@ func (q *Queries) GetMediaItemByTmdbIDAndType(ctx context.Context, arg GetMediaI
 		&i.MetadataLastAttemptedAt,
 		&i.MetadataLastError,
 		&i.MetadataAttemptCount,
+		&i.HomeReleaseDate,
 	)
 	return i, err
 }
@@ -753,7 +757,7 @@ func (q *Queries) GetSeasonByNumber(ctx context.Context, arg GetSeasonByNumberPa
 }
 
 const listDueMediaItems = `-- name: ListDueMediaItems :many
-SELECT id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count FROM media_item
+SELECT id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count, home_release_date FROM media_item
 WHERE tmdb_id IS NOT NULL
   AND (next_refresh_at IS NULL OR next_refresh_at <= $1)
 ORDER BY next_refresh_at ASC NULLS FIRST
@@ -803,6 +807,7 @@ func (q *Queries) ListDueMediaItems(ctx context.Context, arg ListDueMediaItemsPa
 			&i.MetadataLastAttemptedAt,
 			&i.MetadataLastError,
 			&i.MetadataAttemptCount,
+			&i.HomeReleaseDate,
 		); err != nil {
 			return nil, err
 		}
@@ -1275,7 +1280,7 @@ func (q *Queries) ListInboxItems(ctx context.Context, arg ListInboxItemsParams) 
 
 const listMediaItems = `-- name: ListMediaItems :many
 
-select id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count from media_item
+select id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count, home_release_date from media_item
 order by created_at desc
 `
 
@@ -1315,6 +1320,7 @@ func (q *Queries) ListMediaItems(ctx context.Context) ([]MediaItem, error) {
 			&i.MetadataLastAttemptedAt,
 			&i.MetadataLastError,
 			&i.MetadataAttemptCount,
+			&i.HomeReleaseDate,
 		); err != nil {
 			return nil, err
 		}
@@ -1328,7 +1334,7 @@ func (q *Queries) ListMediaItems(ctx context.Context) ([]MediaItem, error) {
 
 const listMediaItemsPaginated = `-- name: ListMediaItemsPaginated :many
 
-SELECT id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count FROM media_item
+SELECT id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count, home_release_date FROM media_item
 WHERE
     ($1::text IS NULL OR type = $1) AND
     ($2::text IS NULL OR title ILIKE '%' || $2 || '%')
@@ -1395,6 +1401,7 @@ func (q *Queries) ListMediaItemsPaginated(ctx context.Context, arg ListMediaItem
 			&i.MetadataLastAttemptedAt,
 			&i.MetadataLastError,
 			&i.MetadataAttemptCount,
+			&i.HomeReleaseDate,
 		); err != nil {
 			return nil, err
 		}
@@ -1765,7 +1772,7 @@ set title = $2,
     tmdb_id = $4,
     updated_at = now()
 where id = $1
-returning id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count
+returning id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count, home_release_date
 `
 
 type UpdateMediaItemParams struct {
@@ -1809,6 +1816,7 @@ func (q *Queries) UpdateMediaItem(ctx context.Context, arg UpdateMediaItemParams
 		&i.MetadataLastAttemptedAt,
 		&i.MetadataLastError,
 		&i.MetadataAttemptCount,
+		&i.HomeReleaseDate,
 	)
 	return i, err
 }
@@ -1826,33 +1834,35 @@ SET poster_path        = $1,
     certification      = $8,
     genres             = $9,
     release_date       = $10,
-    last_air_date      = $11,
-    in_production      = $12,
-    next_refresh_at    = $13,
+    home_release_date  = $11,
+    last_air_date      = $12,
+    in_production      = $13,
+    next_refresh_at    = $14,
     metadata_updated_at = now(),
     metadata_last_attempted_at = now(),
     metadata_last_error = NULL,
     metadata_attempt_count = 0,
     updated_at         = now()
-WHERE id = $14
-RETURNING id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count
+WHERE id = $15
+RETURNING id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count, home_release_date
 `
 
 type UpdateMediaItemMetadataParams struct {
-	PosterPath    *string            `json:"poster_path"`
-	BackdropPath  *string            `json:"backdrop_path"`
-	Overview      *string            `json:"overview"`
-	VoteAverage   *float64           `json:"vote_average"`
-	VoteCount     *int32             `json:"vote_count"`
-	Runtime       *int32             `json:"runtime"`
-	Status        *string            `json:"status"`
-	Certification *string            `json:"certification"`
-	Genres        []byte             `json:"genres"`
-	ReleaseDate   pgtype.Date        `json:"release_date"`
-	LastAirDate   pgtype.Date        `json:"last_air_date"`
-	InProduction  *bool              `json:"in_production"`
-	NextRefreshAt pgtype.Timestamptz `json:"next_refresh_at"`
-	ID            pgtype.UUID        `json:"id"`
+	PosterPath      *string            `json:"poster_path"`
+	BackdropPath    *string            `json:"backdrop_path"`
+	Overview        *string            `json:"overview"`
+	VoteAverage     *float64           `json:"vote_average"`
+	VoteCount       *int32             `json:"vote_count"`
+	Runtime         *int32             `json:"runtime"`
+	Status          *string            `json:"status"`
+	Certification   *string            `json:"certification"`
+	Genres          []byte             `json:"genres"`
+	ReleaseDate     pgtype.Date        `json:"release_date"`
+	HomeReleaseDate pgtype.Date        `json:"home_release_date"`
+	LastAirDate     pgtype.Date        `json:"last_air_date"`
+	InProduction    *bool              `json:"in_production"`
+	NextRefreshAt   pgtype.Timestamptz `json:"next_refresh_at"`
+	ID              pgtype.UUID        `json:"id"`
 }
 
 // Metadata enrichment queries
@@ -1873,6 +1883,7 @@ func (q *Queries) UpdateMediaItemMetadata(ctx context.Context, arg UpdateMediaIt
 		arg.Certification,
 		arg.Genres,
 		arg.ReleaseDate,
+		arg.HomeReleaseDate,
 		arg.LastAirDate,
 		arg.InProduction,
 		arg.NextRefreshAt,
@@ -1905,6 +1916,7 @@ func (q *Queries) UpdateMediaItemMetadata(ctx context.Context, arg UpdateMediaIt
 		&i.MetadataLastAttemptedAt,
 		&i.MetadataLastError,
 		&i.MetadataAttemptCount,
+		&i.HomeReleaseDate,
 	)
 	return i, err
 }
@@ -2032,7 +2044,7 @@ on conflict (type, tmdb_id)
 do update set title = excluded.title,
               year = excluded.year,
               updated_at = now()
-returning id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count
+returning id, type, series_type, title, year, tmdb_id, created_at, updated_at, poster_path, backdrop_path, overview, vote_average, vote_count, runtime, status, certification, genres, release_date, last_air_date, in_production, metadata_updated_at, next_refresh_at, metadata_last_attempted_at, metadata_last_error, metadata_attempt_count, home_release_date
 `
 
 type UpsertMediaItemParams struct {
@@ -2076,6 +2088,7 @@ func (q *Queries) UpsertMediaItem(ctx context.Context, arg UpsertMediaItemParams
 		&i.MetadataLastAttemptedAt,
 		&i.MetadataLastError,
 		&i.MetadataAttemptCount,
+		&i.HomeReleaseDate,
 	)
 	return i, err
 }

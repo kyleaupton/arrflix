@@ -64,11 +64,60 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item model.MediaIte
 			Op("EnrichmentService.enrichMovie")
 	}
 
-	if err := s.applyMovieMetadata(ctx, s.repo, item, details); err != nil {
+	updated, err := s.applyMovieMetadata(ctx, s.repo, item, details)
+	if err != nil {
 		return err
 	}
 	s.storeRawPayload(ctx, item.ID, "tmdb", details)
+
+	if !sameDate(item.HomeReleaseDate, updated.HomeReleaseDate) || !sameDate(item.ReleaseDate, updated.ReleaseDate) {
+		if err := s.rescheduleDormantMovieWants(ctx, updated); err != nil {
+			s.logger.Warn().Err(err).Str("title", item.Title).
+				Msg("movie enrich: rescheduling dormant wants failed, will retry on next date change")
+		}
+	}
 	return nil
+}
+
+// rescheduleDormantMovieWants moves a movie's not-yet-due pending wants to its
+// current search date after a refresh changed its release dates — earlier as
+// well as later. A want that has already come due (or is mid-search) keeps its
+// schedule: the worker consults the scheduler again after its next search.
+func (s *EnrichmentService) rescheduleDormantMovieWants(ctx context.Context, item model.MediaItem) error {
+	tracking, err := s.repo.FindTrackingByMediaItem(ctx, item.ID)
+	if apperrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	wants, err := s.repo.ListWantsByTracking(ctx, tracking.ID)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	next := now
+	if from := MovieSearchFrom(item); from != nil && from.After(now) {
+		next = *from
+	}
+	for _, w := range wants {
+		if w.Status != string(model.WantPending) || !w.NextRunAt.After(now) {
+			continue
+		}
+		if _, _, err := s.repo.DeferPendingWant(ctx, w.ID, next); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sameDate reports whether two optional dates are equal, both nil included.
+func sameDate(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
 }
 
 // applyMovieMetadata writes a movie's already-fetched TMDB payload onto the
@@ -79,34 +128,37 @@ func (s *EnrichmentService) enrichMovie(ctx context.Context, item model.MediaIte
 // external-id are hard writes: a failure returns and, under the spawn tx, rolls
 // the spawn back rather than birthing a half-populated item. The raw-payload
 // store is deliberately excluded — it's best-effort and belongs outside any tx
-// (see storeRawPayload).
-func (s *EnrichmentService) applyMovieMetadata(ctx context.Context, r *repo.Repository, item model.MediaItem, details tmdb.MovieDetails) error {
-	// Extract certification from appended release dates
+// (see storeRawPayload). It returns the item as written.
+func (s *EnrichmentService) applyMovieMetadata(ctx context.Context, r *repo.Repository, item model.MediaItem, details tmdb.MovieDetails) (model.MediaItem, error) {
+	// Certification and the home-release date come from the appended release dates.
+	releaseDate := parseDateToTimePtr(details.ReleaseDate)
 	var certification string
+	var homeReleaseDate *time.Time
 	if details.MovieReleaseDatesAppend != nil && details.ReleaseDates != nil {
 		certification = extractMovieCertification(details.ReleaseDates)
+		homeReleaseDate = extractMovieHomeReleaseDate(details.ReleaseDates, releaseDate)
 	}
 
-	releaseDate := parseDateToTimePtr(details.ReleaseDate)
 	runtime := int32(details.Runtime)
 	voteAvg := float64(details.VoteAverage)
 	voteCount := int32(details.VoteCount)
 	inProd := false
 
 	params := repo.UpdateMediaItemMetadataParams{
-		ID:            item.ID,
-		PosterPath:    strPtrIfNotEmpty(details.PosterPath),
-		BackdropPath:  strPtrIfNotEmpty(details.BackdropPath),
-		Overview:      strPtrIfNotEmpty(details.Overview),
-		VoteAverage:   &voteAvg,
-		VoteCount:     &voteCount,
-		Runtime:       &runtime,
-		Status:        canonicalStatusPtr(details.Status),
-		Certification: strPtrIfNotEmpty(certification),
-		Genres:        genresFromTmdb(details.Genres),
-		ReleaseDate:   releaseDate,
-		LastAirDate:   nil,
-		InProduction:  &inProd,
+		ID:              item.ID,
+		PosterPath:      strPtrIfNotEmpty(details.PosterPath),
+		BackdropPath:    strPtrIfNotEmpty(details.BackdropPath),
+		Overview:        strPtrIfNotEmpty(details.Overview),
+		VoteAverage:     &voteAvg,
+		VoteCount:       &voteCount,
+		Runtime:         &runtime,
+		Status:          canonicalStatusPtr(details.Status),
+		Certification:   strPtrIfNotEmpty(certification),
+		Genres:          genresFromTmdb(details.Genres),
+		ReleaseDate:     releaseDate,
+		HomeReleaseDate: homeReleaseDate,
+		LastAirDate:     nil,
+		InProduction:    &inProd,
 	}
 
 	// Schedule the next refresh from the movie's state (release age drives the
@@ -120,18 +172,19 @@ func (s *EnrichmentService) applyMovieMetadata(ctx context.Context, r *repo.Repo
 	}, time.Now())
 	params.NextRefreshAt = &refreshAt
 
-	if _, err := r.UpdateMediaItemMetadata(ctx, params); err != nil {
-		return err
+	updated, err := r.UpdateMediaItemMetadata(ctx, params)
+	if err != nil {
+		return model.MediaItem{}, err
 	}
 
 	// The imdb id helps acquisition ID-match on the first search. Guarded on a
 	// non-empty value so a missing id doesn't write an empty external_id.
 	if details.IMDbID != "" {
 		if err := r.UpsertMediaItemExternalID(ctx, item.ID, string(metadata.SourceIMDB), details.IMDbID); err != nil {
-			return err
+			return model.MediaItem{}, err
 		}
 	}
-	return nil
+	return updated, nil
 }
 
 func (s *EnrichmentService) enrichSeries(ctx context.Context, item model.MediaItem) error {

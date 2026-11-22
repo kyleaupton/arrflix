@@ -108,7 +108,7 @@ So `state` is what the chip says, and `library` / `active` / `phase` carry the o
 | `state` | Means |
 | --- | --- |
 | `not_requested` | Nothing exists for this title |
-| `unreleased` | Not obtainable yet (episodes: not yet aired). **Unbuilt:** `obtainableAt` on the wire, and any obtainable date for movies |
+| `unreleased` | Not obtainable yet (episodes: not yet aired; movies: search date still ahead — the day before the home release, or theatrical + 30 days when none is announced). A movie carries `homeReleaseDate` when one is known. **Unbuilt:** `obtainableAt` on the wire |
 | `awaiting_approval` | A request is pending a decision |
 | `denied` | A request was refused |
 | `searching` | Looking for an acceptable release |
@@ -229,7 +229,6 @@ Two grant rules follow from rendering one source:
 
 ### Known gaps
 
-- **The unreleased movie reads as `not_requested`.** No obtainable date is persisted for a movie (REQ-UNREL-003), so the projection cannot distinguish "not out yet" from "not asked for". `MovieStatusCard` renders the theatrical/digital dates beneath the headline from TMDB metadata it already holds, which preserves the information but not the state. Closing this means persisting a home-release date, not changing the derivation.
 - **The status card does not show the release name to operators.** Showing it would mean re-joining the jobs cache in a component the projection frees from it, so it belongs on an operator surface — `AttentionCard` or the Downloads page, which both carry it.
 
 ### List surfaces get the same type, delivered differently
@@ -278,7 +277,7 @@ Traceability to the [stories](../../stories/README.md). This is the design half 
 | `REQ-SERIES-008` — series progress without composing per-episode state | `counts` and per-episode `state` are server-computed; per-season rollups are **unbuilt** |
 | `REQ-UNION-010` — only hear about what your intent covers | Per-viewer computation (**unbuilt:** delivery is scoped to `library.read`, not to intent) |
 | `REQ-UNION-011` — not told who else wants a title | Requester identity is never in the payload |
-| `REQ-UNREL-*` — "not out yet" is distinct from "can't find it" | `unreleased`, distinct from `searching` (episodes by air date; movie dates and `obtainableAt` **unbuilt**) |
+| `REQ-UNREL-*` — "not out yet" is distinct from "can't find it" | `unreleased`, distinct from `searching` (episodes by air date, movies by their stored home-release date; `obtainableAt` **unbuilt**) |
 
 Requirements this **does not** satisfy, listed so the gap stays visible: the notification-side requirements (`REQ-SERIES-009`, `REQ-APPROVE-001`, `REQ-APPROVE-007`) are [notifications](../notifications/README.md)' territory. A live-updating page is not a substitute for telling someone who isn't looking at it.
 

@@ -144,8 +144,9 @@ func TestScheduler_NextSearchAt(t *testing.T) {
 	}
 	assertInterval(t, "undated episode -> CreatedAt fallback", undatedWant.CreatedAt, next, 1*time.Hour)
 
-	// --- Movie want: anchors on release_date (10d ago → cold tier, 24h).
-	// release_date is set through the metadata update path, not the upsert. ---
+	// --- Movie want: anchors on its search date, the day before the home
+	// release (home release 10d ago → anchor 11d ago → cold tier, 24h). The
+	// dates are set through the metadata update path, not the upsert. ---
 	movieTmdb := int64(550)
 	movie, err := app.Repo.UpsertMediaItem(ctx, repo.UpsertMediaItemParams{
 		Type:   string(parsing.DomainMovie),
@@ -156,9 +157,11 @@ func TestScheduler_NextSearchAt(t *testing.T) {
 		t.Fatalf("upsert movie: %v", err)
 	}
 	releasedTenDaysAgo := now.Add(-10 * 24 * time.Hour)
+	theatrical := now.Add(-90 * 24 * time.Hour)
 	movie, err = app.Repo.UpdateMediaItemMetadata(ctx, repo.UpdateMediaItemMetadataParams{
-		ID:          movie.ID,
-		ReleaseDate: &releasedTenDaysAgo,
+		ID:              movie.ID,
+		ReleaseDate:     &theatrical,
+		HomeReleaseDate: &releasedTenDaysAgo,
 	})
 	if err != nil {
 		t.Fatalf("update movie metadata: %v", err)
@@ -191,5 +194,5 @@ func TestScheduler_NextSearchAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextSearchAt(movie): %v", err)
 	}
-	assertInterval(t, "movie released 10d ago", now, next, 24*time.Hour)
+	assertInterval(t, "movie home release 10d ago", now, next, 24*time.Hour)
 }

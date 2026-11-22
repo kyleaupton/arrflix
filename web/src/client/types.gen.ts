@@ -2546,6 +2546,7 @@ export type TitleStatus = {
     active: boolean;
     counts: TitleCounts;
     episodes?: Array<TitleEpisodeStatus> | null;
+    homeReleaseDate?: string;
     library: TitleLibrary;
     mediaType: string;
     phase?: string;
@@ -3979,6 +3980,7 @@ export type TitleStatusWritable = {
     active: boolean;
     counts: TitleCounts;
     episodes?: Array<TitleEpisodeStatus> | null;
+    homeReleaseDate?: string;
     library: TitleLibrary;
     mediaType: string;
     phase?: string;

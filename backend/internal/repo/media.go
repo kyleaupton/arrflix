@@ -143,8 +143,10 @@ type UpdateMediaItemMetadataParams struct {
 	Certification *string
 	Genres        []model.Genre
 	ReleaseDate   *time.Time
-	LastAirDate   *time.Time
-	InProduction  *bool
+	// HomeReleaseDate is a movie's home-release date; nil for series.
+	HomeReleaseDate *time.Time
+	LastAirDate     *time.Time
+	InProduction    *bool
 	// NextRefreshAt is the state-derived due-time the caller computes from the
 	// item's metadata (via cadence.MetadataRefreshAt). The success-path SQL also
 	// clears the failure columns, so this method is only correct on a successful
@@ -195,6 +197,10 @@ func toModelMediaItem(row dbgen.MediaItem) model.MediaItem {
 	if row.ReleaseDate.Valid {
 		t := row.ReleaseDate.Time
 		m.ReleaseDate = &t
+	}
+	if row.HomeReleaseDate.Valid {
+		t := row.HomeReleaseDate.Time
+		m.HomeReleaseDate = &t
 	}
 	if row.LastAirDate.Valid {
 		t := row.LastAirDate.Time
@@ -362,20 +368,21 @@ func (r *Repository) UpdateMediaItemMetadata(ctx context.Context, params UpdateM
 		}
 	}
 	row, err := r.Q.UpdateMediaItemMetadata(ctx, dbgen.UpdateMediaItemMetadataParams{
-		ID:            pgtypeFromUUID(params.ID),
-		PosterPath:    params.PosterPath,
-		BackdropPath:  params.BackdropPath,
-		Overview:      params.Overview,
-		VoteAverage:   params.VoteAverage,
-		VoteCount:     params.VoteCount,
-		Runtime:       params.Runtime,
-		Status:        params.Status,
-		Certification: params.Certification,
-		Genres:        genresJSON,
-		ReleaseDate:   pgDateFromTimePtr(params.ReleaseDate),
-		LastAirDate:   pgDateFromTimePtr(params.LastAirDate),
-		InProduction:  params.InProduction,
-		NextRefreshAt: pgTimestamptzFromTimePtr(params.NextRefreshAt),
+		ID:              pgtypeFromUUID(params.ID),
+		PosterPath:      params.PosterPath,
+		BackdropPath:    params.BackdropPath,
+		Overview:        params.Overview,
+		VoteAverage:     params.VoteAverage,
+		VoteCount:       params.VoteCount,
+		Runtime:         params.Runtime,
+		Status:          params.Status,
+		Certification:   params.Certification,
+		Genres:          genresJSON,
+		ReleaseDate:     pgDateFromTimePtr(params.ReleaseDate),
+		HomeReleaseDate: pgDateFromTimePtr(params.HomeReleaseDate),
+		LastAirDate:     pgDateFromTimePtr(params.LastAirDate),
+		InProduction:    params.InProduction,
+		NextRefreshAt:   pgTimestamptzFromTimePtr(params.NextRefreshAt),
 	})
 	if err != nil {
 		return model.MediaItem{}, apperrors.FromPg(err, "update metadata for media item %s", params.ID)

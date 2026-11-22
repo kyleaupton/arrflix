@@ -183,6 +183,68 @@ func extractMovieReleaseDates(releaseDates *tmdb.MovieReleaseDates) *model.Relea
 	return nil
 }
 
+// homeReleaseRegions are the regions whose home releases count toward a
+// movie's home-release date. A home release in any of them is generally the
+// same English-language film, and indexers aren't regional, so the earliest one
+// is when a release can first appear. Other regions are ignored so a dubbed-only
+// release can't count. Revisit when the region becomes configurable.
+var homeReleaseRegions = map[string]bool{"US": true, "GB": true, "CA": true, "AU": true}
+
+// homeReleaseReissueWindow bounds how long after a movie's first release a
+// home release still counts as its first one. A later digital or physical date
+// is a reissue (a remaster, an anniversary disc) of a film long obtainable, so
+// it must not hold the movie back.
+const homeReleaseReissueWindow = 365 * 24 * time.Hour
+
+// extractMovieHomeReleaseDate picks a movie's home-release date: the earliest
+// digital (TMDB type 4) or physical (type 5) date across homeReleaseRegions.
+// Theatrical and other release types never count. Unlike
+// extractMovieReleaseDates, which keeps one region's trio together for display,
+// this mixes regions on purpose — the question is when any copy can first exist.
+//
+// The movie's first release is the earliest theatrical (type 3) date across
+// homeReleaseRegions. The primary release date stands in only when none of
+// those regions has a theatrical date: it can be an origin-country or festival
+// release well over a year before the English-region one, and measuring from it
+// would drop a genuine first home release as a reissue. A home date more than
+// homeReleaseReissueWindow after the first release is a reissue and is
+// ignored, leaving the movie on the no-home-date rule. Nil when no qualifying
+// date is known.
+func extractMovieHomeReleaseDate(releaseDates *tmdb.MovieReleaseDates, primary *time.Time) *time.Time {
+	if releaseDates == nil || releaseDates.MovieReleaseDatesResults == nil {
+		return nil
+	}
+	var first, earliest *time.Time
+	for _, result := range releaseDates.Results {
+		if !homeReleaseRegions[result.Iso3166_1] {
+			continue
+		}
+		for _, rd := range result.ReleaseDates {
+			d := parseDateToTimePtr(trimToDate(rd.ReleaseDate))
+			if d == nil {
+				continue
+			}
+			switch rd.Type {
+			case 3:
+				if first == nil || d.Before(*first) {
+					first = d
+				}
+			case 4, 5:
+				if earliest == nil || d.Before(*earliest) {
+					earliest = d
+				}
+			}
+		}
+	}
+	if first == nil {
+		first = primary
+	}
+	if earliest != nil && first != nil && earliest.Sub(*first) > homeReleaseReissueWindow {
+		return nil
+	}
+	return earliest
+}
+
 // trimToDate reduces a TMDB RFC3339-ish timestamp ("2018-12-15T00:00:00.000Z")
 // to its date part ("2018-12-15"). Already-date strings pass through.
 func trimToDate(ts string) string {

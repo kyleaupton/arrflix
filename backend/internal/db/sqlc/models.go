@@ -524,6 +524,7 @@ type MediaItem struct {
 	MetadataLastAttemptedAt pgtype.Timestamptz `json:"metadata_last_attempted_at"`
 	MetadataLastError       *string            `json:"metadata_last_error"`
 	MetadataAttemptCount    int32              `json:"metadata_attempt_count"`
+	HomeReleaseDate         pgtype.Date        `json:"home_release_date"`
 }
 
 type MediaItemExternalID struct {

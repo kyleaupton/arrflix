@@ -222,6 +222,46 @@ func (q *Queries) CreateWantIfAbsent(ctx context.Context, arg CreateWantIfAbsent
 	return i, err
 }
 
+const deferPendingWant = `-- name: DeferPendingWant :one
+UPDATE want
+SET next_run_at = $1,
+    updated_at = now()
+WHERE id = $2
+  AND status = 'pending'
+RETURNING id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at
+`
+
+type DeferPendingWantParams struct {
+	NextRunAt time.Time   `json:"next_run_at"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+// DeferPendingWant sets when a 'pending' want next comes due, without touching
+// its attempt history. It backs the movie search date: a want for a movie that
+// isn't obtainable yet sits pending until that date. The 'pending' guard leaves
+// a want the worker has claimed (or that has moved on) alone; a 0-row match
+// surfaces as pgx.ErrNoRows.
+func (q *Queries) DeferPendingWant(ctx context.Context, arg DeferPendingWantParams) (Want, error) {
+	row := q.db.QueryRow(ctx, deferPendingWant, arg.NextRunAt, arg.ID)
+	var i Want
+	err := row.Scan(
+		&i.ID,
+		&i.TrackingID,
+		&i.MediaItemID,
+		&i.EpisodeID,
+		&i.QualityProfileID,
+		&i.Status,
+		&i.Segment,
+		&i.Hold,
+		&i.NextRunAt,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const findLiveWantForEpisode = `-- name: FindLiveWantForEpisode :one
 SELECT id, tracking_id, media_item_id, episode_id, quality_profile_id, status, segment, hold, next_run_at, attempt_count, last_error, created_at, updated_at FROM want
 WHERE tracking_id = $1
