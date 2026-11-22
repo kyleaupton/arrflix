@@ -2754,6 +2754,55 @@ export type Video = {
     type: string;
 };
 
+export type Volume = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    aliases: Array<VolumeAlias> | null;
+    arrflixBase: string;
+    createdAt: string;
+    id: string;
+    name: string;
+    updatedAt: string;
+};
+
+export type VolumeAlias = {
+    base: string;
+    downloaderId: string;
+    flavor: string;
+};
+
+export type VolumeAliasBody = {
+    /**
+     * Absolute path at which the downloader sees the volume
+     */
+    base: string;
+    /**
+     * Downloader that sees this volume at base
+     */
+    downloaderId: string;
+};
+
+export type VolumeWriteBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Per-downloader paths for the same storage; at most one per downloader
+     */
+    aliases?: Array<VolumeAliasBody> | null;
+    /**
+     * Absolute path at which Arrflix sees the volume; must be an existing directory
+     */
+    arrflixBase: string;
+    /**
+     * Display name of the volume
+     */
+    name: string;
+};
+
 export type Want = {
     /**
      * A URL to the JSON Schema for this object.
@@ -4124,6 +4173,30 @@ export type VersionInfoWritable = {
     };
     update: UpdateDetails;
     version: string;
+};
+
+export type VolumeWritable = {
+    aliases: Array<VolumeAlias> | null;
+    arrflixBase: string;
+    createdAt: string;
+    id: string;
+    name: string;
+    updatedAt: string;
+};
+
+export type VolumeWriteBodyWritable = {
+    /**
+     * Per-downloader paths for the same storage; at most one per downloader
+     */
+    aliases?: Array<VolumeAliasBody> | null;
+    /**
+     * Absolute path at which Arrflix sees the volume; must be an existing directory
+     */
+    arrflixBase: string;
+    /**
+     * Display name of the volume
+     */
+    name: string;
 };
 
 export type WantWritable = {
@@ -10159,6 +10232,194 @@ export type VersionGetResponses = {
 };
 
 export type VersionGetResponse = VersionGetResponses[keyof VersionGetResponses];
+
+export type VolumesListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/volumes';
+};
+
+export type VolumesListErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type VolumesListError = VolumesListErrors[keyof VolumesListErrors];
+
+export type VolumesListResponses = {
+    /**
+     * OK
+     */
+    200: Array<Volume> | null;
+};
+
+export type VolumesListResponse = VolumesListResponses[keyof VolumesListResponses];
+
+export type VolumesCreateData = {
+    body: VolumeWriteBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/volumes';
+};
+
+export type VolumesCreateErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type VolumesCreateError = VolumesCreateErrors[keyof VolumesCreateErrors];
+
+export type VolumesCreateResponses = {
+    /**
+     * Created
+     */
+    201: Volume;
+};
+
+export type VolumesCreateResponse = VolumesCreateResponses[keyof VolumesCreateResponses];
+
+export type VolumesDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Volume ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/volumes/{id}';
+};
+
+export type VolumesDeleteErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type VolumesDeleteError = VolumesDeleteErrors[keyof VolumesDeleteErrors];
+
+export type VolumesDeleteResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type VolumesDeleteResponse = VolumesDeleteResponses[keyof VolumesDeleteResponses];
+
+export type VolumesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Volume ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/volumes/{id}';
+};
+
+export type VolumesGetErrors = {
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type VolumesGetError = VolumesGetErrors[keyof VolumesGetErrors];
+
+export type VolumesGetResponses = {
+    /**
+     * OK
+     */
+    200: Volume;
+};
+
+export type VolumesGetResponse = VolumesGetResponses[keyof VolumesGetResponses];
+
+export type VolumesUpdateData = {
+    body: VolumeWriteBodyWritable;
+    path: {
+        /**
+         * Volume ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/volumes/{id}';
+};
+
+export type VolumesUpdateErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type VolumesUpdateError = VolumesUpdateErrors[keyof VolumesUpdateErrors];
+
+export type VolumesUpdateResponses = {
+    /**
+     * OK
+     */
+    200: Volume;
+};
+
+export type VolumesUpdateResponse = VolumesUpdateResponses[keyof VolumesUpdateResponses];
 
 export type WantsCancelData = {
     body?: never;

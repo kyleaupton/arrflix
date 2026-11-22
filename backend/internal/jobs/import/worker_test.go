@@ -10,13 +10,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kyleaupton/arrflix/internal/downloader"
 	"github.com/kyleaupton/arrflix/internal/jobs/state"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/mediainfo"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/parsing"
-	"github.com/kyleaupton/arrflix/internal/pathmapping"
 	"github.com/kyleaupton/arrflix/internal/repo"
+	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/test/dbtest"
 )
 
@@ -30,15 +31,32 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// testExternalID is the downloader item every seeded download job points at.
+const testExternalID = "ext-1"
+
 // newTestWorker builds a Worker directly (not via the production New) so the
-// test controls which collaborators are wired. dlm and broker stay nil — the
-// processTask success path doesn't touch them.
-func newTestWorker(r *repo.Repository) *Worker {
+// test controls which collaborators are wired. Its downloader reports files
+// (absolute paths) for every item; broker stays nil.
+func newTestWorker(t *testing.T, r *repo.Repository, files ...string) *Worker {
+	t.Helper()
+	client := &fakeClient{}
+	for _, f := range files {
+		client.files = append(client.files, downloader.File{Path: f, Size: 16})
+	}
+	return newTestWorkerWithClient(r, client)
+}
+
+func newTestWorkerWithClient(r *repo.Repository, client *fakeClient) *Worker {
 	log := logger.New(true)
+	reg := downloader.NewRegistry()
+	reg.Register(downloader.TypeQbittorrent, func(downloader.ConfigRecord) (downloader.Client, error) {
+		return client, nil
+	})
 	return &Worker{
 		repo:         r,
+		dlm:          downloader.NewManager(reg, r, log),
+		paths:        service.NewPathMappingService(r),
 		log:          log,
-		pathMapper:   pathmapping.New(),
 		sm:           state.NewImportTaskMachine(),
 		mediaInfo:    mediainfo.NewAnalyzer(*log),
 		pollInterval: 2 * time.Second,
@@ -46,6 +64,44 @@ func newTestWorker(r *repo.Repository) *Worker {
 		maxAttempts:  5,
 	}
 }
+
+// fakeClient is a downloader that reports a scripted file list and item. A
+// non-nil err makes every call fail as an unreachable downloader would.
+type fakeClient struct {
+	files []downloader.File
+	item  downloader.Item
+	err   error
+}
+
+func (f *fakeClient) Type() downloader.Type             { return downloader.TypeQbittorrent }
+func (f *fakeClient) InstanceID() downloader.InstanceID { return "fake" }
+func (f *fakeClient) Test(context.Context) (downloader.TestResult, error) {
+	return downloader.TestResult{Success: true}, nil
+}
+func (f *fakeClient) Add(context.Context, downloader.AddRequest) (downloader.AddResult, error) {
+	return downloader.AddResult{}, downloader.ErrUnsupported
+}
+func (f *fakeClient) Get(_ context.Context, externalID string) (downloader.Item, error) {
+	if f.err != nil {
+		return downloader.Item{}, f.err
+	}
+	item := f.item
+	item.ExternalID = externalID
+	return item, nil
+}
+func (f *fakeClient) List(context.Context) ([]downloader.Item, error) {
+	return nil, downloader.ErrUnsupported
+}
+func (f *fakeClient) ListFiles(context.Context, string) ([]downloader.File, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.files, nil
+}
+func (f *fakeClient) Pause(context.Context, string) error             { return nil }
+func (f *fakeClient) Resume(context.Context, string) error            { return nil }
+func (f *fakeClient) Remove(context.Context, string, bool) error      { return nil }
+func (f *fakeClient) AddTags(context.Context, string, []string) error { return nil }
 
 // importFixture is the seeded persistence chain plus the on-disk paths a
 // processTask run needs.
@@ -160,6 +216,9 @@ func seedImportTask(t *testing.T, ctx context.Context, r *repo.Repository, withW
 	if err != nil {
 		t.Fatalf("create download job: %v", err)
 	}
+	if _, _, err := r.SetDownloadJobEnqueued(ctx, job.ID, testExternalID); err != nil {
+		t.Fatalf("enqueue download job: %v", err)
+	}
 
 	// Real source file in a separate temp dir; the worker hardlinks it into the
 	// library root.
@@ -195,7 +254,7 @@ func TestProcessTask_WantMirroredToAvailable(t *testing.T) {
 	ctx := context.Background()
 
 	fix := seedImportTask(t, ctx, r, true)
-	w := newTestWorker(r)
+	w := newTestWorker(t, r, fix.sourcePath)
 
 	if err := w.processTask(ctx, fix.task); err != nil {
 		t.Fatalf("processTask: %v", err)
@@ -357,6 +416,9 @@ func seedSeriesImportTask(t *testing.T, ctx context.Context, r *repo.Repository)
 	if err != nil {
 		t.Fatalf("create download job: %v", err)
 	}
+	if _, _, err := r.SetDownloadJobEnqueued(ctx, job.ID, testExternalID); err != nil {
+		t.Fatalf("enqueue download job: %v", err)
+	}
 
 	srcDir := t.TempDir()
 	sourcePath := filepath.Join(srcDir, "game.of.thrones.s03e05.1080p.bluray.x264.mkv")
@@ -395,7 +457,7 @@ func TestProcessTask_SeriesWantMirroredToAvailable(t *testing.T) {
 	ctx := context.Background()
 
 	fix := seedSeriesImportTask(t, ctx, r)
-	w := newTestWorker(r)
+	w := newTestWorker(t, r, fix.sourcePath)
 
 	if err := w.processTask(ctx, fix.task); err != nil {
 		t.Fatalf("processTask: %v", err)
@@ -447,7 +509,7 @@ func TestProcessTask_NoWant(t *testing.T) {
 	ctx := context.Background()
 
 	fix := seedImportTask(t, ctx, r, false)
-	w := newTestWorker(r)
+	w := newTestWorker(t, r, fix.sourcePath)
 
 	if err := w.processTask(ctx, fix.task); err != nil {
 		t.Fatalf("processTask: %v", err)
@@ -493,7 +555,7 @@ func TestReqCancel007_LateCompletionDoesNotReviveCanceledWant(t *testing.T) {
 		t.Fatalf("cancel want: ok=%v err=%v", ok, err)
 	}
 
-	w := newTestWorker(r)
+	w := newTestWorker(t, r, fix.sourcePath)
 	if err := w.processTask(ctx, claimed[0]); err != nil {
 		t.Fatalf("processTask: %v", err)
 	}
@@ -541,7 +603,7 @@ func TestReqFulfil002_AvailableOnlyOnOwnDiskVerification(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read source: %v", err)
 		}
-		if err := newTestWorker(r).processTask(ctx, fix.task); err != nil {
+		if err := newTestWorker(t, r, fix.sourcePath).processTask(ctx, fix.task); err != nil {
 			t.Fatalf("processTask: %v", err)
 		}
 
@@ -595,7 +657,7 @@ func TestReqFulfil002_AvailableOnlyOnOwnDiskVerification(t *testing.T) {
 
 			fix := seedImportTask(t, ctx, r, true)
 			tc.breakFile(t, fix.sourcePath)
-			if err := newTestWorker(r).processTask(ctx, fix.task); err == nil {
+			if err := newTestWorker(t, r, fix.sourcePath).processTask(ctx, fix.task); err == nil {
 				t.Errorf("processTask succeeded importing an unverifiable file, want a verification failure")
 			}
 
