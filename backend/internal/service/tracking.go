@@ -13,7 +13,7 @@ import (
 // TrackingService exposes reads over the tracking primitive and its wants and
 // requesters, plus the cancel (stop-tracking) write. The spawn write surface
 // lives on RequestService; pause/resume/archive remain out of scope. It holds
-// WantService so cancel reuses the tested want-cancel + download-job cascade.
+// WantService so cancel reuses its want-stop rules.
 type TrackingService struct {
 	repo  *repo.Repository
 	wants *WantService
@@ -216,11 +216,14 @@ func (s *TrackingService) GetByTmdbID(ctx context.Context, userID uuid.UUID, tmd
 	return &tracking, wants, myRequest, nil
 }
 
-// Cancel stops tracking a media item: it cancels every non-terminal want (and
-// its in-flight download job, via the tested WantService cascade), then
-// normalizes the tracking to 'canceled' to cover the all-terminal case where no
-// want needed canceling. 'available' wants and their files are deliberately left
-// intact — stop means "stop future acquisition + cancel in-flight", not delete.
+// Cancel stops tracking a media item: it stops every non-terminal want through
+// WantService.CancelWant, then normalizes the tracking to 'canceled' to cover
+// the all-terminal case where no want needed stopping. A want still searching,
+// or whose download job hasn't been sent to the downloader, is canceled with
+// its job. A download already handed to the downloader finishes and is
+// imported, its want ending 'available' (story 07, operator variant); only the
+// download job's own cancel stops a transfer. 'available' wants and their files
+// are left intact — stop means "stop looking", not delete.
 func (s *TrackingService) Cancel(ctx context.Context, userID, trackingID uuid.UUID) (model.Tracking, error) {
 	tracking, err := s.repo.GetTracking(ctx, trackingID) // 404 flows through
 	if err != nil {
@@ -228,7 +231,7 @@ func (s *TrackingService) Cancel(ctx context.Context, userID, trackingID uuid.UU
 	}
 
 	// own/any gate: tracking.cancel.any cancels any tracking; tracking.cancel.own
-	// requires the caller to be the tracking's only requester. Cancelling cancels
+	// requires the caller to be the tracking's only requester. Cancelling stops
 	// every live want, so a tracking other requesters still justify is someone
 	// else's too, and needs authority over others' requests (REQ-CANCEL-012).
 	// A tracking with no requesters belongs to no one and also needs .any.
@@ -264,8 +267,8 @@ func (s *TrackingService) Cancel(ctx context.Context, userID, trackingID uuid.UU
 		}
 	}
 
-	// CancelWant already flips the tracking to 'canceled' for each want it
-	// cancels, but an all-terminal tracking has no such want — set it here so the
+	// CancelWant already flips the tracking to 'canceled' for each live want it
+	// stops, but an all-terminal tracking has no such want — set it here so the
 	// state is normalized regardless.
 	if tracking.State != string(model.TrackingCanceled) {
 		return s.repo.SetTrackingState(ctx, trackingID, string(model.TrackingCanceled))

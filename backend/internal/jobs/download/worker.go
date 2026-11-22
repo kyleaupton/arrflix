@@ -526,7 +526,7 @@ func (w *Worker) wantsByEpisode(ctx context.Context, jobID uuid.UUID) (map[int]u
 }
 
 // releaseUncoveredWants returns every linked want the pack didn't carry a file for
-// to 'pending' (or fails it, if its request was withdrawn; see releaseOrRetire)
+// to 'pending' (or fails it, if acquisition has stopped; see releaseOrRetire)
 // and unlinks it from the job. Best-effort: a release/unlink failure
 // is logged, not propagated — it must not break the import of the files that did
 // land.
@@ -542,7 +542,7 @@ func (w *Worker) releaseUncoveredWants(ctx context.Context, jobID uuid.UUID, wan
 			var err error
 			if settled, _, err = releaseOrRetire(ctx, tx, wantID,
 				"season pack did not contain this episode; re-searching",
-				"season pack did not contain this episode; request withdrawn, not re-searching"); err != nil {
+				"season pack did not contain this episode; no longer acquiring, not re-searching"); err != nil {
 				return err
 			}
 			return tx.UnlinkDownloadJobWant(ctx, jobID, wantID)
@@ -567,7 +567,8 @@ func (w *Worker) releaseUncoveredWants(ctx context.Context, jobID uuid.UUID, wan
 // manual re-request. The recovery loop is bounded precisely because the exclusion
 // bars re-picking the same release: ProcessWant re-searches once and, on no other
 // winner, falls back to the scheduler's recheck cadence. A want whose request
-// was withdrawn is failed rather than re-searched (releaseOrRetire).
+// was withdrawn, or whose acquisition an operator stopped, is failed rather than
+// re-searched (releaseOrRetire).
 //
 // Best-effort per want (log-and-continue), the same contract as
 // releaseUncoveredWants: one want's recovery failure must not block the others or
@@ -611,7 +612,7 @@ func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJ
 			var err error
 			released, ok, err = releaseOrRetire(ctx, tx, want.ID,
 				fmt.Sprintf("download failed (%s); release excluded, re-searching", lastError),
-				fmt.Sprintf("download failed (%s); request withdrawn, not re-searching", lastError))
+				fmt.Sprintf("download failed (%s); no longer acquiring, not re-searching", lastError))
 			if err != nil || !ok || released.Status != string(model.WantPending) {
 				return err
 			}
@@ -633,10 +634,10 @@ func (w *Worker) failJobAndRecoverWants(ctx context.Context, job model.DownloadJ
 
 // releaseOrRetire settles a want whose grab fell through. Normally the want goes
 // back to 'pending' to search again (releaseReason). If its tracking was
-// withdrawn ('paused') nobody wants the title any more, so the want ends 'failed'
-// instead (retireReason) rather than acquiring it for no one. The bool reports
-// whether either landed: false means the want had already left
-// 'grabbed'/'downloading'.
+// withdrawn ('paused') or stopped by an operator ('canceled'), Arrflix is no
+// longer looking for the title, so the want ends 'failed' instead (retireReason)
+// rather than searching again. The bool reports whether either landed: false
+// means the want had already left 'grabbed'/'downloading'.
 //
 // The tracking row is locked first, the order withdrawal and spawn use, so a
 // concurrent withdrawal or re-request is settled before the decision. tx must be
@@ -650,7 +651,8 @@ func releaseOrRetire(ctx context.Context, tx *repo.Repository, wantID uuid.UUID,
 	if err != nil {
 		return model.Want{}, false, err
 	}
-	if tracking.State == string(model.TrackingPaused) {
+	switch model.TrackingState(tracking.State) {
+	case model.TrackingPaused, model.TrackingCanceled:
 		return tx.RetireWantFromGrab(ctx, wantID, retireReason)
 	}
 	return tx.ReleaseWantFromGrab(ctx, wantID, releaseReason)

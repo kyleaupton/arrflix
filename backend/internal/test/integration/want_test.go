@@ -15,9 +15,9 @@ import (
 )
 
 // TestWant_Cancel proves the user-initiated cancel cascade: a non-terminal want
-// with a live download_job and a pending import task is flipped 'canceled'
-// (want + tracking), and its job + pending task are cancelled via the delegated
-// DownloadJobsService.Cancel.
+// whose download_job was never sent to the downloader, with a pending import
+// task, is flipped 'canceled' (want + tracking), and its job + pending task are
+// cancelled.
 func TestWant_Cancel(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -26,8 +26,8 @@ func TestWant_Cancel(t *testing.T) {
 
 	want := seedPendingWant(t, ctx, r)
 
-	// A live download_job for the want. CreateDownloadJob is born 'created'; the
-	// snapshot update flips it to 'downloading' (an active, cancellable state).
+	// A live download_job for the want, born 'created': not yet handed to the
+	// downloader, so the cancel takes it down with the want.
 	downloader, err := r.CreateDownloader(ctx, repo.CreateDownloaderParams{
 		Name:           "qbit-cancel",
 		DownloaderType: "qbittorrent",
@@ -72,12 +72,6 @@ func TestWant_Cancel(t *testing.T) {
 	}
 	if err := r.LinkDownloadJobWant(ctx, job.ID, want.ID); err != nil {
 		t.Fatalf("link download job to want: %v", err)
-	}
-	if _, err := r.SetDownloadJobDownloadSnapshot(ctx, repo.SetDownloadJobDownloadSnapshotParams{
-		ID:     job.ID,
-		Status: "downloading",
-	}); err != nil {
-		t.Fatalf("set download job downloading: %v", err)
 	}
 
 	task, err := r.CreateImportTask(ctx, repo.CreateImportTaskParams{
