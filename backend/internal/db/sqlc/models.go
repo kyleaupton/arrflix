@@ -814,6 +814,21 @@ type VapidConfig struct {
 	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
+type Volume struct {
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	ArrflixBase string      `json:"arrflix_base"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+}
+
+type VolumeAlias struct {
+	VolumeID     pgtype.UUID `json:"volume_id"`
+	DownloaderID pgtype.UUID `json:"downloader_id"`
+	Base         string      `json:"base"`
+	Flavor       string      `json:"flavor"`
+}
+
 type Want struct {
 	ID               pgtype.UUID `json:"id"`
 	TrackingID       pgtype.UUID `json:"tracking_id"`

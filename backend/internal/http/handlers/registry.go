@@ -37,6 +37,7 @@ func RegisterHumachiHandlers(api huma.API, deps Deps) {
 	NewDownloaders(deps.Services, deps.DownloaderManager).RegisterHumachi(api)
 	NewEmailProvider(deps.Services, deps.EmailManager).RegisterHumachi(api)
 	NewNameTemplates(deps.Services).RegisterHumachi(api)
+	NewVolumes(deps.Services).RegisterHumachi(api)
 	NewRouting(deps.Services).RegisterHumachi(api)
 	NewQualityProfiles(deps.Services).RegisterHumachi(api)
 	NewSettings(deps.Services).RegisterHumachi(api)

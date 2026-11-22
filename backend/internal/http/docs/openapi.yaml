@@ -6149,6 +6149,101 @@ components:
         - size
         - isOfficialTrailer
       type: object
+    Volume:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/Volume.json
+          format: uri
+          readOnly: true
+          type: string
+        aliases:
+          items:
+            $ref: "#/components/schemas/VolumeAlias"
+          type:
+            - array
+            - "null"
+        arrflixBase:
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - name
+        - arrflixBase
+        - aliases
+        - createdAt
+        - updatedAt
+      type: object
+    VolumeAlias:
+      additionalProperties: false
+      properties:
+        base:
+          type: string
+        downloaderId:
+          type: string
+        flavor:
+          type: string
+      required:
+        - downloaderId
+        - base
+        - flavor
+      type: object
+    VolumeAliasBody:
+      additionalProperties: false
+      properties:
+        base:
+          description: Absolute path at which the downloader sees the volume
+          minLength: 1
+          type: string
+        downloaderId:
+          description: Downloader that sees this volume at base
+          format: uuid
+          type: string
+      required:
+        - downloaderId
+        - base
+      type: object
+    VolumeWriteBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/VolumeWriteBody.json
+          format: uri
+          readOnly: true
+          type: string
+        aliases:
+          description: Per-downloader paths for the same storage; at most one per downloader
+          items:
+            $ref: "#/components/schemas/VolumeAliasBody"
+          type:
+            - array
+            - "null"
+        arrflixBase:
+          description: Absolute path at which Arrflix sees the volume; must be an existing directory
+          minLength: 1
+          type: string
+        name:
+          description: Display name of the volume
+          maxLength: 100
+          minLength: 1
+          type: string
+      required:
+        - name
+        - arrflixBase
+      type: object
     Want:
       additionalProperties: false
       properties:
@@ -12985,6 +13080,211 @@ paths:
       summary: Get version and update information
       tags:
         - version
+  /api/v1/volumes:
+    get:
+      operationId: volumes-list
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Volume"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: List volumes
+      tags:
+        - volumes
+    post:
+      description: Create a volume with its downloader aliases. 409 when the name or the Arrflix base is already taken by another volume.
+      operationId: volumes-create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VolumeWriteBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Volume"
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Create volume
+      tags:
+        - volumes
+  /api/v1/volumes/{id}:
+    delete:
+      operationId: volumes-delete
+      parameters:
+        - description: Volume ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Volume ID
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Delete volume
+      tags:
+        - volumes
+    get:
+      operationId: volumes-get
+      parameters:
+        - description: Volume ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Volume ID
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Volume"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Get volume
+      tags:
+        - volumes
+    put:
+      description: Replace a volume's fields and its whole alias set.
+      operationId: volumes-update
+      parameters:
+        - description: Volume ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Volume ID
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VolumeWriteBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Volume"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Update volume
+      tags:
+        - volumes
   /api/v1/wants/{id}/cancel:
     post:
       description: Stops acquiring a want and cancels its tracking. A want still searching, or whose download job hasn't been sent to the downloader, is cancelled with that job and its pending import tasks; a download already handed to the downloader is left to finish and be imported, and the want is returned as it stands. Idempotent on an already-canceled want; conflicts when the want is already terminal for another reason.

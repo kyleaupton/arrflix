@@ -33,13 +33,13 @@ import (
 
 // Worker processes import tasks: hardlinks/copies files from downloads to library.
 type Worker struct {
-	repo       *repo.Repository
-	dlm        *downloader.Manager
-	pathMapper *pathmapping.Mapper
-	log        *logger.Logger
-	broker     *sse.Broker
-	sm         *state.ImportTaskMachine
-	mediaInfo  *mediainfo.Analyzer
+	repo      *repo.Repository
+	dlm       *downloader.Manager
+	paths     *service.PathMappingService
+	log       *logger.Logger
+	broker    *sse.Broker
+	sm        *state.ImportTaskMachine
+	mediaInfo *mediainfo.Analyzer
 	// notifications enqueues the want.available notification when an import
 	// reaches the terminal 'available' transition. Optional: unit tests that build
 	// the worker as a struct literal leave it nil, which skips the enqueue (the
@@ -75,7 +75,7 @@ func New(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker
 	return &Worker{
 		repo:          r,
 		dlm:           dlm,
-		pathMapper:    pathmapping.New(),
+		paths:         service.NewPathMappingService(r),
 		log:           log,
 		broker:        broker,
 		sm:            state.NewImportTaskMachine(),
@@ -598,96 +598,149 @@ func (w *Worker) publishDownloadJobUpdated(ctx context.Context, jobID uuid.UUID)
 	realtime.Emit(ctx, w.broker, realtime.DownloadJobUpdated(enriched))
 }
 
-// deriveSourcePath attempts to re-derive the source path from the download job.
-// This enables self-healing when path mappings change or volume mounts are fixed.
+// deriveSourcePath asks the downloader where the task's file is and maps that
+// path into Arrflix's frame through the configured volumes. Re-deriving on
+// every attempt is what lets a retry succeed once a mount or mapping is fixed.
+//
+// Only a manual import (no download job) uses the stored source path. Every
+// other failure is a typed error, never a silent fallback to the stored path:
+// an unreachable downloader is retryable, a path that can't be made absolute
+// is not, and a resolved path that doesn't exist is retryable with a message
+// naming both frames.
 func (w *Worker) deriveSourcePath(ctx context.Context, task model.ImportTask) (string, error) {
-	// No download job - use stored path (manual import case)
+	const op = "ImportWorker.deriveSourcePath"
 	if task.DownloadJobID == uuid.Nil {
 		return task.SourcePath, nil
 	}
 
-	// Get download job
 	job, err := w.repo.GetDownloadJob(ctx, task.DownloadJobID)
 	if err != nil {
-		w.log.Debug().Err(err).Msg("failed to get download job, using stored path")
-		return task.SourcePath, nil
+		return "", err
 	}
-
-	// Need external ID to query downloader
 	if job.DownloaderExternalID == nil || *job.DownloaderExternalID == "" {
-		return task.SourcePath, nil
+		return "", apperrors.Internalf("download job %s has no downloader item to import from", job.ID).
+			Op(op).
+			NotRetryable()
 	}
+	externalID := *job.DownloaderExternalID
 
-	// Get downloader client
 	client, err := w.dlm.GetClientByID(ctx, job.DownloaderID.String())
 	if err != nil {
-		w.log.Debug().Err(err).Msg("failed to get downloader client, using stored path")
-		return task.SourcePath, nil
+		return "", apperrors.BadGatewayf("downloader %s unreachable: %v", job.DownloaderID, err).Op(op)
 	}
-
-	// Query downloader for files
-	files, err := client.ListFiles(ctx, *job.DownloaderExternalID)
+	files, err := client.ListFiles(ctx, externalID)
 	if err != nil {
-		w.log.Debug().Err(err).Msg("failed to list files from downloader, using stored path")
-		return task.SourcePath, nil
+		return "", apperrors.BadGatewayf("list files of %s from downloader %s: %v", externalID, job.DownloaderID, err).Op(op)
 	}
 
-	if len(files) == 0 {
-		w.log.Debug().Msg("no files returned from downloader, using stored path")
-		return task.SourcePath, nil
-	}
-
-	// Identify correct file based on media type
 	var rawPath string
 	if task.MediaType == "movie" {
-		mainFile, ok := importer.PickMainMovieFile(files)
-		if !ok {
-			return "", apperrors.Internalf("no video files found in download").
-				Op("ImportWorker.deriveSourcePath").
+		if len(files) == 0 {
+			// Same as at spawn: with no file list, the item's content path
+			// is the file.
+			item, err := client.Get(ctx, externalID)
+			if err != nil {
+				return "", apperrors.BadGatewayf("get %s from downloader %s: %v", externalID, job.DownloaderID, err).Op(op)
+			}
+			if item.ContentPath == "" {
+				return "", apperrors.Internalf("downloader reports neither files nor a content path for %s", externalID).
+					Op(op).
+					NotRetryable()
+			}
+			rawPath = item.ContentPath
+		} else {
+			mainFile, ok := importer.PickMainMovieFile(files)
+			if !ok {
+				return "", apperrors.Internalf("no video files found in download").
+					Op(op).
+					NotRetryable()
+			}
+			rawPath = mainFile.Path
+		}
+	} else {
+		if task.EpisodeID == uuid.Nil {
+			return "", apperrors.Internalf("series import task %s has no episode", task.ID).
+				Op(op).
 				NotRetryable()
 		}
-		rawPath = mainFile.Path
-	} else {
-		// Series - match to episode
-		if task.EpisodeID == uuid.Nil {
-			return task.SourcePath, nil
-		}
-
 		episode, err := w.repo.GetEpisode(ctx, task.EpisodeID)
 		if err != nil {
-			w.log.Debug().Err(err).Msg("failed to get episode, using stored path")
-			return task.SourcePath, nil
+			return "", err
 		}
-
 		season, err := w.repo.GetSeason(ctx, episode.SeasonID)
 		if err != nil {
-			w.log.Debug().Err(err).Msg("failed to get season, using stored path")
-			return task.SourcePath, nil
+			return "", err
 		}
 
 		seasonNum := int(season.SeasonNumber)
 		epNum := int(episode.EpisodeNumber)
 		matched := importer.MatchFilesToEpisodes(files, &seasonNum, &epNum)
-
-		if f, ok := matched[epNum]; ok {
-			rawPath = f.Path
-		} else {
+		f, ok := matched[epNum]
+		if !ok {
 			return "", apperrors.Internalf("no file matched episode S%02dE%02d", seasonNum, epNum).
-				Op("ImportWorker.deriveSourcePath").
+				Op(op).
+				NotRetryable()
+		}
+		rawPath = f.Path
+	}
+
+	// File paths are usually relative to the item's save path.
+	if !filepath.IsAbs(rawPath) {
+		item, err := client.Get(ctx, externalID)
+		if err != nil {
+			return "", apperrors.BadGatewayf("get %s from downloader %s: %v", externalID, job.DownloaderID, err).Op(op)
+		}
+		rawPath = filepath.Join(item.SavePath, rawPath)
+		if !filepath.IsAbs(rawPath) {
+			return "", apperrors.Internalf("downloader reports relative path %q for %s and no absolute save path", rawPath, externalID).
+				Op(op).
 				NotRetryable()
 		}
 	}
 
-	// Build absolute path if relative
-	if !filepath.IsAbs(rawPath) {
-		item, err := client.Get(ctx, *job.DownloaderExternalID)
-		if err == nil && item.SavePath != "" {
-			rawPath = filepath.Join(item.SavePath, rawPath)
-		}
+	res, err := w.paths.ToCanonical(ctx, job.DownloaderID, rawPath)
+	if err != nil {
+		return "", err
 	}
+	w.logPathResolution(ctx, task.ID, rawPath, res)
 
-	// Apply path mapping (stub - returns unchanged for now)
-	return w.pathMapper.Apply(ctx, job.DownloaderID, rawPath), nil
+	if _, err := os.Stat(res.Path); err != nil {
+		if os.IsNotExist(err) {
+			return "", apperrors.Internalf("%s reports %q, resolved to %q, which doesn't exist in Arrflix. Add or fix a path mapping.",
+				w.downloaderName(ctx, job.DownloaderID), rawPath, res.Path).
+				Op(op)
+		}
+		return "", apperrors.Internalf("stat resolved source %q: %v", res.Path, err).Op(op)
+	}
+	return res.Path, nil
+}
+
+// logPathResolution records on the task which translation, if any, turned the
+// downloader's path into Arrflix's.
+func (w *Worker) logPathResolution(ctx context.Context, taskID uuid.UUID, downloaderPath string, res pathmapping.Resolution) {
+	meta := map[string]any{
+		"downloader_path": downloaderPath,
+		"arrflix_path":    res.Path,
+	}
+	if res.Volume == nil {
+		w.logEvent(ctx, taskID, "path_resolved", fmt.Sprintf("no path mapping applied to %s", res.Path), meta)
+		return
+	}
+	meta["volume_id"] = res.Volume.ID
+	meta["volume_name"] = res.Volume.Name
+	meta["downloader_base"] = res.Alias
+	meta["arrflix_base"] = res.Volume.ArrflixBase
+	w.logEvent(ctx, taskID, "path_resolved",
+		fmt.Sprintf("%s → %s via volume %q", downloaderPath, res.Path, res.Volume.Name), meta)
+}
+
+// downloaderName is the operator-facing name of a downloader for error
+// messages, falling back to its ID when the row can't be read.
+func (w *Worker) downloaderName(ctx context.Context, id uuid.UUID) string {
+	if dl, err := w.repo.GetDownloader(ctx, id); err == nil {
+		return dl.Name
+	}
+	return "downloader " + id.String()
 }
 
 // verifyReadable opens path and reads its first byte. It proves the bytes can
