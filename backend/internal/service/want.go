@@ -19,15 +19,14 @@ func NewWantService(r *repo.Repository) *WantService {
 	return &WantService{repo: r}
 }
 
-// CancelWant flips a non-terminal want (and its tracking) to 'canceled' and
-// cancels each download job it was the last live want of, with that job's
-// pending import tasks. Idempotent on an already-canceled want; a conflict on a
-// want already terminal for another reason ('available'/'failed').
-//
-// This is the operator's cancel: unlike a requester's withdrawal it cancels a
-// job even after the job was handed to the downloader. That cancel is DB-only —
-// Arrflix never removes torrents, so the transfer keeps running in the
-// downloader and its result is never imported.
+// CancelWant is the operator's stop: it flips the want's tracking to 'canceled'
+// and stands the want down the way the last requester's withdrawal does
+// (standDownWant). A want still searching, or whose job was never sent, is
+// cancelled with that job; a want whose download was already handed to the
+// downloader is left to finish and be imported (story 07). Stopping a transfer is
+// the download job's own cancel. Returns the want as it stands afterwards.
+// Idempotent on an already-canceled want; a conflict on a want already terminal
+// for another reason ('available'/'failed').
 func (s *WantService) CancelWant(ctx context.Context, id uuid.UUID) (model.Want, error) {
 	var out model.Want
 	err := s.repo.InTx(ctx, func(r *repo.Repository) error {
@@ -35,25 +34,31 @@ func (s *WantService) CancelWant(ctx context.Context, id uuid.UUID) (model.Want,
 		if err != nil {
 			return err
 		}
+		// Tracking before want, the lock order withdrawal and the download
+		// worker's releaseOrRetire use.
+		if _, err := r.LockTracking(ctx, want.TrackingID); err != nil {
+			return err
+		}
 
-		canceled, ok, err := cancelWantCascade(ctx, r, id)
+		stood, canceled, err := standDownWant(ctx, r, id)
 		if err != nil {
 			return err
 		}
-		if !ok {
-			if want.Status == string(model.WantCanceled) {
-				out = want // idempotent
+		if !canceled && model.WantStatus(stood.Status).IsTerminal() {
+			if stood.Status == string(model.WantCanceled) {
+				out = stood // idempotent
 				return nil
 			}
-			return apperrors.Conflictf("cannot cancel want in terminal state %q", want.Status).
+			return apperrors.Conflictf("cannot cancel want in terminal state %q", stood.Status).
 				Op("WantService.CancelWant")
 		}
 
-		// Mirror the terminal state onto the tracking so the UI shows "Canceled".
-		if _, err := r.SetTrackingState(ctx, canceled.TrackingID, string(model.TrackingCanceled)); err != nil {
+		// Mirror the stop onto the tracking so the UI shows "Canceled" and a
+		// download left to finish isn't searched again if it fails.
+		if _, err := r.SetTrackingState(ctx, stood.TrackingID, string(model.TrackingCanceled)); err != nil {
 			return err
 		}
-		out = canceled
+		out = stood
 		return nil
 	})
 	if err != nil {
@@ -101,8 +106,9 @@ func cancelWantCascade(ctx context.Context, r *repo.Repository, wantID uuid.UUID
 	return canceled, true, nil
 }
 
-// standDownWant cancels a want nobody justifies any more, unless its download is
-// already committed: a want that is downloading or importing, or that has a job
+// standDownWant cancels a want nobody justifies any more (its last requester
+// withdrew, or an operator stopped acquisition), unless its download is already
+// committed: a want that is downloading or importing, or that has a job
 // already handed to the downloader, is left to finish (REQ-CANCEL-004). A job
 // still waiting to be sent ('created') is cancelled with its want. The bool
 // reports whether the want was cancelled.

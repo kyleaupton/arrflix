@@ -17,7 +17,6 @@ import (
 	"github.com/kyleaupton/arrflix/internal/parsing"
 	"github.com/kyleaupton/arrflix/internal/pathmapping"
 	"github.com/kyleaupton/arrflix/internal/repo"
-	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/test/dbtest"
 )
 
@@ -470,9 +469,11 @@ func TestProcessTask_NoWant(t *testing.T) {
 // doesn't bring the want back to life.
 //
 // The import of a finished download is already claimed when the want is
-// cancelled through WantService. The import then runs to completion and lands
-// the file, but the want must stay 'canceled' rather than advance to
-// 'imported' or 'available'.
+// cancelled. The import then runs to completion and lands the file, but the
+// want must stay 'canceled' rather than advance to 'imported' or 'available'.
+//
+// The want is cancelled with the repo's CAS: WantService.CancelWant leaves a
+// downloading want to finish (story 07), so it can't set this state up.
 func TestReqCancel007_LateCompletionDoesNotReviveCanceledWant(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
@@ -488,9 +489,8 @@ func TestReqCancel007_LateCompletionDoesNotReviveCanceledWant(t *testing.T) {
 		t.Fatalf("claimed import tasks = %d, want the seeded task", len(claimed))
 	}
 
-	wants := service.NewWantService(r)
-	if _, err := wants.CancelWant(ctx, fix.want.ID); err != nil {
-		t.Fatalf("CancelWant: %v", err)
+	if _, ok, err := r.CancelWant(ctx, fix.want.ID); err != nil || !ok {
+		t.Fatalf("cancel want: ok=%v err=%v", ok, err)
 	}
 
 	w := newTestWorker(r)

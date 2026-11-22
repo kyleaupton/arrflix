@@ -183,7 +183,7 @@ async function handleStop() {
   const confirmed = await modal.confirm({
     title: 'Stop tracking',
     message:
-      'Stop acquiring new episodes and cancel any in-flight downloads? Already-downloaded episodes are kept.',
+      'Stop looking for new episodes? Downloads already in progress will finish, and episodes you have are kept. To stop a download too, cancel it in Downloads.',
     severity: 'danger',
   })
   if (!confirmed) return
@@ -203,7 +203,8 @@ async function handleCancel() {
   if (!props.want) return
   const confirmed = await modal.confirm({
     title: 'Cancel acquisition',
-    message: 'Stop searching/downloading and mark this movie canceled?',
+    message:
+      'Stop searching for this movie? A download already in progress will finish and be imported. To stop a download too, cancel it in Downloads.',
     severity: 'danger',
   })
   if (!confirmed) return
