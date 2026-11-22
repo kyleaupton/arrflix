@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { Check, Copy } from 'lucide-vue-next'
 import { invitesCreateMutation, invitesListQueryKey } from '@/client/@tanstack/vue-query.gen'
 import BaseDialog from './BaseDialog.vue'
+import RequestSettingsFields from '@/components/users/RequestSettingsFields.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,6 +23,8 @@ const queryClient = useQueryClient()
 
 const email = ref('')
 const role = ref<AssignableRole>('requester')
+const autoApprove = ref(false)
+const allow4k = ref(false)
 const error = ref<string | null>(null)
 
 // After creation we show the accept link instead of closing: the copyable link is
@@ -50,7 +53,16 @@ const handleSave = () => {
     error.value = 'Email is required'
     return
   }
-  createInviteMutation.mutate({ body: { email: email.value, role: role.value } })
+  // The switches are hidden when inviting an admin, so they're sent off.
+  const isAdmin = role.value === 'admin'
+  createInviteMutation.mutate({
+    body: {
+      email: email.value,
+      role: role.value,
+      autoApprove: !isAdmin && autoApprove.value,
+      allow4k: !isAdmin && allow4k.value,
+    },
+  })
 }
 
 const handleCopy = async () => {
@@ -97,6 +109,11 @@ const handleClose = () => {
           </SelectContent>
         </Select>
       </div>
+      <RequestSettingsFields
+        v-model:auto-approve="autoApprove"
+        v-model:allow4k="allow4k"
+        :is-admin="role === 'admin'"
+      />
     </div>
 
     <!-- Step 2: hand off the link -->

@@ -25,13 +25,26 @@ SET password_hash = $2, updated_at = now()
 WHERE id = $1;
 
 -- name: ListUsers :many
+-- auto_approve and allow_4k read the user's request settings back from their
+-- user-subject grants. The settings are always written as a whole set
+-- (authz.RequestSettingsGrants), so one key stands for each.
 SELECT u.*,
   COALESCE(
     json_agg(
       json_build_object('id', r.id, 'name', r.name, 'description', r.description)
     ) FILTER (WHERE r.id IS NOT NULL),
     '[]'
-  ) as roles
+  ) as roles,
+  EXISTS (
+    SELECT 1 FROM permission_grant g
+    WHERE g.subject_type = 'user' AND g.subject_id = u.id
+      AND g.permission_key = 'requests.auto_approve:movie:hd'
+  ) AS auto_approve,
+  EXISTS (
+    SELECT 1 FROM permission_grant g
+    WHERE g.subject_type = 'user' AND g.subject_id = u.id
+      AND g.permission_key = 'requests.create:movie:4k'
+  ) AS allow_4k
 FROM app_user u
 LEFT JOIN user_role ur ON ur.user_id = u.id
 LEFT JOIN role r ON r.id = ur.role_id
@@ -39,13 +52,26 @@ GROUP BY u.id
 ORDER BY u.created_at DESC;
 
 -- name: GetUser :one
+-- auto_approve and allow_4k read the user's request settings back from their
+-- user-subject grants. The settings are always written as a whole set
+-- (authz.RequestSettingsGrants), so one key stands for each.
 SELECT u.*,
   COALESCE(
     json_agg(
       json_build_object('id', r.id, 'name', r.name, 'description', r.description)
     ) FILTER (WHERE r.id IS NOT NULL),
     '[]'
-  ) as roles
+  ) as roles,
+  EXISTS (
+    SELECT 1 FROM permission_grant g
+    WHERE g.subject_type = 'user' AND g.subject_id = u.id
+      AND g.permission_key = 'requests.auto_approve:movie:hd'
+  ) AS auto_approve,
+  EXISTS (
+    SELECT 1 FROM permission_grant g
+    WHERE g.subject_type = 'user' AND g.subject_id = u.id
+      AND g.permission_key = 'requests.create:movie:4k'
+  ) AS allow_4k
 FROM app_user u
 LEFT JOIN user_role ur ON ur.user_id = u.id
 LEFT JOIN role r ON r.id = ur.role_id

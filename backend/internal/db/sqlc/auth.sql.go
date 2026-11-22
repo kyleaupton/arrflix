@@ -119,7 +119,17 @@ SELECT u.id, u.email, u.username, u.avatar_url, u.password_hash, u.is_active, u.
       json_build_object('id', r.id, 'name', r.name, 'description', r.description)
     ) FILTER (WHERE r.id IS NOT NULL),
     '[]'
-  ) as roles
+  ) as roles,
+  EXISTS (
+    SELECT 1 FROM permission_grant g
+    WHERE g.subject_type = 'user' AND g.subject_id = u.id
+      AND g.permission_key = 'requests.auto_approve:movie:hd'
+  ) AS auto_approve,
+  EXISTS (
+    SELECT 1 FROM permission_grant g
+    WHERE g.subject_type = 'user' AND g.subject_id = u.id
+      AND g.permission_key = 'requests.create:movie:4k'
+  ) AS allow_4k
 FROM app_user u
 LEFT JOIN user_role ur ON ur.user_id = u.id
 LEFT JOIN role r ON r.id = ur.role_id
@@ -137,8 +147,13 @@ type GetUserRow struct {
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`
 	Roles        interface{} `json:"roles"`
+	AutoApprove  bool        `json:"auto_approve"`
+	Allow4k      bool        `json:"allow_4k"`
 }
 
+// auto_approve and allow_4k read the user's request settings back from their
+// user-subject grants. The settings are always written as a whole set
+// (authz.RequestSettingsGrants), so one key stands for each.
 func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (GetUserRow, error) {
 	row := q.db.QueryRow(ctx, getUser, id)
 	var i GetUserRow
@@ -152,6 +167,8 @@ func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (GetUserRow, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Roles,
+		&i.AutoApprove,
+		&i.Allow4k,
 	)
 	return i, err
 }
@@ -255,7 +272,17 @@ SELECT u.id, u.email, u.username, u.avatar_url, u.password_hash, u.is_active, u.
       json_build_object('id', r.id, 'name', r.name, 'description', r.description)
     ) FILTER (WHERE r.id IS NOT NULL),
     '[]'
-  ) as roles
+  ) as roles,
+  EXISTS (
+    SELECT 1 FROM permission_grant g
+    WHERE g.subject_type = 'user' AND g.subject_id = u.id
+      AND g.permission_key = 'requests.auto_approve:movie:hd'
+  ) AS auto_approve,
+  EXISTS (
+    SELECT 1 FROM permission_grant g
+    WHERE g.subject_type = 'user' AND g.subject_id = u.id
+      AND g.permission_key = 'requests.create:movie:4k'
+  ) AS allow_4k
 FROM app_user u
 LEFT JOIN user_role ur ON ur.user_id = u.id
 LEFT JOIN role r ON r.id = ur.role_id
@@ -273,8 +300,13 @@ type ListUsersRow struct {
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`
 	Roles        interface{} `json:"roles"`
+	AutoApprove  bool        `json:"auto_approve"`
+	Allow4k      bool        `json:"allow_4k"`
 }
 
+// auto_approve and allow_4k read the user's request settings back from their
+// user-subject grants. The settings are always written as a whole set
+// (authz.RequestSettingsGrants), so one key stands for each.
 func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 	rows, err := q.db.Query(ctx, listUsers)
 	if err != nil {
@@ -294,6 +326,8 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Roles,
+			&i.AutoApprove,
+			&i.Allow4k,
 		); err != nil {
 			return nil, err
 		}

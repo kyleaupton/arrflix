@@ -14,7 +14,7 @@ import (
 // AuthzService answers permission checks for a user, backed by a per-user cache
 // of their effective grant set. The cache has no TTL: its lifetime is the
 // process, and correctness relies on Bust being called whenever a user's grants
-// change (today, only role assignment). Nothing enforces these checks yet —
+// change (role assignment and per-user request settings). Nothing enforces these checks yet —
 // this is the primitive; consumers arrive in a later phase.
 type AuthzService struct {
 	repo  *repo.Repository

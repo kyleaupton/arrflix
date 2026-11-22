@@ -1225,6 +1225,8 @@ export type IndexerTestResult = {
 };
 
 export type Invite = {
+    allow4k: boolean;
+    autoApprove: boolean;
     claimedAt: string | null;
     createdAt: string;
     email: string;
@@ -1239,6 +1241,14 @@ export type InvitesCreateBody = {
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    /**
+     * Whether the invited user may request 4K (defaults to false)
+     */
+    allow4k?: boolean;
+    /**
+     * Whether the invited user's requests skip the approval queue (defaults to false)
+     */
+    autoApprove?: boolean;
     /**
      * Invitee email
      */
@@ -2650,6 +2660,8 @@ export type User = {
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    allow4k: boolean;
+    autoApprove: boolean;
     avatarUrl?: string;
     createdAt: string;
     email: string | null;
@@ -2699,6 +2711,21 @@ export type UsersAssignRoleBody = {
      * Role name
      */
     role: 'requester' | 'admin';
+};
+
+export type UsersUpdateRequestSettingsInputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Whether the user may request 4K
+     */
+    allow4k: boolean;
+    /**
+     * Whether the user's requests skip the approval queue, at every tier they may request
+     */
+    autoApprove: boolean;
 };
 
 export type VersionInfo = {
@@ -3307,6 +3334,14 @@ export type IndexerTestResultWritable = {
 };
 
 export type InvitesCreateBodyWritable = {
+    /**
+     * Whether the invited user may request 4K (defaults to false)
+     */
+    allow4k?: boolean;
+    /**
+     * Whether the invited user's requests skip the approval queue (defaults to false)
+     */
+    autoApprove?: boolean;
     /**
      * Invitee email
      */
@@ -4027,6 +4062,8 @@ export type TrackingSetAutonomyInputBodyWritable = {
 };
 
 export type UserWritable = {
+    allow4k: boolean;
+    autoApprove: boolean;
     avatarUrl?: string;
     createdAt: string;
     email: string | null;
@@ -4064,6 +4101,17 @@ export type UsersAssignRoleBodyWritable = {
      * Role name
      */
     role: 'requester' | 'admin';
+};
+
+export type UsersUpdateRequestSettingsInputBodyWritable = {
+    /**
+     * Whether the user may request 4K
+     */
+    allow4k: boolean;
+    /**
+     * Whether the user's requests skip the approval queue, at every tier they may request
+     */
+    autoApprove: boolean;
 };
 
 export type VersionInfoWritable = {
@@ -9992,6 +10040,52 @@ export type UsersUpdatePasswordResponses = {
 };
 
 export type UsersUpdatePasswordResponse = UsersUpdatePasswordResponses[keyof UsersUpdatePasswordResponses];
+
+export type UsersUpdateRequestSettingsData = {
+    body: UsersUpdateRequestSettingsInputBodyWritable;
+    path: {
+        /**
+         * User ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/users/{id}/request-settings';
+};
+
+export type UsersUpdateRequestSettingsErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type UsersUpdateRequestSettingsError = UsersUpdateRequestSettingsErrors[keyof UsersUpdateRequestSettingsErrors];
+
+export type UsersUpdateRequestSettingsResponses = {
+    /**
+     * OK
+     */
+    200: User;
+};
+
+export type UsersUpdateRequestSettingsResponse = UsersUpdateRequestSettingsResponses[keyof UsersUpdateRequestSettingsResponses];
 
 export type UsersAssignRoleData = {
     body: UsersAssignRoleBodyWritable;

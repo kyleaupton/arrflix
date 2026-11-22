@@ -32,7 +32,7 @@ func NewInvitesService(r *repo.Repository, notifications *NotificationService, s
 }
 
 // Create issues (or re-issues) an invite for email with the given target role and
-// returns the invite, the raw token (returned exactly once, for the caller to build
+// request settings (applied when the invite is accepted) and returns the invite, the raw token (returned exactly once, for the caller to build
 // the accept link), and whether the magic link was also emailed. An empty role
 // defaults to "requester". Re-inviting an existing email regenerates the link
 // ("resend"); inviting an address that already belongs to a user is a Conflict, so
@@ -43,7 +43,7 @@ func NewInvitesService(r *repo.Repository, notifications *NotificationService, s
 // Emailing is best-effort and never fails the create: the copyable link is the
 // source of truth, so a delivery-enqueue problem or unconfigured SMTP just yields
 // emailed=false.
-func (s *InvitesService) Create(ctx context.Context, email, role string, invitedBy uuid.UUID, originHint string) (model.Invite, string, bool, error) {
+func (s *InvitesService) Create(ctx context.Context, email, role string, settings model.RequestSettings, invitedBy uuid.UUID, originHint string) (model.Invite, string, bool, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
 		return model.Invite{}, "", false, apperrors.Validation("invalid invite",
@@ -73,6 +73,7 @@ func (s *InvitesService) Create(ctx context.Context, email, role string, invited
 		TokenHash: hash,
 		ExpiresAt: time.Now().Add(inviteTTL),
 		Role:      role,
+		Settings:  settings,
 	})
 	if err != nil {
 		return model.Invite{}, "", false, err
