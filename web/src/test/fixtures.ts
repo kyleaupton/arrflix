@@ -2,7 +2,16 @@
 // neutral defaults, so a test states only the fields its scenario turns on.
 
 import { HttpResponse } from 'msw'
-import type { ProblemDetails, Request, Role, TitleStatus, User } from '@/client/types.gen'
+import type {
+  DownloaderPathCheck,
+  PathTestResult,
+  ProblemDetails,
+  Request,
+  Role,
+  TitleStatus,
+  User,
+  Volume,
+} from '@/client/types.gen'
 import { requester } from './render'
 
 export function request(overrides: Partial<Request> = {}): Request {
@@ -61,6 +70,40 @@ export function titleStatus(overrides: Partial<TitleStatus> = {}): TitleStatus {
     counts: { available: 0, total: 1, working: 1 },
     library: { fileCount: 0, hasFiles: false },
     viewer: { isRequester: false },
+    ...overrides,
+  }
+}
+
+export function pathCheck(overrides: Partial<DownloaderPathCheck> = {}): DownloaderPathCheck {
+  return {
+    downloaderId: '40000000-0000-0000-0000-000000000001',
+    downloaderName: 'qBittorrent',
+    status: 'no_mapping_needed',
+    savePath: '/data/torrents',
+    resolvedPath: '/data/torrents',
+    ...overrides,
+  }
+}
+
+export function volume(overrides: Partial<Volume> = {}): Volume {
+  return {
+    id: '50000000-0000-0000-0000-000000000001',
+    name: 'media',
+    arrflixBase: '/data',
+    aliases: [],
+    createdAt: '2026-11-01T12:00:00Z',
+    updatedAt: '2026-11-01T12:00:00Z',
+    ...overrides,
+  }
+}
+
+export function pathTestResult(overrides: Partial<PathTestResult> = {}): PathTestResult {
+  return {
+    downloaderId: '40000000-0000-0000-0000-000000000001',
+    path: '/downloads',
+    resolvedPath: '/data/torrents',
+    exists: true,
+    libraries: [],
     ...overrides,
   }
 }

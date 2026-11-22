@@ -62,7 +62,7 @@ const groups = computed<NavGroup[]>(() => [
         icon: Library,
         badge: () => unmatchedCount.value,
       },
-      { label: 'Path Mapping', icon: FolderTree, disabled: true },
+      { label: 'Path Mapping', to: '/settings/path-mapping', icon: FolderTree },
     ],
   },
   {

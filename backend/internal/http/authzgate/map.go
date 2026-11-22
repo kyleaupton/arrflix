@@ -156,6 +156,8 @@ var operationPerms = map[string]requirement{
 	"email-provider-get":          perm(authz.AdminSettingsRead),
 	"volumes-list":                perm(authz.AdminSettingsRead),
 	"volumes-get":                 perm(authz.AdminSettingsRead),
+	"path-mapping-checks":         perm(authz.AdminSettingsRead),
+	"path-mapping-test":           perm(authz.AdminSettingsRead),
 
 	// ----- admin.settings.write -----
 	"settings-patch":               perm(authz.AdminSettingsWrite),
@@ -181,6 +183,7 @@ var operationPerms = map[string]requirement{
 	"volumes-create":               perm(authz.AdminSettingsWrite),
 	"volumes-update":               perm(authz.AdminSettingsWrite),
 	"volumes-delete":               perm(authz.AdminSettingsWrite),
+	"path-mapping-preview":         perm(authz.AdminSettingsWrite),
 
 	// ----- admin.indexers.manage -----
 	"indexers-list-configured": perm(authz.AdminIndexersManage),

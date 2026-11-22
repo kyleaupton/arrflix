@@ -149,7 +149,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		MatchDecisions:     matchDecisionsSvc,
 		Media:              media,
 		NameTemplates:      NewNameTemplatesService(r),
-		PathMapping:        NewPathMappingService(r),
+		PathMapping:        NewPathMappingService(r, cfg.downloaders),
 		Notifications:      notifications,
 		Proposals:          proposals,
 		QualityProfiles:    quality,

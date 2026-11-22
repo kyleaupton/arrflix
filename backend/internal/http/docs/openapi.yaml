@@ -1273,6 +1273,35 @@ components:
         - createdAt
         - updatedAt
       type: object
+    DownloaderPathCheck:
+      additionalProperties: false
+      properties:
+        downloaderId:
+          type: string
+        downloaderName:
+          type: string
+        message:
+          type: string
+        resolvedPath:
+          type: string
+        savePath:
+          type: string
+        status:
+          enum:
+            - no_mapping_needed
+            - mapped
+            - not_visible
+            - unavailable
+          type: string
+        volumeId:
+          type: string
+        volumeName:
+          type: string
+      required:
+        - downloaderId
+        - downloaderName
+        - status
+      type: object
     DownloaderWithStatus:
       additionalProperties: false
       properties:
@@ -3942,6 +3971,113 @@ components:
       required:
         - title
       type: object
+    PathMappingPreviewBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/PathMappingPreviewBody.json
+          format: uri
+          readOnly: true
+          type: string
+        aliases:
+          description: Draft downloader aliases; any whose base isn't absolute is ignored
+          items:
+            $ref: "#/components/schemas/VolumeAliasBody"
+          type:
+            - array
+            - "null"
+        arrflixBase:
+          description: Draft Arrflix path; ignored unless absolute
+          type: string
+        volumeId:
+          description: Volume being edited; omit for a new one
+          format: uuid
+          type: string
+      required:
+        - arrflixBase
+      type: object
+    PathMappingTestInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/PathMappingTestInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        downloaderId:
+          description: Downloader whose frame path is in
+          format: uuid
+          type: string
+        path:
+          description: Absolute path as the downloader sees it
+          minLength: 1
+          type: string
+      required:
+        - downloaderId
+        - path
+      type: object
+    PathTestLibrary:
+      additionalProperties: false
+      properties:
+        libraryId:
+          type: string
+        libraryName:
+          type: string
+        message:
+          type: string
+        rootPath:
+          type: string
+        verdict:
+          enum:
+            - hardlink
+            - copy
+            - unknown
+          type: string
+      required:
+        - libraryId
+        - libraryName
+        - rootPath
+        - verdict
+      type: object
+    PathTestResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/PathTestResult.json
+          format: uri
+          readOnly: true
+          type: string
+        downloaderId:
+          type: string
+        exists:
+          type: boolean
+        libraries:
+          items:
+            $ref: "#/components/schemas/PathTestLibrary"
+          type:
+            - array
+            - "null"
+        path:
+          type: string
+        resolvedPath:
+          type: string
+        volumeId:
+          type: string
+        volumeName:
+          type: string
+      required:
+        - downloaderId
+        - path
+        - resolvedPath
+        - exists
+        - libraries
+      type: object
     PersonDetail:
       additionalProperties: false
       properties:
@@ -5550,6 +5686,8 @@ components:
           type: string
         message:
           type: string
+        pathsResolve:
+          type: boolean
         success:
           type: boolean
         version:
@@ -10321,6 +10459,128 @@ paths:
       summary: Mark a notification read
       tags:
         - notifications
+  /api/v1/path-mapping/checks:
+    get:
+      description: Ask each downloader for its default save path, map it through the volumes, and report whether Arrflix sees a directory there. Nothing is persisted.
+      operationId: path-mapping-checks
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/DownloaderPathCheck"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Check downloader save paths
+      tags:
+        - volumes
+  /api/v1/path-mapping/preview:
+    post:
+      description: Run the save-path checks as they would come out with the draft volume saved. Nothing is persisted.
+      operationId: path-mapping-preview
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PathMappingPreviewBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/DownloaderPathCheck"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Preview downloader save path checks with a draft volume
+      tags:
+        - volumes
+  /api/v1/path-mapping/test:
+    post:
+      description: Map a path as a downloader sees it into Arrflix, report whether it exists, and for each library whether imports from it would hardlink or copy. Nothing is persisted.
+      operationId: path-mapping-test
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PathMappingTestInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PathTestResult"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Test a downloader path
+      tags:
+        - volumes
   /api/v1/person/{id}:
     get:
       description: Returns the full person detail.

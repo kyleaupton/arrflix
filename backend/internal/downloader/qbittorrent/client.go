@@ -229,6 +229,12 @@ func (c *Client) GetWebAPIVersion(ctx context.Context) (string, error) {
 	return c.doRaw(ctx, "GET", "/api/v2/app/webapiVersion")
 }
 
+// GetDefaultSavePath returns the directory torrents are saved to when added
+// without a save path.
+func (c *Client) GetDefaultSavePath(ctx context.Context) (string, error) {
+	return c.doRaw(ctx, "GET", "/api/v2/app/defaultSavePath")
+}
+
 // ListTorrents returns torrents matching the given options.
 func (c *Client) ListTorrents(ctx context.Context, hashes ...string) ([]TorrentInfo, error) {
 	params := url.Values{}

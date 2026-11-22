@@ -230,6 +230,12 @@ func (h *Downloaders) Test(ctx context.Context, input *DownloadersTestInput) (*D
 	if err != nil {
 		return nil, apperrors.BadGatewayf("%v", err).Op("DownloadersHandler.Test")
 	}
+	if result.Success {
+		result.PathsResolve, err = h.svc.PathMapping.PathsResolve(testCtx, dl, client)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return &DownloadersTestOutput{Body: result}, nil
 }

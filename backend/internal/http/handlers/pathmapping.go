@@ -127,6 +127,74 @@ func (h *Volumes) Delete(ctx context.Context, input *VolumesDeleteInput) (*Volum
 	return &VolumesDeleteOutput{}, nil
 }
 
+// ----- Checks -----
+
+type PathMappingChecksInput struct{}
+
+type PathMappingChecksOutput struct {
+	Body []model.DownloaderPathCheck
+}
+
+func (h *Volumes) Checks(ctx context.Context, _ *PathMappingChecksInput) (*PathMappingChecksOutput, error) {
+	out, err := h.svc.PathMapping.Checks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &PathMappingChecksOutput{Body: out}, nil
+}
+
+// ----- Preview -----
+
+type pathMappingPreviewBody struct {
+	VolumeID    *uuid.UUID        `json:"volumeId,omitempty" format:"uuid" doc:"Volume being edited; omit for a new one"`
+	ArrflixBase string            `json:"arrflixBase" doc:"Draft Arrflix path; ignored unless absolute"`
+	Aliases     []volumeAliasBody `json:"aliases" required:"false" doc:"Draft downloader aliases; any whose base isn't absolute is ignored"`
+}
+
+type PathMappingPreviewInput struct {
+	Body pathMappingPreviewBody
+}
+
+type PathMappingPreviewOutput struct {
+	Body []model.DownloaderPathCheck
+}
+
+func (h *Volumes) Preview(ctx context.Context, input *PathMappingPreviewInput) (*PathMappingPreviewOutput, error) {
+	draft := service.VolumeDraft{ArrflixBase: input.Body.ArrflixBase}
+	if input.Body.VolumeID != nil {
+		draft.ID = *input.Body.VolumeID
+	}
+	for _, a := range input.Body.Aliases {
+		draft.Aliases = append(draft.Aliases, service.VolumeAliasInput{DownloaderID: a.DownloaderID, Base: a.Base})
+	}
+	out, err := h.svc.PathMapping.Preview(ctx, draft)
+	if err != nil {
+		return nil, err
+	}
+	return &PathMappingPreviewOutput{Body: out}, nil
+}
+
+// ----- Test -----
+
+type PathMappingTestInput struct {
+	Body struct {
+		DownloaderID uuid.UUID `json:"downloaderId" required:"true" format:"uuid" doc:"Downloader whose frame path is in"`
+		Path         string    `json:"path" required:"true" minLength:"1" doc:"Absolute path as the downloader sees it"`
+	}
+}
+
+type PathMappingTestOutput struct {
+	Body model.PathTestResult
+}
+
+func (h *Volumes) Test(ctx context.Context, input *PathMappingTestInput) (*PathMappingTestOutput, error) {
+	out, err := h.svc.PathMapping.Test(ctx, input.Body.DownloaderID, input.Body.Path)
+	if err != nil {
+		return nil, err
+	}
+	return &PathMappingTestOutput{Body: out}, nil
+}
+
 // ----- Register -----
 
 func (h *Volumes) RegisterHumachi(api huma.API) {
@@ -177,4 +245,33 @@ func (h *Volumes) RegisterHumachi(api huma.API) {
 		DefaultStatus: http.StatusNoContent,
 		Errors:        errsDelete,
 	}, h.Delete)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "path-mapping-checks",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/path-mapping/checks",
+		Summary:     "Check downloader save paths",
+		Description: "Ask each downloader for its default save path, map it through the volumes, and report whether Arrflix sees a directory there. Nothing is persisted.",
+		Tags:        []string{"volumes"},
+	}, h.Checks)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "path-mapping-preview",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/path-mapping/preview",
+		Summary:     "Preview downloader save path checks with a draft volume",
+		Description: "Run the save-path checks as they would come out with the draft volume saved. Nothing is persisted.",
+		Tags:        []string{"volumes"},
+		Errors:      errsWrite,
+	}, h.Preview)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "path-mapping-test",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/path-mapping/test",
+		Summary:     "Test a downloader path",
+		Description: "Map a path as a downloader sees it into Arrflix, report whether it exists, and for each library whether imports from it would hardlink or copy. Nothing is persisted.",
+		Tags:        []string{"volumes"},
+		Errors:      errsUpsert,
+	}, h.Test)
 }

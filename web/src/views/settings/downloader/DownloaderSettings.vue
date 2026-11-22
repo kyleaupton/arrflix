@@ -33,6 +33,10 @@ function invalidateDownloaders() {
 // Error state for table-level errors
 const downloaderError = ref<string | null>(null)
 
+// The path check from the last successful test, shown with a link to Path
+// Mapping. Absent when the test couldn't ask the downloader for its save path.
+const pathsResult = ref<{ name: string; ok: boolean } | null>(null)
+
 // Mutations
 const deleteDownloaderMutation = useMutation({
   ...downloadersDeleteMutation(),
@@ -43,9 +47,14 @@ const deleteDownloaderMutation = useMutation({
 })
 const testDownloaderMutation = useMutation({
   ...downloadersTestMutation(),
-  onSuccess: async (result) => {
+  onSuccess: async (result, variables) => {
+    pathsResult.value = null
     if (result.success) {
       downloaderError.value = null
+      const name = downloaders.value?.find((d) => d.id === variables.path.id)?.name ?? 'Downloader'
+      if (result.pathsResolve != null) {
+        pathsResult.value = { name, ok: result.pathsResolve }
+      }
       await modal.alert({
         title: 'Connection Test Successful',
         message:
@@ -60,6 +69,10 @@ const testDownloaderMutation = useMutation({
     downloaderError.value = problemMessage(err, 'Connection test failed')
   },
 })
+
+function pathsLine(ok: boolean) {
+  return ok ? '✓ Paths resolve' : "⚠ Arrflix can't see this downloader's downloads"
+}
 
 // Handlers
 const handleAddDownloader = () => {
@@ -126,6 +139,25 @@ const downloaderActions = createDownloaderActions(
           class="p-4 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive mb-4"
         >
           {{ downloaderError }}
+        </div>
+        <div
+          v-if="pathsResult"
+          class="mb-4 flex flex-wrap items-center gap-x-2 rounded-lg border p-3 text-sm"
+          data-testid="downloader-paths-result"
+        >
+          <span class="font-medium">{{ pathsResult.name }}:</span>
+          <span
+            :class="
+              pathsResult.ok
+                ? 'text-green-600 dark:text-green-500'
+                : 'text-amber-600 dark:text-amber-500'
+            "
+          >
+            {{ pathsLine(pathsResult.ok) }}
+          </span>
+          <RouterLink to="/settings/path-mapping" class="underline underline-offset-4">
+            Path Mapping
+          </RouterLink>
         </div>
         <div v-if="isLoading" class="space-y-3">
           <Skeleton class="h-12 w-full" />

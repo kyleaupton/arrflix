@@ -55,7 +55,7 @@ func newTestWorkerWithClient(r *repo.Repository, client *fakeClient) *Worker {
 	return &Worker{
 		repo:         r,
 		dlm:          downloader.NewManager(reg, r, log),
-		paths:        service.NewPathMappingService(r),
+		paths:        service.NewPathMappingService(r, nil),
 		log:          log,
 		sm:           state.NewImportTaskMachine(),
 		mediaInfo:    mediainfo.NewAnalyzer(*log),
@@ -77,6 +77,9 @@ func (f *fakeClient) Type() downloader.Type             { return downloader.Type
 func (f *fakeClient) InstanceID() downloader.InstanceID { return "fake" }
 func (f *fakeClient) Test(context.Context) (downloader.TestResult, error) {
 	return downloader.TestResult{Success: true}, nil
+}
+func (f *fakeClient) DefaultSavePath(context.Context) (string, error) {
+	return "", downloader.ErrUnsupported
 }
 func (f *fakeClient) Add(context.Context, downloader.AddRequest) (downloader.AddResult, error) {
 	return downloader.AddResult{}, downloader.ErrUnsupported

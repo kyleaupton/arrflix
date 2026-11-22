@@ -145,6 +145,10 @@ const router = createRouter({
           component: () => import('@/views/settings/downloader/DownloaderSettings.vue'),
         },
         {
+          path: 'path-mapping',
+          component: () => import('@/views/settings/path-mapping/PathMappingSettings.vue'),
+        },
+        {
           path: 'routing',
           component: () => import('@/views/settings/RoutingSettings.vue'),
         },
