@@ -2151,7 +2151,7 @@ export const requestsCancelMutation = (options?: Partial<Options<RequestsCancelD
 /**
  * Deny a pending request
  *
- * Denies a pending request with an optional reason. Requires a deny permission for the request's media type. A non-pending request is a 409.
+ * Denies a pending request with a reason, which the requester is notified of. Requires a deny permission for the request's media type. A blank reason is a 422; a non-pending request is a 409.
  */
 export const requestsDenyMutation = (options?: Partial<Options<RequestsDenyData>>): UseMutationOptions<RequestsDenyResponse, RequestsDenyError, Options<RequestsDenyData>> => {
     const mutationOptions: UseMutationOptions<RequestsDenyResponse, RequestsDenyError, Options<RequestsDenyData>> = {

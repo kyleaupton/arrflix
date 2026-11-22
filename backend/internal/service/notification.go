@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/kyleaupton/arrflix/internal/authz"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/notifications"
@@ -21,8 +22,9 @@ import (
 const AwaitingConfigDrainWindow = 7 * 24 * time.Hour
 
 // NotificationService is the enqueue half of the notification system: it turns a
-// typed notifications.Event into outbox rows. It resolves recipients (v1: the
-// user-audience recipients the event carries), checks each recipient's per-channel
+// typed notifications.Event into outbox rows. Producers resolve recipients (the
+// requester for user-audience events; the users permitted to decide a request
+// for admin-audience ones), Enqueue checks each recipient's per-channel
 // preferences, and writes one queued outbox row per (recipient, enabled channel).
 // The pure registry, bundle catalog, and preference resolution live in
 // internal/notifications; delivery (draining the outbox) is the worker's job.
@@ -41,11 +43,15 @@ type NotificationService struct {
 	// holds its own renderer for delivery-side needs; this one serves the read
 	// path. Both parse the same embedded templates.
 	renderer *notifications.Renderer
+	// authz answers "may this user decide requests?", which is who the
+	// admin-audience bundles and events belong to.
+	authz *AuthzService
 }
 
-func NewNotificationService(r *repo.Repository) *NotificationService {
+func NewNotificationService(r *repo.Repository, az *AuthzService) *NotificationService {
 	return &NotificationService{
 		repo:             r,
+		authz:            az,
 		outboundChannels: []model.NotificationChannel{model.ChannelEmail, model.ChannelPush},
 		renderer:         notifications.MustNewRenderer(),
 	}
@@ -192,8 +198,105 @@ func (s *NotificationService) NotifyWantAvailable(ctx context.Context, want mode
 	return nil
 }
 
+// NotifyRequestPending enqueues request.pending to every active user who may
+// decide the request (holds the approve or deny key for its media type), except
+// the requester. media is the title the request is for; the caller resolves it
+// because a pending request has no media item yet.
+func (s *NotificationService) NotifyRequestPending(ctx context.Context, req model.Request, media notifications.MediaRef) error {
+	requester, err := s.repo.GetUser(ctx, req.RequestedBy)
+	if err != nil {
+		return err
+	}
+	users, err := s.repo.ListUsers(ctx)
+	if err != nil {
+		return err
+	}
+	var deciders []uuid.UUID
+	for _, u := range users {
+		if !u.IsActive || u.ID == req.RequestedBy {
+			continue
+		}
+		ok, err := s.mayDecide(ctx, u.ID, model.MediaType(req.Type))
+		if err != nil {
+			return err
+		}
+		if ok {
+			deciders = append(deciders, u.ID)
+		}
+	}
+	return s.Enqueue(ctx, notifications.RequestPending{
+		Deciders:  deciders,
+		RequestID: req.ID,
+		Media:     media,
+		Requester: requester.Username,
+	})
+}
+
+// NotifyRequestApproved tells the requester an operator approved their request.
+func (s *NotificationService) NotifyRequestApproved(ctx context.Context, req model.Request, media notifications.MediaRef) error {
+	return s.Enqueue(ctx, notifications.RequestApproved{
+		Recipient: req.RequestedBy,
+		RequestID: req.ID,
+		Media:     media,
+	})
+}
+
+// NotifyRequestDenied tells the requester an operator declined their request,
+// carrying the operator's reason.
+func (s *NotificationService) NotifyRequestDenied(ctx context.Context, req model.Request, media notifications.MediaRef) error {
+	reason := ""
+	if req.DeniedReason != nil {
+		reason = *req.DeniedReason
+	}
+	return s.Enqueue(ctx, notifications.RequestDenied{
+		Recipient: req.RequestedBy,
+		RequestID: req.ID,
+		Media:     media,
+		Reason:    reason,
+	})
+}
+
+// mayDecide reports whether the user may approve or deny a request of the given
+// media type.
+func (s *NotificationService) mayDecide(ctx context.Context, userID uuid.UUID, t model.MediaType) (bool, error) {
+	for _, key := range []string{authz.RequestApprove(t), authz.RequestDeny(t)} {
+		ok, err := s.authz.Can(ctx, userID, key, nil)
+		if err != nil || ok {
+			return ok, err
+		}
+	}
+	return false, nil
+}
+
+// mayDecideAny reports whether the user may decide requests of any media type —
+// the audience of the admin bundles.
+func (s *NotificationService) mayDecideAny(ctx context.Context, userID uuid.UUID) (bool, error) {
+	for _, t := range []model.MediaType{model.MediaTypeMovie, model.MediaTypeSeries} {
+		ok, err := s.mayDecide(ctx, userID, t)
+		if err != nil || ok {
+			return ok, err
+		}
+	}
+	return false, nil
+}
+
+// bundlesFor returns the preference bundles the user may see and toggle: every
+// user-audience bundle, plus the admin-audience ones when the user may decide
+// requests.
+func (s *NotificationService) bundlesFor(ctx context.Context, userID uuid.UUID) ([]notifications.Bundle, error) {
+	out := notifications.UserBundles()
+	decider, err := s.mayDecideAny(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if decider {
+		out = append(out, notifications.AdminBundles()...)
+	}
+	return out, nil
+}
+
 // Preferences returns the user's per-bundle preference view: one BundlePreference
-// per user-audience bundle, each carrying the resolved subscription (the master —
+// per bundle the user may see (bundlesFor), each carrying the resolved subscription (the master —
 // in-app follows it) plus the resolved enablement of every outbound amplifier
 // channel (s.outboundChannels). Resolution is a stored override else the in-code
 // default. Available is left false — the handler fills channel deliverability,
@@ -203,7 +306,10 @@ func (s *NotificationService) Preferences(ctx context.Context, userID uuid.UUID)
 	if err != nil {
 		return nil, err
 	}
-	bundles := notifications.UserBundles()
+	bundles, err := s.bundlesFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]model.BundlePreference, 0, len(bundles))
 	for _, bundle := range bundles {
 		channels := make([]model.ChannelPreference, 0, len(s.outboundChannels))
@@ -229,13 +335,17 @@ const (
 
 // SetPreference writes one preference toggle for the user: the bundle's
 // subscription master ("subscribed", which governs in-app) or one of its outbound
-// channels ("email"/"push"). value must be a user-audience bundle name. Invalid
+// channels ("email"/"push"). bundle must be one the user may see (bundlesFor). Invalid
 // input collects every field problem into one Validation error; a valid write
 // upserts just the targeted column (idempotent), leaving the rest to keep tracking
 // their defaults.
 func (s *NotificationService) SetPreference(ctx context.Context, userID uuid.UUID, bundle, target string, enabled bool) error {
+	visible, err := s.maySeeBundle(ctx, userID, bundle)
+	if err != nil {
+		return err
+	}
 	var fields []apperrors.FieldError
-	if !isUserBundle(bundle) {
+	if !visible {
 		fields = append(fields, apperrors.Field("body.bundle", "must be a known bundle"))
 	}
 	if !s.isValidTarget(target) {
@@ -261,9 +371,22 @@ func (s *NotificationService) isValidTarget(target string) bool {
 	return false
 }
 
-// isUserBundle reports whether name is a known user-audience bundle.
-func isUserBundle(name string) bool {
-	for _, b := range notifications.UserBundles() {
+// maySeeBundle reports whether name is a bundle the user may see and toggle: any
+// user-audience bundle, or an admin-audience one when the user may decide
+// requests. An unknown bundle is false without consulting permissions.
+func (s *NotificationService) maySeeBundle(ctx context.Context, userID uuid.UUID, name string) (bool, error) {
+	if hasBundle(notifications.UserBundles(), name) {
+		return true, nil
+	}
+	if hasBundle(notifications.AdminBundles(), name) {
+		return s.mayDecideAny(ctx, userID)
+	}
+	return false, nil
+}
+
+// hasBundle reports whether name is one of bundles.
+func hasBundle(bundles []notifications.Bundle, name string) bool {
+	for _, b := range bundles {
 		if b.Name == name {
 			return true
 		}
@@ -288,9 +411,8 @@ func (s *NotificationService) Enqueue(ctx context.Context, ev notifications.Even
 		dedup = &k
 	}
 
-	// v1 handles the user audience only — recipients are carried on the event. The
-	// admin audience (permission-key holders via the reverse resolver) and system
-	// audience (literal emails) resolve their recipients here when they land.
+	// Recipients are carried on the event: the producer resolved them (for the
+	// admin audience, from permissions) before building it.
 	for _, recipient := range ev.Recipients() {
 		prefs, err := s.repo.ListPreferences(ctx, recipient)
 		if err != nil {

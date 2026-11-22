@@ -96,7 +96,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 	routingSvc := NewRoutingService(r)
 	quality := NewQualityProfileService(r)
 	authz := NewAuthzService(r)
-	notifications := NewNotificationService(r)
+	notifications := NewNotificationService(r, authz)
 	sessions := NewSessionService(r, l, cfg.jwtSecret, c.AccessTokenTTL, c.SessionTTL)
 	users := NewUsersService(r, authz, sessions)
 	invites := NewInvitesService(r, notifications, settings, l)
@@ -152,7 +152,7 @@ func New(ctx context.Context, r *repo.Repository, l *logger.Logger, c *config.Co
 		Proposals:          proposals,
 		QualityProfiles:    quality,
 		Reconcile:          reconcile,
-		Requests:           NewRequestService(r, l, tmdb, quality, enrichment, reconcile, authz, titleStatus),
+		Requests:           NewRequestService(r, l, tmdb, quality, enrichment, reconcile, authz, titleStatus, notifications),
 		Routing:            routingSvc,
 		Scanner:            NewScannerService(r, l, tmdb, broker, matcherSvc, enrichment),
 		Scheduler:          scheduler,

@@ -101,7 +101,7 @@ func TestPush_GetIsOwnerScoped(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
 	r := repo.New(pool)
-	svc := service.NewNotificationService(r)
+	svc := service.NewNotificationService(r, service.NewAuthzService(r))
 	ctx := context.Background()
 
 	alice := newNotifUser(t, ctx, r, "push-get-alice@test.local")
@@ -129,7 +129,7 @@ func TestPush_RemoveIsOwnerScopedAndIdempotent(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t)
 	r := repo.New(pool)
-	svc := service.NewNotificationService(r)
+	svc := service.NewNotificationService(r, service.NewAuthzService(r))
 	ctx := context.Background()
 
 	alice := newNotifUser(t, ctx, r, "push-rm-alice@test.local")
