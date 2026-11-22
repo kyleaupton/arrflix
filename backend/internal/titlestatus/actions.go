@@ -81,7 +81,7 @@ func deriveActions(in Input, state State) []Action {
 	if a, ok := requestAction(in, state); ok {
 		out = append(out, a)
 	}
-	if a, ok := cancelAction(in); ok {
+	if a, ok := cancelAction(in, state); ok {
 		out = append(out, a)
 	}
 	return out
@@ -120,8 +120,13 @@ func requestAction(in Input, state State) (Action, bool) {
 }
 
 // cancelAction offers withdrawal of the viewer's own live request.
-func cancelAction(in Input) (Action, bool) {
-	if !in.Viewer.IsRequester {
+//
+// It is absent once the title is available (REQ-CANCEL-008): availability ends
+// the request's life, and taking the title back out of the library is an
+// operator action, not a withdrawal. For a series, available means every
+// in-scope episode has a file, so a partly available series stays withdrawable.
+func cancelAction(in Input, state State) (Action, bool) {
+	if !in.Viewer.IsRequester || state == StateAvailable {
 		return Action{}, false
 	}
 	if !in.Viewer.Grants.CanCancel {

@@ -14,13 +14,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/kyleaupton/arrflix/internal/downloader"
 	"github.com/kyleaupton/arrflix/internal/indexer"
-	importw "github.com/kyleaupton/arrflix/internal/jobs/import"
 	"github.com/kyleaupton/arrflix/internal/logger"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/service"
 	"github.com/kyleaupton/arrflix/internal/test/testapp"
+	"github.com/kyleaupton/arrflix/internal/test/tmdbtest"
 )
 
 // cancelApp is lifecycleApp plus the default downloader, library and name
@@ -155,73 +154,65 @@ func TestReqCancel001_WithdrawalRemovesOnlyOwnAssociation(t *testing.T) {
 
 // REQ-CANCEL-005 — Withdrawal never deletes files already acquired.
 //
-// The movie is acquired end to end (grab → download → import into the library),
-// then its only requester withdraws. The imported file must still be on disk
-// with its bytes intact, and still recorded against the title.
+// A series is acquired in part: a season pack delivers S01E01 into the library
+// while S01E02 is never found. Partly available, its request is still
+// withdrawable (an available title is not — REQ-CANCEL-008), and its only
+// requester withdraws. The imported episode file must still be on disk with its
+// bytes intact, and still recorded against the title.
 func TestReqCancel005_WithdrawalKeepsAcquiredFiles(t *testing.T) {
 	t.Parallel()
-	app, ctx, library := cancelApp(t)
+	s := newSeriesReqApp(t)
+	ctx := s.ctx
 
-	req := createMovieRequest(t, app, app.Token)
-	if req.SpawnedTrackingID == nil {
-		t.Fatalf("setup: request did not spawn a tracking")
-	}
-	job := grabTrackedMovie(t, ctx, app, *req.SpawnedTrackingID, "guid-acquired")
-
-	content := []byte("acquired movie bytes")
-	source := filepath.Join(t.TempDir(), "The.Matrix.1999.1080p.BluRay.x264.mkv")
-	if err := os.WriteFile(source, content, 0o644); err != nil {
-		t.Fatalf("write download payload: %v", err)
-	}
-
-	client := &fakeDownloaderClient{files: []downloader.File{{Path: source, Size: int64(len(content))}}}
-	dlWorker := newDownloadWorkerWithClient(t, ctx, app.Repo, client)
-	reg := downloader.NewRegistry()
-	reg.Register(downloader.TypeQbittorrent, func(downloader.ConfigRecord) (downloader.Client, error) {
-		return client, nil
+	s.scriptSeries(map[int][]tmdbtest.SeasonEpisode{
+		1: {
+			{ID: 8301, EpisodeNumber: 1, Name: "One", AirDate: "2024-01-05"},
+			{ID: 8302, EpisodeNumber: 2, Name: "Two", AirDate: "2024-01-12"},
+		},
 	})
-	dm := downloader.NewManager(reg, app.Repo, logger.New(false))
-	if err := dm.Initialize(ctx); err != nil {
-		t.Fatalf("initialize downloader manager: %v", err)
+	req := requestWholeSeries(t, s)
+	wants := s.episodeWants(t, *req.SpawnedTrackingID)
+	if len(wants) != 2 {
+		t.Fatalf("wants after request = %v, want S01E01..S01E02", keys(wants))
 	}
-	impWorker := importw.New(app.Repo, dm, logger.New(false), nil, nil, nil)
 
-	stopDownload := runWorker(t, ctx, dlWorker)
-	stopImport := runWorker(t, ctx, impWorker)
-	links, err := app.Repo.ListWantsByDownloadJob(ctx, job.ID)
-	if err != nil || len(links) != 1 {
-		t.Fatalf("wants linked to job = %d (err %v), want 1", len(links), err)
+	payloads, content := writeEpisodePayloads(t, 1)
+	idx := &recordingIndexer{respond: func(n int, _ indexer.SearchQuery) []indexer.SearchResult {
+		if n == 1 {
+			return []indexer.SearchResult{seasonOnePack("guid-acquired")}
+		}
+		return nil
+	}}
+	stop := s.runSeriesPipeline(t, idx, &fakeDownloaderClient{files: payloads})
+	waitForWantStatus(t, ctx, s.app.Repo, wants["S01E01"].ID, model.WantAvailable, 30*time.Second)
+	stop()
+
+	item, err := s.app.Repo.GetMediaItemByTmdbIDAndType(ctx, seriesReqTmdbID, "series")
+	if err != nil {
+		t.Fatalf("get series media item: %v", err)
 	}
-	waitForWantStatus(t, ctx, app.Repo, links[0].ID, model.WantAvailable, 30*time.Second)
-	stopDownload()
-	stopImport()
-
-	filesBefore, err := app.Repo.ListFilesForItem(ctx, job.MediaItemID)
+	filesBefore, err := s.app.Repo.ListFilesForItem(ctx, item.ID)
 	if err != nil {
 		t.Fatalf("list files: %v", err)
 	}
 	if len(filesBefore) != 1 {
-		t.Fatalf("setup: files for title = %d, want 1 imported file", len(filesBefore))
+		t.Fatalf("setup: files for title = %d, want 1 imported episode file", len(filesBefore))
 	}
-	imported := filepath.Join(library.RootPath, filesBefore[0].Path)
-	if got, err := os.ReadFile(imported); err != nil || !bytes.Equal(got, content) {
+	imported := filepath.Join(s.library.RootPath, filesBefore[0].Path)
+	if got, err := os.ReadFile(imported); err != nil || !bytes.Equal(got, content["S01E01"]) {
 		t.Fatalf("setup: imported file %s unreadable or wrong content (err %v)", imported, err)
 	}
 
-	var withdrawn model.Request
-	app.POST(t, "/api/v1/requests/"+req.ID.String()+"/cancel", nil, &withdrawn, http.StatusOK)
-	if withdrawn.Status != string(model.RequestCanceled) {
-		t.Fatalf("withdrawn request status = %q, want canceled", withdrawn.Status)
-	}
+	withdrawRequest(t, s.app, s.app.Token, req.ID)
 
 	got, err := os.ReadFile(imported)
 	if err != nil {
 		t.Fatalf("acquired file gone after withdrawal: %v", err)
 	}
-	if !bytes.Equal(got, content) {
-		t.Errorf("acquired file content changed after withdrawal: %q, want %q", got, content)
+	if !bytes.Equal(got, content["S01E01"]) {
+		t.Errorf("acquired file content changed after withdrawal: %q, want %q", got, content["S01E01"])
 	}
-	filesAfter, err := app.Repo.ListFilesForItem(ctx, job.MediaItemID)
+	filesAfter, err := s.app.Repo.ListFilesForItem(ctx, item.ID)
 	if err != nil {
 		t.Fatalf("list files: %v", err)
 	}

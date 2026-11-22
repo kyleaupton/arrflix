@@ -67,3 +67,26 @@ test('REQ-FULFIL-004: the status a requester sees follows a title-status kick wi
   expect(await screen.findByText('In your library')).toBeInTheDocument()
   expect(screen.queryByText('Downloading')).not.toBeInTheDocument()
 })
+
+test('REQ-CANCEL-008: the focus page offers no withdrawal once the title is available', async () => {
+  const own = request({ status: 'spawned' })
+  server.use(
+    // The viewer's request is still live, but the title is in the library, so
+    // the server offers no cancel action.
+    handleTitleStatusGet({
+      body: titleStatus({
+        state: 'available',
+        active: false,
+        counts: { available: 1, total: 1, working: 0 },
+        library: { fileCount: 1, hasFiles: true },
+        viewer: { isRequester: true, requestId: own.id },
+        actions: [],
+      }),
+    }),
+    handleTrackingByTmdb(notFound),
+  )
+  renderWithApp(AcquisitionControl, { props: { tmdbId: own.tmdbId, title: 'Dune: Part Two' } })
+
+  expect(await screen.findByText('In your library')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /withdraw/i })).toBeNull()
+})

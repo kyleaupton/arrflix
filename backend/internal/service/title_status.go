@@ -97,6 +97,18 @@ func (s *TitleStatusService) Get(ctx context.Context, viewerID uuid.UUID, mediaT
 	return s.finish(in, nil, tmdbID, mediaType, ownRequest), nil
 }
 
+// Available reports whether the title is available — for a movie, a file on
+// disk; for a series, a file for every in-scope episode. It is the projection's
+// own headline, read without a viewer, so withdrawal is refused on exactly the
+// titles the focus page stops offering it for.
+func (s *TitleStatusService) Available(ctx context.Context, mediaType model.MediaType, tmdbID int64) (bool, error) {
+	st, err := s.Get(ctx, uuid.Nil, mediaType, tmdbID)
+	if err != nil {
+		return false, err
+	}
+	return st.State == string(titlestatus.StateAvailable), nil
+}
+
 // finish runs the derivation and shapes the wire model. episodes is nil for
 // movies; when present it is index-aligned with in.Items so each cell picks up
 // its own derived state.

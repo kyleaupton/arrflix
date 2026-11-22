@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import RequestCard from '@/components/acquisition/RequestCard.vue'
+import WithdrawRequestButton from '@/components/acquisition/WithdrawRequestButton.vue'
 import DenyRequestDialog from '@/components/modals/DenyRequestDialog.vue'
 import { useModal } from '@/composables/useModal'
 import { useAuthStore } from '@/stores/auth'
@@ -129,15 +130,12 @@ function handleDeny(req: Request) {
         <div v-else class="space-y-3">
           <RequestCard v-for="req in myRequests" :key="req.id" :request="req">
             <template #actions>
-              <Button
+              <WithdrawRequestButton
                 v-if="auth.canCancelRequests && isCancelable(req.status)"
-                variant="outline"
-                size="sm"
+                :request="req"
                 :disabled="cancelRequest.isPending.value"
-                @click="handleCancel(req)"
-              >
-                Cancel
-              </Button>
+                @withdraw="handleCancel(req)"
+              />
             </template>
           </RequestCard>
         </div>

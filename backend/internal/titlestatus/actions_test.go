@@ -269,3 +269,76 @@ func TestTheZeroViewerAffordsNothing(t *testing.T) {
 		t.Fatalf("the zero viewer must afford nothing, got %v", res.Actions)
 	}
 }
+
+// REQ-CANCEL-008 — Withdrawal must not be offered once the title is available to
+// that user. Availability ends the request's life; removal from the library is a
+// separate, operator-authorized action. A series is available only when every
+// in-scope episode has a file, so a partly available one can still be withdrawn.
+func TestReqCancel008_WithdrawalIsNotOfferedOnceAvailable(t *testing.T) {
+	t.Parallel()
+
+	live := requester(hdOnly)
+	live.IsRequester = true
+	noGrant := Viewer{IsRequester: true, Grants: Grants{RequestTiers: hdOnly}}
+
+	cases := []struct {
+		name      string
+		mediaType MediaType
+		items     []Item
+		viewer    Viewer
+		state     State
+		offered   bool
+	}{
+		{
+			name:      "movie in the library",
+			mediaType: MediaTypeMovie,
+			items:     []Item{{InScope: true, HasFile: true, Want: want(wantAvailable)}},
+			viewer:    live,
+			state:     StateAvailable,
+		},
+		{
+			name:      "movie in the library, viewer without the cancel grant",
+			mediaType: MediaTypeMovie,
+			items:     []Item{{InScope: true, HasFile: true}},
+			viewer:    noGrant,
+			state:     StateAvailable,
+		},
+		{
+			name:      "series with every in-scope episode on disk",
+			mediaType: MediaTypeSeries,
+			items:     inScope([]Item{{HasFile: true}, {HasFile: true}}),
+			viewer:    live,
+			state:     StateAvailable,
+		},
+		{
+			name:      "series with some in-scope episodes still wanted",
+			mediaType: MediaTypeSeries,
+			items:     inScope([]Item{{HasFile: true}, {Want: want(wantSearching)}}),
+			viewer:    live,
+			state:     StatePartiallyAvailable,
+			offered:   true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			res := Derive(Input{
+				MediaType: tc.mediaType,
+				Items:     tc.items,
+				Request:   &Request{Status: "spawned"},
+				Viewer:    tc.viewer,
+				Now:       now,
+			})
+			if res.State != tc.state {
+				t.Fatalf("precondition: state = %q, want %q", res.State, tc.state)
+			}
+			a, ok := find(res.Actions, ActionCancel)
+			if ok != tc.offered {
+				t.Fatalf("cancel offered = %v (%+v), want %v", ok, a, tc.offered)
+			}
+			if tc.offered && !a.Enabled {
+				t.Fatalf("a withdrawable request must offer an enabled cancel, got %+v", a)
+			}
+		})
+	}
+}

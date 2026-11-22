@@ -125,7 +125,7 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ### The affordance is honest
 
-- **REQ-CANCEL-008** — Cancellation must not be offered once the title is available to that user. Availability ends the request's life; removal from the library is a separate, operator-authorized action. **Not currently true:** withdrawal is offered for any live request, on the focus page and in the requests list, including one whose title is already available.
+- **REQ-CANCEL-008** — Cancellation must not be offered once the title is available to that user. Availability ends the request's life; removal from the library is a separate, operator-authorized action. *Currently true* — neither the focus page nor the requests list offers withdrawal once the title is available, and the API refuses it with a 409. For a series, available means every in-scope episode has a file; a partly available series can still be withdrawn.
 - **REQ-CANCEL-009** — Confirmation copy must not promise that acquisition stops, since for a shared title it does not. *Currently true by omission* — the focus page's *Withdraw request* asks for no confirmation, and the requests list asks only *"Withdraw this request?"*
 - **REQ-CANCEL-010** — Cancellation must not disclose the identity or existence of specific other requesters beyond the generic possibility that some exist. *Currently true by omission* — cancellation says nothing about other requesters.
 - **REQ-CANCEL-011** — Withdrawing while a proposal awaits review must retire that proposal, so no reviewer is asked to decide on behalf of a requester who left. **Not currently true:** cancelling a want leaves any open proposal covering it in place.

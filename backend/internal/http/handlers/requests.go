@@ -231,7 +231,7 @@ func (h *Requests) RegisterHumachi(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/requests/{id}/cancel",
 		Summary:     "Cancel a request",
-		Description: "Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409; already-canceled is idempotent.",
+		Description: "Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409, as is a request whose title is already available; already-canceled is idempotent.",
 		Tags:        []string{"requests"},
 		Errors:      errs(errsRead, errsForbidden, []int{http.StatusConflict}),
 	}, h.Cancel)
