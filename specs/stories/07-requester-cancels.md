@@ -132,7 +132,7 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 ### Authorization
 
-- **REQ-CANCEL-012** — Cancelling a tracking that other requesters still justify must require authority over others' requests, not merely over one's own. Removing one's own requester association requires only own-intent authority, because it cancels nothing. **Not currently true:** cancelling a tracking is authorized on own-tracking authority for any member of its requester set, and cancels every live want. Latent under V1's roles, where only operators hold a tracking-cancel grant.
+- **REQ-CANCEL-012** — Cancelling a tracking that other requesters still justify must require authority over others' requests, not merely over one's own. Removing one's own requester association requires only own-intent authority, because it cancels nothing. *Currently true* — cancelling a tracking on own-tracking authority requires the caller to be its only requester; a tracking with any other requester needs `tracking.cancel.any`, and is refused 403 otherwise.
 
 ## Out of scope (variant stories)
 
