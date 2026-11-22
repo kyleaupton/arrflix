@@ -31,10 +31,11 @@ type RequestService struct {
 	enrichment *EnrichmentService
 	reconcile  *ReconcileService
 	authz      *AuthzService
+	titles     *TitleStatusService
 }
 
-func NewRequestService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, quality *QualityProfileService, enrichment *EnrichmentService, reconcile *ReconcileService, authz *AuthzService) *RequestService {
-	return &RequestService{repo: r, log: l, tmdb: tmdb, quality: quality, enrichment: enrichment, reconcile: reconcile, authz: authz}
+func NewRequestService(r *repo.Repository, l *logger.Logger, tmdb *TmdbService, quality *QualityProfileService, enrichment *EnrichmentService, reconcile *ReconcileService, authz *AuthzService, titles *TitleStatusService) *RequestService {
+	return &RequestService{repo: r, log: l, tmdb: tmdb, quality: quality, enrichment: enrichment, reconcile: reconcile, authz: authz, titles: titles}
 }
 
 // CreateRequestInput is the writeable shape for a new request. Type is the
@@ -613,7 +614,8 @@ func (s *RequestService) Deny(ctx context.Context, approverID, requestID uuid.UU
 // cancels anyone's, requests.cancel.own only the caller's. A pending or
 // (transiently) approved request just flips to canceled — nothing spawned. A
 // spawned request cascades into the tracking (below). Terminal states are
-// idempotent (already canceled) or a Conflict (already denied).
+// idempotent (already canceled) or a Conflict (already denied), and so is a
+// live request whose title is already available.
 func (s *RequestService) Cancel(ctx context.Context, userID, requestID uuid.UUID) (model.Request, error) {
 	const op = "RequestService.Cancel"
 
@@ -637,6 +639,20 @@ func (s *RequestService) Cancel(ctx context.Context, userID, requestID uuid.UUID
 		return req, nil // idempotent
 	case model.RequestDenied:
 		return model.Request{}, apperrors.Conflictf("request %s is already denied", requestID).Op(op)
+	}
+
+	// Availability ends a request's life (REQ-CANCEL-008). Taking the title back
+	// out of the library is an operator action, not a withdrawal, so a request
+	// whose title is available is no longer the requester's to withdraw.
+	available, err := s.titles.Available(ctx, model.MediaType(req.Type), req.TmdbID)
+	if err != nil {
+		return model.Request{}, err
+	}
+	if available {
+		return model.Request{}, apperrors.Conflictf("request %s can't be withdrawn: its title is already available", requestID).Op(op)
+	}
+
+	switch model.RequestStatus(req.Status) {
 	case model.RequestSpawned:
 		return s.cancelSpawned(ctx, userID, req)
 	default:

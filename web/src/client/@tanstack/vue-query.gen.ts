@@ -2132,7 +2132,7 @@ export const requestsApproveMutation = (options?: Partial<Options<RequestsApprov
 /**
  * Cancel a request
  *
- * Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409; already-canceled is idempotent.
+ * Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409, as is a request whose title is already available; already-canceled is idempotent.
  */
 export const requestsCancelMutation = (options?: Partial<Options<RequestsCancelData>>): UseMutationOptions<RequestsCancelResponse, RequestsCancelError, Options<RequestsCancelData>> => {
     const mutationOptions: UseMutationOptions<RequestsCancelResponse, RequestsCancelError, Options<RequestsCancelData>> = {

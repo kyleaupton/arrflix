@@ -888,7 +888,7 @@ export const requestsApprove = <ThrowOnError extends boolean = false>(options: O
 /**
  * Cancel a request
  *
- * Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409; already-canceled is idempotent.
+ * Withdraws a request (own/any). A spawned request drops the caller from its tracking; only the last requester's withdrawal cancels the tracking's wants and parks it. Already-denied is a 409, as is a request whose title is already available; already-canceled is idempotent.
  */
 export const requestsCancel = <ThrowOnError extends boolean = false>(options: Options<RequestsCancelData, ThrowOnError>): RequestResult<RequestsCancelResponses, RequestsCancelErrors, ThrowOnError> => (options.client ?? client).post<RequestsCancelResponses, RequestsCancelErrors, ThrowOnError>({ url: '/api/v1/requests/{id}/cancel', ...options });
 
