@@ -259,6 +259,19 @@ WHERE id = sqlc.arg(id)
   AND status = 'searching'
 RETURNING *;
 
+-- DeferPendingWant sets when a 'pending' want next comes due, without touching
+-- its attempt history. It backs the movie search date: a want for a movie that
+-- isn't obtainable yet sits pending until that date. The 'pending' guard leaves
+-- a want the worker has claimed (or that has moved on) alone; a 0-row match
+-- surfaces as pgx.ErrNoRows.
+-- name: DeferPendingWant :one
+UPDATE want
+SET next_run_at = sqlc.arg(next_run_at),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND status = 'pending'
+RETURNING *;
+
 -- RearmWant resumes a terminal want when its movie is re-requested, flipping a
 -- 'failed'/'canceled' want back to 'pending' with the backoff reset so the
 -- AcquisitionWorker re-claims it. The single-atom invariant means a re-request

@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -110,6 +111,151 @@ func TestExtractMovieReleaseDates(t *testing.T) {
 				t.Fatalf("want %+v, got nil", *tt.want)
 			case tt.want != nil && *got != *tt.want:
 				t.Fatalf("want %+v, got %+v", *tt.want, *got)
+			}
+		})
+	}
+}
+
+// TestReqUnrel002_HomeReleaseIsEarliestDigitalOrPhysical — REQ-UNREL-002 — A
+// movie's obtainability is decided by its home-release date, not the
+// theatrical one: the earliest digital or physical date across US, GB, CA and
+// AU, ignoring theatrical releases and every other region. A home date more
+// than a year after the movie's first release is a reissue and doesn't count.
+func TestReqUnrel002_HomeReleaseIsEarliestDigitalOrPhysical(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		json    string
+		primary string // TMDB's primary release_date; "" = unknown
+		want    string // "" = nil
+	}{
+		{
+			name: "nil input",
+			want: "",
+		},
+		{
+			name: "theatrical only is not a home release",
+			json: `{"results":[{"iso_3166_1":"US","release_dates":[{"type":3,"release_date":"2026-07-03T00:00:00.000Z"}]}]}`,
+			want: "",
+		},
+		{
+			name: "digital in the us",
+			json: `{"results":[{"iso_3166_1":"US","release_dates":[
+				{"type":3,"release_date":"2026-07-03T00:00:00.000Z"},
+				{"type":4,"release_date":"2026-09-12T00:00:00.000Z"}
+			]}]}`,
+			want: "2026-09-12",
+		},
+		{
+			name: "earliest across priority regions and types",
+			json: `{"results":[
+				{"iso_3166_1":"US","release_dates":[{"type":4,"release_date":"2026-09-12T00:00:00.000Z"}]},
+				{"iso_3166_1":"GB","release_dates":[{"type":5,"release_date":"2026-10-01T00:00:00.000Z"}]},
+				{"iso_3166_1":"AU","release_dates":[{"type":5,"release_date":"2026-08-30T00:00:00.000Z"}]},
+				{"iso_3166_1":"CA","release_dates":[{"type":4,"release_date":"2026-09-01T00:00:00.000Z"}]}
+			]}`,
+			want: "2026-08-30",
+		},
+		{
+			name: "other regions are ignored",
+			json: `{"results":[
+				{"iso_3166_1":"FR","release_dates":[{"type":4,"release_date":"2026-08-01T00:00:00.000Z"}]},
+				{"iso_3166_1":"GB","release_dates":[{"type":4,"release_date":"2026-09-20T00:00:00.000Z"}]}
+			]}`,
+			want: "2026-09-20",
+		},
+		{
+			name: "other release types are ignored",
+			json: `{"results":[{"iso_3166_1":"US","release_dates":[
+				{"type":1,"release_date":"2026-05-01T00:00:00.000Z"},
+				{"type":2,"release_date":"2026-05-02T00:00:00.000Z"},
+				{"type":6,"release_date":"2026-05-03T00:00:00.000Z"},
+				{"type":5,"release_date":"2026-11-01T00:00:00.000Z"}
+			]}]}`,
+			want: "2026-11-01",
+		},
+		{
+			name:    "a home date over a year after the theatrical one is a reissue",
+			primary: "1975-06-20",
+			json: `{"results":[{"iso_3166_1":"US","release_dates":[
+				{"type":3,"release_date":"1975-06-20T00:00:00.000Z"},
+				{"type":5,"release_date":"2026-03-10T00:00:00.000Z"}
+			]}]}`,
+			want: "",
+		},
+		{
+			name: "the reissue window runs from the earliest theatrical date",
+			json: `{"results":[
+				{"iso_3166_1":"US","release_dates":[{"type":3,"release_date":"2025-01-10T00:00:00.000Z"}]},
+				{"iso_3166_1":"GB","release_dates":[{"type":3,"release_date":"2026-02-01T00:00:00.000Z"},{"type":4,"release_date":"2026-03-01T00:00:00.000Z"}]}
+			]}`,
+			want: "",
+		},
+		{
+			name:    "an earlier origin-country primary date doesn't make the home release a reissue",
+			primary: "2024-05-20",
+			json: `{"results":[{"iso_3166_1":"US","release_dates":[
+				{"type":3,"release_date":"2025-03-01T00:00:00.000Z"},
+				{"type":4,"release_date":"2025-06-01T00:00:00.000Z"}
+			]}]}`,
+			want: "2025-06-01",
+		},
+		{
+			name:    "theatrical dates outside the priority regions don't start the window",
+			primary: "2025-03-01",
+			json: `{"results":[
+				{"iso_3166_1":"KR","release_dates":[{"type":3,"release_date":"2024-01-10T00:00:00.000Z"}]},
+				{"iso_3166_1":"US","release_dates":[{"type":4,"release_date":"2025-06-01T00:00:00.000Z"}]}
+			]}`,
+			want: "2025-06-01",
+		},
+		{
+			name:    "the reissue window runs from the primary date when no theatrical one is known",
+			primary: "1975-06-20",
+			json:    `{"results":[{"iso_3166_1":"US","release_dates":[{"type":4,"release_date":"2026-03-10T00:00:00.000Z"}]}]}`,
+			want:    "",
+		},
+		{
+			name:    "a home date within a year of release counts",
+			primary: "2026-07-03",
+			json: `{"results":[{"iso_3166_1":"US","release_dates":[
+				{"type":3,"release_date":"2026-07-03T00:00:00.000Z"},
+				{"type":4,"release_date":"2027-06-30T00:00:00.000Z"}
+			]}]}`,
+			want: "2027-06-30",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var rd *tmdb.MovieReleaseDates
+			if tt.json != "" {
+				rd = &tmdb.MovieReleaseDates{}
+				if err := json.Unmarshal([]byte(tt.json), rd); err != nil {
+					t.Fatalf("unmarshal fixture: %v", err)
+				}
+			}
+
+			var primary *time.Time
+			if tt.primary != "" {
+				p, err := time.Parse("2006-01-02", tt.primary)
+				if err != nil {
+					t.Fatalf("parse primary: %v", err)
+				}
+				primary = &p
+			}
+
+			got := extractMovieHomeReleaseDate(rd, primary)
+			switch {
+			case tt.want == "" && got != nil:
+				t.Fatalf("want nil, got %v", *got)
+			case tt.want != "" && got == nil:
+				t.Fatalf("want %s, got nil", tt.want)
+			case tt.want != "" && got.Format("2006-01-02") != tt.want:
+				t.Fatalf("want %s, got %s", tt.want, got.Format("2006-01-02"))
 			}
 		})
 	}

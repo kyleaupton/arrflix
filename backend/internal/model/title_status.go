@@ -42,6 +42,11 @@ type TitleStatus struct {
 	// Episodes carries per-episode state for a series, in season/episode order.
 	// Nil for movies.
 	Episodes []TitleEpisodeStatus `json:"episodes,omitempty"`
+
+	// HomeReleaseDate is a movie's expected home release (digital or physical),
+	// when one is known. Nil for series and for movies without one — an
+	// estimated date is never sent.
+	HomeReleaseDate *time.Time `json:"homeReleaseDate,omitempty"`
 }
 
 // TitleLibrary is what the library holds for a title.

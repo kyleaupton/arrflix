@@ -244,3 +244,35 @@ func TestMetadataBackoffAt(t *testing.T) {
 		prev = got
 	}
 }
+
+func TestMovieSearchFrom(t *testing.T) {
+	t.Parallel()
+
+	home := time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC)
+	theatrical := time.Date(2026, 7, 3, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name             string
+		home, theatrical *time.Time
+		want             *time.Time
+	}{
+		{"home release known: the day before", &home, &theatrical, ptr(home.Add(-24 * time.Hour))},
+		{"home release only", &home, nil, ptr(home.Add(-24 * time.Hour))},
+		{"theatrical only: plus 30 days", nil, &theatrical, ptr(theatrical.Add(30 * 24 * time.Hour))},
+		{"no dates", nil, nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := MovieSearchFrom(tt.home, tt.theatrical)
+			switch {
+			case tt.want == nil && got != nil:
+				t.Fatalf("got %v, want nil", *got)
+			case tt.want != nil && (got == nil || !got.Equal(*tt.want)):
+				t.Fatalf("got %v, want %v", got, *tt.want)
+			}
+		})
+	}
+}
+
+func ptr(t time.Time) *time.Time { return &t }
