@@ -2996,6 +2996,10 @@ components:
     Invite:
       additionalProperties: false
       properties:
+        allow4k:
+          type: boolean
+        autoApprove:
+          type: boolean
         claimedAt:
           format: date-time
           type:
@@ -3021,6 +3025,8 @@ components:
         - id
         - email
         - role
+        - autoApprove
+        - allow4k
         - invitedBy
         - createdAt
         - expiresAt
@@ -3036,6 +3042,12 @@ components:
           format: uri
           readOnly: true
           type: string
+        allow4k:
+          description: Whether the invited user may request 4K (defaults to false)
+          type: boolean
+        autoApprove:
+          description: Whether the invited user's requests skip the approval queue (defaults to false)
+          type: boolean
         email:
           description: Invitee email
           format: email
@@ -5961,6 +5973,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        allow4k:
+          type: boolean
+        autoApprove:
+          type: boolean
         avatarUrl:
           type: string
         createdAt:
@@ -5991,6 +6007,8 @@ components:
         - username
         - isActive
         - roles
+        - autoApprove
+        - allow4k
         - createdAt
         - updatedAt
       type: object
@@ -6055,6 +6073,26 @@ components:
           type: string
       required:
         - role
+      type: object
+    UsersUpdateRequestSettingsInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/UsersUpdateRequestSettingsInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        allow4k:
+          description: Whether the user may request 4K
+          type: boolean
+        autoApprove:
+          description: Whether the user's requests skip the approval queue, at every tier they may request
+          type: boolean
+      required:
+        - autoApprove
+        - allow4k
       type: object
     VersionInfo:
       additionalProperties: false
@@ -12812,6 +12850,65 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
           description: Internal Server Error
       summary: Update user password
+      tags:
+        - users
+  /api/v1/users/{id}/request-settings:
+    put:
+      description: Sets whether the user's requests are auto-approved and whether they may request 4K. Auto-approve covers every tier the user may request. Requests already made are unaffected, and the settings have no effect while the user is an admin.
+      operationId: users-update-request-settings
+      parameters:
+        - description: User ID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: User ID
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UsersUpdateRequestSettingsInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Update user request settings
       tags:
         - users
   /api/v1/users/{id}/role:

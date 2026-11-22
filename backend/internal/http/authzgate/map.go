@@ -59,16 +59,17 @@ var operationPerms = map[string]requirement{
 	"push-test":                     authUser(),
 
 	// ----- admin.users.manage -----
-	"users-list":            perm(authz.AdminUsersManage),
-	"users-get":             perm(authz.AdminUsersManage),
-	"users-update":          perm(authz.AdminUsersManage),
-	"users-delete":          perm(authz.AdminUsersManage),
-	"users-update-password": perm(authz.AdminUsersManage),
-	"users-assign-role":     perm(authz.AdminUsersManage),
-	"invites-list":          perm(authz.AdminUsersManage),
-	"invites-create":        perm(authz.AdminUsersManage),
-	"invites-delete":        perm(authz.AdminUsersManage),
-	"roles-list":            perm(authz.AdminUsersManage),
+	"users-list":                    perm(authz.AdminUsersManage),
+	"users-get":                     perm(authz.AdminUsersManage),
+	"users-update":                  perm(authz.AdminUsersManage),
+	"users-delete":                  perm(authz.AdminUsersManage),
+	"users-update-password":         perm(authz.AdminUsersManage),
+	"users-assign-role":             perm(authz.AdminUsersManage),
+	"users-update-request-settings": perm(authz.AdminUsersManage),
+	"invites-list":                  perm(authz.AdminUsersManage),
+	"invites-create":                perm(authz.AdminUsersManage),
+	"invites-delete":                perm(authz.AdminUsersManage),
+	"roles-list":                    perm(authz.AdminUsersManage),
 
 	// ----- library.read (shared library state, not private) -----
 	"libraries-list":       perm(authz.LibraryRead),

@@ -13,11 +13,15 @@ import (
 // The token hash is deliberately absent: it's a secret that never leaves the
 // database, and the raw token is returned once (out of band) at creation time.
 type Invite struct {
-	ID        uuid.UUID  `json:"id"`
-	Email     string     `json:"email"`
-	Role      string     `json:"role"`
-	InvitedBy uuid.UUID  `json:"invitedBy"`
-	CreatedAt time.Time  `json:"createdAt"`
-	ExpiresAt *time.Time `json:"expiresAt"`
-	ClaimedAt *time.Time `json:"claimedAt"`
+	ID    uuid.UUID `json:"id"`
+	Email string    `json:"email"`
+	Role  string    `json:"role"`
+	// AutoApprove and Allow4k are the request settings the invited user starts
+	// with; they're applied when the invite is accepted.
+	AutoApprove bool       `json:"autoApprove"`
+	Allow4k     bool       `json:"allow4k"`
+	InvitedBy   uuid.UUID  `json:"invitedBy"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	ExpiresAt   *time.Time `json:"expiresAt"`
+	ClaimedAt   *time.Time `json:"claimedAt"`
 }

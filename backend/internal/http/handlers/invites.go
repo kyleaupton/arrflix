@@ -37,8 +37,10 @@ func (h *Invites) List(ctx context.Context, _ *InvitesListInput) (*InvitesListOu
 // ----- Create -----
 
 type InvitesCreateBody struct {
-	Email string `json:"email" required:"true" format:"email" minLength:"1" doc:"Invitee email"`
-	Role  string `json:"role,omitempty" enum:"requester,admin" doc:"Target role for the invited user (defaults to requester)"`
+	Email       string `json:"email" required:"true" format:"email" minLength:"1" doc:"Invitee email"`
+	Role        string `json:"role,omitempty" enum:"requester,admin" doc:"Target role for the invited user (defaults to requester)"`
+	AutoApprove bool   `json:"autoApprove,omitempty" doc:"Whether the invited user's requests skip the approval queue (defaults to false)"`
+	Allow4k     bool   `json:"allow4k,omitempty" doc:"Whether the invited user may request 4K (defaults to false)"`
 }
 
 type InvitesCreateInput struct {
@@ -79,7 +81,8 @@ func (h *Invites) Create(ctx context.Context, input *InvitesCreateInput) (*Invit
 		return nil, apperrors.Unauthenticatedf("invalid token").Op("InvitesHandler.Create")
 	}
 
-	invite, rawToken, emailed, err := h.svc.Invites.Create(ctx, input.Body.Email, input.Body.Role, invitedBy, input.Origin)
+	invite, rawToken, emailed, err := h.svc.Invites.Create(ctx, input.Body.Email, input.Body.Role,
+		model.RequestSettings{AutoApprove: input.Body.AutoApprove, Allow4k: input.Body.Allow4k}, invitedBy, input.Origin)
 	if err != nil {
 		return nil, err
 	}

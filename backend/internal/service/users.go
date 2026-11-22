@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/kyleaupton/arrflix/internal/authz"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
 	pw "github.com/kyleaupton/arrflix/internal/password"
@@ -31,8 +32,20 @@ func (s *UsersService) Get(ctx context.Context, id uuid.UUID) (model.User, error
 	return s.repo.GetUser(ctx, id)
 }
 
-// Create creates a new user with password and role assignment
+// Create creates a new user with password and role assignment. The user starts
+// with both request settings off.
 func (s *UsersService) Create(ctx context.Context, email, username, password string, roleName string, isActive bool) (model.User, error) {
+	return s.create(ctx, email, username, password, roleName, isActive, model.RequestSettings{}, "UsersService.Create")
+}
+
+// CreateFromInvite creates the active user an invite provisions: the invite's
+// email, role and request settings, all written in one transaction.
+func (s *UsersService) CreateFromInvite(ctx context.Context, invite model.Invite, username, password string) (model.User, error) {
+	settings := model.RequestSettings{AutoApprove: invite.AutoApprove, Allow4k: invite.Allow4k}
+	return s.create(ctx, invite.Email, username, password, invite.Role, true, settings, "UsersService.CreateFromInvite")
+}
+
+func (s *UsersService) create(ctx context.Context, email, username, password, roleName string, isActive bool, settings model.RequestSettings, op string) (model.User, error) {
 	// Validation — collect every field problem before returning.
 	email = strings.TrimSpace(email)
 	username = strings.TrimSpace(username)
@@ -56,16 +69,16 @@ func (s *UsersService) Create(ctx context.Context, email, username, password str
 		fields = append(fields, apperrors.Field("body.role", "must be one of: requester, admin"))
 	}
 	if len(fields) > 0 {
-		return model.User{}, apperrors.Validation("invalid user", fields...).Op("UsersService.Create")
+		return model.User{}, apperrors.Validation("invalid user", fields...).Op(op)
 	}
 
 	passwordHash, err := pw.Hash(password)
 	if err != nil {
-		return model.User{}, apperrors.Internalf("failed to hash password: %v", err).Op("UsersService.Create")
+		return model.User{}, apperrors.Internalf("failed to hash password: %v", err).Op(op)
 	}
 
-	// The user and their role are written together so a failed role assignment
-	// never leaves a user with no role. Repo translates unique violation to Conflict.
+	// The user, their role and their request settings are written together so a
+	// failed role assignment never leaves a user with no role. Repo translates unique violation to Conflict.
 	var user model.User
 	err = s.repo.InTx(ctx, func(tx *repo.Repository) error {
 		role, err := tx.GetRoleByName(ctx, roleName)
@@ -81,11 +94,15 @@ func (s *UsersService) Create(ctx context.Context, email, username, password str
 		if err != nil {
 			return err
 		}
-		return tx.AssignRole(ctx, user.ID, role.ID)
+		if err := tx.AssignRole(ctx, user.ID, role.ID); err != nil {
+			return err
+		}
+		return tx.ReplaceUserGrants(ctx, user.ID, authz.RequestSettingsKeys(), authz.RequestSettingsGrants(settings))
 	})
 	if err != nil {
 		return model.User{}, err
 	}
+	user.AutoApprove, user.Allow4k = settings.AutoApprove, settings.Allow4k
 	return user, nil
 }
 
@@ -180,18 +197,39 @@ func (s *UsersService) AssignRole(ctx context.Context, userID uuid.UUID, roleNam
 		return err
 	}
 
-	// Roles changed → the user's cached grant set is stale. AssignRole (via
-	// UnassignAllRoles + AssignRole) is the only grant-mutation path today, so
-	// this is the sole Bust site. Auto-approve rides the role's grants
-	// (requests.auto_approve:*), so there's no separate per-user state to sync.
+	// Roles changed → the user's cached grant set is stale. The user's request
+	// settings are user-subject grants, so they survive the role change: inert
+	// under admin, in force again under requester.
 	s.authz.Bust(userID)
 
 	return nil
 }
 
+// SetRequestSettings replaces the user's request settings. The settings are
+// stored only as the user's own grants (authz.RequestSettingsGrants), swapped in
+// one transaction; role grants are untouched. Requests already made are not
+// revisited: turning auto-approve on leaves queued requests queued.
+func (s *UsersService) SetRequestSettings(ctx context.Context, userID uuid.UUID, settings model.RequestSettings) (model.User, error) {
+	err := s.repo.InTx(ctx, func(tx *repo.Repository) error {
+		if _, err := tx.GetUserByID(ctx, userID); err != nil {
+			return err
+		}
+		return tx.ReplaceUserGrants(ctx, userID, authz.RequestSettingsKeys(), authz.RequestSettingsGrants(settings))
+	})
+	if err != nil {
+		return model.User{}, err
+	}
+	s.authz.Bust(userID)
+	return s.repo.GetUser(ctx, userID)
+}
+
 // Delete removes a user
 func (s *UsersService) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.withLastAdminGuard(ctx, "cannot delete the last active admin", "UsersService.Delete", func(tx *repo.Repository) error {
+		// User-subject grants have no foreign key to the user; drop them with it.
+		if err := tx.ReplaceUserGrants(ctx, id, authz.RequestSettingsKeys(), nil); err != nil {
+			return err
+		}
 		return tx.DeleteUser(ctx, id)
 	})
 }

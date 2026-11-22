@@ -176,7 +176,7 @@ type AcceptInviteOutput struct {
 }
 
 // AcceptInvite redeems an invite link: it validates the token, provisions the
-// account with the invited email + role, consumes the invite, and opens a session
+// account with the invited email, role and request settings, consumes the invite, and opens a session
 // so the invitee lands logged-in. The token is validated before the account is
 // created and consumed only after — so a failed create (weak password, taken
 // username/email) leaves the link live to retry.
@@ -186,7 +186,7 @@ func (h *Auth) AcceptInvite(ctx context.Context, input *AcceptInviteInput) (*Acc
 		return nil, err
 	}
 
-	user, err := h.svc.Users.Create(ctx, invite.Email, input.Body.Username, input.Body.Password, invite.Role, true)
+	user, err := h.svc.Users.CreateFromInvite(ctx, invite, input.Body.Username, input.Body.Password)
 	if err != nil {
 		return nil, err
 	}
