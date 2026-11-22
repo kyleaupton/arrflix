@@ -75,7 +75,7 @@ func New(r *repo.Repository, dlm *downloader.Manager, log *logger.Logger, broker
 	return &Worker{
 		repo:          r,
 		dlm:           dlm,
-		paths:         service.NewPathMappingService(r),
+		paths:         service.NewPathMappingService(r, dlm),
 		log:           log,
 		broker:        broker,
 		sm:            state.NewImportTaskMachine(),

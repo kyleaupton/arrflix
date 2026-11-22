@@ -71,6 +71,15 @@ func (c *qBittorrentClient) Test(ctx context.Context) (downloader.TestResult, er
 	return result, nil
 }
 
+// DefaultSavePath returns qBittorrent's default save path.
+func (c *qBittorrentClient) DefaultSavePath(ctx context.Context) (string, error) {
+	p, err := c.client.GetDefaultSavePath(ctx)
+	if err != nil {
+		return "", fmt.Errorf("get default save path: %w", err)
+	}
+	return p, nil
+}
+
 // Add adds a download (magnet URL or torrent file URL).
 func (c *qBittorrentClient) Add(ctx context.Context, req downloader.AddRequest) (downloader.AddResult, error) {
 	var result downloader.AddResult

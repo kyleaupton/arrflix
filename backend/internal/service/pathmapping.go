@@ -6,23 +6,35 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/kyleaupton/arrflix/internal/downloader"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
 	"github.com/kyleaupton/arrflix/internal/pathmapping"
 	"github.com/kyleaupton/arrflix/internal/repo"
 )
 
-// PathMappingService owns volumes and their downloader aliases, and resolves
-// downloader-reported paths into Arrflix's frame through them.
+// PathMappingService owns volumes and their downloader aliases, resolves
+// downloader-reported paths into Arrflix's frame through them, and verifies
+// mappings against the filesystem. Verification persists nothing.
 type PathMappingService struct {
-	repo *repo.Repository
+	repo   *repo.Repository
+	dlm    *downloader.Manager
+	device pathmapping.DeviceFunc
 }
 
-func NewPathMappingService(r *repo.Repository) *PathMappingService {
-	return &PathMappingService{repo: r}
+// NewPathMappingService builds the service. With a nil manager, checks that
+// need to ask a downloader for its save path report it unavailable.
+func NewPathMappingService(r *repo.Repository, dlm *downloader.Manager) *PathMappingService {
+	return &PathMappingService{repo: r, dlm: dlm, device: pathmapping.Device}
 }
+
+// savePathTimeout bounds one downloader's answer to "where do you save?", so
+// an unreachable downloader doesn't hold up the checks for the others.
+const savePathTimeout = 10 * time.Second
 
 // VolumeInput is a volume as a caller asks to save it.
 type VolumeInput struct {
@@ -76,6 +88,138 @@ func (s *PathMappingService) ToCanonical(ctx context.Context, downloaderID uuid.
 		return pathmapping.Resolution{}, err
 	}
 	return pathmapping.New(volumes).ToCanonical(downloaderID, path)
+}
+
+// Checks asks every downloader for its default save path and reports whether
+// Arrflix can see it through the configured volumes.
+func (s *PathMappingService) Checks(ctx context.Context) ([]model.DownloaderPathCheck, error) {
+	volumes, err := s.repo.ListVolumes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.checkAll(ctx, volumes)
+}
+
+// VolumeDraft is a volume being edited and not yet saved. ID is the volume it
+// replaces, uuid.Nil for a new one.
+type VolumeDraft struct {
+	ID          uuid.UUID
+	ArrflixBase string
+	Aliases     []VolumeAliasInput
+}
+
+// Preview runs Checks as they would come out with draft saved. A draft whose
+// Arrflix base isn't absolute is left out, and so is any alias whose base
+// isn't, since neither could be saved.
+func (s *PathMappingService) Preview(ctx context.Context, draft VolumeDraft) ([]model.DownloaderPathCheck, error) {
+	existing, err := s.repo.ListVolumes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	volumes := make([]model.Volume, 0, len(existing)+1)
+	for _, v := range existing {
+		if v.ID != draft.ID {
+			volumes = append(volumes, v)
+		}
+	}
+	if filepath.IsAbs(draft.ArrflixBase) {
+		v := model.Volume{ID: draft.ID, Name: "this location", ArrflixBase: filepath.Clean(draft.ArrflixBase)}
+		for _, a := range draft.Aliases {
+			if filepath.IsAbs(a.Base) {
+				v.Aliases = append(v.Aliases, model.VolumeAlias{DownloaderID: a.DownloaderID, Base: filepath.Clean(a.Base), Flavor: "posix"})
+			}
+		}
+		volumes = append(volumes, v)
+	}
+	return s.checkAll(ctx, volumes)
+}
+
+// Test resolves path, as downloaderID sees it, and reports whether it exists in
+// Arrflix and, for each library, whether imports from it would hardlink or
+// copy.
+func (s *PathMappingService) Test(ctx context.Context, downloaderID uuid.UUID, path string) (model.PathTestResult, error) {
+	if _, err := s.repo.GetDownloader(ctx, downloaderID); err != nil {
+		return model.PathTestResult{}, err
+	}
+	if !filepath.IsAbs(path) {
+		return model.PathTestResult{}, apperrors.Validation("invalid path",
+			apperrors.Field("body.path", "must be an absolute path"),
+		).Op("PathMappingService.Test")
+	}
+	volumes, err := s.repo.ListVolumes(ctx)
+	if err != nil {
+		return model.PathTestResult{}, err
+	}
+	libraries, err := s.repo.ListLibraries(ctx)
+	if err != nil {
+		return model.PathTestResult{}, err
+	}
+	return pathmapping.New(volumes).TestPath(downloaderID, path, libraries, s.device)
+}
+
+// PathsResolve reports whether Arrflix can see client's default save path
+// through the current volumes, or nil when the check can't run.
+func (s *PathMappingService) PathsResolve(ctx context.Context, dl model.Downloader, client downloader.Client) (*bool, error) {
+	volumes, err := s.repo.ListVolumes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	check := s.checkClient(ctx, pathmapping.New(volumes), dl, client)
+	if check.Status == model.PathCheckUnavailable {
+		return nil, nil
+	}
+	ok := check.Status != model.PathCheckNotVisible
+	return &ok, nil
+}
+
+func (s *PathMappingService) checkAll(ctx context.Context, volumes []model.Volume) ([]model.DownloaderPathCheck, error) {
+	downloaders, err := s.repo.ListDownloaders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r := pathmapping.New(volumes)
+	out := make([]model.DownloaderPathCheck, len(downloaders))
+	var wg sync.WaitGroup
+	for i, dl := range downloaders {
+		wg.Go(func() { out[i] = s.checkDownloader(ctx, r, dl) })
+	}
+	wg.Wait()
+	return out, nil
+}
+
+func (s *PathMappingService) checkDownloader(ctx context.Context, r *pathmapping.Resolver, dl model.Downloader) model.DownloaderPathCheck {
+	switch {
+	case !dl.Enabled:
+		return unavailableCheck(dl, "the downloader is disabled")
+	case s.dlm == nil:
+		return unavailableCheck(dl, "downloaders aren't available")
+	}
+	ctx, cancel := context.WithTimeout(ctx, savePathTimeout)
+	defer cancel()
+	client, err := s.dlm.GetClientByID(ctx, dl.ID.String())
+	if err != nil {
+		return unavailableCheck(dl, "Arrflix couldn't connect to the downloader")
+	}
+	return s.checkClient(ctx, r, dl, client)
+}
+
+func (s *PathMappingService) checkClient(ctx context.Context, r *pathmapping.Resolver, dl model.Downloader, client downloader.Client) model.DownloaderPathCheck {
+	ctx, cancel := context.WithTimeout(ctx, savePathTimeout)
+	defer cancel()
+	savePath, err := client.DefaultSavePath(ctx)
+	if err != nil || savePath == "" {
+		return unavailableCheck(dl, "the downloader didn't report its save path")
+	}
+	return r.CheckSavePath(dl, savePath)
+}
+
+func unavailableCheck(dl model.Downloader, message string) model.DownloaderPathCheck {
+	return model.DownloaderPathCheck{
+		DownloaderID:   dl.ID,
+		DownloaderName: dl.Name,
+		Status:         model.PathCheckUnavailable,
+		Message:        message,
+	}
 }
 
 // validate collects every field problem (422) before checking uniqueness

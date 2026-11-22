@@ -92,6 +92,11 @@ type TestResult struct {
 	Version       string `json:"version,omitempty"`
 	WebAPIVersion string `json:"webApiVersion,omitempty"`
 	Error         string `json:"error,omitempty"`
+	// PathsResolve reports whether Arrflix can see the directory the
+	// downloader saves to by default, through the configured path mappings.
+	// It is absent when the check didn't run: an unsaved downloader, a failed
+	// connection, or a downloader that wouldn't report its save path.
+	PathsResolve *bool `json:"pathsResolve,omitempty"`
 }
 
 type Client interface {
@@ -100,6 +105,10 @@ type Client interface {
 
 	// Test tests the connection to the downloader
 	Test(ctx context.Context) (TestResult, error)
+
+	// DefaultSavePath is where the downloader saves an item added without a
+	// save path, in the downloader's own frame.
+	DefaultSavePath(ctx context.Context) (string, error)
 
 	// Add a download (magnet/NZB/etc)
 	Add(ctx context.Context, req AddRequest) (AddResult, error)

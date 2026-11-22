@@ -180,6 +180,9 @@ func (f *fakeDownloaderClient) InstanceID() downloader.InstanceID { return "fake
 func (f *fakeDownloaderClient) Test(ctx context.Context) (downloader.TestResult, error) {
 	return downloader.TestResult{Success: true}, nil
 }
+func (f *fakeDownloaderClient) DefaultSavePath(ctx context.Context) (string, error) {
+	return "/downloads", nil
+}
 func (f *fakeDownloaderClient) Add(ctx context.Context, req downloader.AddRequest) (downloader.AddResult, error) {
 	return downloader.AddResult{ExternalID: "ext-1", Name: "pack"}, nil
 }

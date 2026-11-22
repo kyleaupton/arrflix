@@ -455,6 +455,17 @@ export type Downloader = {
     username: string | null;
 };
 
+export type DownloaderPathCheck = {
+    downloaderId: string;
+    downloaderName: string;
+    message?: string;
+    resolvedPath?: string;
+    savePath?: string;
+    status: 'no_mapping_needed' | 'mapped' | 'not_visible' | 'unavailable';
+    volumeId?: string;
+    volumeName?: string;
+};
+
 export type DownloaderWithStatus = {
     configJson: unknown;
     createdAt: string;
@@ -1702,6 +1713,62 @@ export type ParsedSnapshotDto = {
     year?: number;
 };
 
+export type PathMappingPreviewBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Draft downloader aliases; any whose base isn't absolute is ignored
+     */
+    aliases?: Array<VolumeAliasBody> | null;
+    /**
+     * Draft Arrflix path; ignored unless absolute
+     */
+    arrflixBase: string;
+    /**
+     * Volume being edited; omit for a new one
+     */
+    volumeId?: string;
+};
+
+export type PathMappingTestInputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Downloader whose frame path is in
+     */
+    downloaderId: string;
+    /**
+     * Absolute path as the downloader sees it
+     */
+    path: string;
+};
+
+export type PathTestLibrary = {
+    libraryId: string;
+    libraryName: string;
+    message?: string;
+    rootPath: string;
+    verdict: 'hardlink' | 'copy' | 'unknown';
+};
+
+export type PathTestResult = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    downloaderId: string;
+    exists: boolean;
+    libraries: Array<PathTestLibrary> | null;
+    path: string;
+    resolvedPath: string;
+    volumeId?: string;
+    volumeName?: string;
+};
+
 export type PersonDetail = {
     /**
      * A URL to the JSON Schema for this object.
@@ -2487,6 +2554,7 @@ export type TestResult = {
     readonly $schema?: string;
     error?: string;
     message: string;
+    pathsResolve?: boolean;
     success: boolean;
     version?: string;
     webApiVersion?: string;
@@ -3655,6 +3723,42 @@ export type PageLibraryItemWritable = {
     pagination: Pagination;
 };
 
+export type PathMappingPreviewBodyWritable = {
+    /**
+     * Draft downloader aliases; any whose base isn't absolute is ignored
+     */
+    aliases?: Array<VolumeAliasBody> | null;
+    /**
+     * Draft Arrflix path; ignored unless absolute
+     */
+    arrflixBase: string;
+    /**
+     * Volume being edited; omit for a new one
+     */
+    volumeId?: string;
+};
+
+export type PathMappingTestInputBodyWritable = {
+    /**
+     * Downloader whose frame path is in
+     */
+    downloaderId: string;
+    /**
+     * Absolute path as the downloader sees it
+     */
+    path: string;
+};
+
+export type PathTestResultWritable = {
+    downloaderId: string;
+    exists: boolean;
+    libraries: Array<PathTestLibrary> | null;
+    path: string;
+    resolvedPath: string;
+    volumeId?: string;
+    volumeName?: string;
+};
+
 export type PersonDetailWritable = {
     alsoKnownAs?: Array<string> | null;
     biography: string;
@@ -4048,6 +4152,7 @@ export type SignupResponseWritable = {
 export type TestResultWritable = {
     error?: string;
     message: string;
+    pathsResolve?: boolean;
     success: boolean;
     version?: string;
     webApiVersion?: string;
@@ -7817,6 +7922,109 @@ export type NotificationsMarkReadResponses = {
 };
 
 export type NotificationsMarkReadResponse = NotificationsMarkReadResponses[keyof NotificationsMarkReadResponses];
+
+export type PathMappingChecksData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/path-mapping/checks';
+};
+
+export type PathMappingChecksErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type PathMappingChecksError = PathMappingChecksErrors[keyof PathMappingChecksErrors];
+
+export type PathMappingChecksResponses = {
+    /**
+     * OK
+     */
+    200: Array<DownloaderPathCheck> | null;
+};
+
+export type PathMappingChecksResponse = PathMappingChecksResponses[keyof PathMappingChecksResponses];
+
+export type PathMappingPreviewData = {
+    body: PathMappingPreviewBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/path-mapping/preview';
+};
+
+export type PathMappingPreviewErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type PathMappingPreviewError = PathMappingPreviewErrors[keyof PathMappingPreviewErrors];
+
+export type PathMappingPreviewResponses = {
+    /**
+     * OK
+     */
+    200: Array<DownloaderPathCheck> | null;
+};
+
+export type PathMappingPreviewResponse = PathMappingPreviewResponses[keyof PathMappingPreviewResponses];
+
+export type PathMappingTestData = {
+    body: PathMappingTestInputBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/path-mapping/test';
+};
+
+export type PathMappingTestErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type PathMappingTestError = PathMappingTestErrors[keyof PathMappingTestErrors];
+
+export type PathMappingTestResponses = {
+    /**
+     * OK
+     */
+    200: PathTestResult;
+};
+
+export type PathMappingTestResponse = PathMappingTestResponses[keyof PathMappingTestResponses];
 
 export type MediaGetPersonData = {
     body?: never;
