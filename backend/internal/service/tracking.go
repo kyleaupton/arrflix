@@ -228,16 +228,18 @@ func (s *TrackingService) Cancel(ctx context.Context, userID, trackingID uuid.UU
 	}
 
 	// own/any gate: tracking.cancel.any cancels any tracking; tracking.cancel.own
-	// requires the caller to be one of the tracking's requesters. Ownership is
-	// membership in the requester set.
+	// requires the caller to be the tracking's only requester. Cancelling cancels
+	// every live want, so a tracking other requesters still justify is someone
+	// else's too, and needs authority over others' requests (REQ-CANCEL-012).
+	// A tracking with no requesters belongs to no one and also needs .any.
 	requesters, err := s.repo.ListRequestersByTracking(ctx, trackingID)
 	if err != nil {
 		return model.Tracking{}, err
 	}
-	isOwner := false
+	isOwner := len(requesters) > 0
 	for _, r := range requesters {
-		if r.UserID == userID {
-			isOwner = true
+		if r.UserID != userID {
+			isOwner = false
 			break
 		}
 	}
