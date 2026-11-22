@@ -51,16 +51,23 @@ const waitLine = computed(() => {
   const home = status.value?.homeReleaseDate
   if (home) return `Expected ${dayMonth(home)}`
   const cinema = theatrical.value
-  if (cinema && isoDate(cinema) > todayIso()) {
+  if (cinema && isoDate(cinema) > isoDaysAgo(0)) {
     return `In cinemas ${dayMonth(cinema)} · home release not announced yet`
   }
   return 'In cinemas · home release not announced yet'
 })
 
 // Release dates are TMDB metadata the page already holds, not acquisition state,
-// so rendering them here is copy rather than a second derivation.
+// so rendering them here is copy rather than a second derivation. A film whose
+// cinema release is more than a year old is back catalogue: its home release is
+// long settled (the same 365-day window the backend uses to drop reissues), so
+// it reads as a plain dated release instead.
 const releaseLine = computed(() => {
   const rd = props.movie.releaseDates
+  const cinema = theatrical.value
+  if (cinema && isoDate(cinema) < isoDaysAgo(365)) {
+    return `Released ${formatDate(isoDate(cinema))}`
+  }
   if (rd?.theatrical) {
     const home = rd.digital
       ? `digital release ${dayMonth(rd.digital)}`
@@ -92,8 +99,10 @@ function isoDate(iso: string): string {
   return iso.slice(0, 10)
 }
 
-function todayIso(): string {
+// isoDaysAgo gives the viewer's local calendar day `days` before today.
+function isoDaysAgo(days: number): string {
   const d = new Date()
+  d.setDate(d.getDate() - days)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
