@@ -202,17 +202,19 @@ const homeReleaseReissueWindow = 365 * 24 * time.Hour
 // extractMovieReleaseDates, which keeps one region's trio together for display,
 // this mixes regions on purpose — the question is when any copy can first exist.
 //
-// The movie's first release is the earliest theatrical date across
-// homeReleaseRegions or the primary release date, whichever is earlier. A home
-// date more than homeReleaseReissueWindow after it is a reissue and is ignored,
-// leaving the movie on the no-home-date rule. Nil when no qualifying date is
-// known.
+// The movie's first release is the earliest theatrical (type 3) date across
+// homeReleaseRegions. The primary release date stands in only when none of
+// those regions has a theatrical date: it can be an origin-country or festival
+// release well over a year before the English-region one, and measuring from it
+// would drop a genuine first home release as a reissue. A home date more than
+// homeReleaseReissueWindow after the first release is a reissue and is
+// ignored, leaving the movie on the no-home-date rule. Nil when no qualifying
+// date is known.
 func extractMovieHomeReleaseDate(releaseDates *tmdb.MovieReleaseDates, primary *time.Time) *time.Time {
 	if releaseDates == nil || releaseDates.MovieReleaseDatesResults == nil {
 		return nil
 	}
-	first := primary
-	var earliest *time.Time
+	var first, earliest *time.Time
 	for _, result := range releaseDates.Results {
 		if !homeReleaseRegions[result.Iso3166_1] {
 			continue
@@ -233,6 +235,9 @@ func extractMovieHomeReleaseDate(releaseDates *tmdb.MovieReleaseDates, primary *
 				}
 			}
 		}
+	}
+	if first == nil {
+		first = primary
 	}
 	if earliest != nil && first != nil && earliest.Sub(*first) > homeReleaseReissueWindow {
 		return nil

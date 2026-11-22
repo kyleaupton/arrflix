@@ -193,6 +193,24 @@ func TestReqUnrel002_HomeReleaseIsEarliestDigitalOrPhysical(t *testing.T) {
 			want: "",
 		},
 		{
+			name:    "an earlier origin-country primary date doesn't make the home release a reissue",
+			primary: "2024-05-20",
+			json: `{"results":[{"iso_3166_1":"US","release_dates":[
+				{"type":3,"release_date":"2025-03-01T00:00:00.000Z"},
+				{"type":4,"release_date":"2025-06-01T00:00:00.000Z"}
+			]}]}`,
+			want: "2025-06-01",
+		},
+		{
+			name:    "theatrical dates outside the priority regions don't start the window",
+			primary: "2025-03-01",
+			json: `{"results":[
+				{"iso_3166_1":"KR","release_dates":[{"type":3,"release_date":"2024-01-10T00:00:00.000Z"}]},
+				{"iso_3166_1":"US","release_dates":[{"type":4,"release_date":"2025-06-01T00:00:00.000Z"}]}
+			]}`,
+			want: "2025-06-01",
+		},
+		{
 			name:    "the reissue window runs from the primary date when no theatrical one is known",
 			primary: "1975-06-20",
 			json:    `{"results":[{"iso_3166_1":"US","release_dates":[{"type":4,"release_date":"2026-03-10T00:00:00.000Z"}]}]}`,
