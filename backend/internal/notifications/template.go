@@ -23,6 +23,9 @@ var templateFS embed.FS
 // never rendering.
 var Registered = []Event{
 	WantAvailable{},
+	RequestPending{},
+	RequestApproved{},
+	RequestDenied{},
 }
 
 // textParts are the template files a text channel (in_app, push) renders — a

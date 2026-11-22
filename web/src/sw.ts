@@ -54,12 +54,17 @@ interface PushMessage {
   body: string
   tag?: string
   media?: { tmdbId: number; type: string }
+  event?: string
 }
 
-// The app path a notification opens. The backend sends the title's identity
-// rather than a URL, so route shapes live here alongside the router that
-// defines them. Anything without media — a test send — opens the root.
+// The app path a notification opens. The backend sends the event type and the
+// title's identity rather than a URL, so route shapes live here alongside the
+// router that defines them. Request-review events open the requests page (a
+// pending one, the review queue); anything else with media opens the title, and
+// anything without — a test send — opens the root.
 function pathFor(msg: PushMessage): string {
+  if (msg.event === 'request.pending') return '/requests?tab=queue'
+  if (msg.event === 'request.approved' || msg.event === 'request.denied') return '/requests'
   if (!msg.media?.tmdbId) return '/'
   return msg.media.type === 'series' ? `/series/${msg.media.tmdbId}` : `/movie/${msg.media.tmdbId}`
 }

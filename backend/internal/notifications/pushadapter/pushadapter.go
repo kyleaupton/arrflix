@@ -87,6 +87,7 @@ func (a *Adapter) Deliver(ctx context.Context, row model.NotificationOutbox) err
 		Body:  body,
 		Tag:   tagFor(row),
 		Media: mediaFor(row.Payload),
+		Event: row.EventType,
 	})
 	if err != nil {
 		return apperrors.Internalf("marshal push message: %v", err).NotRetryable().Op(op)

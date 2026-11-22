@@ -895,7 +895,7 @@ export const requestsCancel = <ThrowOnError extends boolean = false>(options: Op
 /**
  * Deny a pending request
  *
- * Denies a pending request with an optional reason. Requires a deny permission for the request's media type. A non-pending request is a 409.
+ * Denies a pending request with a reason, which the requester is notified of. Requires a deny permission for the request's media type. A blank reason is a 422; a non-pending request is a 409.
  */
 export const requestsDeny = <ThrowOnError extends boolean = false>(options: Options<RequestsDenyData, ThrowOnError>): RequestResult<RequestsDenyResponses, RequestsDenyErrors, ThrowOnError> => (options.client ?? client).post<RequestsDenyResponses, RequestsDenyErrors, ThrowOnError>({
     url: '/api/v1/requests/{id}/deny',

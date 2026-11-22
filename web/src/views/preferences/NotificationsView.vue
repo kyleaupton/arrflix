@@ -10,7 +10,8 @@ import { useAuthStore } from '@/stores/auth'
 const auth = useAuthStore()
 const { bundles, isLoading, isError, setPreference } = useNotificationPreferences()
 
-// Friendly copy for the catalog keys the API returns. Unknown keys fall back to
+// Friendly copy for the catalog keys the API returns. The API returns only the
+// bundles the viewer may receive (admin_alerts only to request reviewers). Unknown keys fall back to
 // a humanized version of the slug, so a new bundle/channel still renders.
 const BUNDLE_META: Record<string, { title: string; description: string }> = {
   my_requests: {
@@ -20,6 +21,10 @@ const BUNDLE_META: Record<string, { title: string; description: string }> = {
   library_activity: {
     title: 'Library Activity',
     description: 'New additions and updates across the shared library.',
+  },
+  admin_alerts: {
+    title: 'Admin Alerts',
+    description: 'New requests waiting for your review.',
   },
 }
 
