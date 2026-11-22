@@ -11,6 +11,42 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteUserGrantsByKeys = `-- name: DeleteUserGrantsByKeys :exec
+DELETE FROM permission_grant
+WHERE subject_type = 'user' AND subject_id = $1
+  AND permission_key = ANY($2::text[])
+`
+
+type DeleteUserGrantsByKeysParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Keys   []string    `json:"keys"`
+}
+
+// Remove the user's own (user-subject) grants on the given keys. Role grants are
+// never touched.
+func (q *Queries) DeleteUserGrantsByKeys(ctx context.Context, arg DeleteUserGrantsByKeysParams) error {
+	_, err := q.db.Exec(ctx, deleteUserGrantsByKeys, arg.UserID, arg.Keys)
+	return err
+}
+
+const insertUserGrants = `-- name: InsertUserGrants :exec
+INSERT INTO permission_grant (subject_type, subject_id, permission_key, effect)
+SELECT 'user', $1, k, 'allow'
+FROM unnest($2::text[]) AS k
+ON CONFLICT DO NOTHING
+`
+
+type InsertUserGrantsParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Keys   []string    `json:"keys"`
+}
+
+// Grant the user each of the given keys globally (unscoped, allow).
+func (q *Queries) InsertUserGrants(ctx context.Context, arg InsertUserGrantsParams) error {
+	_, err := q.db.Exec(ctx, insertUserGrants, arg.UserID, arg.Keys)
+	return err
+}
+
 const listUserGrants = `-- name: ListUserGrants :many
 SELECT g.id, g.subject_type, g.subject_id, g.permission_key, g.resource_type, g.resource_id, g.effect, g.created_at FROM permission_grant g
 WHERE (g.subject_type = 'user' AND g.subject_id = $1)

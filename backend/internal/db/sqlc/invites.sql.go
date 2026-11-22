@@ -32,7 +32,7 @@ func (q *Queries) DeleteInvite(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getInviteByEmail = `-- name: GetInviteByEmail :one
-SELECT id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role FROM user_invite
+SELECT id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role, auto_approve, allow_4k FROM user_invite
 WHERE lower(email) = lower($1) AND claimed_at IS NULL
 `
 
@@ -48,12 +48,14 @@ func (q *Queries) GetInviteByEmail(ctx context.Context, lower string) (UserInvit
 		&i.TokenHash,
 		&i.ExpiresAt,
 		&i.Role,
+		&i.AutoApprove,
+		&i.Allow4k,
 	)
 	return i, err
 }
 
 const getInviteByTokenHash = `-- name: GetInviteByTokenHash :one
-SELECT id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role FROM user_invite
+SELECT id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role, auto_approve, allow_4k FROM user_invite
 WHERE token_hash = $1 AND claimed_at IS NULL AND expires_at > now()
 `
 
@@ -69,12 +71,14 @@ func (q *Queries) GetInviteByTokenHash(ctx context.Context, tokenHash []byte) (U
 		&i.TokenHash,
 		&i.ExpiresAt,
 		&i.Role,
+		&i.AutoApprove,
+		&i.Allow4k,
 	)
 	return i, err
 }
 
 const listInvites = `-- name: ListInvites :many
-SELECT id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role FROM user_invite
+SELECT id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role, auto_approve, allow_4k FROM user_invite
 ORDER BY created_at DESC
 `
 
@@ -96,6 +100,8 @@ func (q *Queries) ListInvites(ctx context.Context) ([]UserInvite, error) {
 			&i.TokenHash,
 			&i.ExpiresAt,
 			&i.Role,
+			&i.AutoApprove,
+			&i.Allow4k,
 		); err != nil {
 			return nil, err
 		}
@@ -108,28 +114,33 @@ func (q *Queries) ListInvites(ctx context.Context) ([]UserInvite, error) {
 }
 
 const upsertInvite = `-- name: UpsertInvite :one
-INSERT INTO user_invite (email, invited_by, token_hash, expires_at, role)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO user_invite (email, invited_by, token_hash, expires_at, role, auto_approve, allow_4k)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (email) DO UPDATE SET
   invited_by = EXCLUDED.invited_by,
   token_hash = EXCLUDED.token_hash,
   expires_at = EXCLUDED.expires_at,
   role       = EXCLUDED.role,
+  auto_approve = EXCLUDED.auto_approve,
+  allow_4k   = EXCLUDED.allow_4k,
   claimed_at = NULL,
   created_at = now()
-RETURNING id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role
+RETURNING id, email, invited_by, created_at, claimed_at, token_hash, expires_at, role, auto_approve, allow_4k
 `
 
 type UpsertInviteParams struct {
-	Email     string             `json:"email"`
-	InvitedBy pgtype.UUID        `json:"invited_by"`
-	TokenHash []byte             `json:"token_hash"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	Role      string             `json:"role"`
+	Email       string             `json:"email"`
+	InvitedBy   pgtype.UUID        `json:"invited_by"`
+	TokenHash   []byte             `json:"token_hash"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	Role        string             `json:"role"`
+	AutoApprove bool               `json:"auto_approve"`
+	Allow4k     bool               `json:"allow_4k"`
 }
 
 // Create or re-issue an invite. Re-inviting an email (ON CONFLICT) regenerates the
-// token/expiry/role and clears claimed_at — the admin "resend" gesture.
+// token/expiry/role/request settings and clears claimed_at — the admin "resend"
+// gesture.
 func (q *Queries) UpsertInvite(ctx context.Context, arg UpsertInviteParams) (UserInvite, error) {
 	row := q.db.QueryRow(ctx, upsertInvite,
 		arg.Email,
@@ -137,6 +148,8 @@ func (q *Queries) UpsertInvite(ctx context.Context, arg UpsertInviteParams) (Use
 		arg.TokenHash,
 		arg.ExpiresAt,
 		arg.Role,
+		arg.AutoApprove,
+		arg.Allow4k,
 	)
 	var i UserInvite
 	err := row.Scan(
@@ -148,6 +161,8 @@ func (q *Queries) UpsertInvite(ctx context.Context, arg UpsertInviteParams) (Use
 		&i.TokenHash,
 		&i.ExpiresAt,
 		&i.Role,
+		&i.AutoApprove,
+		&i.Allow4k,
 	)
 	return i, err
 }

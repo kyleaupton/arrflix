@@ -35,6 +35,7 @@ type AuthRepo interface {
 	CountActiveUsersByRole(ctx context.Context, roleID uuid.UUID) (int64, error)
 	// Grants
 	ListUserGrants(ctx context.Context, userID uuid.UUID) ([]model.Grant, error)
+	ReplaceUserGrants(ctx context.Context, userID uuid.UUID, owned, grant []string) error
 	// Identity
 	GetIdentityByProviderSubject(ctx context.Context, provider model.AuthProvider, subject string) (model.Identity, error)
 	UpsertIdentity(ctx context.Context, params UpsertIdentityParams) (model.Identity, error)
@@ -163,6 +164,8 @@ func toModelUserFromGetRow(row dbgen.GetUserRow) model.User {
 		AvatarURL:    row.AvatarUrl,
 		IsActive:     row.IsActive,
 		Roles:        rolesFromAggregate(row.Roles),
+		AutoApprove:  row.AutoApprove,
+		Allow4k:      row.Allow4k,
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
 		PasswordHash: row.PasswordHash,
@@ -177,6 +180,8 @@ func toModelUserFromListRow(row dbgen.ListUsersRow) model.User {
 		AvatarURL:    row.AvatarUrl,
 		IsActive:     row.IsActive,
 		Roles:        rolesFromAggregate(row.Roles),
+		AutoApprove:  row.AutoApprove,
+		Allow4k:      row.Allow4k,
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
 		PasswordHash: row.PasswordHash,
@@ -356,6 +361,26 @@ func (r *Repository) ListUserGrants(ctx context.Context, userID uuid.UUID) ([]mo
 		out = append(out, toModelGrant(row))
 	}
 	return out, nil
+}
+
+// ReplaceUserGrants makes grant the user's complete set of user-subject grants
+// among the owned keys: owned grants not in grant are removed, and those in
+// grant are added. User-subject grants on keys outside owned, and every role
+// grant, are left alone. Run it inside InTx so the swap is atomic.
+func (r *Repository) ReplaceUserGrants(ctx context.Context, userID uuid.UUID, owned, grant []string) error {
+	if err := r.Q.DeleteUserGrantsByKeys(ctx, dbgen.DeleteUserGrantsByKeysParams{
+		UserID: pgtypeFromUUID(userID),
+		Keys:   owned,
+	}); err != nil {
+		return apperrors.FromPg(err, "clear grants for user %s", userID)
+	}
+	if len(grant) == 0 {
+		return nil
+	}
+	return apperrors.FromPg(r.Q.InsertUserGrants(ctx, dbgen.InsertUserGrantsParams{
+		UserID: pgtypeFromUUID(userID),
+		Keys:   grant,
+	}), "grant user %s", userID)
 }
 
 func (r *Repository) GetRoleByName(ctx context.Context, name string) (model.Role, error) {

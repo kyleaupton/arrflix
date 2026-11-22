@@ -4,10 +4,12 @@ import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import {
   usersUpdateMutation,
   usersAssignRoleMutation,
+  usersUpdateRequestSettingsMutation,
   usersListQueryKey,
 } from '@/client/@tanstack/vue-query.gen'
 import type { User } from '@/components/tables/configs/userTableConfig'
 import BaseDialog from './BaseDialog.vue'
+import RequestSettingsFields from '@/components/users/RequestSettingsFields.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -33,12 +35,22 @@ const queryClient = useQueryClient()
 
 const updateUserMutation = useMutation(usersUpdateMutation())
 const updateRoleMutation = useMutation(usersAssignRoleMutation())
+const updateRequestSettingsMutation = useMutation(usersUpdateRequestSettingsMutation())
 
-const userForm = ref<{ email: string; username: string; role: AssignableRole; isActive: boolean }>({
+const userForm = ref<{
+  email: string
+  username: string
+  role: AssignableRole
+  isActive: boolean
+  autoApprove: boolean
+  allow4k: boolean
+}>({
   email: '',
   username: '',
   role: 'requester',
   isActive: true,
+  autoApprove: false,
+  allow4k: false,
 })
 
 const userError = ref<string | null>(null)
@@ -67,6 +79,8 @@ watch(
       username: user.username || '',
       role: isAssignableRole(roleName) ? roleName : 'requester',
       isActive: user.isActive ?? true,
+      autoApprove: user.autoApprove ?? false,
+      allow4k: user.allow4k ?? false,
     }
     userError.value = null
   },
@@ -97,6 +111,20 @@ const handleSave = async () => {
       })
     }
 
+    // Hidden for admins, whose role grants everything: their stored settings are
+    // left as they are, to apply again if they're demoted.
+    const { autoApprove, allow4k } = userForm.value
+    if (
+      userForm.value.role !== 'admin' &&
+      (autoApprove !== (props.user.autoApprove ?? false) ||
+        allow4k !== (props.user.allow4k ?? false))
+    ) {
+      await updateRequestSettingsMutation.mutateAsync({
+        path: { id: props.user.id },
+        body: { autoApprove, allow4k },
+      })
+    }
+
     queryClient.invalidateQueries({ queryKey: usersListQueryKey() })
     userError.value = null
     dialogRef.value.close({ saved: true })
@@ -110,7 +138,10 @@ const handleCancel = () => {
 }
 
 const isLoading = computed(
-  () => updateUserMutation.isPending.value || updateRoleMutation.isPending.value,
+  () =>
+    updateUserMutation.isPending.value ||
+    updateRoleMutation.isPending.value ||
+    updateRequestSettingsMutation.isPending.value,
 )
 </script>
 
@@ -144,6 +175,11 @@ const isLoading = computed(
           </SelectContent>
         </Select>
       </div>
+      <RequestSettingsFields
+        v-model:auto-approve="userForm.autoApprove"
+        v-model:allow4k="userForm.allow4k"
+        :is-admin="userForm.role === 'admin'"
+      />
       <div class="flex items-center justify-between">
         <Label for="user-active">Active</Label>
         <Switch id="user-active" v-model="userForm.isActive" />

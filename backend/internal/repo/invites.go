@@ -28,6 +28,7 @@ type CreateInviteParams struct {
 	TokenHash []byte
 	ExpiresAt time.Time
 	Role      string
+	Settings  model.RequestSettings
 }
 
 // toModelInvite translates the persistence-shaped dbgen.UserInvite into the
@@ -45,23 +46,27 @@ func toModelInvite(row dbgen.UserInvite) model.Invite {
 		claimedAt = &t
 	}
 	return model.Invite{
-		ID:        uuidFromPgtype(row.ID),
-		Email:     row.Email,
-		Role:      row.Role,
-		InvitedBy: uuidFromPgtype(row.InvitedBy),
-		CreatedAt: row.CreatedAt,
-		ExpiresAt: expiresAt,
-		ClaimedAt: claimedAt,
+		ID:          uuidFromPgtype(row.ID),
+		Email:       row.Email,
+		Role:        row.Role,
+		AutoApprove: row.AutoApprove,
+		Allow4k:     row.Allow4k,
+		InvitedBy:   uuidFromPgtype(row.InvitedBy),
+		CreatedAt:   row.CreatedAt,
+		ExpiresAt:   expiresAt,
+		ClaimedAt:   claimedAt,
 	}
 }
 
 func (r *Repository) UpsertInvite(ctx context.Context, params CreateInviteParams) (model.Invite, error) {
 	row, err := r.Q.UpsertInvite(ctx, dbgen.UpsertInviteParams{
-		Email:     params.Email,
-		InvitedBy: pgtypeFromUUID(params.InvitedBy),
-		TokenHash: params.TokenHash,
-		ExpiresAt: pgtype.Timestamptz{Time: params.ExpiresAt, Valid: true},
-		Role:      params.Role,
+		Email:       params.Email,
+		InvitedBy:   pgtypeFromUUID(params.InvitedBy),
+		TokenHash:   params.TokenHash,
+		ExpiresAt:   pgtype.Timestamptz{Time: params.ExpiresAt, Valid: true},
+		Role:        params.Role,
+		AutoApprove: params.Settings.AutoApprove,
+		Allow4k:     params.Settings.Allow4k,
 	})
 	if err != nil {
 		return model.Invite{}, apperrors.FromPg(err, "create invite for %q", params.Email)

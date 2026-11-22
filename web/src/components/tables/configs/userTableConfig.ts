@@ -7,6 +7,8 @@ export interface User {
   username: string | null
   isActive: boolean
   roles?: unknown // JSONB from database; runtime-narrowed in render below
+  autoApprove?: boolean
+  allow4k?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -28,8 +30,8 @@ export const userColumns: TableColumn<User>[] = [
     key: 'roles',
     label: 'Role',
     sortable: false,
-    width: '150px',
-    render: (value: unknown) => {
+    width: '220px',
+    render: (value: unknown, user: User) => {
       // Parse roles from JSONB array
       let roleName = 'none'
       if (value) {
@@ -50,7 +52,18 @@ export const userColumns: TableColumn<User>[] = [
         guest: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
       }
       const colorClass = colorMap[roleName] || colorMap.guest
-      return `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${colorClass}">${roleName}</span>`
+      const roleBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${colorClass}">${roleName}</span>`
+      // Request settings only take effect on requesters; an admin's role grants everything.
+      if (roleName !== 'requester') return roleBadge
+      const settingBadge = (label: string) =>
+        `<span class="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-medium text-muted-foreground">${label}</span>`
+      const badges = [
+        user.autoApprove ? settingBadge('Auto-approve') : '',
+        user.allow4k ? settingBadge('4K') : '',
+      ].join('')
+      return badges
+        ? `<div class="flex flex-wrap items-center gap-1">${roleBadge}${badges}</div>`
+        : roleBadge
     },
   },
   {

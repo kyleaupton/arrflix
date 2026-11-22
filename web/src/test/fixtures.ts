@@ -43,6 +43,8 @@ export function user(overrides: Partial<User> = {}): User {
     username: 'member',
     isActive: true,
     roles: [role('requester')],
+    autoApprove: false,
+    allow4k: false,
     createdAt: '2026-11-01T12:00:00Z',
     updatedAt: '2026-11-01T12:00:00Z',
     ...overrides,

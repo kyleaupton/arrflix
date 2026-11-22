@@ -165,6 +165,31 @@ func (h *Users) AssignRole(ctx context.Context, input *UsersAssignRoleInput) (*U
 	return &UsersAssignRoleOutput{}, nil
 }
 
+// ----- UpdateRequestSettings -----
+
+type UsersUpdateRequestSettingsInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"User ID"`
+	Body struct {
+		AutoApprove bool `json:"autoApprove" required:"true" doc:"Whether the user's requests skip the approval queue, at every tier they may request"`
+		Allow4k     bool `json:"allow4k" required:"true" doc:"Whether the user may request 4K"`
+	}
+}
+
+type UsersUpdateRequestSettingsOutput struct {
+	Body model.User
+}
+
+func (h *Users) UpdateRequestSettings(ctx context.Context, input *UsersUpdateRequestSettingsInput) (*UsersUpdateRequestSettingsOutput, error) {
+	user, err := h.svc.Users.SetRequestSettings(ctx, input.ID, model.RequestSettings{
+		AutoApprove: input.Body.AutoApprove,
+		Allow4k:     input.Body.Allow4k,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &UsersUpdateRequestSettingsOutput{Body: user}, nil
+}
+
 // ----- GetProfile -----
 
 type UsersGetProfileInput struct{}
@@ -291,6 +316,18 @@ func (h *Users) RegisterHumachi(api huma.API) {
 		DefaultStatus: http.StatusNoContent,
 		Errors:        errsUpsert,
 	}, h.AssignRole)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "users-update-request-settings",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/users/{id}/request-settings",
+		Summary:     "Update user request settings",
+		Description: "Sets whether the user's requests are auto-approved and whether they may request 4K. " +
+			"Auto-approve covers every tier the user may request. Requests already made are unaffected, " +
+			"and the settings have no effect while the user is an admin.",
+		Tags:   []string{"users"},
+		Errors: errsUpsert,
+	}, h.UpdateRequestSettings)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "users-get-profile",

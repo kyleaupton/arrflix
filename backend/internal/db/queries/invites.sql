@@ -1,13 +1,16 @@
 -- name: UpsertInvite :one
 -- Create or re-issue an invite. Re-inviting an email (ON CONFLICT) regenerates the
--- token/expiry/role and clears claimed_at — the admin "resend" gesture.
-INSERT INTO user_invite (email, invited_by, token_hash, expires_at, role)
-VALUES ($1, $2, $3, $4, $5)
+-- token/expiry/role/request settings and clears claimed_at — the admin "resend"
+-- gesture.
+INSERT INTO user_invite (email, invited_by, token_hash, expires_at, role, auto_approve, allow_4k)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (email) DO UPDATE SET
   invited_by = EXCLUDED.invited_by,
   token_hash = EXCLUDED.token_hash,
   expires_at = EXCLUDED.expires_at,
   role       = EXCLUDED.role,
+  auto_approve = EXCLUDED.auto_approve,
+  allow_4k   = EXCLUDED.allow_4k,
   claimed_at = NULL,
   created_at = now()
 RETURNING *;
