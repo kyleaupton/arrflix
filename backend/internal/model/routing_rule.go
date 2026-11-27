@@ -21,7 +21,9 @@ import (
 // Action targets are nullable: a slot can be left unset by the author or
 // nulled by the database when its target is deleted (ON DELETE SET NULL).
 // Either way the rule still matches, contributes nothing for that slot, and
-// the slot falls back to the configured default at dispatch.
+// the slot falls back to the configured default at dispatch. SaveTo is the
+// one slot that isn't a reference: it's a folder path, and its default may be
+// unset (no save path is sent and the downloader decides).
 type RoutingRule struct {
 	ID             uuid.UUID       `json:"id"`
 	Name           string          `json:"name"`
@@ -31,6 +33,7 @@ type RoutingRule struct {
 	DownloaderID   *uuid.UUID      `json:"downloaderId,omitempty"`
 	LibraryID      *uuid.UUID      `json:"libraryId,omitempty"`
 	NameTemplateID *uuid.UUID      `json:"nameTemplateId,omitempty"`
+	SaveTo         *string         `json:"saveTo,omitempty" doc:"Save location as Arrflix sees it, sent to the downloader in its own frame"`
 	Continue       bool            `json:"continue"`
 	CreatedAt      time.Time       `json:"createdAt"`
 	UpdatedAt      time.Time       `json:"updatedAt"`

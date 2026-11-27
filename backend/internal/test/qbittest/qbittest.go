@@ -31,6 +31,8 @@ type Torrent struct {
 	Hash     string
 	Name     string
 	Category string
+	// SavePath is the savepath form value the add carried; empty when none.
+	SavePath string
 	Tags     []string
 }
 
@@ -174,7 +176,7 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 			hash = strings.ToLower(h)
 		}
 	}
-	tor := &Torrent{Hash: hash, Name: u.Query().Get("dn"), Category: r.FormValue("category")}
+	tor := &Torrent{Hash: hash, Name: u.Query().Get("dn"), Category: r.FormValue("category"), SavePath: r.FormValue("savepath")}
 	if tags := r.FormValue("tags"); tags != "" {
 		tor.Tags = strings.Split(tags, ",")
 	}

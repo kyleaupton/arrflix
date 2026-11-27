@@ -299,7 +299,7 @@ func TestRouting_EvaluateDispatch(t *testing.T) {
 	if eval.Final.LibraryID == nil || *eval.Final.LibraryID != defaultLibrary.ID {
 		t.Errorf("Final.LibraryID = %v, want default %s", eval.Final.LibraryID, defaultLibrary.ID)
 	}
-	want := routing.Fallbacks{Downloader: true, Library: true, NameTemplate: true}
+	want := routing.Fallbacks{Downloader: true, Library: true, NameTemplate: true, SaveTo: true}
 	if eval.FellBack != want {
 		t.Errorf("FellBack = %+v, want everything fell back", eval.FellBack)
 	}

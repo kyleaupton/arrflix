@@ -29,6 +29,9 @@ export function buildRoutingSummary(
     const nt = nameTemplates.find((x) => x.id === rule.nameTemplateId)
     parts.push(`name with ${nt?.name ?? rule.nameTemplateId}`)
   }
+  if (rule.saveTo) {
+    parts.push(`download to ${rule.saveTo}`)
+  }
   if (rule.continue) {
     parts.push('continue')
   }

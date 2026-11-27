@@ -152,6 +152,11 @@ func (w *Worker) processJob(ctx context.Context, job model.DownloadJob) error {
 
 func (w *Worker) enqueueDownload(ctx context.Context, client downloader.Client, job model.DownloadJob) error {
 	addReq := downloader.AddRequest{Category: downloader.Category}
+	// The save path was resolved into the downloader's frame at grab (routing's
+	// save-to action); unset leaves the downloader's own default in charge.
+	if job.SavePath != nil {
+		addReq.SavePath = *job.SavePath
+	}
 	switch job.Protocol {
 	case "torrent":
 		addReq.MagnetURL = job.CandidateLink

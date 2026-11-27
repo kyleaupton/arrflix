@@ -12,7 +12,7 @@ import (
 )
 
 const createRoutingRule = `-- name: CreateRoutingRule :one
-insert into routing_rule (name, enabled, "position", conditions, downloader_id, library_id, name_template_id, "continue")
+insert into routing_rule (name, enabled, "position", conditions, downloader_id, library_id, name_template_id, save_to, "continue")
 values (
   $1,
   $2,
@@ -21,9 +21,10 @@ values (
   $4,
   $5,
   $6,
-  $7
+  $7,
+  $8
 )
-returning id, name, enabled, position, conditions, downloader_id, library_id, name_template_id, continue, created_at, updated_at
+returning id, name, enabled, position, conditions, downloader_id, library_id, name_template_id, continue, created_at, updated_at, save_to
 `
 
 type CreateRoutingRuleParams struct {
@@ -33,6 +34,7 @@ type CreateRoutingRuleParams struct {
 	DownloaderID   pgtype.UUID `json:"downloader_id"`
 	LibraryID      pgtype.UUID `json:"library_id"`
 	NameTemplateID pgtype.UUID `json:"name_template_id"`
+	SaveTo         *string     `json:"save_to"`
 	RuleContinue   bool        `json:"rule_continue"`
 }
 
@@ -44,6 +46,7 @@ func (q *Queries) CreateRoutingRule(ctx context.Context, arg CreateRoutingRulePa
 		arg.DownloaderID,
 		arg.LibraryID,
 		arg.NameTemplateID,
+		arg.SaveTo,
 		arg.RuleContinue,
 	)
 	var i RoutingRule
@@ -59,6 +62,7 @@ func (q *Queries) CreateRoutingRule(ctx context.Context, arg CreateRoutingRulePa
 		&i.Continue,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SaveTo,
 	)
 	return i, err
 }
@@ -73,7 +77,7 @@ func (q *Queries) DeleteRoutingRule(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getRoutingRule = `-- name: GetRoutingRule :one
-select id, name, enabled, position, conditions, downloader_id, library_id, name_template_id, continue, created_at, updated_at from routing_rule
+select id, name, enabled, position, conditions, downloader_id, library_id, name_template_id, continue, created_at, updated_at, save_to from routing_rule
 where id = $1
 `
 
@@ -92,13 +96,14 @@ func (q *Queries) GetRoutingRule(ctx context.Context, id pgtype.UUID) (RoutingRu
 		&i.Continue,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SaveTo,
 	)
 	return i, err
 }
 
 const listRoutingRules = `-- name: ListRoutingRules :many
 
-select id, name, enabled, position, conditions, downloader_id, library_id, name_template_id, continue, created_at, updated_at from routing_rule
+select id, name, enabled, position, conditions, downloader_id, library_id, name_template_id, continue, created_at, updated_at, save_to from routing_rule
 order by "position" asc
 `
 
@@ -124,6 +129,7 @@ func (q *Queries) ListRoutingRules(ctx context.Context) ([]RoutingRule, error) {
 			&i.Continue,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SaveTo,
 		); err != nil {
 			return nil, err
 		}
@@ -143,10 +149,11 @@ set name = $1,
     downloader_id = $4,
     library_id = $5,
     name_template_id = $6,
-    "continue" = $7,
+    save_to = $7,
+    "continue" = $8,
     updated_at = now()
-where id = $8
-returning id, name, enabled, position, conditions, downloader_id, library_id, name_template_id, continue, created_at, updated_at
+where id = $9
+returning id, name, enabled, position, conditions, downloader_id, library_id, name_template_id, continue, created_at, updated_at, save_to
 `
 
 type UpdateRoutingRuleParams struct {
@@ -156,6 +163,7 @@ type UpdateRoutingRuleParams struct {
 	DownloaderID   pgtype.UUID `json:"downloader_id"`
 	LibraryID      pgtype.UUID `json:"library_id"`
 	NameTemplateID pgtype.UUID `json:"name_template_id"`
+	SaveTo         *string     `json:"save_to"`
 	RuleContinue   bool        `json:"rule_continue"`
 	ID             pgtype.UUID `json:"id"`
 }
@@ -168,6 +176,7 @@ func (q *Queries) UpdateRoutingRule(ctx context.Context, arg UpdateRoutingRulePa
 		arg.DownloaderID,
 		arg.LibraryID,
 		arg.NameTemplateID,
+		arg.SaveTo,
 		arg.RuleContinue,
 		arg.ID,
 	)
@@ -184,6 +193,7 @@ func (q *Queries) UpdateRoutingRule(ctx context.Context, arg UpdateRoutingRulePa
 		&i.Continue,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SaveTo,
 	)
 	return i, err
 }

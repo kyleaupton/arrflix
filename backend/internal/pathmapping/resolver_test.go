@@ -106,6 +106,50 @@ func TestFromCanonical(t *testing.T) {
 	}
 }
 
+func TestToDownloader(t *testing.T) {
+	t.Parallel()
+	qbit := uuid.New()
+	r := New([]model.Volume{
+		volume("media", "/data/torrents", alias(qbit, "/downloads")),
+		volume("4k", "/data/torrents/4k", alias(qbit, "/fast")),
+	})
+
+	cases := []struct {
+		name, in, want, volume string
+	}{
+		{"swaps the Arrflix base for the alias", "/data/torrents/hd", "/downloads/hd", "media"},
+		{"innermost volume wins", "/data/torrents/4k/x", "/fast/x", "4k"},
+		{"outside every volume is unchanged", "/srv/other/", "/srv/other", ""},
+		{"prefix matches whole segments only", "/data/torrentsextra", "/data/torrentsextra", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, v, err := r.ToDownloader(qbit, tc.in)
+			if err != nil {
+				t.Fatalf("ToDownloader(%q): %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Errorf("ToDownloader(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+			name := ""
+			if v != nil {
+				name = v.Name
+			}
+			if name != tc.volume {
+				t.Errorf("ToDownloader(%q) volume = %q, want %q", tc.in, name, tc.volume)
+			}
+		})
+	}
+
+	t.Run("a relative path is an error", func(t *testing.T) {
+		t.Parallel()
+		if _, _, err := r.ToDownloader(qbit, "data/torrents"); err == nil {
+			t.Errorf("want an error")
+		}
+	})
+}
+
 func TestDeviceAndSameFile(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

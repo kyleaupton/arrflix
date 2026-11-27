@@ -30,6 +30,7 @@ type CreateRoutingRuleParams struct {
 	DownloaderID   *uuid.UUID
 	LibraryID      *uuid.UUID
 	NameTemplateID *uuid.UUID
+	SaveTo         *string
 	Continue       bool
 }
 
@@ -44,6 +45,7 @@ type UpdateRoutingRuleParams struct {
 	DownloaderID   *uuid.UUID
 	LibraryID      *uuid.UUID
 	NameTemplateID *uuid.UUID
+	SaveTo         *string
 	Continue       bool
 }
 
@@ -60,6 +62,7 @@ func toModelRoutingRule(row dbgen.RoutingRule) model.RoutingRule {
 		DownloaderID:   uuidPtrFromPgtype(row.DownloaderID),
 		LibraryID:      uuidPtrFromPgtype(row.LibraryID),
 		NameTemplateID: uuidPtrFromPgtype(row.NameTemplateID),
+		SaveTo:         row.SaveTo,
 		Continue:       row.Continue,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
@@ -95,6 +98,7 @@ func (r *Repository) CreateRoutingRule(ctx context.Context, params CreateRouting
 		DownloaderID:   pgtypeFromUUIDPtr(params.DownloaderID),
 		LibraryID:      pgtypeFromUUIDPtr(params.LibraryID),
 		NameTemplateID: pgtypeFromUUIDPtr(params.NameTemplateID),
+		SaveTo:         params.SaveTo,
 		RuleContinue:   params.Continue,
 	})
 	if err != nil {
@@ -112,6 +116,7 @@ func (r *Repository) UpdateRoutingRule(ctx context.Context, params UpdateRouting
 		DownloaderID:   pgtypeFromUUIDPtr(params.DownloaderID),
 		LibraryID:      pgtypeFromUUIDPtr(params.LibraryID),
 		NameTemplateID: pgtypeFromUUIDPtr(params.NameTemplateID),
+		SaveTo:         params.SaveTo,
 		RuleContinue:   params.Continue,
 	})
 	if err != nil {

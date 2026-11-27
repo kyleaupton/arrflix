@@ -28,6 +28,7 @@ INSERT INTO proposal (
   downloader_id,
   library_id,
   name_template_id,
+  save_path,
   size,
   seeders,
   bin_source,
@@ -55,9 +56,10 @@ VALUES (
   $17,
   $18,
   $19,
-  $20
+  $20,
+  $21
 )
-RETURNING id, tracking_id, media_item_id, is_pack, protocol, media_type, season_id, episode_id, indexer_id, guid, candidate_title, candidate_link, downloader_id, library_id, name_template_id, size, seeders, bin_source, bin_resolution, bin_modifier, score, created_at, updated_at
+RETURNING id, tracking_id, media_item_id, is_pack, protocol, media_type, season_id, episode_id, indexer_id, guid, candidate_title, candidate_link, downloader_id, library_id, name_template_id, size, seeders, bin_source, bin_resolution, bin_modifier, score, created_at, updated_at, save_path
 `
 
 type CreateProposalParams struct {
@@ -75,6 +77,7 @@ type CreateProposalParams struct {
 	DownloaderID   pgtype.UUID `json:"downloader_id"`
 	LibraryID      pgtype.UUID `json:"library_id"`
 	NameTemplateID pgtype.UUID `json:"name_template_id"`
+	SavePath       *string     `json:"save_path"`
 	Size           int64       `json:"size"`
 	Seeders        int32       `json:"seeders"`
 	BinSource      string      `json:"bin_source"`
@@ -103,6 +106,7 @@ func (q *Queries) CreateProposal(ctx context.Context, arg CreateProposalParams) 
 		arg.DownloaderID,
 		arg.LibraryID,
 		arg.NameTemplateID,
+		arg.SavePath,
 		arg.Size,
 		arg.Seeders,
 		arg.BinSource,
@@ -135,6 +139,7 @@ func (q *Queries) CreateProposal(ctx context.Context, arg CreateProposalParams) 
 		&i.Score,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SavePath,
 	)
 	return i, err
 }
@@ -155,7 +160,7 @@ func (q *Queries) DeleteProposal(ctx context.Context, id pgtype.UUID) (pgtype.UU
 }
 
 const findOpenProposalForWant = `-- name: FindOpenProposalForWant :one
-SELECT p.id, p.tracking_id, p.media_item_id, p.is_pack, p.protocol, p.media_type, p.season_id, p.episode_id, p.indexer_id, p.guid, p.candidate_title, p.candidate_link, p.downloader_id, p.library_id, p.name_template_id, p.size, p.seeders, p.bin_source, p.bin_resolution, p.bin_modifier, p.score, p.created_at, p.updated_at FROM proposal p
+SELECT p.id, p.tracking_id, p.media_item_id, p.is_pack, p.protocol, p.media_type, p.season_id, p.episode_id, p.indexer_id, p.guid, p.candidate_title, p.candidate_link, p.downloader_id, p.library_id, p.name_template_id, p.size, p.seeders, p.bin_source, p.bin_resolution, p.bin_modifier, p.score, p.created_at, p.updated_at, p.save_path FROM proposal p
 JOIN proposal_want pw ON pw.proposal_id = p.id
 WHERE pw.want_id = $1
 LIMIT 1
@@ -192,12 +197,13 @@ func (q *Queries) FindOpenProposalForWant(ctx context.Context, wantID pgtype.UUI
 		&i.Score,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SavePath,
 	)
 	return i, err
 }
 
 const getProposal = `-- name: GetProposal :one
-SELECT id, tracking_id, media_item_id, is_pack, protocol, media_type, season_id, episode_id, indexer_id, guid, candidate_title, candidate_link, downloader_id, library_id, name_template_id, size, seeders, bin_source, bin_resolution, bin_modifier, score, created_at, updated_at FROM proposal
+SELECT id, tracking_id, media_item_id, is_pack, protocol, media_type, season_id, episode_id, indexer_id, guid, candidate_title, candidate_link, downloader_id, library_id, name_template_id, size, seeders, bin_source, bin_resolution, bin_modifier, score, created_at, updated_at, save_path FROM proposal
 WHERE id = $1
 `
 
@@ -228,12 +234,13 @@ func (q *Queries) GetProposal(ctx context.Context, id pgtype.UUID) (Proposal, er
 		&i.Score,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SavePath,
 	)
 	return i, err
 }
 
 const getProposalForUpdate = `-- name: GetProposalForUpdate :one
-SELECT id, tracking_id, media_item_id, is_pack, protocol, media_type, season_id, episode_id, indexer_id, guid, candidate_title, candidate_link, downloader_id, library_id, name_template_id, size, seeders, bin_source, bin_resolution, bin_modifier, score, created_at, updated_at FROM proposal
+SELECT id, tracking_id, media_item_id, is_pack, protocol, media_type, season_id, episode_id, indexer_id, guid, candidate_title, candidate_link, downloader_id, library_id, name_template_id, size, seeders, bin_source, bin_resolution, bin_modifier, score, created_at, updated_at, save_path FROM proposal
 WHERE id = $1
 FOR UPDATE
 `
@@ -268,6 +275,7 @@ func (q *Queries) GetProposalForUpdate(ctx context.Context, id pgtype.UUID) (Pro
 		&i.Score,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SavePath,
 	)
 	return i, err
 }
@@ -328,7 +336,7 @@ func (q *Queries) ListCoveredEpisodeIDsForProposals(ctx context.Context, proposa
 }
 
 const listProposalsForTracking = `-- name: ListProposalsForTracking :many
-SELECT id, tracking_id, media_item_id, is_pack, protocol, media_type, season_id, episode_id, indexer_id, guid, candidate_title, candidate_link, downloader_id, library_id, name_template_id, size, seeders, bin_source, bin_resolution, bin_modifier, score, created_at, updated_at FROM proposal
+SELECT id, tracking_id, media_item_id, is_pack, protocol, media_type, season_id, episode_id, indexer_id, guid, candidate_title, candidate_link, downloader_id, library_id, name_template_id, size, seeders, bin_source, bin_resolution, bin_modifier, score, created_at, updated_at, save_path FROM proposal
 WHERE tracking_id = $1
 ORDER BY created_at DESC
 `
@@ -366,6 +374,7 @@ func (q *Queries) ListProposalsForTracking(ctx context.Context, trackingID pgtyp
 			&i.Score,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SavePath,
 		); err != nil {
 			return nil, err
 		}
@@ -478,15 +487,16 @@ SET is_pack = $1,
     downloader_id = $10,
     library_id = $11,
     name_template_id = $12,
-    size = $13,
-    seeders = $14,
-    bin_source = $15,
-    bin_resolution = $16,
-    bin_modifier = $17,
-    score = $18,
+    save_path = $13,
+    size = $14,
+    seeders = $15,
+    bin_source = $16,
+    bin_resolution = $17,
+    bin_modifier = $18,
+    score = $19,
     updated_at = now()
-WHERE id = $19
-RETURNING id, tracking_id, media_item_id, is_pack, protocol, media_type, season_id, episode_id, indexer_id, guid, candidate_title, candidate_link, downloader_id, library_id, name_template_id, size, seeders, bin_source, bin_resolution, bin_modifier, score, created_at, updated_at
+WHERE id = $20
+RETURNING id, tracking_id, media_item_id, is_pack, protocol, media_type, season_id, episode_id, indexer_id, guid, candidate_title, candidate_link, downloader_id, library_id, name_template_id, size, seeders, bin_source, bin_resolution, bin_modifier, score, created_at, updated_at, save_path
 `
 
 type UpdateProposalParams struct {
@@ -502,6 +512,7 @@ type UpdateProposalParams struct {
 	DownloaderID   pgtype.UUID `json:"downloader_id"`
 	LibraryID      pgtype.UUID `json:"library_id"`
 	NameTemplateID pgtype.UUID `json:"name_template_id"`
+	SavePath       *string     `json:"save_path"`
 	Size           int64       `json:"size"`
 	Seeders        int32       `json:"seeders"`
 	BinSource      string      `json:"bin_source"`
@@ -529,6 +540,7 @@ func (q *Queries) UpdateProposal(ctx context.Context, arg UpdateProposalParams) 
 		arg.DownloaderID,
 		arg.LibraryID,
 		arg.NameTemplateID,
+		arg.SavePath,
 		arg.Size,
 		arg.Seeders,
 		arg.BinSource,
@@ -562,6 +574,7 @@ func (q *Queries) UpdateProposal(ctx context.Context, arg UpdateProposalParams) 
 		&i.Score,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SavePath,
 	)
 	return i, err
 }

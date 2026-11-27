@@ -92,6 +92,33 @@ func FromCanonical(volume model.Volume, arrflixPath string, downloaderID uuid.UU
 	return clean, nil
 }
 
+// ToDownloader maps arrflixPath into the frame of the downloader downloaderID
+// through the volume whose Arrflix base contains it; the innermost volume wins
+// when they nest. A path inside no volume is returned cleaned and unchanged,
+// with a nil volume: the downloader is taken to share Arrflix's mount.
+func (r *Resolver) ToDownloader(downloaderID uuid.UUID, arrflixPath string) (string, *model.Volume, error) {
+	clean, err := cleanAbs(arrflixPath)
+	if err != nil {
+		return "", nil, err
+	}
+	var best *model.Volume
+	for i := range r.volumes {
+		v := &r.volumes[i]
+		base := filepath.Clean(v.ArrflixBase)
+		if _, ok := under(base, clean); ok && (best == nil || len(base) > len(filepath.Clean(best.ArrflixBase))) {
+			best = v
+		}
+	}
+	if best == nil {
+		return clean, nil, nil
+	}
+	out, err := FromCanonical(*best, clean, downloaderID)
+	if err != nil {
+		return "", nil, err
+	}
+	return out, best, nil
+}
+
 // cleanAbs cleans path and rejects a relative one.
 func cleanAbs(path string) (string, error) {
 	if !filepath.IsAbs(path) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { CheckCircle2, CircleHelp, FlaskConical, Plus, Route, XCircle } from 'lucide-vue-next'
 import {
@@ -8,13 +8,16 @@ import {
   routingGetFieldsOptions,
   routingReorderRulesMutation,
   routingEvaluateMutation,
+  routingGetDefaultsOptions,
+  routingGetDefaultsQueryKey,
+  routingUpdateDefaultsMutation,
   librariesListOptions,
   nameTemplatesListOptions,
   downloadersListOptions,
 } from '@/client/@tanstack/vue-query.gen'
 import type { Evaluation } from '@/client/types.gen'
 import RoutingRuleCard from '@/components/settings/RoutingRuleCard.vue'
-import { problemMessage } from '@/lib/api'
+import { fieldProblem, problemMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -45,6 +48,44 @@ const { data: fields, isLoading: fieldsLoading } = useQuery(routingGetFieldsOpti
 const { data: libraries } = useQuery(librariesListOptions())
 const { data: nameTemplates } = useQuery(nameTemplatesListOptions())
 const { data: downloaders } = useQuery(downloadersListOptions())
+const { data: defaults } = useQuery(routingGetDefaultsOptions())
+
+// Routing defaults that aren't a flag on the target entity. An empty save
+// location sends no save path, leaving the choice to the downloader.
+const defaultSaveTo = ref('')
+watch(
+  defaults,
+  (d) => {
+    defaultSaveTo.value = d?.saveTo ?? ''
+  },
+  { immediate: true },
+)
+const defaultsError = ref<string | null>(null)
+const defaultSaveToError = ref<string | null>(null)
+const defaultsSaved = ref(false)
+const defaultsMutation = useMutation({
+  ...routingUpdateDefaultsMutation(),
+  onSuccess: () => {
+    defaultsSaved.value = true
+    queryClient.invalidateQueries({ queryKey: routingGetDefaultsQueryKey() })
+  },
+  onError: (err) => {
+    defaultSaveToError.value = fieldProblem(err, 'body.saveTo')
+    defaultsError.value = defaultSaveToError.value
+      ? null
+      : problemMessage(err, 'Failed to save routing defaults')
+  },
+})
+const handleDefaultSaveToInput = () => {
+  defaultSaveToError.value = null
+  defaultsSaved.value = false
+}
+const handleSaveDefaults = () => {
+  defaultsError.value = null
+  defaultSaveToError.value = null
+  defaultsSaved.value = false
+  defaultsMutation.mutate({ body: { saveTo: defaultSaveTo.value.trim() } })
+}
 
 // New rule cards — RoutingRuleCard self-invalidates on save/delete; parent
 // only tracks the "new" cards array so it can close them on save/cancel.
@@ -158,6 +199,12 @@ const finalSlots = computed(() => {
       name: resolveName(r.final.nameTemplateId, nameTemplates.value),
       fellBack: r.fellBack.nameTemplate,
     },
+    {
+      label: 'Save to',
+      name: r.final.saveTo ?? "Downloader's default",
+      detail: r.downloaderSavePath ? `Downloader sees ${r.downloaderSavePath}` : null,
+      fellBack: r.fellBack.saveTo && !!r.final.saveTo,
+    },
   ]
 })
 </script>
@@ -239,6 +286,46 @@ const finalSlots = computed(() => {
             />
           </div>
         </template>
+      </CardContent>
+    </Card>
+
+    <!-- Defaults -->
+    <Card>
+      <CardHeader>
+        <CardTitle class="text-xl font-semibold mb-2">Routing defaults</CardTitle>
+        <p class="text-sm text-muted-foreground">
+          Used when no rule sets a slot. The default downloader, library and name template are set
+          on those pages.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <div class="flex-1 flex flex-col gap-2">
+            <Label for="routing-default-save-to">Save to</Label>
+            <Input
+              id="routing-default-save-to"
+              v-model="defaultSaveTo"
+              placeholder="/data/torrents"
+              aria-describedby="routing-default-save-to-hint"
+              :aria-invalid="defaultSaveToError ? true : undefined"
+              :class="{ 'border-destructive': defaultSaveToError }"
+              @input="handleDefaultSaveToInput"
+            />
+            <p id="routing-default-save-to-hint" class="text-xs text-muted-foreground">
+              Empty: the downloader decides.
+            </p>
+            <p v-if="defaultSaveToError" class="text-sm text-destructive">
+              {{ defaultSaveToError }}
+            </p>
+          </div>
+          <div class="flex items-start sm:pt-7">
+            <Button :disabled="defaultsMutation.isPending.value" @click="handleSaveDefaults">
+              Save defaults
+            </Button>
+          </div>
+        </div>
+        <p v-if="defaultsError" class="text-sm text-destructive mt-2">{{ defaultsError }}</p>
+        <p v-else-if="defaultsSaved" class="text-sm text-muted-foreground mt-2">Saved.</p>
       </CardContent>
     </Card>
 
@@ -325,7 +412,7 @@ const finalSlots = computed(() => {
           <!-- Final action set -->
           <div>
             <span class="text-sm font-medium block mb-2">Resulting dispatch</span>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div v-for="slot in finalSlots" :key="slot.label" class="rounded-md border px-3 py-2">
                 <div class="text-xs text-muted-foreground">{{ slot.label }}</div>
                 <div class="text-sm font-medium truncate">
@@ -333,6 +420,9 @@ const finalSlots = computed(() => {
                   <Badge v-if="slot.fellBack" variant="secondary" class="text-xs ml-1">
                     default
                   </Badge>
+                </div>
+                <div v-if="slot.detail" class="text-xs text-muted-foreground truncate">
+                  {{ slot.detail }}
                 </div>
               </div>
             </div>

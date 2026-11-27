@@ -180,7 +180,8 @@ INSERT INTO download_job (
   candidate_link,
   downloader_id,
   library_id,
-  name_template_id
+  name_template_id,
+  save_path
 )
 VALUES (
   'created',
@@ -195,7 +196,8 @@ VALUES (
   $9,
   $10,
   $11,
-  $12
+  $12,
+  $13
 )
 ON CONFLICT (indexer_id, guid) WHERE status NOT IN ('failed', 'cancelled') DO UPDATE
 SET updated_at = now()
@@ -215,6 +217,7 @@ type CreateDownloadJobParams struct {
 	DownloaderID   pgtype.UUID `json:"downloader_id"`
 	LibraryID      pgtype.UUID `json:"library_id"`
 	NameTemplateID pgtype.UUID `json:"name_template_id"`
+	SavePath       *string     `json:"save_path"`
 }
 
 // Download jobs (refactored: 6 states, no import states)
@@ -232,6 +235,7 @@ func (q *Queries) CreateDownloadJob(ctx context.Context, arg CreateDownloadJobPa
 		arg.DownloaderID,
 		arg.LibraryID,
 		arg.NameTemplateID,
+		arg.SavePath,
 	)
 	var i DownloadJob
 	err := row.Scan(
@@ -1369,6 +1373,7 @@ INSERT INTO download_job (
   downloader_id,
   library_id,
   name_template_id,
+  save_path,
   previous_job_id
 )
 SELECT
@@ -1385,6 +1390,7 @@ SELECT
   old.downloader_id,
   old.library_id,
   old.name_template_id,
+  old.save_path,
   old.id
 FROM download_job old
 WHERE old.id = $1

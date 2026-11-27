@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, useId } from 'vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import {
   routingCreateRuleMutation,
@@ -16,7 +16,7 @@ import type {
 } from '@/client/types.gen'
 import { buildRoutingSummary } from '@/composables/useRoutingSummary'
 import { useModal } from '@/composables/useModal'
-import { problemMessage } from '@/lib/api'
+import { fieldProblem, problemMessage } from '@/lib/api'
 import ConditionBuilder from '@/components/conditions/ConditionBuilder.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -73,6 +73,7 @@ const createMutation = useMutation({
   },
   onError: (err) => {
     saveError.value = problemMessage(err, 'Failed to create routing rule')
+    saveToError.value = fieldProblem(err, 'body.saveTo')
   },
 })
 const updateMutation = useMutation({
@@ -84,6 +85,7 @@ const updateMutation = useMutation({
   },
   onError: (err) => {
     saveError.value = problemMessage(err, 'Failed to update routing rule')
+    saveToError.value = fieldProblem(err, 'body.saveTo')
   },
 })
 const deleteMutation = useMutation({
@@ -101,6 +103,7 @@ const deleteMutation = useMutation({
 const isExpanded = ref(props.isNew)
 const nameError = ref(false)
 const saveError = ref<string | null>(null)
+const saveToError = ref<string | null>(null)
 
 const form = ref({
   name: '',
@@ -109,13 +112,17 @@ const form = ref({
   downloaderId: '',
   libraryId: '',
   nameTemplateId: '',
+  saveTo: '',
 })
 
 // The canonical condition tree, edited via ConditionBuilder (null = none).
 const conditionTree = ref<unknown>(null)
 
+const saveToId = useId()
+
 function initForm() {
   saveError.value = null
+  saveToError.value = null
   if (props.rule) {
     form.value = {
       name: props.rule.name,
@@ -124,6 +131,7 @@ function initForm() {
       downloaderId: props.rule.downloaderId ?? '',
       libraryId: props.rule.libraryId ?? '',
       nameTemplateId: props.rule.nameTemplateId ?? '',
+      saveTo: props.rule.saveTo ?? '',
     }
     conditionTree.value = props.rule.conditions ?? null
   } else {
@@ -134,6 +142,7 @@ function initForm() {
       downloaderId: '',
       libraryId: '',
       nameTemplateId: '',
+      saveTo: '',
     }
     conditionTree.value = null
   }
@@ -171,6 +180,7 @@ function buildBody() {
     downloaderId: form.value.downloaderId || undefined,
     libraryId: form.value.libraryId || undefined,
     nameTemplateId: form.value.nameTemplateId || undefined,
+    saveTo: form.value.saveTo.trim() || undefined,
   }
 }
 
@@ -186,6 +196,7 @@ const isSaving = computed(() => createMutation.isPending.value || updateMutation
 
 const handleSave = () => {
   saveError.value = null
+  saveToError.value = null
   if (!form.value.name.trim()) {
     nameError.value = true
     return
@@ -298,7 +309,7 @@ const handleDelete = async () => {
       <!-- Actions section -->
       <div class="mb-6">
         <span class="text-sm font-medium block mb-3">Actions on match</span>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div class="flex flex-col gap-2">
             <Label>Downloader</Label>
             <Select v-model="form.downloaderId">
@@ -337,6 +348,22 @@ const handleDelete = async () => {
                 </SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div class="flex flex-col gap-2">
+            <Label :for="saveToId">Save to</Label>
+            <Input
+              :id="saveToId"
+              v-model="form.saveTo"
+              placeholder="/data/torrents/4k"
+              :aria-describedby="`${saveToId}-hint`"
+              :aria-invalid="saveToError ? true : undefined"
+              :class="{ 'border-destructive': saveToError }"
+              @input="saveToError = null"
+            />
+            <p :id="`${saveToId}-hint`" class="text-xs text-muted-foreground">
+              Folder as Arrflix sees it. Leave empty to use the downloader's default.
+            </p>
+            <p v-if="saveToError" class="text-sm text-destructive">{{ saveToError }}</p>
           </div>
         </div>
         <p class="text-xs text-muted-foreground mt-2">

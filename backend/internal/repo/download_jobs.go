@@ -66,6 +66,9 @@ type CreateDownloadJobParams struct {
 	DownloaderID   uuid.UUID
 	LibraryID      uuid.UUID
 	NameTemplateID uuid.UUID
+	// SavePath is where the downloader is told to save, in its own frame. Nil
+	// sends no save path and the downloader's default applies.
+	SavePath *string
 }
 
 // SetDownloadJobDownloadSnapshotParams is the domain-shaped input for
@@ -395,6 +398,7 @@ func (r *Repository) CreateDownloadJob(ctx context.Context, params CreateDownloa
 		DownloaderID:   pgtypeFromUUID(params.DownloaderID),
 		LibraryID:      pgtypeFromUUID(params.LibraryID),
 		NameTemplateID: pgtypeFromUUID(params.NameTemplateID),
+		SavePath:       params.SavePath,
 	})
 	if err != nil {
 		return model.DownloadJob{}, apperrors.FromPg(err, "create download job for media %s", params.MediaItemID)

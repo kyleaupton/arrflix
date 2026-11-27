@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
+	"github.com/kyleaupton/arrflix/internal/pathmapping"
 	"github.com/kyleaupton/arrflix/internal/repo"
 	"github.com/kyleaupton/arrflix/internal/routing"
 	"github.com/kyleaupton/arrflix/internal/rules"
@@ -38,8 +41,21 @@ type RoutingRuleInput struct {
 	DownloaderID   *uuid.UUID
 	LibraryID      *uuid.UUID
 	NameTemplateID *uuid.UUID
+	SaveTo         *string
 	Continue       bool
 }
+
+// RoutingDefaults are the routing defaults that aren't a flag on the target
+// entity (the default downloader, library and name template are). SaveTo nil
+// means no save path is sent and the downloader decides.
+type RoutingDefaults struct {
+	SaveTo *string
+}
+
+// saveToDefaultKey is the app_setting row holding the save-to default. It is
+// deliberately not in the settings Registry: it's written only through
+// SetDefaults, which validates the path. An absent row or empty text is unset.
+const saveToDefaultKey = "routing.save_to_default"
 
 func (s *RoutingService) List(ctx context.Context) ([]model.RoutingRule, error) {
 	return s.repo.ListRoutingRules(ctx)
@@ -50,7 +66,7 @@ func (s *RoutingService) Get(ctx context.Context, id uuid.UUID) (model.RoutingRu
 }
 
 func (s *RoutingService) Create(ctx context.Context, in RoutingRuleInput) (model.RoutingRule, error) {
-	conditions, err := s.validateInput(ctx, in, "RoutingService.Create")
+	conditions, saveTo, err := s.validateInput(ctx, in, "RoutingService.Create")
 	if err != nil {
 		return model.RoutingRule{}, err
 	}
@@ -61,12 +77,13 @@ func (s *RoutingService) Create(ctx context.Context, in RoutingRuleInput) (model
 		DownloaderID:   in.DownloaderID,
 		LibraryID:      in.LibraryID,
 		NameTemplateID: in.NameTemplateID,
+		SaveTo:         saveTo,
 		Continue:       in.Continue,
 	})
 }
 
 func (s *RoutingService) Update(ctx context.Context, id uuid.UUID, in RoutingRuleInput) (model.RoutingRule, error) {
-	conditions, err := s.validateInput(ctx, in, "RoutingService.Update")
+	conditions, saveTo, err := s.validateInput(ctx, in, "RoutingService.Update")
 	if err != nil {
 		return model.RoutingRule{}, err
 	}
@@ -78,6 +95,7 @@ func (s *RoutingService) Update(ctx context.Context, id uuid.UUID, in RoutingRul
 		DownloaderID:   in.DownloaderID,
 		LibraryID:      in.LibraryID,
 		NameTemplateID: in.NameTemplateID,
+		SaveTo:         saveTo,
 		Continue:       in.Continue,
 	})
 }
@@ -122,10 +140,82 @@ func (s *RoutingService) Reorder(ctx context.Context, ids []uuid.UUID) ([]model.
 	return s.repo.ListRoutingRules(ctx)
 }
 
+// GetDefaults returns the stored routing defaults.
+func (s *RoutingService) GetDefaults(ctx context.Context) (RoutingDefaults, error) {
+	saveTo, err := s.saveToDefault(ctx)
+	if err != nil {
+		return RoutingDefaults{}, err
+	}
+	return RoutingDefaults{SaveTo: saveTo}, nil
+}
+
+// SetDefaults validates and stores the routing defaults. An empty SaveTo
+// clears the default.
+func (s *RoutingService) SetDefaults(ctx context.Context, in RoutingDefaults) (RoutingDefaults, error) {
+	saveTo, problem := validateSaveTo(in.SaveTo)
+	if problem != "" {
+		return RoutingDefaults{}, apperrors.Validation("invalid routing defaults",
+			apperrors.Field("body.saveTo", problem)).Op("RoutingService.SetDefaults")
+	}
+	stored := ""
+	if saveTo != nil {
+		stored = *saveTo
+	}
+	b, err := json.Marshal(stored)
+	if err != nil {
+		return RoutingDefaults{}, apperrors.Internalf("marshal save-to default: %v", err).Op("RoutingService.SetDefaults")
+	}
+	if err := s.repo.Upsert(ctx, saveToDefaultKey, string(SettingText), b); err != nil {
+		return RoutingDefaults{}, err
+	}
+	return RoutingDefaults{SaveTo: saveTo}, nil
+}
+
+func (s *RoutingService) saveToDefault(ctx context.Context) (*string, error) {
+	row, err := s.repo.Get(ctx, saveToDefaultKey)
+	if apperrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var v string
+	if err := json.Unmarshal(row.ValueJSON, &v); err != nil {
+		return nil, apperrors.Internalf("setting %q is not text: %v", saveToDefaultKey, err).
+			Op("RoutingService.saveToDefault").
+			NotRetryable()
+	}
+	if v == "" {
+		return nil, nil
+	}
+	return &v, nil
+}
+
+// validateSaveTo checks a save-to path at save time. Empty or nil is unset
+// (nil, ""); otherwise it must be an absolute path to a directory Arrflix can
+// see. It returns the cleaned path, or the field problem.
+func validateSaveTo(saveTo *string) (*string, string) {
+	if saveTo == nil || *saveTo == "" {
+		return nil, ""
+	}
+	if !filepath.IsAbs(*saveTo) {
+		return nil, "must be an absolute path"
+	}
+	clean := filepath.Clean(*saveTo)
+	info, err := os.Stat(clean)
+	switch {
+	case err != nil:
+		return nil, fmt.Sprintf("not accessible: %v", err)
+	case !info.IsDir():
+		return nil, "not a directory"
+	}
+	return &clean, ""
+}
+
 // validateInput runs every authoring-time check and returns the canonical
-// condition bytes to store. All field problems are collected so the editor
-// can flag everything at once.
-func (s *RoutingService) validateInput(ctx context.Context, in RoutingRuleInput, op string) ([]byte, error) {
+// condition bytes and cleaned save-to path to store. All field problems are
+// collected so the editor can flag everything at once.
+func (s *RoutingService) validateInput(ctx context.Context, in RoutingRuleInput, op string) ([]byte, *string, error) {
 	var fields []apperrors.FieldError
 	if in.Name == "" {
 		fields = append(fields, apperrors.Field("body.name", "required"))
@@ -166,28 +256,34 @@ func (s *RoutingService) validateInput(ctx context.Context, in RoutingRuleInput,
 		if _, err := s.repo.GetDownloader(ctx, *in.DownloaderID); apperrors.IsNotFound(err) {
 			fields = append(fields, apperrors.Field("body.downloaderId", "downloader not found"))
 		} else if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if in.LibraryID != nil {
 		if _, err := s.repo.GetLibrary(ctx, *in.LibraryID); apperrors.IsNotFound(err) {
 			fields = append(fields, apperrors.Field("body.libraryId", "library not found"))
 		} else if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if in.NameTemplateID != nil {
 		if _, err := s.repo.GetNameTemplate(ctx, *in.NameTemplateID); apperrors.IsNotFound(err) {
 			fields = append(fields, apperrors.Field("body.nameTemplateId", "name template not found"))
 		} else if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	if len(fields) > 0 {
-		return nil, apperrors.Validation("invalid routing rule", fields...).Op(op)
+	// Post-save disappearance of the folder fails the grab instead (SavePath).
+	saveTo, problem := validateSaveTo(in.SaveTo)
+	if problem != "" {
+		fields = append(fields, apperrors.Field("body.saveTo", problem))
 	}
-	return canonical, nil
+
+	if len(fields) > 0 {
+		return nil, nil, apperrors.Validation("invalid routing rule", fields...).Op(op)
+	}
+	return canonical, saveTo, nil
 }
 
 // Dispatch evaluates the rule list against the subject at grab and returns
@@ -220,6 +316,7 @@ func (s *RoutingService) Dispatch(ctx context.Context, subject model.Subject) (r
 				DownloaderID:   row.DownloaderID,
 				LibraryID:      row.LibraryID,
 				NameTemplateID: row.NameTemplateID,
+				SaveTo:         row.SaveTo,
 			},
 			Continue: row.Continue,
 		})
@@ -270,8 +367,66 @@ func (s *RoutingService) Dispatch(ctx context.Context, subject model.Subject) (r
 		final.NameTemplateID = &id
 	}
 
+	// An unset save-to default is valid: the slot stays nil and the downloader
+	// decides where to save.
+	if final.SaveTo == nil {
+		saveTo, err := s.saveToDefault(ctx)
+		if err != nil {
+			return final, eval, err
+		}
+		final.SaveTo = saveTo
+	}
+
 	eval.Final = final
+	if final.SaveTo != nil {
+		translated, err := s.toDownloaderFrame(ctx, *final.DownloaderID, *final.SaveTo)
+		if err != nil {
+			return final, eval, err
+		}
+		if translated != *final.SaveTo {
+			eval.DownloaderSavePath = translated
+		}
+	}
 	return final, eval, nil
+}
+
+// SavePath resolves a dispatched action set's save location for the grab: the
+// folder in the chosen downloader's frame, or nil when none is set. A folder
+// that no longer exists fails the grab with an error naming it; the error is
+// retryable, so an acquisition want backs off and tries again rather than
+// silently downloading to the downloader's default.
+func (s *RoutingService) SavePath(ctx context.Context, actions routing.ActionSet) (*string, error) {
+	if actions.SaveTo == nil {
+		return nil, nil
+	}
+	saveTo := *actions.SaveTo
+	if !isAccessibleDir(saveTo) {
+		return nil, apperrors.Internalf("routing save location %q is not an accessible directory; fix the routing rule or default", saveTo).
+			Op("RoutingService.SavePath")
+	}
+	translated, err := s.toDownloaderFrame(ctx, *actions.DownloaderID, saveTo)
+	if err != nil {
+		return nil, err
+	}
+	return &translated, nil
+}
+
+// isAccessibleDir reports whether path exists in Arrflix's filesystem and is a
+// directory.
+func isAccessibleDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// toDownloaderFrame maps an Arrflix path into downloaderID's frame through the
+// configured volumes; with no matching volume the path is unchanged.
+func (s *RoutingService) toDownloaderFrame(ctx context.Context, downloaderID uuid.UUID, arrflixPath string) (string, error) {
+	volumes, err := s.repo.ListVolumes(ctx)
+	if err != nil {
+		return "", err
+	}
+	translated, _, err := pathmapping.New(volumes).ToDownloader(downloaderID, arrflixPath)
+	return translated, err
 }
 
 // GetFieldDefinitions returns the editor's field catalog, generated from the

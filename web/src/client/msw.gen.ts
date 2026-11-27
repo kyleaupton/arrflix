@@ -2,7 +2,7 @@
 
 import { type DefaultBodyType, http, type HttpHandler, HttpResponse, type HttpResponseResolver, type RequestHandlerOptions as RequestHandlerOptions2 } from 'msw';
 
-import type { AuthAcceptInviteData, AuthAcceptInviteResponses, AuthLoginData, AuthLoginResponses, AuthLogoutResponses, AuthMeResponses, AuthPlexExchangeData, AuthPlexExchangeResponses, AuthRefreshResponses, AuthSignupData, AuthSignupResponses, BootstrapGetResponses, ClientOptions, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieResponses, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesResponses, DownloadCandidatesListMovieResponses, DownloadCandidatesListSeriesResponses, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieResponses, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesResponses, DownloadersCreateData, DownloadersCreateResponses, DownloadersDeleteResponses, DownloadersGetDefaultResponses, DownloadersGetResponses, DownloadersListResponses, DownloadersTestConfigData, DownloadersTestConfigResponses, DownloadersTestResponses, DownloadersUpdateData, DownloadersUpdateResponses, DownloadJobsCancelResponses, DownloadJobsGetResponses, DownloadJobsHistoryResponses, DownloadJobsListForMovieResponses, DownloadJobsListForSeriesResponses, DownloadJobsListImportTasksResponses, DownloadJobsListResponses, DownloadJobsReimportResponses, DownloadJobsRetryResponses, DownloadJobsTimelineResponses, EmailProviderGetResponses, EmailProviderSaveData, EmailProviderSaveResponses, EmailProviderTestConfigData, EmailProviderTestConfigResponses, EmailProviderTestData, EmailProviderTestResponses, EventsStreamResponses, EventsSubscriptionsAddData, EventsSubscriptionsAddResponses, EventsSubscriptionsListResponses, EventsSubscriptionsRemoveResponses, FeedGetResponses, FilesDetachData, FilesDetachResponses, FilesMatchData, FilesMatchDecisionResponses, FilesMatchResponses, FilesUnmatchResponses, FilesystemBrowseResponses, HealthCheckResponses, ImportTasksCancelResponses, ImportTasksCountsResponses, ImportTasksGetResponses, ImportTasksHistoryResponses, ImportTasksListResponses, ImportTasksReimportResponses, ImportTasksTimelineResponses, IndexersActionResponses, IndexersDeleteResponses, IndexersGetResponses, IndexersGetSchemaResponses, IndexersListConfiguredResponses, IndexersSaveData, IndexersSaveResponses, IndexersTestAllResponses, IndexersTestSavedResponses, IndexersTestUnsavedData, IndexersTestUnsavedResponses, IndexersToggleResponses, InvitesCreateData, InvitesCreateResponses, InvitesDeleteResponses, InvitesListResponses, LibrariesCreateData, LibrariesCreateResponses, LibrariesDeleteResponses, LibrariesGetResponses, LibrariesListResponses, LibrariesScanResponses, LibrariesUpdateData, LibrariesUpdateResponses, LibraryListResponses, MediaGetMovieResponses, MediaGetPersonResponses, MediaGetSeriesResponses, MediaSearchResponses, NameTemplatesCreateData, NameTemplatesCreateResponses, NameTemplatesDeleteResponses, NameTemplatesGetDefaultResponses, NameTemplatesGetResponses, NameTemplatesListResponses, NameTemplatesUpdateData, NameTemplatesUpdateResponses, NotificationPreferencesGetResponses, NotificationPreferencesSetData, NotificationPreferencesSetResponses, NotificationsListResponses, NotificationsMarkAllReadResponses, NotificationsMarkReadResponses, NotificationsUnreadCountResponses, ProposalsApproveResponses, ProposalsDeclineResponses, PushPublicKeyResponses, PushRemoveResponses, PushSubscribeData, PushSubscribeResponses, PushTestResponses, QualityBindTierData, QualityBindTierResponses, QualityCreateCustomFormatData, QualityCreateCustomFormatResponses, QualityCreateProfileData, QualityCreateProfileResponses, QualityDeleteCustomFormatResponses, QualityDeleteProfileResponses, QualityGetCustomFormatResponses, QualityGetProfileResponses, QualityListBinsResponses, QualityListCustomFormatsResponses, QualityListProfilesResponses, QualityListSizeDefaultsResponses, QualityListTiersResponses, QualityTestProfileData, QualityTestProfileResponses, QualityUpdateCustomFormatData, QualityUpdateCustomFormatResponses, QualityUpdateProfileData, QualityUpdateProfileResponses, RequestsApproveResponses, RequestsCancelResponses, RequestsCreateData, RequestsCreateResponses, RequestsDenyData, RequestsDenyResponses, RequestsGetResponses, RequestsListResponses, RolesListResponses, RoutingCreateRuleData, RoutingCreateRuleResponses, RoutingDeleteRuleResponses, RoutingEvaluateData, RoutingEvaluateResponses, RoutingGetFieldsResponses, RoutingGetRuleResponses, RoutingListRulesResponses, RoutingReorderRulesData, RoutingReorderRulesResponses, RoutingUpdateRuleData, RoutingUpdateRuleResponses, SessionsListResponses, SessionsRevokeAllResponses, SessionsRevokeResponses, SettingsListResponses, SettingsPatchData, SettingsPatchResponses, SetupInitializeData, SetupInitializeResponses, SetupStatusResponses, SetupTmdbData, SetupTmdbResponses, TitleStatusGetResponses, TrackingByTmdbResponses, TrackingCancelResponses, TrackingGetResponses, TrackingListResponses, TrackingProposalsResponses, TrackingRequestersResponses, TrackingRetryResponses, TrackingSetAutonomyData, TrackingSetAutonomyResponses, TrackingWantsResponses, UnmatchedFilesGetResponses, UnmatchedFilesListResponses, UsersAssignRoleData, UsersAssignRoleResponses, UsersDeleteResponses, UsersGetProfileResponses, UsersGetResponses, UsersListResponses, UsersUpdateData, UsersUpdatePasswordData, UsersUpdatePasswordResponses, UsersUpdateProfileData, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordResponses, UsersUpdateProfileResponses, UsersUpdateRequestSettingsData, UsersUpdateRequestSettingsResponses, UsersUpdateResponses, VersionGetResponses, VolumesCreateData, VolumesCreateResponses, VolumesDeleteResponses, VolumesGetResponses, VolumesListResponses, VolumesUpdateData, VolumesUpdateResponses, WantsCancelResponses } from './types.gen';
+import type { AuthAcceptInviteData, AuthAcceptInviteResponses, AuthLoginData, AuthLoginResponses, AuthLogoutResponses, AuthMeResponses, AuthPlexExchangeData, AuthPlexExchangeResponses, AuthRefreshResponses, AuthSignupData, AuthSignupResponses, BootstrapGetResponses, ClientOptions, DownloadCandidatesDownloadMovieData, DownloadCandidatesDownloadMovieResponses, DownloadCandidatesDownloadSeriesData, DownloadCandidatesDownloadSeriesResponses, DownloadCandidatesListMovieResponses, DownloadCandidatesListSeriesResponses, DownloadCandidatesPreviewMovieData, DownloadCandidatesPreviewMovieResponses, DownloadCandidatesPreviewSeriesData, DownloadCandidatesPreviewSeriesResponses, DownloadersCreateData, DownloadersCreateResponses, DownloadersDeleteResponses, DownloadersGetDefaultResponses, DownloadersGetResponses, DownloadersListResponses, DownloadersTestConfigData, DownloadersTestConfigResponses, DownloadersTestResponses, DownloadersUpdateData, DownloadersUpdateResponses, DownloadJobsCancelResponses, DownloadJobsGetResponses, DownloadJobsHistoryResponses, DownloadJobsListForMovieResponses, DownloadJobsListForSeriesResponses, DownloadJobsListImportTasksResponses, DownloadJobsListResponses, DownloadJobsReimportResponses, DownloadJobsRetryResponses, DownloadJobsTimelineResponses, EmailProviderGetResponses, EmailProviderSaveData, EmailProviderSaveResponses, EmailProviderTestConfigData, EmailProviderTestConfigResponses, EmailProviderTestData, EmailProviderTestResponses, EventsStreamResponses, EventsSubscriptionsAddData, EventsSubscriptionsAddResponses, EventsSubscriptionsListResponses, EventsSubscriptionsRemoveResponses, FeedGetResponses, FilesDetachData, FilesDetachResponses, FilesMatchData, FilesMatchDecisionResponses, FilesMatchResponses, FilesUnmatchResponses, FilesystemBrowseResponses, HealthCheckResponses, ImportTasksCancelResponses, ImportTasksCountsResponses, ImportTasksGetResponses, ImportTasksHistoryResponses, ImportTasksListResponses, ImportTasksReimportResponses, ImportTasksTimelineResponses, IndexersActionResponses, IndexersDeleteResponses, IndexersGetResponses, IndexersGetSchemaResponses, IndexersListConfiguredResponses, IndexersSaveData, IndexersSaveResponses, IndexersTestAllResponses, IndexersTestSavedResponses, IndexersTestUnsavedData, IndexersTestUnsavedResponses, IndexersToggleResponses, InvitesCreateData, InvitesCreateResponses, InvitesDeleteResponses, InvitesListResponses, LibrariesCreateData, LibrariesCreateResponses, LibrariesDeleteResponses, LibrariesGetResponses, LibrariesListResponses, LibrariesScanResponses, LibrariesUpdateData, LibrariesUpdateResponses, LibraryListResponses, MediaGetMovieResponses, MediaGetPersonResponses, MediaGetSeriesResponses, MediaSearchResponses, NameTemplatesCreateData, NameTemplatesCreateResponses, NameTemplatesDeleteResponses, NameTemplatesGetDefaultResponses, NameTemplatesGetResponses, NameTemplatesListResponses, NameTemplatesUpdateData, NameTemplatesUpdateResponses, NotificationPreferencesGetResponses, NotificationPreferencesSetData, NotificationPreferencesSetResponses, NotificationsListResponses, NotificationsMarkAllReadResponses, NotificationsMarkReadResponses, NotificationsUnreadCountResponses, ProposalsApproveResponses, ProposalsDeclineResponses, PushPublicKeyResponses, PushRemoveResponses, PushSubscribeData, PushSubscribeResponses, PushTestResponses, QualityBindTierData, QualityBindTierResponses, QualityCreateCustomFormatData, QualityCreateCustomFormatResponses, QualityCreateProfileData, QualityCreateProfileResponses, QualityDeleteCustomFormatResponses, QualityDeleteProfileResponses, QualityGetCustomFormatResponses, QualityGetProfileResponses, QualityListBinsResponses, QualityListCustomFormatsResponses, QualityListProfilesResponses, QualityListSizeDefaultsResponses, QualityListTiersResponses, QualityTestProfileData, QualityTestProfileResponses, QualityUpdateCustomFormatData, QualityUpdateCustomFormatResponses, QualityUpdateProfileData, QualityUpdateProfileResponses, RequestsApproveResponses, RequestsCancelResponses, RequestsCreateData, RequestsCreateResponses, RequestsDenyData, RequestsDenyResponses, RequestsGetResponses, RequestsListResponses, RolesListResponses, RoutingCreateRuleData, RoutingCreateRuleResponses, RoutingDeleteRuleResponses, RoutingEvaluateData, RoutingEvaluateResponses, RoutingGetDefaultsResponses, RoutingGetFieldsResponses, RoutingGetRuleResponses, RoutingListRulesResponses, RoutingReorderRulesData, RoutingReorderRulesResponses, RoutingUpdateDefaultsData, RoutingUpdateDefaultsResponses, RoutingUpdateRuleData, RoutingUpdateRuleResponses, SessionsListResponses, SessionsRevokeAllResponses, SessionsRevokeResponses, SettingsListResponses, SettingsPatchData, SettingsPatchResponses, SetupInitializeData, SetupInitializeResponses, SetupStatusResponses, SetupTmdbData, SetupTmdbResponses, TitleStatusGetResponses, TrackingByTmdbResponses, TrackingCancelResponses, TrackingGetResponses, TrackingListResponses, TrackingProposalsResponses, TrackingRequestersResponses, TrackingRetryResponses, TrackingSetAutonomyData, TrackingSetAutonomyResponses, TrackingWantsResponses, UnmatchedFilesGetResponses, UnmatchedFilesListResponses, UsersAssignRoleData, UsersAssignRoleResponses, UsersDeleteResponses, UsersGetProfileResponses, UsersGetResponses, UsersListResponses, UsersUpdateData, UsersUpdatePasswordData, UsersUpdatePasswordResponses, UsersUpdateProfileData, UsersUpdateProfilePasswordData, UsersUpdateProfilePasswordResponses, UsersUpdateProfileResponses, UsersUpdateRequestSettingsData, UsersUpdateRequestSettingsResponses, UsersUpdateResponses, VersionGetResponses, VolumesCreateData, VolumesCreateResponses, VolumesDeleteResponses, VolumesGetResponses, VolumesListResponses, VolumesUpdateData, VolumesUpdateResponses, WantsCancelResponses } from './types.gen';
 
 export type RequestHandlerOptions = RequestHandlerOptions2 & {
     baseUrl?: ClientOptions['baseUrl'];
@@ -3296,6 +3296,60 @@ export function handleRolesList(response?: HandleRolesListResponse | HttpRespons
     }, options);
 }
 
+export type HandleRoutingGetDefaultsResponse = {
+    body: RoutingGetDefaultsResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `GET /api/v1/routing/defaults` operation.
+ */
+export function handleRoutingGetDefaults(response?: HandleRoutingGetDefaultsResponse | HttpResponseResolver<never, never>, options?: RequestHandlerOptions): HttpHandler {
+    return http.get<never, never>(`${options?.baseUrl ?? '*'}/api/v1/routing/defaults`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return HttpResponse.json(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
+export type HandleRoutingUpdateDefaultsResponse = {
+    body: RoutingUpdateDefaultsResponses[200];
+    status?: 200;
+};
+
+/**
+ * Handler for the `PUT /api/v1/routing/defaults` operation.
+ */
+export function handleRoutingUpdateDefaults(response?: HandleRoutingUpdateDefaultsResponse | HttpResponseResolver<never, RoutingUpdateDefaultsData['body']>, options?: RequestHandlerOptions): HttpHandler {
+    return http.put<never, RoutingUpdateDefaultsData['body']>(`${options?.baseUrl ?? '*'}/api/v1/routing/defaults`, info => {
+        if (typeof response === 'function') {
+            return response(info);
+        }
+        const body = response?.body;
+        if (body !== undefined) {
+            return HttpResponse.json(body, { status: response?.status ?? 200 });
+        }
+        if (options?.responseFallback === 'passthrough') {
+            return;
+        }
+        return new Response('Not Implemented', {
+            status: 501,
+            statusText: 'Not Implemented'
+        });
+    }, options);
+}
+
 export type HandleRoutingEvaluateResponse = {
     body: RoutingEvaluateResponses[200];
     status?: 200;
@@ -5214,6 +5268,14 @@ export type MswHandlerFactories = {
      */
     rolesList: typeof handleRolesList;
     /**
+     * Handler for the `GET /api/v1/routing/defaults` operation.
+     */
+    routingGetDefaults: typeof handleRoutingGetDefaults;
+    /**
+     * Handler for the `PUT /api/v1/routing/defaults` operation.
+     */
+    routingUpdateDefaults: typeof handleRoutingUpdateDefaults;
+    /**
      * Handler for the `POST /api/v1/routing/evaluate` operation.
      */
     routingEvaluate: typeof handleRoutingEvaluate;
@@ -5543,6 +5605,8 @@ export function createMswHandlers(config: RequestHandlerOptions = {}): CreateMsw
         requestsCancel: wrap(handleRequestsCancel),
         requestsDeny: wrap(handleRequestsDeny),
         rolesList: wrap(handleRolesList),
+        routingGetDefaults: wrap(handleRoutingGetDefaults),
+        routingUpdateDefaults: wrap(handleRoutingUpdateDefaults),
         routingEvaluate: wrap(handleRoutingEvaluate),
         routingGetFields: wrap(handleRoutingGetFields),
         routingListRules: wrap(handleRoutingListRules),
@@ -5688,6 +5752,8 @@ export function createMswHandlers(config: RequestHandlerOptions = {}): CreateMsw
             invoke(pick.notificationPreferencesSet, overrides.notificationPreferencesSet),
             invoke(pick.notificationsMarkAllRead, overrides.notificationsMarkAllRead),
             invoke(pick.notificationsUnreadCount, overrides.notificationsUnreadCount),
+            invoke(pick.routingGetDefaults, overrides.routingGetDefaults),
+            invoke(pick.routingUpdateDefaults, overrides.routingUpdateDefaults),
             invoke(pick.routingEvaluate, overrides.routingEvaluate),
             invoke(pick.routingGetFields, overrides.routingGetFields),
             invoke(pick.routingListRules, overrides.routingListRules),

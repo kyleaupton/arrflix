@@ -60,6 +60,7 @@ func (s *ProposalService) ProposeOrSupersede(ctx context.Context, want model.Wan
 		DownloaderID:   job.DownloaderID,
 		LibraryID:      job.LibraryID,
 		NameTemplateID: job.NameTemplateID,
+		SavePath:       job.SavePath,
 		Size:           size,
 		Seeders:        seeders,
 		Bin:            bin,
@@ -357,6 +358,7 @@ func jobParamsFromProposal(p model.Proposal) repo.CreateDownloadJobParams {
 		DownloaderID:   p.DownloaderID,
 		LibraryID:      p.LibraryID,
 		NameTemplateID: p.NameTemplateID,
+		SavePath:       p.SavePath,
 	}
 }
 
@@ -378,6 +380,7 @@ func updateFromCreate(id uuid.UUID, c repo.CreateProposalParams) repo.UpdateProp
 		DownloaderID:   c.DownloaderID,
 		LibraryID:      c.LibraryID,
 		NameTemplateID: c.NameTemplateID,
+		SavePath:       c.SavePath,
 		Size:           c.Size,
 		Seeders:        c.Seeders,
 		Bin:            c.Bin,
