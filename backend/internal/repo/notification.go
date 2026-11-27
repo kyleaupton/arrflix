@@ -33,6 +33,7 @@ func toModelOutbox(row dbgen.NotificationOutbox) model.NotificationOutbox {
 		ClaimedAt:       timePtrFromPgTimestamptz(row.ClaimedAt),
 		DeliveredAt:     timePtrFromPgTimestamptz(row.DeliveredAt),
 		ReadAt:          timePtrFromPgTimestamptz(row.ReadAt),
+		ResolvedAt:      timePtrFromPgTimestamptz(row.ResolvedAt),
 	}
 }
 
@@ -207,6 +208,20 @@ func (r *Repository) ListInbox(ctx context.Context, userID uuid.UUID, limit int3
 func (r *Repository) CountUnreadInbox(ctx context.Context, userID uuid.UUID) (int64, error) {
 	n, err := r.Q.CountUnreadInbox(ctx, pgtypeFromUUID(userID))
 	return n, apperrors.FromPg(err, "count unread inbox for user %s", userID)
+}
+
+// ResolveInAppByDedupKey resolves every recipient's in_app row carrying the
+// dedup key; rows already resolved are left as they are.
+func (r *Repository) ResolveInAppByDedupKey(ctx context.Context, dedupKey string) (int64, error) {
+	n, err := r.Q.ResolveInAppByDedupKey(ctx, &dedupKey)
+	return n, apperrors.FromPg(err, "resolve in_app notifications %q", dedupKey)
+}
+
+// SupersedeUndeliveredByDedupKey cancels the not-yet-sent push/email rows carrying
+// the dedup key.
+func (r *Repository) SupersedeUndeliveredByDedupKey(ctx context.Context, dedupKey string) (int64, error) {
+	n, err := r.Q.SupersedeUndeliveredByDedupKey(ctx, &dedupKey)
+	return n, apperrors.FromPg(err, "supersede undelivered notifications %q", dedupKey)
 }
 
 func (r *Repository) MarkInboxRead(ctx context.Context, id, userID uuid.UUID) error {

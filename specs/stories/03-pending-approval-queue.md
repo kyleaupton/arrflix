@@ -99,7 +99,7 @@ Requirements carry stable ids per [the stories contract](./README.md#conventions
 
 - **REQ-APPROVE-001** — A request needing review must reach someone able to decide it, without them having to check. *Currently true:* a request entering the queue notifies every active user who may decide it (in-app, plus push by default), never the requester.
 - **REQ-APPROVE-002** — Multiple requests arriving close together must not produce one alert each. **Not currently true:** each pending request sends its own alert.
-- **REQ-APPROVE-003** — Deciding a request must clear it from every reviewer's attention, including reviewers who did not act on it. **Unbuilt**, and dependent on the missing resolution lifecycle.
+- **REQ-APPROVE-003** — Deciding a request must clear it from every reviewer's attention, including reviewers who did not act on it. *Currently true:* once a request is approved, denied or withdrawn, every reviewer's in-app `request.pending` for it is resolved: it stops counting as unread and stays in the bell, dimmed, with its outcome. Push and email for it that haven't gone out are cancelled; a push already delivered stays in the tray, and tapping it opens a queue that no longer lists the request.
 
 ### The decision is informed
 

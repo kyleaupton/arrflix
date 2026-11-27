@@ -97,7 +97,8 @@ export function useNotifications(listEnabled: Ref<boolean>) {
     isError: computed(() => listQuery.isError.value),
     markRead: (id: string) => {
       const n = notifications.value.find((x) => x.id === id)
-      if (n && !n.readAt) markReadM.mutate({ path: { id } })
+      // A resolved row isn't counted as unread, so opening it has nothing to clear.
+      if (n && !n.readAt && !n.resolvedAt) markReadM.mutate({ path: { id } })
     },
     markAllRead: () => {
       if (unreadCount.value > 0) markAllReadM.mutate({})

@@ -1140,6 +1140,14 @@ export type InboxNotification = {
     id: string;
     payload: unknown;
     readAt?: string;
+    /**
+     * How the condition cleared; set with resolvedAt
+     */
+    resolution?: 'approved' | 'denied' | 'withdrawn';
+    /**
+     * When the condition behind the notification cleared; a resolved entry is not unread
+     */
+    resolvedAt?: string;
     title: string;
 };
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	dbgen "github.com/kyleaupton/arrflix/internal/db/sqlc"
 	apperrors "github.com/kyleaupton/arrflix/internal/errors"
 	"github.com/kyleaupton/arrflix/internal/model"
@@ -100,6 +101,24 @@ func (r *Repository) GetRequest(ctx context.Context, id uuid.UUID) (model.Reques
 		return model.Request{}, apperrors.FromPg(err, "request %s not found", id)
 	}
 	return toModelRequest(row), nil
+}
+
+// ListRequestsByIDs returns the requests with the given IDs, in no particular
+// order. IDs with no request are absent from the result.
+func (r *Repository) ListRequestsByIDs(ctx context.Context, ids []uuid.UUID) ([]model.Request, error) {
+	pgIDs := make([]pgtype.UUID, len(ids))
+	for i, id := range ids {
+		pgIDs[i] = pgtypeFromUUID(id)
+	}
+	rows, err := r.Q.ListRequestsByIDs(ctx, pgIDs)
+	if err != nil {
+		return nil, apperrors.FromPg(err, "list requests by id")
+	}
+	out := make([]model.Request, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toModelRequest(row))
+	}
+	return out, nil
 }
 
 // FindPendingRequestForUser returns the caller's still-pending request for a
