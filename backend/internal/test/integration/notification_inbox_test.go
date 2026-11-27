@@ -30,6 +30,9 @@ func deliverInApp(t *testing.T, ctx context.Context, r *repo.Repository, userID 
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
+	if _, err := r.MarkOutboxDelivering(ctx, row.ID); err != nil {
+		t.Fatalf("mark delivering: %v", err)
+	}
 	delivered, err := r.MarkOutboxDelivered(ctx, row.ID)
 	if err != nil {
 		t.Fatalf("mark delivered: %v", err)

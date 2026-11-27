@@ -120,13 +120,24 @@ func (s *NotificationService) RequeueAwaitingConfig(ctx context.Context, since t
 // its title and body rendered from the event template. A row whose template
 // can't render (should not happen post-startup-verify) falls back to the raw
 // event type as title rather than dropping the entry or failing the whole read.
+// A resolved request.pending entry is labelled with its outcome, read from the
+// request's current status (see requestResolutions).
 func (s *NotificationService) Inbox(ctx context.Context, userID uuid.UUID, limit int32) ([]model.InboxNotification, error) {
 	rows, err := s.repo.ListInbox(ctx, userID, limit)
 	if err != nil {
 		return nil, err
 	}
+	resolutions, err := s.requestResolutions(ctx, rows)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]model.InboxNotification, 0, len(rows))
 	for _, row := range rows {
+		var resolution *string
+		if r, ok := resolutions[row.ID]; ok {
+			v := string(r)
+			resolution = &v
+		}
 		title, body, err := s.renderer.Render(row.EventType, model.ChannelInApp, row.Payload)
 		if err != nil {
 			title, body = row.EventType, ""
@@ -140,10 +151,63 @@ func (s *NotificationService) Inbox(ctx context.Context, userID uuid.UUID, limit
 			CreatedAt:  row.CreatedAt,
 			ReadAt:     row.ReadAt,
 			ResolvedAt: row.ResolvedAt,
-			Resolution: row.Resolution,
+			Resolution: resolution,
 		})
 	}
 	return out, nil
+}
+
+// requestResolutions maps each resolved request.pending row to its outcome,
+// looking the requests up in one batch by the payload's requestId. A row whose
+// payload can't be decoded, whose request is gone, or whose request is somehow
+// still pending gets no entry (resolved, but unlabelled).
+func (s *NotificationService) requestResolutions(ctx context.Context, rows []model.NotificationOutbox) (map[uuid.UUID]model.NotificationResolution, error) {
+	byRow := map[uuid.UUID]uuid.UUID{}
+	var ids []uuid.UUID
+	for _, row := range rows {
+		if row.ResolvedAt == nil || row.EventType != notifications.EventRequestPending {
+			continue
+		}
+		var p notifications.RequestPending
+		if err := json.Unmarshal(row.Payload, &p); err != nil || p.RequestID == uuid.Nil {
+			continue
+		}
+		byRow[row.ID] = p.RequestID
+		ids = append(ids, p.RequestID)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	reqs, err := s.repo.ListRequestsByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	status := make(map[uuid.UUID]model.RequestStatus, len(reqs))
+	for _, r := range reqs {
+		status[r.ID] = model.RequestStatus(r.Status)
+	}
+	out := make(map[uuid.UUID]model.NotificationResolution, len(byRow))
+	for rowID, reqID := range byRow {
+		if r, ok := resolutionFor(status[reqID]); ok {
+			out[rowID] = r
+		}
+	}
+	return out, nil
+}
+
+// resolutionFor maps a decided request's status to the bell's outcome label:
+// approved or anything after it reads approved, denied reads denied, and canceled
+// reads withdrawn.
+func resolutionFor(st model.RequestStatus) (model.NotificationResolution, bool) {
+	switch st {
+	case model.RequestApproved, model.RequestSpawned:
+		return model.ResolutionApproved, true
+	case model.RequestDenied:
+		return model.ResolutionDenied, true
+	case model.RequestCanceled:
+		return model.ResolutionWithdrawn, true
+	}
+	return "", false
 }
 
 // UnreadCount is the bell badge: the user's delivered-but-unread in_app count.
@@ -260,14 +324,14 @@ func (s *NotificationService) NotifyRequestDenied(ctx context.Context, req model
 
 // ResolveRequestPending clears a request's request.pending from every reviewer's
 // attention once the request stops being pending: each recipient's bell row is
-// resolved with the outcome, and push/email rows not yet sent are superseded so
-// no one is alerted afterwards. A push already delivered is left alone — it can't
+// resolved, and push/email rows not yet sent (including any claimed mid-delivery)
+// are superseded so no one is alerted afterwards. A push already delivered is left alone — it can't
 // be reliably withdrawn, and its tap target (the approval queue) no longer lists
 // the request.
-func (s *NotificationService) ResolveRequestPending(ctx context.Context, requestID uuid.UUID, outcome model.NotificationResolution) error {
+func (s *NotificationService) ResolveRequestPending(ctx context.Context, requestID uuid.UUID) error {
 	key := notifications.RequestPendingDedupKey(requestID)
 	return s.repo.InTx(ctx, func(r *repo.Repository) error {
-		if _, err := r.ResolveInAppByDedupKey(ctx, key, outcome); err != nil {
+		if _, err := r.ResolveInAppByDedupKey(ctx, key); err != nil {
 			return err
 		}
 		_, err := r.SupersedeUndeliveredByDedupKey(ctx, key)

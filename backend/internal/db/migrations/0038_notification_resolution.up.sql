@@ -1,11 +1,8 @@
--- A resolvable in_app notification (today only request.pending) is resolved once
--- the condition it asks about clears: the request was approved, denied or
--- withdrawn. A resolved row stays in the bell, dimmed and labelled with its
--- outcome, but no longer counts as unread. Both columns are set together and only
--- ever on in_app rows; undelivered push/email rows for the same condition move to
+-- resolved_at marks a notification that no longer needs attention: the condition
+-- it asks about has cleared. A resolved in_app row stays in the bell but doesn't
+-- count as unread. It says nothing about how the condition cleared; any outcome a
+-- reader shows comes from the notification's subject (for request.pending, the
+-- request's status). Undelivered push/email rows for the same condition move to
 -- status 'superseded' instead.
 ALTER TABLE notification_outbox
-  ADD COLUMN resolved_at TIMESTAMPTZ,
-  ADD COLUMN resolution TEXT CHECK (resolution IN ('approved', 'denied', 'withdrawn')),
-  ADD CONSTRAINT notification_outbox_resolution_pair
-    CHECK ((resolved_at IS NULL) = (resolution IS NULL));
+  ADD COLUMN resolved_at TIMESTAMPTZ;

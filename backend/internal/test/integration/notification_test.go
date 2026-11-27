@@ -158,6 +158,9 @@ func TestNotification_DedupIndex(t *testing.T) {
 		t.Fatalf("second null-key enqueue should not collide: %v", err)
 	}
 	// Once the first row leaves the queued/delivering window, the key frees up.
+	if _, err := r.MarkOutboxDelivering(ctx, first.ID); err != nil {
+		t.Fatalf("mark first delivering: %v", err)
+	}
 	if _, err := r.MarkOutboxDelivered(ctx, first.ID); err != nil {
 		t.Fatalf("mark first delivered: %v", err)
 	}

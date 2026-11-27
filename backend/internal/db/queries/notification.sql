@@ -71,10 +71,13 @@ WHERE status = 'delivering'
   AND claimed_at < sqlc.arg(stale_before)
 RETURNING *;
 
+-- MarkOutboxDelivered settles a claimed row as delivered. Guarded by
+-- status='delivering' so a row superseded mid-delivery stays superseded; such a
+-- row matches nothing and surfaces as NotFound.
 -- name: MarkOutboxDelivered :one
 UPDATE notification_outbox
 SET status = 'delivered', delivered_at = now()
-WHERE id = sqlc.arg(id)
+WHERE id = sqlc.arg(id) AND status = 'delivering'
 RETURNING *;
 
 -- MarkOutboxAwaitingConfig parks a queued row whose channel adapter isn't
@@ -102,13 +105,15 @@ WHERE status = 'awaiting_config' AND created_at >= sqlc.arg(since);
 -- RescheduleOutbox returns a transiently-failed row to the queue with an
 -- incremented attempt count and a future next_attempt_at (the worker computes the
 -- backoff). last_error keeps the most recent failure reason for history/debugging.
+-- Guarded by status='delivering' so a row superseded mid-delivery can't return
+-- to the queue; such a row matches nothing and surfaces as NotFound.
 -- name: RescheduleOutbox :one
 UPDATE notification_outbox
 SET status = 'queued',
     attempts = attempts + 1,
     next_attempt_at = sqlc.arg(next_attempt_at),
     last_error = sqlc.arg(last_error)
-WHERE id = sqlc.arg(id)
+WHERE id = sqlc.arg(id) AND status = 'delivering'
 RETURNING *;
 
 -- name: MarkOutboxDead :one
@@ -143,30 +148,30 @@ WHERE recipient_user_id = sqlc.arg(user_id)
   AND resolved_at IS NULL;
 
 -- ResolveInAppByDedupKey stamps every recipient's in_app row for one resolvable
--- notification with its outcome, whatever the row's delivery status, so a row
--- delivered later still lands resolved. The first resolution wins: a row already
--- resolved keeps its outcome. Returns the number of rows resolved.
+-- notification as resolved, whatever the row's delivery status, so a row
+-- delivered later still lands resolved. A row already resolved keeps its first
+-- resolved_at. Returns the number of rows resolved.
 -- name: ResolveInAppByDedupKey :execrows
 UPDATE notification_outbox
-SET resolved_at = now(),
-    resolution = sqlc.arg(resolution)
+SET resolved_at = now()
 WHERE dedup_key = sqlc.arg(dedup_key)
   AND channel = 'in_app'
   AND resolved_at IS NULL;
 
 -- SupersedeUndeliveredByDedupKey cancels the outbound (push/email) rows of a
 -- resolvable notification that haven't gone out yet — queued (fresh or awaiting
--- a retry) or parked awaiting_config — so no one is alerted about a condition
--- that already cleared. A row the worker has claimed ('delivering') is left to
--- finish; the worker's own transitions are guarded on status='queued', so a row
--- superseded between its poll and its claim is never delivered. Returns the
--- number of rows superseded.
+-- a retry), parked awaiting_config, or claimed mid-delivery — so no one is
+-- alerted about a condition that already cleared. The worker's settling
+-- transitions (MarkOutboxDelivered, RescheduleOutbox) are guarded on
+-- status='delivering', so a row superseded mid-delivery is never requeued or
+-- marked delivered; the one attempt already in flight may still reach the
+-- device. Returns the number of rows superseded.
 -- name: SupersedeUndeliveredByDedupKey :execrows
 UPDATE notification_outbox
 SET status = 'superseded'
 WHERE dedup_key = sqlc.arg(dedup_key)
   AND channel <> 'in_app'
-  AND status IN ('queued', 'failed', 'awaiting_config');
+  AND status IN ('queued', 'failed', 'awaiting_config', 'delivering');
 
 -- MarkInboxRead marks one entry read, guarded by recipient so a user only touches
 -- their own rows. Idempotent — re-marking a read row is a no-op.

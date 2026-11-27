@@ -41,9 +41,9 @@ const (
 	OutboxSuperseded     NotificationStatus = "superseded"
 )
 
-// NotificationResolution is how the condition behind a resolvable notification
-// cleared. Today only request.pending is resolvable: its request was approved,
-// denied, or withdrawn by the requester.
+// NotificationResolution is how the condition behind a resolved notification
+// cleared, as the bell labels it. It is derived on read from the notification's
+// subject, never stored: for request.pending, from the request's status.
 type NotificationResolution string
 
 const (
@@ -61,8 +61,8 @@ const (
 // DeliveredAt/ReadAt are nil until the worker delivers and the user reads. ClaimedAt
 // is the worker's claim stamp, meaningful only while Status is 'delivering' — it is
 // how the crash-window reaper spots a row whose worker died mid-delivery.
-// ResolvedAt/Resolution are set together, on in_app rows only, once the condition
-// a resolvable notification asks about clears. Mirrors dbgen.NotificationOutbox.
+// ResolvedAt is set, on in_app rows only, once the condition a resolvable
+// notification asks about clears. Mirrors dbgen.NotificationOutbox.
 type NotificationOutbox struct {
 	ID              uuid.UUID       `json:"id"`
 	EventType       string          `json:"eventType"`
@@ -82,7 +82,6 @@ type NotificationOutbox struct {
 	DeliveredAt     *time.Time      `json:"deliveredAt"`
 	ReadAt          *time.Time      `json:"readAt"`
 	ResolvedAt      *time.Time      `json:"resolvedAt"`
-	Resolution      *string         `json:"resolution"`
 }
 
 // InboxNotification is the bell-icon read shape: a delivered in_app outbox row
@@ -91,7 +90,7 @@ type NotificationOutbox struct {
 // Payload still carries the structured extras (poster path, deep link) a rich
 // card wants. It is a read projection of NotificationOutbox, not a stored row.
 // A resolved entry (ResolvedAt set) no longer counts as unread; the bell shows it
-// dimmed with its Resolution.
+// dimmed with its Resolution, which is derived from the notification's subject.
 type InboxNotification struct {
 	ID         uuid.UUID       `json:"id"`
 	EventType  string          `json:"eventType"`

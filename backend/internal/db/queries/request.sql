@@ -25,6 +25,12 @@ RETURNING *;
 SELECT * FROM request
 WHERE id = $1;
 
+-- ListRequestsByIDs fetches a set of requests in one read. IDs with no row are
+-- simply absent from the result.
+-- name: ListRequestsByIDs :many
+SELECT * FROM request
+WHERE id = ANY(sqlc.arg(ids)::uuid[]);
+
 -- FindPendingRequestForUser returns the caller's still-pending request for a
 -- title (tmdb id + type), if any. The acquisition-status endpoint joins this so
 -- a focus page shows the Pending badge without pulling the user's whole request

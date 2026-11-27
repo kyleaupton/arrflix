@@ -255,6 +255,48 @@ func (q *Queries) ListRequests(ctx context.Context) ([]ListRequestsRow, error) {
 	return items, nil
 }
 
+const listRequestsByIDs = `-- name: ListRequestsByIDs :many
+SELECT id, requested_by, tmdb_id, type, tier, status, spawned_tracking_id, denied_reason, created_at, updated_at, scope_rule, decided_by, decided_at, decision_auto FROM request
+WHERE id = ANY($1::uuid[])
+`
+
+// ListRequestsByIDs fetches a set of requests in one read. IDs with no row are
+// simply absent from the result.
+func (q *Queries) ListRequestsByIDs(ctx context.Context, ids []pgtype.UUID) ([]Request, error) {
+	rows, err := q.db.Query(ctx, listRequestsByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Request
+	for rows.Next() {
+		var i Request
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequestedBy,
+			&i.TmdbID,
+			&i.Type,
+			&i.Tier,
+			&i.Status,
+			&i.SpawnedTrackingID,
+			&i.DeniedReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ScopeRule,
+			&i.DecidedBy,
+			&i.DecidedAt,
+			&i.DecisionAuto,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setRequestApproved = `-- name: SetRequestApproved :one
 UPDATE request
 SET status = 'approved',

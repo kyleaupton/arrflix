@@ -614,7 +614,7 @@ func (s *RequestService) Approve(ctx context.Context, approverID, requestID uuid
 	if !ok {
 		return model.Request{}, apperrors.Conflictf("request %s is no longer pending", requestID).Op(op)
 	}
-	s.resolvePending(ctx, requestID, model.ResolutionApproved)
+	s.resolvePending(ctx, requestID)
 	// The approval is committed whether or not the spawn succeeds (a failed
 	// spawn leaves the request recoverable in 'approved'), so the requester is
 	// told either way.
@@ -653,7 +653,7 @@ func (s *RequestService) Deny(ctx context.Context, approverID, requestID uuid.UU
 	if !ok {
 		return model.Request{}, apperrors.Conflictf("request %s is no longer pending", requestID).Op(op)
 	}
-	s.resolvePending(ctx, requestID, model.ResolutionDenied)
+	s.resolvePending(ctx, requestID)
 	s.notifyDecision(ctx, denied, s.notify.NotifyRequestDenied)
 	return denied, nil
 }
@@ -662,9 +662,9 @@ func (s *RequestService) Deny(ctx context.Context, approverID, requestID uuid.UU
 // reviewer once the request has left pending. Like notifyDecision it runs after
 // the change commits and is best-effort: a failure is logged and never fails the
 // decision.
-func (s *RequestService) resolvePending(ctx context.Context, requestID uuid.UUID, outcome model.NotificationResolution) {
-	if err := s.notify.ResolveRequestPending(ctx, requestID, outcome); err != nil {
-		s.log.Warn().Err(err).Str("request_id", requestID.String()).Str("outcome", string(outcome)).Msg("request.pending notification not resolved")
+func (s *RequestService) resolvePending(ctx context.Context, requestID uuid.UUID) {
+	if err := s.notify.ResolveRequestPending(ctx, requestID); err != nil {
+		s.log.Warn().Err(err).Str("request_id", requestID.String()).Msg("request.pending notification not resolved")
 	}
 }
 
@@ -774,7 +774,7 @@ func (s *RequestService) Cancel(ctx context.Context, userID, requestID uuid.UUID
 			return model.Request{}, err
 		}
 		if req.Status == string(model.RequestPending) {
-			s.resolvePending(ctx, requestID, model.ResolutionWithdrawn)
+			s.resolvePending(ctx, requestID)
 		}
 		return canceled, nil
 	}

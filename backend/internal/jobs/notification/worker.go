@@ -206,8 +206,12 @@ func (w *Worker) handle(ctx context.Context, row model.NotificationOutbox) bool 
 		w.retryOrKill(ctx, claimed, err)
 		return false
 	}
+	// Settling is guarded on status='delivering': a NotFound means the row was
+	// superseded while this attempt was in flight, and it stays superseded.
 	if _, err := w.repo.MarkOutboxDelivered(ctx, claimed.ID); err != nil {
-		w.log.Error().Err(err).Str("id", claimed.ID.String()).Msg("mark delivered failed")
+		if !apperrors.IsNotFound(err) {
+			w.log.Error().Err(err).Str("id", claimed.ID.String()).Msg("mark delivered failed")
+		}
 		return false
 	}
 	return true
@@ -226,7 +230,8 @@ func (w *Worker) retryOrKill(ctx context.Context, row model.NotificationOutbox, 
 		ID:            row.ID,
 		NextAttemptAt: next,
 		LastError:     &msg,
-	}); err != nil {
+	}); err != nil && !apperrors.IsNotFound(err) {
+		// NotFound: the row was superseded mid-delivery and must not be requeued.
 		w.log.Error().Err(err).Str("id", row.ID.String()).Msg("reschedule notification failed")
 	}
 }

@@ -34,7 +34,6 @@ func toModelOutbox(row dbgen.NotificationOutbox) model.NotificationOutbox {
 		DeliveredAt:     timePtrFromPgTimestamptz(row.DeliveredAt),
 		ReadAt:          timePtrFromPgTimestamptz(row.ReadAt),
 		ResolvedAt:      timePtrFromPgTimestamptz(row.ResolvedAt),
-		Resolution:      row.Resolution,
 	}
 }
 
@@ -212,12 +211,9 @@ func (r *Repository) CountUnreadInbox(ctx context.Context, userID uuid.UUID) (in
 }
 
 // ResolveInAppByDedupKey resolves every recipient's in_app row carrying the
-// dedup key with the given outcome; rows already resolved are left as they are.
-func (r *Repository) ResolveInAppByDedupKey(ctx context.Context, dedupKey string, resolution model.NotificationResolution) (int64, error) {
-	n, err := r.Q.ResolveInAppByDedupKey(ctx, dbgen.ResolveInAppByDedupKeyParams{
-		DedupKey:   &dedupKey,
-		Resolution: (*string)(&resolution),
-	})
+// dedup key; rows already resolved are left as they are.
+func (r *Repository) ResolveInAppByDedupKey(ctx context.Context, dedupKey string) (int64, error) {
+	n, err := r.Q.ResolveInAppByDedupKey(ctx, &dedupKey)
 	return n, apperrors.FromPg(err, "resolve in_app notifications %q", dedupKey)
 }
 
