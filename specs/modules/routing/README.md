@@ -13,17 +13,17 @@ It does **not** decide which release to grab — that's [quality profiles](../qu
 ## TL;DR
 
 - Routing answers one question: *given a release we're grabbing, where does it go?*
-- Implemented as an ordered list of **rules**. Each rule has **conditions** (a [rule-substrate](../../patterns/rules/README.md) tree over the shared Subject) and **actions** (downloader, library, name template, future tags / categories / post-import hooks). First matching rule wins, unless an explicit `continue` action chains.
+- Implemented as an ordered list of **rules**. Each rule has **conditions** (a [rule-substrate](../../patterns/rules/README.md) tree over the shared Subject) and **actions** (downloader, library, name template, save location, future tags / categories / post-import hooks). First matching rule wins, unless an explicit `continue` action chains.
 - Rules evaluate the **[Subject](../../patterns/rules/README.md#the-subject) at the `grab` moment**: the picked release + matched media, plus (unassembled) the want's intent facts (`want.trigger`, `want.requesters`, `want.tier`) and (reserved) the quality decision (`decision.*`). `mediainfo.*` is `import`-phase and therefore indeterminate here — routing never sees it.
 - Every evaluation is designed to write an audit row per the [decision-artifact pattern](../../patterns/audit/README.md) — one row per `download_job`, capturing the firing rule and its action set (unbuilt).
-- Any slot no rule fills falls back to the configured default (downloader, library, name template), so an empty rule list still dispatches every grab.
-- There is no `stop_processing` action: gating belongs to quality profiles, not routing. The action set is exactly `{downloader, library, name_template, continue}`.
+- Any slot no rule fills falls back to the configured default (downloader, library, name template, save location), so an empty rule list still dispatches every grab. The save-location default is unset out of the box, and unset is valid: no save path is sent and the downloader decides.
+- There is no `stop_processing` action: gating belongs to quality profiles, not routing. The action set is exactly `{downloader, library, name_template, save_to, continue}`.
 
 ## What routing is, and isn't
 
 Routing is **deterministic dispatch**. Given a release object and the system's configuration, it produces one of:
 
-- `{downloader, library, name_template}` — the action set the caller applies. The pure `routing.Dispatch` may leave slots unset (no rule matched, or a matched rule's target was deleted); `RoutingService.Dispatch` fills each unset slot from the configured default (the `torrent` default downloader; the per-media-type default library and name template) and records which slots fell back. A missing default surfaces as an error.
+- `{downloader, library, name_template, save_to}` — the action set the caller applies. The pure `routing.Dispatch` may leave slots unset (no rule matched, or a matched rule's target was deleted); `RoutingService.Dispatch` fills each unset slot from the configured default (the `torrent` default downloader; the per-media-type default library and name template; the save-to default) and records which slots fell back. A missing downloader, library or name-template default surfaces as an error; an unset save-to default leaves `save_to` unset, which sends no save path.
 
 Routing is **not**:
 
@@ -55,7 +55,7 @@ rule {
 
 **Conditions** are a [rule-substrate](../../patterns/rules/README.md#conditions-the-typed-operand-model) tree — typed operands, registry-validated at save time. The substrate supports full `and`/`or`/`not` trees; routing's v1 authoring UI presents a rule as an AND'd list (OR is expressed by writing multiple rules), which simply emits a tree whose root is `and`.
 
-**Actions** populate the action set: `downloader`, `library`, `name_template`, each a nullable FK on the `routing_rule` row. Optional / future: tags, categories, post-import hooks, priority hints.
+**Actions** populate the action set: `downloader`, `library`, `name_template`, each a nullable FK on the `routing_rule` row, and `save_to`, a nullable path. Optional / future: tags, categories, post-import hooks, priority hints.
 
 **Evaluation:** rules are evaluated top-down by `position`; disabled rules are skipped. A condition that evaluates `Unknown` (not knowable at `grab`) counts as not-matched. The first rule whose conditions match fires; its actions are returned, and evaluation stops. Order matters — admin orders rules from most-specific to most-general; the last rule is typically a catch-all default.
 
@@ -88,7 +88,10 @@ The action set:
 | `downloader`    | ID of a configured downloader connection; unset → the `torrent` default downloader      |
 | `library`       | ID of a configured library root; unset → the media type's default library               |
 | `name_template` | ID of a configured name template; unset → the media type's default template             |
+| `save_to`       | Folder as Arrflix sees it, where the downloader saves; unset → the save-to default, which may itself be unset (no save path is sent, the downloader's own default applies). See below. |
 | `continue`      | If true, don't stop; merge this action set with the next match                          |
+
+**Save to.** `save_to` must be an absolute path to an existing directory when a rule or the default is saved (else a 422 on `saveTo`). At grab time it is translated into the chosen downloader's frame through the [path resolver](../path-mapping/README.md#the-four-boundaries) (boundary 2; a path inside no volume is sent unchanged), sent as `AddRequest.SavePath`, and recorded on the download job's `save_path`. A folder that no longer exists at grab fails the grab with a retryable error naming it; the save path is never silently dropped. The default lives in `app_setting` (`routing.save_to_default`), read and written at `/api/v1/routing/defaults`. Dry-run reports the resolved `saveTo` and, when a volume alias applies, the downloader-frame `downloaderSavePath`.
 
 Reserved for future expansion:
 
@@ -117,7 +120,7 @@ These rows sit alongside acquisition's quality decisions in the audit table fami
 
 ## No stop_processing
 
-Routing has no action that rejects a release. **Gating is the quality profile's job**, not routing's — by the time routing sees a release, the quality engine has already approved it; rejecting at routing is muddled responsibility. The action set is exactly `{downloader, library, name_template, continue}`; gating belongs in quality-profile gates.
+Routing has no action that rejects a release. **Gating is the quality profile's job**, not routing's — by the time routing sees a release, the quality engine has already approved it; rejecting at routing is muddled responsibility. The action set is exactly `{downloader, library, name_template, save_to, continue}`; gating belongs in quality-profile gates.
 
 ## Naming and surface
 
@@ -125,7 +128,7 @@ The subsystem is called `routing`, not `policy` — "policy" collides with the c
 
 | Piece | Name |
 | --- | --- |
-| Table | `routing_rule` — one global ordered list (`position`, unique and deferrable so a reorder can permute), `enabled`, `conditions` (canonical condition-tree JSONB), nullable `downloader_id` / `library_id` / `name_template_id` (`ON DELETE SET NULL`), `continue`. There is no rule-set table. |
+| Table | `routing_rule` — one global ordered list (`position`, unique and deferrable so a reorder can permute), `enabled`, `conditions` (canonical condition-tree JSONB), nullable `downloader_id` / `library_id` / `name_template_id` (`ON DELETE SET NULL`), nullable `save_to` path, `continue`. There is no rule-set table. |
 | Pure engine | `internal/routing` — `routing.Dispatch(reg, rules, subject) → (ActionSet, Evaluation)` |
 | Service | `RoutingService` — rule CRUD with save-time validation, `Dispatch` with default fallbacks, the editor's field catalog |
 | API | `/api/v1/routing/rules` (list, create, get, update, delete), `/api/v1/routing/rules/positions` (reorder), `/api/v1/routing/fields`, `/api/v1/routing/evaluate` (dry-run) |

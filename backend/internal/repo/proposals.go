@@ -32,6 +32,7 @@ type CreateProposalParams struct {
 	DownloaderID   uuid.UUID
 	LibraryID      uuid.UUID
 	NameTemplateID uuid.UUID
+	SavePath       *string
 	Size           int64
 	Seeders        int
 	Bin            parsing.BinKey
@@ -55,6 +56,7 @@ type UpdateProposalParams struct {
 	DownloaderID   uuid.UUID
 	LibraryID      uuid.UUID
 	NameTemplateID uuid.UUID
+	SavePath       *string
 	Size           int64
 	Seeders        int
 	Bin            parsing.BinKey
@@ -80,6 +82,7 @@ func toModelProposal(row dbgen.Proposal) model.Proposal {
 		DownloaderID:   uuidFromPgtype(row.DownloaderID),
 		LibraryID:      uuidFromPgtype(row.LibraryID),
 		NameTemplateID: uuidFromPgtype(row.NameTemplateID),
+		SavePath:       row.SavePath,
 		Size:           row.Size,
 		Seeders:        int(row.Seeders),
 		Bin: parsing.BinKey{
@@ -109,6 +112,7 @@ func (r *Repository) CreateProposal(ctx context.Context, params CreateProposalPa
 		DownloaderID:   pgtypeFromUUID(params.DownloaderID),
 		LibraryID:      pgtypeFromUUID(params.LibraryID),
 		NameTemplateID: pgtypeFromUUID(params.NameTemplateID),
+		SavePath:       params.SavePath,
 		Size:           params.Size,
 		Seeders:        int32(params.Seeders),
 		BinSource:      string(params.Bin.Source),
@@ -186,6 +190,7 @@ func (r *Repository) UpdateProposal(ctx context.Context, params UpdateProposalPa
 		DownloaderID:   pgtypeFromUUID(params.DownloaderID),
 		LibraryID:      pgtypeFromUUID(params.LibraryID),
 		NameTemplateID: pgtypeFromUUID(params.NameTemplateID),
+		SavePath:       params.SavePath,
 		Size:           params.Size,
 		Seeders:        int32(params.Seeders),
 		BinSource:      string(params.Bin.Source),

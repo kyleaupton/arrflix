@@ -38,6 +38,7 @@ export type ActionSet = {
     downloaderId?: string;
     libraryId?: string;
     nameTemplateId?: string;
+    saveTo?: string;
 };
 
 export type Availability = {
@@ -744,6 +745,7 @@ export type Evaluation = {
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    downloaderSavePath?: string;
     fellBack: Fallbacks;
     final: ActionSet;
     fired: Array<string> | null;
@@ -781,6 +783,7 @@ export type Fallbacks = {
     downloader: boolean;
     library: boolean;
     nameTemplate: boolean;
+    saveTo: boolean;
 };
 
 export type Feed = {
@@ -1794,6 +1797,7 @@ export type ProposalView = {
     mediaType: string;
     nameTemplateId: string;
     protocol: string;
+    savePath?: string;
     score: number;
     seasonId?: string;
     seeders: number;
@@ -2112,6 +2116,17 @@ export type Role = {
     name: string;
 };
 
+export type RoutingDefaultsBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * Default save folder as Arrflix sees it, used when no rule sets one. Empty: the downloader decides
+     */
+    saveTo?: string;
+};
+
 export type RoutingEvaluateBody = {
     /**
      * A URL to the JSON Schema for this object.
@@ -2153,6 +2168,10 @@ export type RoutingRule = {
     name: string;
     nameTemplateId?: string;
     position: number;
+    /**
+     * Save location as Arrflix sees it, sent to the downloader in its own frame
+     */
+    saveTo?: string;
     updatedAt: string;
 };
 
@@ -2189,6 +2208,10 @@ export type RoutingRuleWriteBody = {
      * Name template applied on match
      */
     nameTemplateId?: string;
+    /**
+     * Folder as Arrflix sees it, where the downloader saves on match. Must be an absolute path to an existing directory; empty leaves the slot unset
+     */
+    saveTo?: string;
 };
 
 export type RuleEvaluation = {
@@ -3196,6 +3219,7 @@ export type EnqueueCandidateBodyWritable = {
 };
 
 export type EvaluationWritable = {
+    downloaderSavePath?: string;
     fellBack: Fallbacks;
     final: ActionSet;
     fired: Array<string> | null;
@@ -3872,6 +3896,13 @@ export type RequestsDenyInputBodyWritable = {
     reason: string;
 };
 
+export type RoutingDefaultsBodyWritable = {
+    /**
+     * Default save folder as Arrflix sees it, used when no rule sets one. Empty: the downloader decides
+     */
+    saveTo?: string;
+};
+
 export type RoutingEvaluateBodyWritable = {
     /**
      * The download candidate to evaluate
@@ -3901,6 +3932,10 @@ export type RoutingRuleWritable = {
     name: string;
     nameTemplateId?: string;
     position: number;
+    /**
+     * Save location as Arrflix sees it, sent to the downloader in its own frame
+     */
+    saveTo?: string;
     updatedAt: string;
 };
 
@@ -3933,6 +3968,10 @@ export type RoutingRuleWriteBodyWritable = {
      * Name template applied on match
      */
     nameTemplateId?: string;
+    /**
+     * Folder as Arrflix sees it, where the downloader saves on match. Must be an absolute path to an existing directory; empty leaves the slot unset
+     */
+    saveTo?: string;
 };
 
 export type ScanResponseWritable = {
@@ -8611,6 +8650,68 @@ export type RolesListResponses = {
 };
 
 export type RolesListResponse = RolesListResponses[keyof RolesListResponses];
+
+export type RoutingGetDefaultsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/defaults';
+};
+
+export type RoutingGetDefaultsErrors = {
+    /**
+     * Error
+     */
+    default: ProblemDetails;
+};
+
+export type RoutingGetDefaultsError = RoutingGetDefaultsErrors[keyof RoutingGetDefaultsErrors];
+
+export type RoutingGetDefaultsResponses = {
+    /**
+     * OK
+     */
+    200: RoutingDefaultsBody;
+};
+
+export type RoutingGetDefaultsResponse = RoutingGetDefaultsResponses[keyof RoutingGetDefaultsResponses];
+
+export type RoutingUpdateDefaultsData = {
+    body: RoutingDefaultsBodyWritable;
+    path?: never;
+    query?: never;
+    url: '/api/v1/routing/defaults';
+};
+
+export type RoutingUpdateDefaultsErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Internal Server Error
+     */
+    500: ProblemDetails;
+};
+
+export type RoutingUpdateDefaultsError = RoutingUpdateDefaultsErrors[keyof RoutingUpdateDefaultsErrors];
+
+export type RoutingUpdateDefaultsResponses = {
+    /**
+     * OK
+     */
+    200: RoutingDefaultsBody;
+};
+
+export type RoutingUpdateDefaultsResponse = RoutingUpdateDefaultsResponses[keyof RoutingUpdateDefaultsResponses];
 
 export type RoutingEvaluateData = {
     body: RoutingEvaluateBodyWritable;

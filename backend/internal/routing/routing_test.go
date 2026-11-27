@@ -59,8 +59,10 @@ func uuidPtr() *uuid.UUID {
 	return &id
 }
 
+func strPtr(s string) *string { return &s }
+
 func fullActions() ActionSet {
-	return ActionSet{DownloaderID: uuidPtr(), LibraryID: uuidPtr(), NameTemplateID: uuidPtr()}
+	return ActionSet{DownloaderID: uuidPtr(), LibraryID: uuidPtr(), NameTemplateID: uuidPtr(), SaveTo: strPtr("/data/torrents")}
 }
 
 func rule(name string, pos int32, cond *rules.Condition, actions ActionSet) Rule {
@@ -179,6 +181,44 @@ func TestDispatchContinueMerge(t *testing.T) {
 	}
 }
 
+func TestDispatchSaveToSlot(t *testing.T) {
+	t.Parallel()
+	reg := rules.NewRegistry()
+
+	t.Run("a continuing rule's save location wins, a later match fills the rest", func(t *testing.T) {
+		t.Parallel()
+		saveOnly := rule("save-only", 0, matchCond(), ActionSet{SaveTo: strPtr("/data/torrents/4k")})
+		saveOnly.Continue = true
+		full := rule("full", 1, matchCond(), fullActions())
+
+		final, eval := Dispatch(reg, []Rule{saveOnly, full}, subject())
+		if final.SaveTo == nil || *final.SaveTo != "/data/torrents/4k" {
+			t.Errorf("SaveTo = %v, want the earlier match's /data/torrents/4k", final.SaveTo)
+		}
+		if final.LibraryID != full.Actions.LibraryID {
+			t.Errorf("LibraryID = %v, want the later match's", final.LibraryID)
+		}
+		if eval.FellBack.SaveTo {
+			t.Errorf("FellBack.SaveTo = true, want false (a rule set it)")
+		}
+	})
+
+	t.Run("an unset save location is not an incomplete rule", func(t *testing.T) {
+		t.Parallel()
+		actions := fullActions()
+		actions.SaveTo = nil
+		r := rule("no-save", 0, matchCond(), actions)
+
+		final, eval := Dispatch(reg, []Rule{r}, subject())
+		if final.SaveTo != nil || !eval.FellBack.SaveTo {
+			t.Errorf("SaveTo = %v, FellBack.SaveTo = %v; want nil, true", final.SaveTo, eval.FellBack.SaveTo)
+		}
+		if eval.Rules[0].Incomplete {
+			t.Errorf("rules[0] = %+v, want complete", eval.Rules[0])
+		}
+	})
+}
+
 func TestDispatchContinueWithNoLaterMatchFallsBack(t *testing.T) {
 	t.Parallel()
 	reg := rules.NewRegistry()
@@ -192,7 +232,7 @@ func TestDispatchContinueWithNoLaterMatchFallsBack(t *testing.T) {
 	if final.LibraryID == nil || final.DownloaderID != nil || final.NameTemplateID != nil {
 		t.Errorf("final = %+v, want only LibraryID set", final)
 	}
-	want := Fallbacks{Downloader: true, NameTemplate: true}
+	want := Fallbacks{Downloader: true, NameTemplate: true, SaveTo: true}
 	if eval.FellBack != want {
 		t.Errorf("FellBack = %+v, want %+v", eval.FellBack, want)
 	}
@@ -210,7 +250,7 @@ func TestDispatchEmptyRuleList(t *testing.T) {
 	if len(eval.Rules) != 0 || len(eval.Fired) != 0 {
 		t.Errorf("eval = %+v, want empty rules/fired", eval)
 	}
-	want := Fallbacks{Downloader: true, Library: true, NameTemplate: true}
+	want := Fallbacks{Downloader: true, Library: true, NameTemplate: true, SaveTo: true}
 	if eval.FellBack != want {
 		t.Errorf("FellBack = %+v, want everything fell back", eval.FellBack)
 	}
@@ -229,7 +269,7 @@ func TestDispatchNoMatch(t *testing.T) {
 	if eval.Rules[0].Result != rules.False || eval.Rules[0].Fired {
 		t.Errorf("rules[0] = %+v, want False/not-fired", eval.Rules[0])
 	}
-	want := Fallbacks{Downloader: true, Library: true, NameTemplate: true}
+	want := Fallbacks{Downloader: true, Library: true, NameTemplate: true, SaveTo: true}
 	if eval.FellBack != want {
 		t.Errorf("FellBack = %+v, want everything fell back", eval.FellBack)
 	}

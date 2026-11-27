@@ -1,7 +1,7 @@
 // Package routing is the dispatch consumer of the rules substrate: it
 // evaluates an ordered list of user-authored rules against a Subject at the
 // grab moment and reduces matches to an action set (downloader, library,
-// name template). The package is pure — it imports internal/rules,
+// name template, save location). The package is pure — it imports internal/rules,
 // internal/model, and the stdlib only. Persistence, fallbacks to configured
 // defaults, and HTTP live in the service/handler layers.
 package routing
@@ -21,9 +21,14 @@ type ActionSet struct {
 	DownloaderID   *uuid.UUID `json:"downloaderId,omitempty"`
 	LibraryID      *uuid.UUID `json:"libraryId,omitempty"`
 	NameTemplateID *uuid.UUID `json:"nameTemplateId,omitempty"`
+	// SaveTo is the save location as Arrflix sees it. Unlike the other slots it
+	// may stay unset after the default fills in: then no save path is sent and
+	// the downloader's own default applies.
+	SaveTo *string `json:"saveTo,omitempty"`
 }
 
-// Complete reports whether every slot is set.
+// Complete reports whether every reference slot is set. SaveTo is excluded:
+// leaving it unset is a valid choice, not a missing target.
 func (a ActionSet) Complete() bool {
 	return a.DownloaderID != nil && a.LibraryID != nil && a.NameTemplateID != nil
 }
@@ -67,6 +72,7 @@ type Fallbacks struct {
 	Downloader   bool `json:"downloader"`
 	Library      bool `json:"library"`
 	NameTemplate bool `json:"nameTemplate"`
+	SaveTo       bool `json:"saveTo"`
 }
 
 // Evaluation is routing's dispatch record, built from the neutral rules
@@ -78,6 +84,10 @@ type Evaluation struct {
 	Fired    []uuid.UUID      `json:"fired"`
 	Final    ActionSet        `json:"final"`
 	FellBack Fallbacks        `json:"fellBack"`
+	// DownloaderSavePath is Final.SaveTo in the chosen downloader's frame, set
+	// by the service only when a volume alias translates it (otherwise the
+	// downloader is sent Final.SaveTo unchanged).
+	DownloaderSavePath string `json:"downloaderSavePath,omitempty"`
 }
 
 // Dispatch evaluates the rule list against the subject at the grab moment and
@@ -132,6 +142,9 @@ func Dispatch(reg *rules.Registry, rs []Rule, s model.Subject) (ActionSet, Evalu
 		if final.NameTemplateID == nil {
 			final.NameTemplateID = rule.Actions.NameTemplateID
 		}
+		if final.SaveTo == nil {
+			final.SaveTo = rule.Actions.SaveTo
+		}
 
 		if !rule.Continue {
 			stopped = true
@@ -144,6 +157,7 @@ func Dispatch(reg *rules.Registry, rs []Rule, s model.Subject) (ActionSet, Evalu
 		Downloader:   final.DownloaderID == nil,
 		Library:      final.LibraryID == nil,
 		NameTemplate: final.NameTemplateID == nil,
+		SaveTo:       final.SaveTo == nil,
 	}
 	return final, eval
 }

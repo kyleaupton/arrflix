@@ -14,7 +14,8 @@ INSERT INTO download_job (
   candidate_link,
   downloader_id,
   library_id,
-  name_template_id
+  name_template_id,
+  save_path
 )
 VALUES (
   'created',
@@ -29,7 +30,8 @@ VALUES (
   sqlc.arg(candidate_link),
   sqlc.arg(downloader_id),
   sqlc.arg(library_id),
-  sqlc.arg(name_template_id)
+  sqlc.arg(name_template_id),
+  sqlc.narg(save_path)
 )
 ON CONFLICT (indexer_id, guid) WHERE status NOT IN ('failed', 'cancelled') DO UPDATE
 SET updated_at = now()
@@ -300,6 +302,7 @@ INSERT INTO download_job (
   downloader_id,
   library_id,
   name_template_id,
+  save_path,
   previous_job_id
 )
 SELECT
@@ -316,6 +319,7 @@ SELECT
   old.downloader_id,
   old.library_id,
   old.name_template_id,
+  old.save_path,
   old.id
 FROM download_job old
 WHERE old.id = $1

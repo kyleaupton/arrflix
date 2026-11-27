@@ -34,6 +34,7 @@ type routingRuleWriteBody struct {
 	DownloaderID   *uuid.UUID      `json:"downloaderId,omitempty" format:"uuid" doc:"Downloader applied on match"`
 	LibraryID      *uuid.UUID      `json:"libraryId,omitempty" format:"uuid" doc:"Library applied on match"`
 	NameTemplateID *uuid.UUID      `json:"nameTemplateId,omitempty" format:"uuid" doc:"Name template applied on match"`
+	SaveTo         *string         `json:"saveTo,omitempty" doc:"Folder as Arrflix sees it, where the downloader saves on match. Must be an absolute path to an existing directory; empty leaves the slot unset"`
 	Continue       bool            `json:"continue" doc:"Keep evaluating later rules after this one matches (they fill only unset slots)"`
 }
 
@@ -45,6 +46,7 @@ func (b routingRuleWriteBody) toInput() service.RoutingRuleInput {
 		DownloaderID:   b.DownloaderID,
 		LibraryID:      b.LibraryID,
 		NameTemplateID: b.NameTemplateID,
+		SaveTo:         b.SaveTo,
 		Continue:       b.Continue,
 	}
 }
@@ -155,6 +157,48 @@ func (h *Routing) ReorderRules(ctx context.Context, input *RoutingReorderRulesIn
 		return nil, err
 	}
 	return &RoutingReorderRulesOutput{Body: out}, nil
+}
+
+// ----- Defaults -----
+
+// routingDefaultsBody carries the routing defaults that aren't a flag on the
+// target entity. An absent or empty saveTo means no save path is sent.
+type routingDefaultsBody struct {
+	SaveTo *string `json:"saveTo,omitempty" doc:"Default save folder as Arrflix sees it, used when no rule sets one. Empty: the downloader decides"`
+}
+
+func defaultsBody(d service.RoutingDefaults) routingDefaultsBody {
+	return routingDefaultsBody{SaveTo: d.SaveTo}
+}
+
+type RoutingGetDefaultsInput struct{}
+
+type RoutingGetDefaultsOutput struct {
+	Body routingDefaultsBody
+}
+
+func (h *Routing) GetDefaults(ctx context.Context, _ *RoutingGetDefaultsInput) (*RoutingGetDefaultsOutput, error) {
+	out, err := h.svc.Routing.GetDefaults(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &RoutingGetDefaultsOutput{Body: defaultsBody(out)}, nil
+}
+
+type RoutingUpdateDefaultsInput struct {
+	Body routingDefaultsBody
+}
+
+type RoutingUpdateDefaultsOutput struct {
+	Body routingDefaultsBody
+}
+
+func (h *Routing) UpdateDefaults(ctx context.Context, input *RoutingUpdateDefaultsInput) (*RoutingUpdateDefaultsOutput, error) {
+	out, err := h.svc.Routing.SetDefaults(ctx, service.RoutingDefaults{SaveTo: input.Body.SaveTo})
+	if err != nil {
+		return nil, err
+	}
+	return &RoutingUpdateDefaultsOutput{Body: defaultsBody(out)}, nil
 }
 
 // ----- GetFields -----
@@ -279,6 +323,24 @@ func (h *Routing) RegisterHumachi(api huma.API) {
 		DefaultStatus: http.StatusNoContent,
 		Errors:        errsRead,
 	}, h.DeleteRule)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "routing-get-defaults",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/routing/defaults",
+		Summary:     "Get routing defaults",
+		Description: "Defaults that aren't a flag on the target entity. The default downloader, library and name template are set on those entities.",
+		Tags:        []string{"routing"},
+	}, h.GetDefaults)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "routing-update-defaults",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/routing/defaults",
+		Summary:     "Update routing defaults",
+		Tags:        []string{"routing"},
+		Errors:      errsWrite,
+	}, h.UpdateDefaults)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "routing-get-fields",

@@ -33,6 +33,7 @@ type Proposal struct {
 	DownloaderID   uuid.UUID  `json:"downloaderId"`
 	LibraryID      uuid.UUID  `json:"libraryId"`
 	NameTemplateID uuid.UUID  `json:"nameTemplateId"`
+	SavePath       *string    `json:"savePath,omitempty"`
 
 	// Display.
 	Size    int64 `json:"size"`

@@ -52,6 +52,8 @@ components:
           type: string
         nameTemplateId:
           type: string
+        saveTo:
+          type: string
       type: object
     Availability:
       additionalProperties: false
@@ -1708,6 +1710,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        downloaderSavePath:
+          type: string
         fellBack:
           $ref: "#/components/schemas/Fallbacks"
         final:
@@ -1795,10 +1799,13 @@ components:
           type: boolean
         nameTemplate:
           type: boolean
+        saveTo:
+          type: boolean
       required:
         - downloader
         - library
         - nameTemplate
+        - saveTo
       type: object
     Feed:
       additionalProperties: false
@@ -4140,6 +4147,8 @@ components:
           type: string
         protocol:
           type: string
+        savePath:
+          type: string
         score:
           format: int64
           type: integer
@@ -4841,6 +4850,20 @@ components:
         - builtIn
         - createdAt
       type: object
+    RoutingDefaultsBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/RoutingDefaultsBody.json
+          format: uri
+          readOnly: true
+          type: string
+        saveTo:
+          description: "Default save folder as Arrflix sees it, used when no rule sets one. Empty: the downloader decides"
+          type: string
+      type: object
     RoutingEvaluateBody:
       additionalProperties: false
       properties:
@@ -4915,6 +4938,9 @@ components:
         position:
           format: int32
           type: integer
+        saveTo:
+          description: Save location as Arrflix sees it, sent to the downloader in its own frame
+          type: string
         updatedAt:
           format: date-time
           type: string
@@ -4961,6 +4987,9 @@ components:
         nameTemplateId:
           description: Name template applied on match
           format: uuid
+          type: string
+        saveTo:
+          description: Folder as Arrflix sees it, where the downloader saves on match. Must be an absolute path to an existing directory; empty leaves the slot unset
           type: string
       required:
         - name
@@ -11243,6 +11272,68 @@ paths:
       summary: List roles
       tags:
         - roles
+  /api/v1/routing/defaults:
+    get:
+      description: Defaults that aren't a flag on the target entity. The default downloader, library and name template are set on those entities.
+      operationId: routing-get-defaults
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutingDefaultsBody"
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Error
+      summary: Get routing defaults
+      tags:
+        - routing
+    put:
+      operationId: routing-update-defaults
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutingDefaultsBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutingDefaultsBody"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Conflict
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+      summary: Update routing defaults
+      tags:
+        - routing
   /api/v1/routing/evaluate:
     post:
       description: Evaluates at the grab moment and returns the per-rule tri-state dispatch record.

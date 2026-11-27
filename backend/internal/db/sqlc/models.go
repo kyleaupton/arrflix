@@ -639,6 +639,7 @@ type Proposal struct {
 	Score          int32       `json:"score"`
 	CreatedAt      time.Time   `json:"created_at"`
 	UpdatedAt      time.Time   `json:"updated_at"`
+	SavePath       *string     `json:"save_path"`
 }
 
 type ProposalWant struct {
@@ -726,6 +727,7 @@ type RoutingRule struct {
 	Continue       bool        `json:"continue"`
 	CreatedAt      time.Time   `json:"created_at"`
 	UpdatedAt      time.Time   `json:"updated_at"`
+	SaveTo         *string     `json:"save_to"`
 }
 
 type TierBinding struct {

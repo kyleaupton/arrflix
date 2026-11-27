@@ -156,6 +156,10 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 	if err != nil {
 		return model.Want{}, OutcomeNoRelease, err
 	}
+	savePath, err := s.routing.SavePath(ctx, actions)
+	if err != nil {
+		return model.Want{}, OutcomeNoRelease, err
+	}
 	job := repo.CreateDownloadJobParams{
 		Protocol:       cand.Protocol,
 		MediaType:      "movie",
@@ -167,6 +171,7 @@ func (s *AcquisitionService) ProcessWant(ctx context.Context, want model.Want) (
 		DownloaderID:   *actions.DownloaderID,
 		LibraryID:      *actions.LibraryID,
 		NameTemplateID: *actions.NameTemplateID,
+		SavePath:       savePath,
 	}
 	// A series want carries season linkage onto the job. A single also carries the
 	// episode_id (the import worker's series branch files the one file back to it);

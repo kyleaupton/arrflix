@@ -9,7 +9,7 @@ select * from routing_rule
 where id = $1;
 
 -- name: CreateRoutingRule :one
-insert into routing_rule (name, enabled, "position", conditions, downloader_id, library_id, name_template_id, "continue")
+insert into routing_rule (name, enabled, "position", conditions, downloader_id, library_id, name_template_id, save_to, "continue")
 values (
   sqlc.arg(name),
   sqlc.arg(enabled),
@@ -18,6 +18,7 @@ values (
   sqlc.arg(downloader_id),
   sqlc.arg(library_id),
   sqlc.arg(name_template_id),
+  sqlc.narg(save_to),
   sqlc.arg(rule_continue)
 )
 returning *;
@@ -30,6 +31,7 @@ set name = sqlc.arg(name),
     downloader_id = sqlc.arg(downloader_id),
     library_id = sqlc.arg(library_id),
     name_template_id = sqlc.arg(name_template_id),
+    save_to = sqlc.narg(save_to),
     "continue" = sqlc.arg(rule_continue),
     updated_at = now()
 where id = sqlc.arg(id)

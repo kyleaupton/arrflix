@@ -183,6 +183,18 @@ func (s *DownloadCandidatesService) PreviewCandidate(ctx context.Context, movieI
 	return s.EvaluateCandidate(ctx, movieID, indexerID, guid)
 }
 
+// manualSavePath resolves the routed save path for a manual grab. A save
+// location that is no longer a directory is a Conflict naming the path, so the
+// admin sees which folder is missing; RoutingService.SavePath reports it as a
+// retryable Internal error, whose detail is hidden from the wire.
+func (s *DownloadCandidatesService) manualSavePath(ctx context.Context, actions routing.ActionSet, op string) (*string, error) {
+	if actions.SaveTo != nil && !isAccessibleDir(*actions.SaveTo) {
+		return nil, apperrors.Conflictf("routing save location %q is not an accessible directory; fix the routing rule or default", *actions.SaveTo).
+			Op(op)
+	}
+	return s.routing.SavePath(ctx, actions)
+}
+
 // EnqueueCandidate creates a durable download job for a candidate (movies-only).
 func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieID int64, indexerID int64, guid string) (routing.Evaluation, model.DownloadJob, error) {
 	// Lookup candidate from cache
@@ -216,6 +228,10 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 	downloaderID := *actions.DownloaderID
 	libraryID := *actions.LibraryID
 	nameTemplateID := *actions.NameTemplateID
+	savePath, err := s.manualSavePath(ctx, actions, "DownloadCandidatesService.EnqueueCandidate")
+	if err != nil {
+		return eval, model.DownloadJob{}, err
+	}
 
 	// Ensure media_item exists for this movie/library and link the job to it.
 	mi, err := s.repo.GetMediaItemByTmdbID(ctx, movieID)
@@ -285,6 +301,7 @@ func (s *DownloadCandidatesService) EnqueueCandidate(ctx context.Context, movieI
 			DownloaderID:   downloaderID,
 			LibraryID:      libraryID,
 			NameTemplateID: nameTemplateID,
+			SavePath:       savePath,
 		})
 		if jerr != nil {
 			return jerr
@@ -428,6 +445,10 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 	downloaderID := *actions.DownloaderID
 	libraryID := *actions.LibraryID
 	nameTemplateID := *actions.NameTemplateID
+	savePath, err := s.manualSavePath(ctx, actions, "DownloadCandidatesService.EnqueueSeriesCandidate")
+	if err != nil {
+		return eval, model.DownloadJob{}, err
+	}
 
 	// Ensure media_item exists for this series and link the job to it.
 	mi, err := s.repo.GetMediaItemByTmdbIDAndType(ctx, seriesID, string(model.MediaTypeSeries))
@@ -520,6 +541,7 @@ func (s *DownloadCandidatesService) EnqueueSeriesCandidate(ctx context.Context, 
 			DownloaderID:   downloaderID,
 			LibraryID:      libraryID,
 			NameTemplateID: nameTemplateID,
+			SavePath:       savePath,
 		})
 		if jerr != nil {
 			return jerr
